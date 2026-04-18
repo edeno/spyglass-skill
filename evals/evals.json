@@ -1,0 +1,51 @@
+{
+  "skill_name": "spyglass",
+  "notes": "Baseline eval prompts for the Spyglass skill. Prompts are written in the realistic, detailed style skill-creator recommends (file paths, error messages, lab context). Assertions are intentionally left empty — per the skill-creator workflow, assertions are drafted during the first test-run pass, not before. Cover one prompt per major stage in SKILL.md's stage classifier plus one Common Mistake, so a baseline run exercises the full routing surface.",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "fresh-install-remote-lab-db",
+      "stage": "setup",
+      "prompt": "ok so I just joined Eric's lab at UCSF — they run spyglass and the lab has a mysql db at franklab.ucsf.edu port 3306 and my db user is edeno. This is my personal macbook (m1 pro), and I haven't installed spyglass or miniforge yet. Can you walk me through getting spyglass installed and pointed at the lab db?",
+      "expected_output": "Routes to setup_install.md (and setup_config.md for env vars). Recommends `python scripts/install.py --remote --db-host franklab.ucsf.edu --db-user edeno`. Notes the m1 pro is supported (no Rosetta needed). Points out where dj_local_conf.json lands and which SPYGLASS_BASE_DIR to set.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 2,
+      "eval_name": "ingest-new-nwb-file",
+      "stage": "ingestion",
+      "prompt": "I just finished converting a rat recording to NWB using trodes_to_nwb and the output is at /data/edeno/j1620210710_.nwb. How do I get this into spyglass so I can eventually run spike sorting and position tracking on it? It's my first time ingesting anything.",
+      "expected_output": "Routes to ingestion.md. Shows the `spyglass.data_import.insert_sessions` call. Warns about the filename convention (the trailing underscore before .nwb is significant). Notes that insert_sessions populates Session, Subject, Electrode, etc. automatically. Flags that `skip_duplicates=True` is NOT the right flag for raw re-ingestion.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 3,
+      "eval_name": "fetch1-cardinality-error",
+      "stage": "runtime-debugging",
+      "prompt": "getting this error when trying to fetch position data: `datajoint.errors.DataJointError: fetch1 should only be called on one tuple, but 14 were returned`. My code is `(PositionOutput & {'nwb_file_name': 'j1620210710_.nwb'}).fetch1_dataframe()`. What am I doing wrong? I thought that key uniquely identified the position for that session.",
+      "expected_output": "Identifies this as the too-loose-restriction footgun (Common Mistake #2). Explains that `{nwb_file_name: ...}` alone matches every interval × every params × every pipeline version. Routes to runtime_debugging.md or datajoint_api.md. Shows the discovery pattern: run `PositionOutput.merge_restrict({'nwb_file_name': ...})` first to see the 14 options, then build a fully-specified key (nwb_file_name + interval_list_name + trodes_pos_params_name).",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 4,
+      "eval_name": "populate-fails-halfway-through",
+      "stage": "runtime-debugging",
+      "prompt": "I ran `LFPV1.populate()` on about 20 sessions last night and woke up to find it failed somewhere in the middle. The traceback goes 30+ frames deep into datajoint internals and I can't tell which session is broken. Is there a way to figure out the failing key without rerunning everything one at a time by hand?",
+      "expected_output": "Routes to runtime_debugging.md. Walks through the isolate-single-key pattern: enumerate keys via `LFPV1.key_source.fetch('KEY')`, loop with `try/except` printing each key before populate, break on first failure. Explains that Spyglass doesn't ship a debug_populate helper — this pattern is manual. Mentions checking the `~jobs` table for reserved/errored keys. Notes that `use_transaction=True` (Spyglass default) rolls back partial state, so post-mortem inspection shows no residue.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 5,
+      "eval_name": "merge-delete-classmethod-discard",
+      "stage": "common-mistakes",
+      "prompt": "I inserted a bad position entry (the tracking was corrupted on that session) and I'm trying to delete just that one merge_id from PositionOutput. I did `merge_key = PositionOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'interval_list_name': '02_r1'}).fetch1('KEY')` and then `(PositionOutput & merge_key).merge_delete()` — but it's asking me to confirm deletion of like 200 rows? I only want the one.",
+      "expected_output": "Catches the classmethod-restriction-discard (Common Mistake #1). Explains that `merge_delete` is a classmethod with `restriction=True` default, so `(PositionOutput & merge_key).merge_delete()` dispatches to the class and drops the `& merge_key`. Fix: `PositionOutput.merge_delete(merge_key)`. Shows the paired inspect-before-destroy pattern from destructive_operations.md. STRONGLY warns the user NOT to confirm the 200-row deletion, since that cascade is not what they asked for.",
+      "files": [],
+      "assertions": []
+    }
+  ]
+}
