@@ -7,7 +7,7 @@
       "eval_name": "fresh-install-remote-lab-db",
       "stage": "setup",
       "prompt": "ok so I just joined Eric's lab at UCSF — they run spyglass and the lab has a mysql db at franklab.ucsf.edu port 3306 and my db user is edeno. This is my personal macbook (m1 pro), and I haven't installed spyglass or miniforge yet. Can you walk me through getting spyglass installed and pointed at the lab db?",
-      "expected_output": "Routes to setup_install.md (and setup_config.md for env vars). Recommends `python scripts/install.py --remote --db-host franklab.ucsf.edu --db-user edeno`. Notes the m1 pro is supported (no Rosetta needed). Points out where dj_local_conf.json lands and which SPYGLASS_BASE_DIR to set.",
+      "expected_output": "Routes to setup_install.md (and setup_config.md for env vars). Recommends `python scripts/install.py --remote --db-host franklab.ucsf.edu --db-user edeno`. Notes the m1 pro is supported (no Rosetta needed). Points out that the DataJoint config lands at `~/.datajoint_config.json` and asks which `SPYGLASS_BASE_DIR` to set.",
       "files": [],
       "assertions": []
     },
@@ -15,8 +15,8 @@
       "id": 2,
       "eval_name": "ingest-new-nwb-file",
       "stage": "ingestion",
-      "prompt": "I just finished converting a rat recording to NWB using trodes_to_nwb and the output is at /data/edeno/j1620210710_.nwb. How do I get this into spyglass so I can eventually run spike sorting and position tracking on it? It's my first time ingesting anything.",
-      "expected_output": "Routes to ingestion.md. Shows the `spyglass.data_import.insert_sessions` call. Warns about the filename convention (the trailing underscore before .nwb is significant). Notes that insert_sessions populates Session, Subject, Electrode, etc. automatically. Flags that `skip_duplicates=True` is NOT the right flag for raw re-ingestion.",
+      "prompt": "I just finished converting a rat recording to NWB using trodes_to_nwb and the output is at /data/edeno/j1620210710.nwb. How do I get this into spyglass so I can eventually run spike sorting and position tracking on it? It's my first time ingesting anything.",
+      "expected_output": "Routes to ingestion.md. Shows the `spyglass.data_import.insert_sessions` call with the RAW filename `j1620210710.nwb` (no trailing underscore). Explains that Spyglass copies the file during ingest and appends `_` before `.nwb`, so downstream queries reference `j1620210710_.nwb` under `Nwbfile` — the underscore is added by Spyglass, not the user. Notes that `insert_sessions` populates Session, Subject, Electrode, etc. automatically. Flags that `skip_duplicates=True` is NOT the right flag for raw re-ingestion (use `reinsert=True`).",
       "files": [],
       "assertions": []
     },
