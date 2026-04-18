@@ -263,4 +263,4 @@ Results are saved as files in `{SPYGLASS_ANALYSIS_DIR}/{nwb_file_name}/`:
 - `.nc` files — xarray Dataset with posteriors
 - `.pkl` files — Pickled classifier model
 
-Use `DecodingOutput.cleanup(dry_run=True)` to find orphaned files.
+Use `DecodingOutput.cleanup(dry_run=True)` to find orphaned files. **Destructive when `dry_run=False`** — it permanently removes `.nc` and `.pkl` files from disk with no undo. Always run with `dry_run=True` first, inspect the returned list, and only rerun with `dry_run=False` after confirming. See SKILL.md's destructive-ops list for the full pattern.

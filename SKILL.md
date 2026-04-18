@@ -11,6 +11,7 @@ description: Use when working with the Spyglass framework, spyglass.* imports, S
   - DataJoint: `delete()`, `drop()`, `cautious_delete()`, `super_delete()`, `delete_quick()`
   - Merge-table helpers: `merge_delete()`, `merge_delete_parent()`, `delete_downstream_parts()`
   - File cleanup: `cleanup()`, `delete_orphans()` — these remove analysis files from disk
+- **Safe-before-destructive idiom**: always show the inspect step before the destroy step. See the paired shapes below — never present the destroy step without the matching inspect step above it.
 - **Writes are normal workflow**: Spyglass pipelines require inserting selection rows and populating tables. When the user asks how to run a pipeline, show the full workflow including inserts and populates. Explain what each write does, but don't refuse to show it
 - **Environment**: Do not assume Jupyter or remote NWB files — detect the user's setup from context. Spyglass supports local Docker, local data, and remote-lab workflows
 - **Verify schema before querying**: Run `Table.describe()` or `Table.heading` to confirm column names before using them in restrictions or fetch calls
@@ -20,6 +21,32 @@ description: Use when working with the Spyglass framework, spyglass.* imports, S
 - **Pip/conda users (no repo checkout)**: The `src/spyglass/` layout lives under the installed package — find it with `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`. Notebooks, docs, and `scripts/` are NOT installed; fetch them from GitHub:
   - Notebooks: `https://github.com/LorenFrankLab/spyglass/tree/master/notebooks/py_scripts/`
   - Docs: `https://lorenfranklab.github.io/spyglass/` (or `https://github.com/LorenFrankLab/spyglass/tree/master/docs/src/`)
+
+## Safe-Before-Destructive Patterns
+
+For every destructive helper listed above, the skill ships a paired inspect step. Produce the inspect step first, get user confirmation, THEN the destroy step. Never present the destroy step alone.
+
+```python
+# Delete rows: restrict, fetch to preview, confirm, THEN delete.
+target = (Session & key)
+print(len(target), "rows will be deleted; cascades to downstream tables")
+target.fetch(as_dict=True)          # inspect what is there
+# After user confirms:  target.delete()
+
+# Merge-table delete helpers: inspect via the master, THEN merge_delete.
+merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
+print((PositionOutput & merge_key).fetch(as_dict=True))
+# After confirm:  (PositionOutput & merge_key).merge_delete()
+
+# File cleanup: dry_run=True first, read the returned list, THEN rerun.
+# cleanup is an instance method — note the () on DecodingOutput.
+pending = DecodingOutput().cleanup(dry_run=True)   # returns what WOULD be removed
+# After confirm:  DecodingOutput().cleanup(dry_run=False)
+
+# delete_downstream_parts: reload_cache=True because the cache can be stale
+# and silently return "nothing to delete" when entries actually exist.
+Session().delete_downstream_parts(reload_cache=True, dry_run=True)
+```
 
 ## First Step: Classify the User's Stage
 
