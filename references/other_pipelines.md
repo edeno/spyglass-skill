@@ -46,7 +46,7 @@ from spyglass.linearization.v1 import (
 - Key: `linearization_param_name`
 - Parameters for the HMM-based linearization algorithm
 
-**LinearizationSelection** (Manual)
+**LinearizationSelection** (Lookup)
 - Links: PositionOutput (merge_id), TrackGraph, LinearizationParameters, IntervalList
 
 **LinearizedPositionV1** (Computed)

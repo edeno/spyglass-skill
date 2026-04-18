@@ -148,9 +148,9 @@ Simple lookup tables referenced by Session.
 
 ### `Raw`
 
-- **Primary Key**: `nwb_file_name` (Session)
+- **Primary Key**: `nwb_file_name` (via Session), plus `interval_list_name` (via IntervalList)
 - Entry point for raw ElectricalSeries. Upstream of LFP and spike sorting.
-- Secondary attributes include `raw_object_id`, `sampling_rate`.
+- Use `Raw.describe()` for exact schema.
 
 ## Filtering
 

@@ -26,8 +26,8 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).parent.parent
 REFERENCES_DIR = SKILL_DIR / "references"
 
-# Default spyglass source location — override with --spyglass-src
-DEFAULT_SPYGLASS_SRC = Path(__file__).parent.parent.parent.parent.parent / "Documents/GitHub/spyglass/src"
+# No hardcoded default — use --spyglass-src or run from the repo root
+DEFAULT_SPYGLASS_SRC = None
 
 # Patterns to extract from markdown (inside code blocks only)
 IMPORT_PATTERN = re.compile(
@@ -573,14 +573,13 @@ def main():
     # Find spyglass source
     src_root = args.spyglass_src
     if src_root is None:
-        # Try common locations
+        # Try common locations (cwd-based only, no hardcoded paths)
         candidates = [
-            DEFAULT_SPYGLASS_SRC,
             Path.cwd() / "src",
             Path.cwd(),
         ]
         for candidate in candidates:
-            if (candidate / "spyglass").is_dir():
+            if candidate is not None and (candidate / "spyglass").is_dir():
                 src_root = candidate
                 break
 

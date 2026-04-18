@@ -164,7 +164,7 @@ The base directory can be set via (in order of precedence):
 1. **`SpyglassConfig(base_dir="...")`** -- passed directly to the constructor
 2. **`dj.config['custom']['spyglass_dirs']['base']`** -- in the DataJoint config file
 3. **`SPYGLASS_BASE_DIR` environment variable**
-4. Default: `~/spyglass_data/` (set by the installer)
+4. No default — errors if unset. The installer prompts with `~/spyglass_data/` as a suggestion, but this is not a runtime fallback
 
 ```bash
 # Environment variable approach
