@@ -10,7 +10,7 @@ description: Use when working with the Spyglass framework, Spyglass merge tables
 - **NEVER delete or drop without explicit confirmation**: This database contains irreplaceable neuroscience research data. Never generate `delete()`, `drop()`, `cautious_delete()`, or any destructive operation without first warning the user what will be affected and getting explicit confirmation. Explain what downstream data will be cascade-deleted before providing the code
 - **Writes are normal workflow**: Spyglass pipelines require inserting selection rows and populating tables. When the user asks how to run a pipeline, show the full workflow including inserts and populates. Explain what each write does, but don't refuse to show it
 - **Environment**: Do not assume Jupyter or remote NWB files — detect the user's setup from context. Spyglass supports local Docker, local data, and remote-lab workflows
-- **Verify schema when unsure**: Use `Table.describe()` or `Table.heading` to confirm column names if you can't determine them from source code or skill references
+- **Verify schema before querying**: Run `Table.describe()` or `Table.heading` to confirm column names before using them in restrictions or fetch calls
 - **Source of truth**: When skill references conflict with the repo, trust the repo. Key locations:
   - `src/spyglass/common/` — shared tables; `src/spyglass/<pipeline>/` — pipeline code
   - `src/spyglass/utils/` — SpyglassMixin, _Merge; `notebooks/py_scripts/` — canonical workflows
