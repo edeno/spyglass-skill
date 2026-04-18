@@ -89,6 +89,16 @@ from spyglass.lfp.v1 import LFPSelection, LFPV1
 - Stores filtered data in analysis NWB file
 - Methods: `fetch1_dataframe()` — Returns filtered LFP as DataFrame
 
+### Running the Pipeline (Selection + Populate)
+
+```python
+key = {"nwb_file_name": nwb_file, "lfp_electrode_group_name": group_name,
+       "target_interval_list_name": interval_name, "filter_name": "LFP 0-400 Hz",
+       "filter_sampling_rate": 30000, "target_sampling_rate": 1000}
+LFPSelection.insert1(key, skip_duplicates=True)
+LFPV1.populate(key)
+```
+
 ### Example: Fetch LFP Data
 
 ```python

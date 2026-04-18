@@ -115,6 +115,7 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 | MUA detection | [other_pipelines.md](references/other_pipelines.md) | `50_MUA_Detection.py` | `src/spyglass/mua/` |
 | Behavior / MoSeq | [other_pipelines.md](references/other_pipelines.md) | `60_MoSeq.py` | `src/spyglass/behavior/` |
 | Cross-table exploration / troubleshooting | [workflows.md](references/workflows.md) | — | — |
+| Export for papers / reproducible snapshots | [export.md](references/export.md) | `05_Export.py` | `src/spyglass/common/common_usage.py` |
 | External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — | — |
 
 When a reference file and the repo disagree, trust the repo. The `notebooks/py_scripts/` files are the canonical end-to-end examples.

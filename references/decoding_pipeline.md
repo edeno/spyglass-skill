@@ -161,6 +161,24 @@ from spyglass.decoding.v1.waveform_features import (
   - `fetch_spike_data(key, filter_by_interval)` — spike times + waveform features
   - `get_ahead_behind_distance(track_graph, time_slice)` — decoded vs actual position
 
+### Running Clusterless Decoding
+
+```python
+selection_key = {
+    "waveform_features_group_name": features_group_name,
+    "position_group_name": position_group_name,
+    "decoding_param_name": "contfrag_clusterless",
+    "encoding_interval": encoding_interval_name,
+    "decoding_interval": decoding_interval_name,
+    "estimate_decoding_params": 0,
+}
+ClusterlessDecodingSelection.insert1(selection_key, skip_duplicates=True)
+ClusterlessDecodingV1.populate(selection_key)
+
+# Fetch via DecodingOutput (friendly key → results)
+results = DecodingOutput.fetch_results(selection_key)
+```
+
 ## Sorted Spikes Decoding Flow
 
 Decodes from explicitly sorted spike times.

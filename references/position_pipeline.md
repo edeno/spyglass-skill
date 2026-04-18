@@ -65,6 +65,26 @@ from spyglass.position.v1 import TrodesPosParams, TrodesPosSelection, TrodesPosV
 - Key: inherits from TrodesPosSelection
 - Methods: `fetch1_dataframe(add_frame_ind=True)`, `fetch_video_path()`
 
+### Running the Pipeline (Selection + Populate)
+
+Every Spyglass pipeline follows the same 3-step pattern: insert a params row, insert a selection row, then populate. Fetching via `PositionOutput` comes after.
+
+```python
+# 1. Params (skip if default already inserted)
+TrodesPosParams.insert1({"trodes_pos_params_name": "my_params", "params": {...}},
+                         skip_duplicates=True)
+
+# 2. Selection — picks the input to run on
+key = {"nwb_file_name": nwb_file, "interval_list_name": interval_name,
+       "trodes_pos_params_name": "my_params"}
+TrodesPosSelection.insert1(key, skip_duplicates=True)
+
+# 3. Populate — runs computation, writes to PositionOutput merge
+TrodesPosV1.populate(key)
+```
+
+Warning: `skip_duplicates=True` silently ignores conflicting rows. Use it for idempotent pipeline reruns. Do not use it when inserting raw data — it masks real errors.
+
 ### Example: Fetch Trodes Position
 
 ```python

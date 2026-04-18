@@ -1,0 +1,97 @@
+# Export Pipeline
+
+## Contents
+
+- [Overview](#overview)
+- [Workflow](#workflow)
+- [Key Tables and Methods](#key-tables-and-methods)
+- [Common Patterns](#common-patterns)
+
+## Overview
+
+The export pipeline produces a reproducible snapshot of tables and files used in a paper or analysis. It logs every fetch during an "export session," then bundles the touched tables and analysis files into an export package.
+
+```python
+from spyglass.common.common_usage import ExportSelection, Export
+```
+
+Canonical notebook: `notebooks/py_scripts/05_Export.py`. Source: `src/spyglass/common/common_usage.py`.
+
+## Workflow
+
+Export has 3 phases: **log**, **populate**, **package**.
+
+```python
+# 1. Log — start an export session, run your analysis, stop the session
+ExportSelection().start_export(paper_id="my_paper", analysis_id="analysis_v1")
+
+# ... run any queries/fetches you want included ...
+# All fetch/fetch1/fetch_nwb calls are logged while the session is active.
+# Every query participates in the export via SpyglassMixin/ExportMixin.
+
+ExportSelection().stop_export()
+
+# 2. Populate — resolve the logged queries into a concrete export set
+Export.populate_paper(paper_id="my_paper")
+
+# 3. Package — list the files and tables captured for the paper
+paths = ExportSelection().list_file_paths({"paper_id": "my_paper"})
+tables = ExportSelection().preview_tables(paper_id="my_paper")
+```
+
+## Key Tables and Methods
+
+### `ExportSelection` (Manual)
+Tracks which queries/fetches were made during an export session.
+
+- `start_export(paper_id, analysis_id)` — Begin logging
+- `stop_export()` — End logging
+- `list_file_paths(key, as_dict=True)` — File paths captured for a paper
+- `preview_tables(**kwargs)` — Tables captured for a paper
+- `show_all_tables(**kwargs)` — Full table set including ancestors
+- `paper_export_id(paper_id, return_all=False)` — Lookup export ID by paper
+- `get_restr_graph(...)` — Build the dependency graph of logged restrictions
+
+### `Export` (Computed)
+Materializes the export from `ExportSelection`.
+
+- `populate_paper(paper_id, ...)` — Populate export for a specific paper
+- `prepare_files_for_export(key, n_processes=1)` — Stage files for transfer
+
+### `ExportErrorLog` (Manual)
+Logs errors encountered during export.
+
+## Common Patterns
+
+### Logging a paper's queries
+
+```python
+sel = ExportSelection()
+sel.start_export(paper_id="smith2024", analysis_id="fig2")
+
+# Any fetch_nwb, fetch, fetch1 during this window is captured
+from spyglass.position import PositionOutput
+merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
+position = (PositionOutput & merge_key).fetch1_dataframe()
+
+sel.stop_export()
+Export.populate_paper(paper_id="smith2024")
+```
+
+### Previewing what will be exported
+
+```python
+# See the tables captured for the paper
+ExportSelection().preview_tables(paper_id="smith2024")
+
+# List file paths (analysis NWB files) that will be bundled
+ExportSelection().list_file_paths({"paper_id": "smith2024"})
+```
+
+### How export logging works
+
+Every Spyglass table inherits `ExportMixin`. When an export session is active, calls like `.fetch()`, `.fetch1()`, `.fetch_nwb()`, `.restrict()`, and `.join()` write log entries to `ExportSelection` via the `_log_fetch` and `_run_with_log` hooks. Pass `log_export=False` to skip logging for a specific call.
+
+### Scoping an export to a single analysis
+
+`analysis_id` within a `paper_id` lets you run multiple analyses and export them together or separately. Use `paper_export_id(paper_id, return_all=True)` to see all exports for a paper.

@@ -163,6 +163,8 @@ pynapple_obj = (Table & key).fetch_pynapple()
 
 ### Upstream/Downstream Restriction
 
+**Performance caveat**: `<<`, `>>`, and `restrict_by()` traverse the dependency graph heuristically and can be ~10x slower than direct joins on long chains. They also may warn or return ambiguous results if the graph has multiple paths between tables. Use them for interactive exploration and debugging; prefer explicit joins or merge-table methods for production code and long-running scripts.
+
 #### `restrict_by(restriction=True, direction='up', return_graph=False, verbose=False) -> QueryExpression`
 Restrict table by searching up or down the dependency chain for matching fields.
 

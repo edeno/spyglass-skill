@@ -98,6 +98,27 @@ from spyglass.spikesorting.v1 import (
 - Applies bandpass filter and referencing to raw data
 - Methods: `get_recording(key)` — Returns SpikeInterface BaseRecording
 
+### Running Recording Preprocessing
+
+The v1 spike sorting pipeline uses `insert_selection()` class methods instead of raw `insert1()`:
+
+```python
+# Set up SortGroup (groups electrodes by probe shank)
+SortGroup().set_group_by_shank(nwb_file_name=nwb_file)
+
+# Selection — insert_selection() generates a recording_id UUID
+recording_key = SpikeSortingRecordingSelection.insert_selection({
+    "nwb_file_name": nwb_file, "sort_group_id": 0,
+    "interval_list_name": interval_name, "preproc_param_name": "default",
+    "team_name": "my_team",
+})
+
+# Populate
+SpikeSortingRecording.populate(recording_key)
+```
+
+The same `insert_selection()` + `populate()` pattern applies to `ArtifactDetection`, `SpikeSorting`, `MetricCuration`, and other v1 stages.
+
 ## Step 2: Artifact Detection (Optional)
 
 ```python
