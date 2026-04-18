@@ -189,7 +189,12 @@ def collect_md_files():
 
 
 def extract_code_blocks(content):
-    """Extract code block contents with line numbers."""
+    """Extract code block contents with line numbers.
+
+    Returns a list of (start_line, [(line_num, line)]) tuples. Callers that
+    need to match multi-line expressions should also consider join_logical_lines
+    which fuses lines that continue inside open brackets/parens.
+    """
     blocks = []
     in_code = False
     block_lines = []
@@ -208,6 +213,43 @@ def extract_code_blocks(content):
             block_lines.append((line_num, line))
 
     return blocks
+
+
+def join_logical_lines(block_lines):
+    """Fuse physical lines into logical lines across open brackets/parens.
+
+    Returns a list of (start_line_num, joined_source) tuples. The line number
+    is the line where the logical line begins, so failures can be reported at
+    a sensible location even when the offending call spans multiple lines.
+    """
+    joined = []
+    buf = []
+    buf_start = None
+    depth = 0
+
+    for line_num, line in block_lines:
+        if buf_start is None:
+            buf_start = line_num
+        buf.append(line)
+        # Count unmatched opening brackets on this line to decide continuation
+        # Simple counter; strings with brackets are rare in the skill examples
+        # and the validator is regex-based anyway so minor miscounts are
+        # self-correcting on the next closing line
+        for ch in line:
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth = max(0, depth - 1)
+        if depth == 0:
+            joined.append((buf_start, " ".join(buf)))
+            buf = []
+            buf_start = None
+
+    # Flush any remaining buffer (unbalanced — shouldn't happen for valid code)
+    if buf:
+        joined.append((buf_start, " ".join(buf)))
+
+    return joined
 
 
 def parse_class_from_file(filepath, class_name, include_inherited=True):
@@ -404,7 +446,7 @@ def check_methods(src_root, results):
         blocks = extract_code_blocks(content)
 
         for block_start, block_lines in blocks:
-            for line_num, line in block_lines:
+            for line_num, line in join_logical_lines(block_lines):
                 for match in METHOD_CALL_PATTERN.finditer(line):
                     class_name = match.group(1)
                     instance_call = bool(match.group(2))  # True if "()" used
@@ -466,7 +508,7 @@ def check_kwargs(src_root, results):
         blocks = extract_code_blocks(content)
 
         for block_start, block_lines in blocks:
-            for line_num, line in block_lines:
+            for line_num, line in join_logical_lines(block_lines):
                 for match in KWARG_PATTERN.finditer(line):
                     class_name = match.group(1)
                     method_name = match.group(3)

@@ -26,7 +26,7 @@ description: Use when working with the Spyglass framework, spyglass.* imports, S
 Before answering, decide which stage the user is in:
 
 1. **Setup/install** → route to `setup_and_config.md` or `00_Setup.py` notebook
-2. **NWB ingestion** (first data load) → `src/spyglass/data_import/insert_sessions.py`, `02_Insert_Data.py` notebook, `docs/src/Features/Ingestion.md`. Warn that `skip_duplicates=True` is for recovery/special cases only — default behavior is stricter
+2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.py` notebook. Warn that `skip_duplicates=True` is for lookup tables / pipeline reruns only, not raw data — use `reinsert=True` for raw re-ingestion
 3. **Concepts/merge tables** (first time using the framework) → this SKILL.md + `04_Merge_Tables.py` notebook
 4. **Pipeline work** (running or querying analyses) → merge table workflow below + pipeline reference files
 
@@ -110,7 +110,7 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 |--------------------------|--------------------|-----|-----------|
 | Installation / DB config | [setup_and_config.md](references/setup_and_config.md) | `00_Setup.py` | `scripts/install.py`, `src/spyglass/settings.py` |
 | Framework concepts / merge tables | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `01_Concepts.py`, `04_Merge_Tables.py` | `src/spyglass/utils/` |
-| NWB ingestion / insert_sessions | — | `02_Insert_Data.py` | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |
+| NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.py` | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — | — |
 | Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | — | `src/spyglass/common/` |
 | Spike sorting pipeline | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `10_Spike_SortingV1.py`, `11_Spike_Sorting_Analysis.py` | `src/spyglass/spikesorting/` |
