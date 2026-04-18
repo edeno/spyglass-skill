@@ -112,10 +112,13 @@ cls = PositionOutput().merge_get_parent_class("TrodesPosV1")
 ### Data Fetching
 
 #### `merge_fetch(*attrs, restriction=True, **kwargs) -> list`
-Fetch data across all part tables. Similar to `fetch()` but works across the union of all parts.
+Fetch data across all part tables. Similar to `fetch()` but works across the union of all parts. **Instance method** — call on a restricted relation or an instance, not the bare class.
 
 ```python
-data = PositionOutput.merge_fetch(restriction={'nwb_file_name': nwb_file})
+# Correct — instance form:
+data = (PositionOutput & {'nwb_file_name': nwb_file}).merge_fetch()
+# Also correct — explicit instance + restriction kwarg:
+data = PositionOutput().merge_fetch(restriction={'nwb_file_name': nwb_file})
 ```
 
 #### `fetch1_dataframe(*attrs, **kwargs) -> pd.DataFrame`

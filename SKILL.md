@@ -70,7 +70,7 @@ Before answering, decide which stage the user is in:
 
 1. **Setup/install** → `scripts/install.py` (interactive installer) is the canonical fast path per the repo's `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md) for install methods and installer/validator scripts, [setup_config.md](references/setup_config.md) for database + directory + env-var configuration, or [setup_troubleshooting.md](references/setup_troubleshooting.md) for setup errors. `00_Setup.py` notebook is a fallback for walking through configuration manually
 2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.py` notebook. Warn that `skip_duplicates=True` is for lookup tables / pipeline reruns only, not raw data — use `reinsert=True` for raw re-ingestion
-3. **Concepts/merge tables** (first time using the framework) → this SKILL.md + `04_Merge_Tables.py` notebook
+3. **Framework concepts** (first time using Spyglass) → this SKILL.md + `01_Concepts.py` notebook for the core DataJoint+NWB mental model. `04_Merge_Tables.py` is a later, specialized concept for pipeline versioning — don't lead with it for novice questions
 4. **Pipeline usage** (running or querying existing analyses) → merge table workflow below + pipeline reference files
 5. **Pipeline authoring** (extending a pipeline, building a new analysis off ingested/common tables, writing schema modules) → [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md). Very different surface from usage — different imports, different class conventions, different non-negotiables.
 
@@ -144,7 +144,8 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 | NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.py` | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — | — |
 | Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | — | `src/spyglass/common/` |
-| Spike sorting pipeline | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `10_Spike_SortingV1.py`, `11_Spike_Sorting_Analysis.py` | `src/spyglass/spikesorting/` |
+| Spike sorting pipeline (current / v1) | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `10_Spike_SortingV1.py`, `11_Spike_Sorting_Analysis.py` | `src/spyglass/spikesorting/v1/` |
+| Reading v0 legacy code / v0 data | [spikesorting_v0_legacy.md](references/spikesorting_v0_legacy.md) | `10_Spike_SortingV0.py` | `src/spyglass/spikesorting/v0/` |
 | Position tracking (Trodes / DLC) | [position_pipeline.md](references/position_pipeline.md) | `20_Position_Trodes.py`, `21_DLC.py` | `src/spyglass/position/` |
 | Linearization | [linearization_pipeline.md](references/linearization_pipeline.md) | `24_Linearization.py` | `src/spyglass/linearization/` |
 | LFP / theta | [lfp_pipeline.md](references/lfp_pipeline.md) | `30_LFP.py`, `31_Theta.py` | `src/spyglass/lfp/` |

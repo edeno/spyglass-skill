@@ -104,7 +104,7 @@ names, times = (Session & key).fetch('nwb_file_name', 'session_start_time')
 # Returns list of dicts with only primary key fields
 ```
 
-**Footgun — too-loose restriction.** `fetch1()` (and anything that wraps it — `merge_get_part`, `fetch_nwb`, `fetch_results`, `fetch1_dataframe`) raises "expected one row, got N" when the restriction matches multiple rows. The usual cause is under-specifying the key: `{"nwb_file_name": nwb_file}` alone typically matches every interval, every parameter set, and every pipeline version for that session. Fix: include enough primary-key fields to pick exactly one row. When unsure what fields exist, print the loose-restriction result first and use it to build a fully-specified key:
+**Footgun — too-loose restriction.** `fetch1()` (and anything that wraps it — `merge_get_part`, `fetch_results`, `fetch1_dataframe`) raises "expected one row, got N" when the restriction matches multiple rows. The usual cause is under-specifying the key: `{"nwb_file_name": nwb_file}` alone typically matches every interval, every parameter set, and every pipeline version for that session. `fetch_nwb()` is a SEPARATE footgun — it silently returns a list across all matching rows, so `[0]`-indexing on an under-specified restriction quietly picks an arbitrary row instead of raising. Fix for both shapes: include enough primary-key fields to pick exactly one row. When unsure what fields exist, print the loose-restriction result first and use it to build a fully-specified key:
 
 ```python
 # Discover
