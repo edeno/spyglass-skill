@@ -842,7 +842,7 @@ def check_prose_assertions(results: ValidationResult):
             "references/custom_pipeline_authoring.md",
             "authoring-selection-separation",
             "authoring ref enforces params/selection/computed separation",
-            "selection",
+            "keep parameters, selection, and computed tables separate",
         ),
         (
             "references/custom_pipeline_authoring.md",
@@ -1140,14 +1140,17 @@ ANTI_PATTERNS = [
         "class inherits from dj.{Manual,Lookup,Computed,Imported,Part} "
         "without SpyglassMixin/SpyglassMixinPart as the first parent — "
         "required for Spyglass method overrides to work correctly",
-        # Match `class Foo(X, dj.Manual):` where X is the first parent but
-        # is not SpyglassMixin/SpyglassMixinPart. Also catches
-        # `class Foo(dj.Manual):` (no mixin at all). Allows `master` (used
-        # inside Part table definition strings, not class declarations).
+        # Match `class Foo(..., dj.Manual):` where SpyglassMixin /
+        # SpyglassMixinPart is NOT the first parent. Handles multi-line
+        # class declarations — the negative lookahead spans leading
+        # whitespace so `class Foo(\n    SpyglassMixin, dj.X):` correctly
+        # passes (earlier `(?!SpyglassMixin\b)` at a fixed position would
+        # let the engine backtrack `\s*` and sneak past the mixin check).
         lambda body: [
             (m.start(), m.group(0))
             for m in re.finditer(
-                r"class\s+\w+\s*\(\s*(?!SpyglassMixin\b|SpyglassMixinPart\b)"
+                r"class\s+\w+\s*\("
+                r"(?!\s*(?:SpyglassMixin|SpyglassMixinPart)\b)"
                 r"[^)]*\bdj\.(?:Manual|Lookup|Computed|Imported|Part)\b",
                 body,
             )

@@ -41,13 +41,13 @@ These are the rules most likely to cause mysterious failures if ignored:
 
 1. **`SpyglassMixin` must be first in inheritance order**, before `dj.Manual`/`Lookup`/`Computed`/`Imported`/`Part`. From `docs/src/ForDevelopers/Classes.md`: "SpyglassMixin must be the first class inherited to ensure method overrides work correctly." Part tables use `SpyglassMixinPart` instead.
 2. **Choose the right tier**. `dj.Lookup` for params (contents baked into the class), `dj.Manual` for selection/grouping tables the user populates, `dj.Computed` with `make()` for analysis outputs, `dj.Imported` for tables populated by walking an NWB file. See the tier list in `TableTypes.md`.
-3. **Keep Parameters, Selection, and Computed separate.** Combining them (e.g., putting a `params` blob directly on a Computed table) breaks reproducibility and makes re-runs with different params impossible without deleting rows.
+3. **Keep Parameters, Selection, and Computed tables separate.** Combining them (e.g., putting a `params` blob directly on a Computed table) breaks reproducibility and makes re-runs with different params impossible without deleting rows.
 4. **Write analysis outputs to `AnalysisNwbfile`** when the result is sizeable (arrays, waveforms, posteriors). Keep only small metadata in DataJoint columns. Tables should reference exactly one AnalysisNwbfile table — Spyglass validates this on declaration.
 5. **Only introduce a merge table for genuinely multi-source outputs.** If you only have one implementation, skip the merge table and let downstream tables FK-ref your Computed table directly.
 
 ## Canonical Schema Skeleton
 
-Minimal authoring module. This compiles, follows all the non-negotiables, and is the shape to start from. Copied with small edits from `docs/src/ForDevelopers/Schema.md` (canonical example at lines 43–201).
+Minimal authoring module. This compiles and follows every non-negotiable. Structure derived from the canonical example in `docs/src/ForDevelopers/Schema.md` lines 43–201; part-table syntax uses `SpyglassMixinPart` as documented in `docs/src/ForDevelopers/Classes.md` line 206.
 
 ```python
 import datajoint as dj
@@ -109,7 +109,7 @@ class MyAnalysis(SpyglassMixin, dj.Computed):
         nwb_file_name = (Session & key).fetch1("nwb_file_name")
         analysis_file_name = AnalysisNwbfile().create(nwb_file_name)
         result_object_id = AnalysisNwbfile().add_nwb_object(
-            analysis_file_name, result_array, "my_result"
+            analysis_file_name, result_array, table_name="result"
         )
         AnalysisNwbfile().add(nwb_file_name, analysis_file_name)
 
@@ -208,8 +208,11 @@ from spyglass.common.common_nwbfile import AnalysisNwbfile
 nwb_file_name = (Session & key).fetch1("nwb_file_name")
 
 analysis_file_name = AnalysisNwbfile().create(nwb_file_name)
+# Third arg is the NWB object NAME (becomes the scratch-space key),
+# not a description. Pandas DataFrames and numpy arrays are auto-wrapped
+# into DynamicTable / ScratchData respectively.
 obj_id = AnalysisNwbfile().add_nwb_object(
-    analysis_file_name, my_numpy_array, "description"
+    analysis_file_name, my_numpy_array, table_name="result"
 )
 AnalysisNwbfile().add(nwb_file_name, analysis_file_name)
 

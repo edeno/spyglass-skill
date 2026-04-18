@@ -235,7 +235,12 @@ def fixture_spyglassmixin_not_first(src_root):
 
 
 def fixture_spyglassmixin_ordering_ok(src_root):
-    """Correct ordering (SpyglassMixin first) must NOT trigger the check."""
+    """Correct ordering (SpyglassMixin first) must NOT trigger the check.
+
+    Covers: single-line inheritance, multi-line inheritance,
+    SpyglassMixinPart alone (no dj base), and SpyglassMixin + dj.Part
+    (the canonical merge-part shape seen in real Spyglass code).
+    """
     md = _write_md(
         """
         # Test
@@ -249,6 +254,16 @@ def fixture_spyglassmixin_ordering_ok(src_root):
 
         @schema
         class GoodPart(SpyglassMixinPart):
+            definition = ""
+
+        @schema
+        class GoodMultiline(
+            SpyglassMixin,
+            dj.Computed,
+        ):
+            definition = ""
+
+        class MergePart(SpyglassMixin, dj.Part):
             definition = ""
         ```
         """
