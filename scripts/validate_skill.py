@@ -168,6 +168,13 @@ SKIP_METHODS = {
     "where", "idxmax",
 }
 
+# Uppercase-first identifiers that appear before a `.method(` but are NOT
+# Spyglass classes — doc placeholders, generic table stand-ins. Without this
+# list, the unresolved-class warning would fire spuriously on them.
+DOC_PLACEHOLDERS = {
+    "Table", "Table1", "Table2", "MergeTable",
+}
+
 SKIP_KWARGS = {
     "as_dict", "limit", "format", "log_export",
     "return_restr", "key", "restriction",
@@ -565,10 +572,24 @@ def check_methods(src_root, results, registry=None):
                         continue
 
                     methods = get_class_methods(class_name)
-                    if methods is None:
-                        continue  # Unknown class
-
                     location = f"{md_file.name}:{line_num}"
+                    if methods is None:
+                        # Heuristic: uppercase-first identifiers that don't
+                        # resolve are probably typos or classes missing from
+                        # the registry. Lowercase names are instance vars
+                        # (e.g. `sel.start_export`) — skip those silently.
+                        if (
+                            class_name[:1].isupper()
+                            and class_name not in DOC_PLACEHOLDERS
+                        ):
+                            results.warn(
+                                f"{location}: unresolved class "
+                                f"'{class_name}' in '{class_name}."
+                                f"{method_name}()' — typo, or add to "
+                                f"KNOWN_CLASSES/DOC_PLACEHOLDERS"
+                            )
+                        continue
+
                     if method_name not in methods:
                         results.fail(
                             f"{location}: {class_name}.{method_name}() "
