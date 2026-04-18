@@ -484,18 +484,21 @@ def check_imports(src_root, results):
                         )
 
 
-def discover_classes(src_root, results=None):
+def discover_classes(src_root):
     """Walk the spyglass source tree and index every top-level class definition.
 
-    Returns a dict mapping class_name → repo-relative path. Hand-maintained
-    KNOWN_CLASSES entries take precedence. When a class name appears in
-    multiple files, the first hit wins and a warning is emitted (unless the
-    name is in KNOWN_CLASSES, in which case the collision is expected).
+    Returns (discovered, collisions) where:
+      discovered: {class_name: repo-relative path} — first hit wins
+      collisions: {class_name: [path1, path2, ...]} — names defined in >1 file
+
+    Collisions are returned but NOT warned about here; the caller scopes
+    warnings to classes the skill actually references, to keep signal strong.
     """
     discovered = {}
+    collisions = {}
     pkg_root = src_root / "spyglass"
     if not pkg_root.is_dir():
-        return discovered
+        return discovered, collisions
     class_pattern = re.compile(r"^class\s+(\w+)\s*[\(:]", re.MULTILINE)
     for py_file in sorted(pkg_root.rglob("*.py")):
         try:
@@ -506,15 +509,10 @@ def discover_classes(src_root, results=None):
             name = match.group(1)
             rel = str(py_file.relative_to(src_root))
             if name in discovered:
-                if name not in KNOWN_CLASSES and results is not None:
-                    results.warn(
-                        f"discover_classes: class '{name}' appears in both "
-                        f"{discovered[name]} and {rel} — first wins. Add to "
-                        f"KNOWN_CLASSES to disambiguate."
-                    )
+                collisions.setdefault(name, [discovered[name]]).append(rel)
             else:
                 discovered[name] = rel
-    return discovered
+    return discovered, collisions
 
 
 class _ClassRegistry:
@@ -528,7 +526,7 @@ class _ClassRegistry:
     def __init__(self, src_root, results):
         self.src_root = src_root
         self.results = results
-        self.auto_registry = discover_classes(src_root, results)
+        self.auto_registry, self.collisions = discover_classes(src_root)
         self._cache = {}
 
     def methods(self, class_name):
@@ -545,6 +543,23 @@ class _ClassRegistry:
         parsed = parse_class_from_file(filepath, class_name)
         self._cache[class_name] = parsed
         return parsed
+
+    def report_referenced_collisions(self):
+        """Warn about v0/v1-style collisions only for classes the skill
+        actually references. Avoids noise from unreferenced duplicates."""
+        referenced = {
+            name for name, parsed in self._cache.items()
+            if parsed is not None
+        }
+        for name in sorted(referenced & self.collisions.keys()):
+            if name in KNOWN_CLASSES:
+                continue  # explicitly disambiguated
+            paths = self.collisions[name]
+            self.results.warn(
+                f"class '{name}' is referenced by the skill but appears in "
+                f"multiple files: {', '.join(paths)}. First wins — add to "
+                f"KNOWN_CLASSES to pin the intended version."
+            )
 
 
 def check_methods(src_root, results, registry=None):
@@ -847,6 +862,10 @@ def main():
         "--spyglass-src", type=Path, default=None,
         help="Path to spyglass src/ directory"
     )
+    parser.add_argument(
+        "--strict", action="store_true",
+        help="Treat warnings as failures (exit non-zero on any warning)"
+    )
     args = parser.parse_args()
 
     # Find spyglass source
@@ -898,6 +917,10 @@ def main():
     print("[6/6] Checking prose assertions...")
     check_prose_assertions(results)
 
+    # Scoped collision report: only warn about v0/v1 duplicates for classes
+    # the skill actually references. Avoids noise from unreferenced dupes.
+    registry.report_referenced_collisions()
+
     # Report
     print("\n" + "=" * 60)
 
@@ -922,12 +945,23 @@ def main():
         f"{len(results.failed)} failed"
     )
 
-    if results.success:
-        print("\nAll checks passed.")
-    else:
-        print("\nSome checks failed — review and fix the skill files.")
+    # Exit status:
+    #   failures → exit 1
+    #   warnings + --strict → exit 1
+    #   warnings alone → exit 0, but message distinguishes from clean
+    has_failures = bool(results.failed)
+    has_warnings = bool(results.warnings)
 
-    return 0 if results.success else 1
+    if has_failures:
+        print("\nSome checks failed — review and fix the skill files.")
+        return 1
+    if has_warnings:
+        suffix = " (--strict: treated as failure)" if args.strict else ""
+        print(f"\nPassed with {len(results.warnings)} warning(s){suffix} — "
+              "review above.")
+        return 1 if args.strict else 0
+    print("\nAll checks passed.")
+    return 0
 
 
 if __name__ == "__main__":
