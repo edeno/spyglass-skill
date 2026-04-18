@@ -14,6 +14,9 @@ description: Use when working with the Spyglass framework, spyglass.* imports, S
 - **Source of truth**: When skill references conflict with the repo, trust the repo. Key locations:
   - `src/spyglass/common/` — shared tables; `src/spyglass/<pipeline>/` — pipeline code
   - `src/spyglass/utils/` — SpyglassMixin, _Merge; `notebooks/py_scripts/` — canonical workflows
+- **Pip/conda users (no repo checkout)**: The `src/spyglass/` layout lives under the installed package — find it with `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`. Notebooks, docs, and `scripts/` are NOT installed; fetch them from GitHub:
+  - Notebooks: `https://github.com/LorenFrankLab/spyglass/tree/master/notebooks/py_scripts/`
+  - Docs: `https://lorenfranklab.github.io/spyglass/` (or `https://github.com/LorenFrankLab/spyglass/tree/master/docs/src/`)
 
 ## First Step: Classify the User's Stage
 
@@ -116,6 +119,7 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 | Behavior / MoSeq | [other_pipelines.md](references/other_pipelines.md) | `60_MoSeq.py` | `src/spyglass/behavior/` |
 | Cross-table exploration / troubleshooting | [workflows.md](references/workflows.md) | — | — |
 | Export for papers / reproducible snapshots | [export.md](references/export.md) | `05_Export.py` | `src/spyglass/common/common_usage.py` |
+| Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) | — | `src/spyglass/spikesorting/v1/figurl_curation.py`, `src/spyglass/decoding/decoding_merge.py` |
 | External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — | — |
 
 When a reference file and the repo disagree, trust the repo. The `notebooks/py_scripts/` files are the canonical end-to-end examples.
