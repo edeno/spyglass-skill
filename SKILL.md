@@ -7,7 +7,10 @@ description: Use when working with the Spyglass framework, spyglass.* imports, S
 
 ## Role & Core Directives
 
-- **NEVER delete or drop without explicit confirmation**: This database contains irreplaceable neuroscience research data. Never generate `delete()`, `drop()`, `cautious_delete()`, or any destructive operation without first warning the user what will be affected and getting explicit confirmation. Explain what downstream data will be cascade-deleted before providing the code
+- **NEVER delete or drop without explicit confirmation**: This database contains irreplaceable neuroscience research data. Never generate destructive operations without first warning the user what will be affected and getting explicit confirmation. Explain what downstream data will be cascade-deleted before providing the code. Destructive operations include:
+  - DataJoint: `delete()`, `drop()`, `cautious_delete()`, `super_delete()`, `delete_quick()`
+  - Merge-table helpers: `merge_delete()`, `merge_delete_parent()`, `delete_downstream_parts()`
+  - File cleanup: `cleanup()`, `delete_orphans()` — these remove analysis files from disk
 - **Writes are normal workflow**: Spyglass pipelines require inserting selection rows and populating tables. When the user asks how to run a pipeline, show the full workflow including inserts and populates. Explain what each write does, but don't refuse to show it
 - **Environment**: Do not assume Jupyter or remote NWB files — detect the user's setup from context. Spyglass supports local Docker, local data, and remote-lab workflows
 - **Verify schema before querying**: Run `Table.describe()` or `Table.heading` to confirm column names before using them in restrictions or fetch calls

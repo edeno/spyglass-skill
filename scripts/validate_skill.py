@@ -33,13 +33,15 @@ DEFAULT_SPYGLASS_SRC = None
 IMPORT_PATTERN = re.compile(
     r"from\s+(spyglass[\w.]+)\s+import\s+([^#\n]+)"
 )
-# Match method calls: Table.method( or Table().method(
+# Match method calls: capture whether `()` was used before the method
+# Group 1: class name; Group 2: "()" if instance-call, "" if bare class access; Group 3: method name
 METHOD_CALL_PATTERN = re.compile(
-    r"(\w+)(?:\(\))?\.(\w+)\s*\("
+    r"(\w+)(\(\))?\.(\w+)\s*\("
 )
-# Match keyword arguments: .method(kwarg=
+# Match keyword arguments: Class(?).method(kwarg=
+# Group 1: class name; Group 2: "()" or ""; Group 3: method name; Group 4: kwarg
 KWARG_PATTERN = re.compile(
-    r"(\w+)(?:\(\))?\.(\w+)\s*\([^)]*?(\w+)\s*="
+    r"(\w+)(\(\))?\.(\w+)\s*\([^)]*?(\w+)\s*="
 )
 
 # Known classes and the module file that defines them
@@ -110,6 +112,10 @@ KNOWN_CLASSES = {
     "AnalysisNwbfileKachery": "spyglass/sharing/sharing_kachery.py",
     "LFPBandSelection": "spyglass/lfp/analysis/v1/lfp_band.py",
     "LFPSelection": "spyglass/lfp/v1/lfp.py",
+    "ExportSelection": "spyglass/common/common_usage.py",
+    "Export": "spyglass/common/common_usage.py",
+    "FigURLCurationSelection": "spyglass/spikesorting/v1/figurl_curation.py",
+    "FigURLCuration": "spyglass/spikesorting/v1/figurl_curation.py",
 }
 
 # Methods to skip — DataJoint builtins, mixin methods, etc.
@@ -209,6 +215,9 @@ def parse_class_from_file(filepath, class_name, include_inherited=True):
 
     If include_inherited=True, also checks base class files for methods
     defined on known Spyglass mixin/base classes.
+
+    Each method info includes `is_classmethod`/`is_staticmethod` flags so
+    callers can check whether `Class.method(...)` (vs `Class().method(...)`) is valid.
     """
     try:
         source = filepath.read_text()
@@ -229,9 +238,20 @@ def parse_class_from_file(filepath, class_name, include_inherited=True):
                     for arg in item.args.kwonlyargs:
                         params.append(arg.arg)
                     has_var_keyword = item.args.kwarg is not None
+                    # Check decorators for classmethod/staticmethod
+                    decorators = [
+                        d.id if isinstance(d, ast.Name)
+                        else d.attr if isinstance(d, ast.Attribute)
+                        else ""
+                        for d in item.decorator_list
+                    ]
+                    is_classmethod = "classmethod" in decorators
+                    is_staticmethod = "staticmethod" in decorators
                     methods[item.name] = {
                         "params": params,
                         "has_kwargs": has_var_keyword,
+                        "is_classmethod": is_classmethod,
+                        "is_staticmethod": is_staticmethod,
                     }
 
             if include_inherited:
@@ -387,7 +407,8 @@ def check_methods(src_root, results):
             for line_num, line in block_lines:
                 for match in METHOD_CALL_PATTERN.finditer(line):
                     class_name = match.group(1)
-                    method_name = match.group(2)
+                    instance_call = bool(match.group(2))  # True if "()" used
+                    method_name = match.group(3)
 
                     if method_name in SKIP_METHODS:
                         continue
@@ -399,14 +420,29 @@ def check_methods(src_root, results):
                         continue  # Unknown class
 
                     location = f"{md_file.name}:{line_num}"
-                    if method_name in methods:
-                        results.ok(
-                            f"{location}: {class_name}.{method_name}() exists"
-                        )
-                    else:
+                    if method_name not in methods:
                         results.fail(
                             f"{location}: {class_name}.{method_name}() "
                             f"NOT FOUND on {class_name}"
+                        )
+                        continue
+
+                    info = methods[method_name]
+                    # Instance-only method called on bare class?
+                    if (
+                        not instance_call
+                        and not info.get("is_classmethod")
+                        and not info.get("is_staticmethod")
+                    ):
+                        results.fail(
+                            f"{location}: {class_name}.{method_name}() is an "
+                            f"instance method — use {class_name}()."
+                            f"{method_name}(...)"
+                        )
+                    else:
+                        results.ok(
+                            f"{location}: {class_name}.{method_name}() valid "
+                            f"({'instance' if instance_call else 'class/static'} call)"
                         )
 
 
@@ -433,8 +469,8 @@ def check_kwargs(src_root, results):
             for line_num, line in block_lines:
                 for match in KWARG_PATTERN.finditer(line):
                     class_name = match.group(1)
-                    method_name = match.group(2)
-                    kwarg_name = match.group(3)
+                    method_name = match.group(3)
+                    kwarg_name = match.group(4)
 
                     if method_name in SKIP_METHODS:
                         continue

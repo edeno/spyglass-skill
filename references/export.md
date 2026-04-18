@@ -32,7 +32,7 @@ ExportSelection().start_export(paper_id="my_paper", analysis_id="analysis_v1")
 ExportSelection().stop_export()
 
 # 2. Populate — resolve the logged queries into a concrete export set
-Export.populate_paper(paper_id="my_paper")
+Export().populate_paper(paper_id="my_paper")
 
 # 3. Package — list the files and tables captured for the paper
 paths = ExportSelection().list_file_paths({"paper_id": "my_paper"})
@@ -75,7 +75,7 @@ merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
 position = (PositionOutput & merge_key).fetch1_dataframe()
 
 sel.stop_export()
-Export.populate_paper(paper_id="smith2024")
+Export().populate_paper(paper_id="smith2024")
 ```
 
 ### Previewing what will be exported
