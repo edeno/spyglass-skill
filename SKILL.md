@@ -15,6 +15,17 @@ description: Use when working with the Spyglass framework, spyglass.* imports, S
   - `src/spyglass/common/` — shared tables; `src/spyglass/<pipeline>/` — pipeline code
   - `src/spyglass/utils/` — SpyglassMixin, _Merge; `notebooks/py_scripts/` — canonical workflows
 
+## First Step: Classify the User's Stage
+
+Before answering, decide which stage the user is in:
+
+1. **Setup/install** → route to `setup_and_config.md` or `00_Setup.py` notebook
+2. **NWB ingestion** (first data load) → `src/spyglass/data_import/insert_sessions.py`, `02_Insert_Data.py` notebook, `docs/src/Features/Ingestion.md`. Warn that `skip_duplicates=True` is for recovery/special cases only — default behavior is stricter
+3. **Concepts/merge tables** (first time using the framework) → this SKILL.md + `04_Merge_Tables.py` notebook
+4. **Pipeline work** (running or querying analyses) → merge table workflow below + pipeline reference files
+
+Users may span stages — when in doubt, ask.
+
 ## Merge Tables — The Key Concept
 
 Merge tables consolidate outputs from multiple pipeline versions into a single `merge_id` interface. Not all part tables are merge tables — `Session.Experimenter` is a regular part table.
@@ -89,19 +100,21 @@ for mid in merge_ids:
 
 For simple data queries, the examples above are usually sufficient. For deeper questions, load the right reference:
 
-| User question is about... | Load this reference | Or inspect this repo path |
-|--------------------------|--------------------|-----------------------|
-| DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — |
-| Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | `src/spyglass/common/` |
-| _Merge / SpyglassMixin methods | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `src/spyglass/utils/` |
-| Position tracking pipeline | [position_pipeline.md](references/position_pipeline.md) | `src/spyglass/position/` |
-| LFP filtering / band analysis | [lfp_pipeline.md](references/lfp_pipeline.md) | `src/spyglass/lfp/` |
-| Spike sorting pipeline | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `src/spyglass/spikesorting/` |
-| Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) | `src/spyglass/decoding/` |
-| Linearization, ripple, MUA, behavior | [other_pipelines.md](references/other_pipelines.md) | `src/spyglass/{linearization,ripple,mua,behavior}/` |
-| NWB ingestion / insert_sessions | — | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |
-| Installation / DB config / directories | [setup_and_config.md](references/setup_and_config.md) | `scripts/install.py`, `src/spyglass/settings.py` |
-| External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — |
-| End-to-end analysis workflows | [workflows.md](references/workflows.md) | `notebooks/py_scripts/` |
+| User question is about... | Load this reference | Canonical notebook | Repo path |
+|--------------------------|--------------------|-----|-----------|
+| Installation / DB config | [setup_and_config.md](references/setup_and_config.md) | `00_Setup.py` | `scripts/install.py`, `src/spyglass/settings.py` |
+| Framework concepts / merge tables | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `01_Concepts.py`, `04_Merge_Tables.py` | `src/spyglass/utils/` |
+| NWB ingestion / insert_sessions | — | `02_Insert_Data.py` | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |
+| DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — | — |
+| Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | — | `src/spyglass/common/` |
+| Spike sorting pipeline | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `10_Spike_SortingV1.py`, `11_Spike_Sorting_Analysis.py` | `src/spyglass/spikesorting/` |
+| Position tracking (Trodes / DLC) | [position_pipeline.md](references/position_pipeline.md) | `20_Position_Trodes.py`, `21_DLC.py` | `src/spyglass/position/` |
+| Linearization | [other_pipelines.md](references/other_pipelines.md) | `24_Linearization.py` | `src/spyglass/linearization/` |
+| LFP / theta / ripple | [lfp_pipeline.md](references/lfp_pipeline.md) | `30_LFP.py`, `31_Theta.py`, `32_Ripple_Detection.py` | `src/spyglass/lfp/`, `src/spyglass/ripple/` |
+| Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) | `40_Extracting_Clusterless_Waveform_Features.py`, `41_Decoding_Clusterless.py`, `42_Decoding_SortedSpikes.py` | `src/spyglass/decoding/` |
+| MUA detection | [other_pipelines.md](references/other_pipelines.md) | `50_MUA_Detection.py` | `src/spyglass/mua/` |
+| Behavior / MoSeq | [other_pipelines.md](references/other_pipelines.md) | `60_MoSeq.py` | `src/spyglass/behavior/` |
+| Cross-table exploration / troubleshooting | [workflows.md](references/workflows.md) | — | — |
+| External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — | — |
 
-When a reference file and the repo disagree, trust the repo. For canonical examples, inspect `notebooks/py_scripts/` directly.
+When a reference file and the repo disagree, trust the repo. The `notebooks/py_scripts/` files are the canonical end-to-end examples.
