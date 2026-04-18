@@ -7,7 +7,7 @@
       "eval_name": "fresh-install-remote-lab-db",
       "stage": "setup",
       "prompt": "ok so I just joined Eric's lab at UCSF — they run spyglass and the lab has a mysql db at franklab.ucsf.edu port 3306 and my db user is edeno. This is my personal macbook (m1 pro), and I haven't installed spyglass or miniforge yet. Can you walk me through getting spyglass installed and pointed at the lab db?",
-      "expected_output": "Routes to setup_install.md (and setup_config.md for env vars). Recommends `python scripts/install.py --remote --db-host franklab.ucsf.edu --db-user edeno`. Notes the m1 pro is supported (no Rosetta needed). Points out that the DataJoint config lands at `~/.datajoint_config.json` and asks which `SPYGLASS_BASE_DIR` to set.",
+      "expected_output": "Routes to setup_install.md (and setup_config.md for env vars). Recommends `python scripts/install.py --remote --db-host franklab.ucsf.edu --db-user edeno`. Notes the m1 pro is supported (no Rosetta needed). Points out that the installer writes the global DataJoint config at `~/.datajoint_config.json`, and mentions that DataJoint prefers a local `dj_local_conf.json` in the cwd if one exists (per-project override — installer doesn't create this one, users can copy/edit if needed). Asks which `SPYGLASS_BASE_DIR` to set.",
       "files": [],
       "assertions": []
     },
