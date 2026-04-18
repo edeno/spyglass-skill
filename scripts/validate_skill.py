@@ -183,6 +183,8 @@ SKIP_METHODS = {
 # list, the unresolved-class warning would fire spuriously on them.
 DOC_PLACEHOLDERS = {
     "Table", "Table1", "Table2", "MergeTable",
+    "MyTable", "SomeTable", "UpstreamTable", "UpstreamA", "UpstreamB",
+    "ParamTable", "SelectionTable",
 }
 
 SKIP_KWARGS = {
