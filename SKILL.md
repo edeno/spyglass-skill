@@ -33,10 +33,16 @@ print(len(target), "rows will be deleted; cascades to downstream tables")
 target.fetch(as_dict=True)          # inspect what is there
 # After user confirms:  target.delete()
 
-# Merge-table delete helpers: inspect via the master, THEN merge_delete.
+# Merge-table delete helpers: merge_delete is a CLASSMETHOD with
+# restriction=True as default. Calling it on a restricted relation like
+# `(PositionOutput & merge_key).merge_delete()` silently drops the
+# restriction — Python routes classmethod calls to the class, so that
+# pattern deletes EVERY merge entry. Always pass the restriction as an
+# arg: PositionOutput.merge_delete(restriction). Canonical example:
+# notebooks/py_scripts/04_Merge_Tables.py:198.
 merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
-print((PositionOutput & merge_key).fetch(as_dict=True))
-# After confirm:  (PositionOutput & merge_key).merge_delete()
+print((PositionOutput & merge_key).fetch(as_dict=True))   # inspect
+# After confirm:  PositionOutput.merge_delete(merge_key)
 
 # File cleanup: dry_run=True first, inspect the log output, THEN rerun.
 # cleanup() returns None in both modes — it LOGS paths it would remove
@@ -106,32 +112,20 @@ key = {"nwb_file_name": nwb_file, "interval_list_name": "02_r1",
        "trodes_pos_params_name": "default"}
 ```
 
-### All Pipelines
+Pipeline output tables, import paths, and fetch methods are documented in each pipeline reference — use the routing table below. Common tables: `from spyglass.common import Session, IntervalList, Nwbfile, ElectrodeGroup, Electrode, Raw`. All tables inherit `fetch_nwb()`, `<<`/`>>`, and other SpyglassMixin methods — see [references/merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
 
-| Output Table | Import Path | Type | Data Access |
-| ------------ | ----------- | ---- | ----------- |
-| `PositionOutput` | `spyglass.position` | Merge | `.fetch1_dataframe()`, `.fetch_pose_dataframe()` (DLC/imported only) |
-| `LFPOutput` | `spyglass.lfp` | Merge | `.fetch1_dataframe()` |
-| `SpikeSortingOutput` | `spyglass.spikesorting.spikesorting_merge` | Merge | `.get_spike_times()`, `.get_firing_rate()`, `.get_sorting()` |
-| `DecodingOutput` | `spyglass.decoding` | Merge | `.fetch_results()`, `.fetch_model()`, `.fetch_position_info()` |
-| `LinearizedPositionOutput` | `spyglass.linearization.merge` | Merge | `.fetch1_dataframe()` |
-| `RippleTimesV1` | `spyglass.ripple.v1` | Direct | `.fetch1_dataframe()` |
-| `MuaEventsV1` | `spyglass.mua.v1` | Direct | `.fetch1_dataframe()` |
+## Querying an Already-Configured DB
 
-Common tables: `from spyglass.common import Session, IntervalList, Nwbfile, ElectrodeGroup, Electrode, Raw`
-
-All tables inherit `fetch_nwb()`, `<<`/`>>`, and other SpyglassMixin methods — see [references/merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
-
-## Quick Start
+This is **not** an onboarding quick start. If the user hasn't installed or configured Spyglass yet, route them to [setup_install.md](references/setup_install.md) first. The snippet below is for a working install where the goal is to discover what's already in the database:
 
 ```python
 from spyglass.common import Session, IntervalList
 
-Session.fetch(limit=10)                                  # List sessions — find your nwb_file_name
-IntervalList & {"nwb_file_name": nwb_file}               # Find intervals for that session
+Session.fetch(limit=10)                      # discover an nwb_file_name
+IntervalList & {"nwb_file_name": nwb_file}   # discover intervals for it
 ```
 
-From here, open the relevant pipeline reference — each one starts with a Canonical Example: [position_pipeline.md](references/position_pipeline.md), [lfp_pipeline.md](references/lfp_pipeline.md), [spikesorting_pipeline.md](references/spikesorting_pipeline.md), [decoding_pipeline.md](references/decoding_pipeline.md), [linearization_pipeline.md](references/linearization_pipeline.md), [ripple_pipeline.md](references/ripple_pipeline.md), [mua_pipeline.md](references/mua_pipeline.md), [behavior_pipeline.md](references/behavior_pipeline.md). Do not expand the full workflow inline — load the one file you need.
+From here, open the relevant pipeline reference — each starts with a Canonical Example: [position_pipeline.md](references/position_pipeline.md), [lfp_pipeline.md](references/lfp_pipeline.md), [spikesorting_pipeline.md](references/spikesorting_pipeline.md), [decoding_pipeline.md](references/decoding_pipeline.md), [linearization_pipeline.md](references/linearization_pipeline.md), [ripple_pipeline.md](references/ripple_pipeline.md), [mua_pipeline.md](references/mua_pipeline.md), [behavior_pipeline.md](references/behavior_pipeline.md). Do not expand the full workflow inline — load the one file you need.
 
 ## Reference Routing
 

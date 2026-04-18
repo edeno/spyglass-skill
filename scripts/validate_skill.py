@@ -154,6 +154,7 @@ SKIP_METHODS = {
     "get_params_blob_from_key",
     # _Merge methods (inherited, hard to resolve via AST)
     "merge_get_parent_class", "parts", "merge_populate",
+    "merge_delete", "merge_delete_parent",
     # AnalysisMixin methods (inherited by AnalysisNwbfile via SpyglassAnalysis,
     # so method resolution via parse_class_from_file finds nothing on the
     # class itself — the real definitions live in utils/mixins/analysis.py)
