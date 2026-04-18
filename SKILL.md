@@ -1,133 +1,49 @@
 ---
 name: spyglass
-description: Work with the Spyglass neuroscience data analysis framework. Trigger when user mentions Spyglass, PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput, merge tables in a Spyglass context, or specific Spyglass pipelines (spike sorting, position tracking, LFP, decoding, linearization, ripple detection).
+description: Use when working with the Spyglass framework, Spyglass merge tables (PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput), Spyglass pipelines (spike sorting, position tracking, LFP, decoding, linearization, ripple detection), Spyglass setup/config (SPYGLASS_BASE_DIR, dj_local_conf), querying Spyglass common tables (Session, IntervalList, ElectrodeGroup), or Spyglass NWB ingestion (insert_sessions).
 ---
 
 # Spyglass Data Analysis Skill
 
 ## Role & Core Directives
 
-- **Read-only by default**: Never generate code that writes to the database (`insert`, `populate`, `delete`, etc.) unless the user explicitly requests it
-- **NEVER delete or drop without explicit confirmation**: This database contains irreplaceable neuroscience research data. Never generate `delete()`, `drop()`, `cautious_delete()`, or any destructive operation without first warning the user what will be affected and getting explicit confirmation. Even when the user asks for deletion, explain what downstream data will be cascade-deleted before providing the code
-- **Teaching approach**: Show code, expected output shape, and explain (≤200 words unless asked for more)
-- **Best practices**: Use PEP8, descriptive variable names, prefer DataJoint operators over raw SQL
+- **NEVER delete or drop without explicit confirmation**: This database contains irreplaceable neuroscience research data. Never generate `delete()`, `drop()`, `cautious_delete()`, or any destructive operation without first warning the user what will be affected and getting explicit confirmation. Explain what downstream data will be cascade-deleted before providing the code
+- **Writes are normal workflow**: Spyglass pipelines require inserting selection rows and populating tables. When the user asks how to run a pipeline, show the full workflow including inserts and populates. Explain what each write does, but don't refuse to show it
 - **Environment**: Do not assume Jupyter or remote NWB files — detect the user's setup from context. Spyglass supports local Docker, local data, and remote-lab workflows
-- **Progressive exploration**: Start broad (what sessions exist?), then narrow (what data for this session?)
-- **Verify schema before querying**: Always run `Table.describe()` or `Table.heading` to confirm column names before using them in restrictions or fetch calls
-- **Source of truth**: When skill reference files conflict with the actual repo, trust the repo. The bundled references here are a starting point, not the final word. Key repo locations:
-  - `src/spyglass/common/` — shared tables (Session, IntervalList, Electrode, etc.)
-  - `src/spyglass/<pipeline>/` — pipeline code (position, lfp, spikesorting, decoding, linearization, ripple, mua, behavior)
-  - `src/spyglass/utils/` — SpyglassMixin, _Merge, and helper utilities
-  - `notebooks/py_scripts/` — canonical analysis workflows
-  - `tests/` — behavior checks and test fixtures
-  - `docs/` — user-facing documentation
+- **Verify schema before querying**: Run `Table.describe()` or `Table.heading` to confirm column names before using them in restrictions or fetch calls
+- **Source of truth**: When skill references conflict with the repo, trust the repo. Key locations:
+  - `src/spyglass/common/` — shared tables; `src/spyglass/<pipeline>/` — pipeline code
+  - `src/spyglass/utils/` — SpyglassMixin, _Merge; `notebooks/py_scripts/` — canonical workflows
 
-## DataJoint Quick Reference
+## Merge Tables — The Key Concept
 
-### Core Operators
+Merge tables consolidate outputs from multiple pipeline versions into a single `merge_id` interface. Not all part tables are merge tables — `Session.Experimenter` is a regular part table.
 
-| Operator | Name | Example |
-|----------|------|---------|
-| `&` | Restriction | `Session & {'nwb_file_name': 'file.nwb'}` |
-| `*` | Join | `Session * Subject` |
-| `.proj()` | Projection | `Session.proj('nwb_file_name', 'subject_id')` |
-| `.fetch()` | Fetch all | `(Session & key).fetch(as_dict=True)` |
-| `.fetch1()` | Fetch one | `(Session & key).fetch1()` |
-| `.aggr()` | Aggregation | `Table1.aggr(Table2, n='count(*)')` |
+**Two ways to access merge table data:**
 
-### Spyglass-Specific Operators
-
-| Operator | Name | Example |
-|----------|------|---------|
-| `<<` | Upstream restrict | `PositionOutput() << "nwb_file_name = 'file.nwb'"` |
-| `>>` | Downstream restrict | `Session() >> 'trodes_pos_params_name="default"'` |
-| `.restrict_by()` | Explicit restrict | `Table().restrict_by(restr, direction="up")` |
-
-### Table Inspection
-
+**Direct access** (DecodingOutput accepts friendly keys and resolves internally):
 ```python
-Table.describe()          # Schema and primary keys
-Table.heading             # All columns as dict
-Table.parents()           # Parent tables
-Table.children()          # Child tables
+results = DecodingOutput.fetch_results(key)  # no manual merge resolution needed
+model = DecodingOutput.fetch_model(key)
+# Still raises ValueError if key matches 0 or >1 entries
 ```
 
-## Part Tables and Merge Tables
-
-**This is the most important concept in Spyglass.** Almost every pipeline uses this pattern.
-
-### What Are Part Tables?
-
-A **part table** is a sub-table owned by a **master table**. The master defines the primary key; each part table adds its own columns. Part tables share the master's primary key and add foreign keys to other tables.
-
-Part tables are a general DataJoint concept used throughout Spyglass. For example, `Session.Experimenter` is a part table that links sessions to lab members — this is a regular part table, not a merge table.
-
-### What Are Merge Tables?
-
-A **merge table** is a *specific Spyglass convention* that uses part tables to consolidate outputs from **multiple pipeline versions** into a single interface. Each part table corresponds to a different pipeline version or data source. Not all part tables are merge tables — merge tables are master tables whose *only purpose* is to assign UUIDs across multiple upstream pipeline versions.
-
-```
-PositionOutput (merge master)     # Only has merge_id as primary key
-├── PositionOutput.TrodesPosV1      # Links merge_id → TrodesPosV1's keys
-├── PositionOutput.DLCPosV1         # Links merge_id → DLCPosV1's keys
-├── PositionOutput.CommonPos        # Links merge_id → IntervalPositionInfo's keys
-└── PositionOutput.ImportedPose     # Links merge_id → ImportedPose's keys
-```
-
-**Why merge tables exist**: Spyglass has evolved over time. Position data might come from Trodes LED tracking, DeepLabCut pose estimation, or imported pose data. Rather than making downstream code handle each source differently, a merge table gives them all the same `merge_id` interface.
-
-**Key rule**: The `merge_id` is a UUID. Never type it manually — always obtain it programmatically.
-
-### The Merge Table Workflow
-
-All merge tables share the same first 3 steps — get a `merge_id`. Step 4 depends on the pipeline:
-
+**Manual merge resolution** (when you need the merge_id explicitly):
 ```python
-# Step 1: Build a restriction key with human-readable fields
-key = {
-    "nwb_file_name": "j1620210710_.nwb",
-    "interval_list_name": "pos 1 valid times",
-    "trodes_pos_params_name": "default",
-}
-
-# Step 2: Find which part table contains this data
-part = MergeTable.merge_get_part(key)
-# Returns the specific part table (e.g., PositionOutput.TrodesPosV1)
-
-# Step 3: Get the merge_id from the part table
-merge_key = part.fetch1("KEY")
-# Returns: {'merge_id': 'abc123-...'}
-
-# Step 4: Fetch data — method depends on the merge table:
-#   PositionOutput, LFPOutput, LinearizedPositionOutput:
-data = (MergeTable & merge_key).fetch1_dataframe()
-#   DecodingOutput: use fetch_results(), fetch_model(), fetch_position_info()
-#   SpikeSortingOutput: use get_spike_times(), get_firing_rate(), get_sorting()
+part = MergeTable.merge_get_part(key)       # raises ValueError if 0 or >1 match
+merge_key = part.fetch1("KEY")              # {'merge_id': 'abc123-...'}
+data = (MergeTable & merge_key).fetch1_dataframe()  # for position, LFP, linearization
 ```
 
-**Not all merge tables use `fetch1_dataframe()`**. `DecodingOutput` stores results as xarray Datasets on disk (use `DecodingOutput.fetch_results(key)`). `SpikeSortingOutput` has specialized helpers like `get_spike_times()` and `get_firing_rate()`. See the pipeline-specific reference files for the correct data access pattern.
+**Gotcha**: `merge_get_part()` raises `ValueError` on zero or multiple matches. Use `multi_source=True` to allow multiple.
 
-**Common mistake #1**: Trying to restrict a merge table directly with friendly keys like `nwb_file_name`. Merge tables only have `merge_id` as their primary key — you must go through `merge_get_part()` first. (Note: `merge_restrict()` and `<<` work with friendly keys because they traverse the dependency graph internally.)
+**Gotcha**: Don't restrict merge tables with friendly keys directly — use `merge_get_part()`, `merge_restrict()`, or `<<`.
 
-**Common mistake #2**: `merge_get_part()` raises `ValueError` if zero or multiple sources match (when `multi_source=False`, the default). Wrap in try/except:
-```python
-try:
-    part = MergeTable.merge_get_part(key)
-    merge_key = part.fetch1("KEY")
-except ValueError:
-    print("No data (or multiple sources) found — refine your key or use multi_source=True")
-```
+### All Pipelines
 
-**When multiple sources exist**: Use `multi_source=True`:
-```python
-parts = MergeTable.merge_get_part(key, multi_source=True)
-```
-
-### All Pipelines and Their Outputs
-
-| Output Table | Import Path | Type | Data Access (Step 4) |
-|-------------|-------------|------|---------------------|
-| `PositionOutput` | `spyglass.position` | Merge | `.fetch1_dataframe()`, `.fetch_pose_dataframe()` |
+| Output Table | Import Path | Type | Data Access |
+|-------------|-------------|------|-------------|
+| `PositionOutput` | `spyglass.position` | Merge | `.fetch1_dataframe()`, `.fetch_pose_dataframe()` (DLC/imported only) |
 | `LFPOutput` | `spyglass.lfp` | Merge | `.fetch1_dataframe()` |
 | `SpikeSortingOutput` | `spyglass.spikesorting.spikesorting_merge` | Merge | `.get_spike_times()`, `.get_firing_rate()`, `.get_sorting()` |
 | `DecodingOutput` | `spyglass.decoding` | Merge | `.fetch_results()`, `.fetch_model()`, `.fetch_position_info()` |
@@ -135,89 +51,61 @@ parts = MergeTable.merge_get_part(key, multi_source=True)
 | `RippleTimesV1` | `spyglass.ripple.v1` | Direct | `.fetch1_dataframe()` |
 | `MuaEventsV1` | `spyglass.mua.v1` | Direct | `.fetch1_dataframe()` |
 
-Common tables root: `from spyglass.common import Session, IntervalList, Nwbfile, ElectrodeGroup, Electrode, Raw`
+Common tables: `from spyglass.common import Session, IntervalList, Nwbfile, ElectrodeGroup, Electrode, Raw`
 
-All tables also inherit `fetch_nwb()` (load NWB objects), `<<`/`>>` (upstream/downstream restrict), and other SpyglassMixin methods — see [references/merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) for the full list.
+All tables inherit `fetch_nwb()`, `<<`/`>>`, and other SpyglassMixin methods — see [references/merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
 
-## Quick Start Examples
-
-### Find sessions and explore data
+## Quick Start
 
 ```python
 from spyglass.common import Session, IntervalList
 
-# List sessions
-Session.fetch(limit=10)
-
-# Find intervals for a session
-nwb_file = "j1620210710_.nwb"
-IntervalList & {"nwb_file_name": nwb_file}
+Session.fetch(limit=10)                                  # List sessions
+IntervalList & {"nwb_file_name": "j1620210710_.nwb"}     # Find intervals
 ```
-
-### Get position data
 
 ```python
 from spyglass.position import PositionOutput
 
-key = {
-    "nwb_file_name": "j1620210710_.nwb",
-    "interval_list_name": "pos 1 valid times",
-    "trodes_pos_params_name": "default",
-}
+key = {"nwb_file_name": "j1620210710_.nwb", "interval_list_name": "pos 1 valid times",
+       "trodes_pos_params_name": "default"}
 merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
 position_df = (PositionOutput & merge_key).fetch1_dataframe()
 ```
 
-### Get spike times
-
 ```python
 from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput
 
-# Using friendly keys
 merge_ids = SpikeSortingOutput().get_restricted_merge_ids(
-    {"nwb_file_name": nwb_file, "interval_list_name": "02_r1"},
-    sources=["v1"],  # recommended: avoid legacy v0 results
-)
+    {"nwb_file_name": "j1620210710_.nwb", "interval_list_name": "02_r1"}, sources=["v1"])
 for mid in merge_ids:
     spikes = SpikeSortingOutput().get_spike_times({"merge_id": mid})
 ```
 
-### Get LFP data
-
-```python
-from spyglass.lfp import LFPOutput
-
-key = {
-    "nwb_file_name": nwb_file,
-    "lfp_electrode_group_name": "lfp_tets_j16",
-    "target_interval_list_name": "02_r1",
-    "filter_name": "LFP 0-400 Hz",
-    "filter_sampling_rate": 30000,
-}
-merge_key = LFPOutput.merge_get_part(key).fetch1("KEY")
-lfp_df = (LFPOutput & merge_key).fetch1_dataframe()
-```
-
 ## Communication Style
 
-1. Analogy → formal term → one-sentence definition
-2. Use markdown for structure
-3. Keep explanations ≤200 words unless user requests more
-4. Show code for operational questions; for conceptual questions, prioritize explanation over code
-5. When the user asks "how do I get X data", show the merge table workflow (steps 1-3), then the correct data access method for that specific pipeline
+1. Show code for operational questions; for conceptual questions, prioritize explanation
+2. Keep explanations ≤200 words unless asked for more
+3. For "how do I get X data" — use the simplest access pattern for that pipeline
+4. For "how do I run X pipeline" — show the full workflow including inserts/populates
 
-## Reference Files
+## Reference Routing
 
-Load a pipeline reference when the user needs to understand pipeline steps, populate tables, debug pipeline-specific errors, or work with parameter tables. For simple "get data" questions, the examples above are usually sufficient.
+For simple data queries, the examples above are usually sufficient. For deeper questions, load the right reference:
 
-- **[references/datajoint_api.md](references/datajoint_api.md)**: Complete DataJoint and Spyglass operator reference with examples
-- **[references/common_tables.md](references/common_tables.md)**: All common schema tables, their keys, fields, and relationships
-- **[references/merge_and_mixin_methods.md](references/merge_and_mixin_methods.md)**: Full _Merge and SpyglassMixin method signatures and usage
-- **[references/position_pipeline.md](references/position_pipeline.md)**: Position tracking pipeline (Trodes, DLC, imported pose)
-- **[references/lfp_pipeline.md](references/lfp_pipeline.md)**: LFP filtering, artifact detection, band analysis
-- **[references/spikesorting_pipeline.md](references/spikesorting_pipeline.md)**: Spike sorting v1 pipeline end-to-end
-- **[references/decoding_pipeline.md](references/decoding_pipeline.md)**: Clusterless and sorted spikes decoding
-- **[references/other_pipelines.md](references/other_pipelines.md)**: Linearization, ripple, MUA, behavior pipelines
-- **[references/workflows.md](references/workflows.md)**: Step-by-step workflows for common analysis tasks
-- **[references/dependencies.md](references/dependencies.md)**: External packages (SpikeInterface, PyNWB, non_local_detector, DLC, etc.)
-- **[references/setup_and_config.md](references/setup_and_config.md)**: Installation methods, database configuration, directory setup, and troubleshooting
+| User question is about... | Load this reference | Or inspect this repo path |
+|--------------------------|--------------------|-----------------------|
+| DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — |
+| Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | `src/spyglass/common/` |
+| _Merge / SpyglassMixin methods | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `src/spyglass/utils/` |
+| Position tracking pipeline | [position_pipeline.md](references/position_pipeline.md) | `src/spyglass/position/` |
+| LFP filtering / band analysis | [lfp_pipeline.md](references/lfp_pipeline.md) | `src/spyglass/lfp/` |
+| Spike sorting pipeline | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `src/spyglass/spikesorting/` |
+| Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) | `src/spyglass/decoding/` |
+| Linearization, ripple, MUA, behavior | [other_pipelines.md](references/other_pipelines.md) | `src/spyglass/{linearization,ripple,mua,behavior}/` |
+| NWB ingestion / insert_sessions | [other_pipelines.md](references/other_pipelines.md) | `src/spyglass/data_import/`, `docs/src/Features/Ingestion.md` |
+| Installation / DB config / directories | [setup_and_config.md](references/setup_and_config.md) | `scripts/install.py`, `src/spyglass/settings.py` |
+| External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — |
+| End-to-end analysis workflows | [workflows.md](references/workflows.md) | `notebooks/py_scripts/` |
+
+When a reference file and the repo disagree, trust the repo. For canonical examples, inspect `notebooks/py_scripts/` directly.

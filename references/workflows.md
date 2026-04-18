@@ -334,7 +334,7 @@ def safe_fetch_merge_key(merge_table, key):
     try:
         part = merge_table.merge_get_part(key)
         return part.fetch1("KEY")
-    except (ValueError, Exception) as e:
+    except ValueError as e:
         print(f"No unique match for {key}: {e}")
         return None
 
