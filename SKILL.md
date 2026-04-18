@@ -38,17 +38,24 @@ merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
 print((PositionOutput & merge_key).fetch(as_dict=True))
 # After confirm:  (PositionOutput & merge_key).merge_delete()
 
-# File cleanup: dry_run=True first, read the returned list, THEN rerun.
-# cleanup() is pipeline-scoped — DecodingOutput().cleanup() removes only
+# File cleanup: dry_run=True first, inspect the log output, THEN rerun.
+# cleanup() returns None in both modes — it LOGS paths it would remove
+# when dry_run=True, and deletes them when dry_run=False. Read the logs
+# before the destroy call.
+# cleanup() is pipeline-scoped: DecodingOutput().cleanup() removes only
 # orphaned .nc/.pkl files from the decoding pipeline. AnalysisNwbfile
-# has its own cleanup() that sweeps orphaned analysis NWB files across
-# tables; same dry_run discipline applies.
-pending = DecodingOutput().cleanup(dry_run=True)   # returns what WOULD be removed
-# After confirm:  DecodingOutput().cleanup(dry_run=False)
+# has its own cleanup() for orphaned analysis NWB files across tables;
+# same dry_run discipline applies.
+DecodingOutput().cleanup(dry_run=True)   # LOGS what would be removed
+# After confirming the logs look right:
+# DecodingOutput().cleanup(dry_run=False)
 
-# delete_downstream_parts: reload_cache=True because the cache can be stale
-# and silently return "nothing to delete" when entries actually exist.
-Session().delete_downstream_parts(reload_cache=True, dry_run=True)
+# delete_downstream_parts: ALWAYS call on a restricted relation, never the
+# whole table. reload_cache=True because the cache can be stale and
+# silently return "nothing to delete" when entries actually exist.
+(Nwbfile & {"nwb_file_name": nwb_copy_file_name}).delete_downstream_parts(
+    reload_cache=True, dry_run=True,
+)
 ```
 
 ## First Step: Classify the User's Stage
@@ -76,18 +83,20 @@ model = DecodingOutput.fetch_model(key)
 # Still raises ValueError if key matches 0 or >1 entries
 ```
 
-**Manual merge resolution** (when you need the merge_id explicitly):
+**Manual merge resolution** (when you need a merge-row restriction):
 ```python
 part = MergeTable.merge_get_part(key)       # raises ValueError if 0 or >1 match
-merge_key = part.fetch1("KEY")              # {'merge_id': 'abc123-...'}
+merge_key = part.fetch1("KEY")              # full part-table PK; use as a restriction
 data = (MergeTable & merge_key).fetch1_dataframe()  # for position, LFP, linearization
 ```
+
+Don't assume `merge_key` is `{'merge_id': 'abc...'}` alone. It's whatever the part table's primary key is (usually just `merge_id`, but treat it as an opaque restriction). Use it by passing to `&`, not by reading fields out of it.
 
 **Gotcha**: `merge_get_part()` raises `ValueError` on zero or multiple matches. Use `multi_source=True` to allow multiple.
 
 **Gotcha**: Don't restrict merge tables with friendly keys directly — use `merge_get_part()`, `merge_restrict()`, or `<<`.
 
-**Gotcha — too-loose restriction** (common, not merge-specific): a restriction like `{"nwb_file_name": nwb_file}` alone usually matches MANY rows — every interval, every parameter set, every pipeline version for that session. That's what causes `fetch1()`, `merge_get_part()`, `fetch_results()`, and `fetch_nwb()` to raise "expected one row, got N" — the restriction was under-specified. The same footgun applies to any Spyglass or DataJoint table, not just merge tables. Fix: include enough primary-key fields to pick exactly one row (typically `nwb_file_name` + `interval_list_name` + a params name). When unsure what exists, restrict loosely first, print the result, then build a fully-specified key:
+**Gotcha — too-loose restriction** (common, not merge-specific): a restriction like `{"nwb_file_name": nwb_file}` alone usually matches MANY rows — every interval, every parameter set, every pipeline version for that session. That's what causes `fetch1()`, `merge_get_part()`, `fetch_results()`, and `fetch1_dataframe()` to raise "expected one row, got N" — the restriction was under-specified. Note: `fetch_nwb()` does NOT raise on multiple rows — it silently returns a list across all matches, which can produce wrong-but-plausible downstream results if you `[0]`-index without thinking. The same footgun applies to any Spyglass or DataJoint table, not just merge tables. Fix: include enough primary-key fields to pick exactly one row (typically `nwb_file_name` + `interval_list_name` + a params name). When unsure what exists, restrict loosely first, print the result, then build a fully-specified key:
 
 ```python
 # Discover, don't guess — shows you every matching row and its full key

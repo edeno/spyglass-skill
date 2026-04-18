@@ -90,20 +90,26 @@ It is **not** appropriate for raw data ingestion. `insert_sessions` uses `reinse
 
 ## Inspecting After Ingestion
 
+**All inspection queries use the COPY filename** (`my_session_.nwb`), not the raw filename you passed to `insert_sessions`. This is the most common filename mistake — see the filename-convention rule at the top of this file.
+
 ```python
 from spyglass.common import Session, Nwbfile
+from spyglass.utils.nwb_helper_fn import get_nwb_copy_filename
+
+# Derive the copy filename once, reuse everywhere downstream
+nwb_copy_file_name = get_nwb_copy_filename("my_session.nwb")  # "my_session_.nwb"
 
 # Was the file registered?
-Nwbfile & {"nwb_file_name": "my_session.nwb"}
+Nwbfile & {"nwb_file_name": nwb_copy_file_name}
 
 # What got ingested into Session?
-Session & {"nwb_file_name": "my_session.nwb"}
+Session & {"nwb_file_name": nwb_copy_file_name}
 
 # Who was the experimenter?
-Session.Experimenter & {"nwb_file_name": "my_session.nwb"}
+Session.Experimenter & {"nwb_file_name": nwb_copy_file_name}
 ```
 
-Spyglass copies the NWB file on ingestion and registers a "copy" filename with `_` appended before `.nwb`. You pass the **raw** filename (e.g., `my_session.nwb`) to `insert_sessions`; Spyglass derives the copy name (`my_session_.nwb`) internally via `get_nwb_copy_filename()`. Downstream tables reference the copy, so when you query `Session`, `Nwbfile`, etc. you'll see the trailing-underscore form:
+Spyglass copies the NWB file on ingestion and registers the copy under `Nwbfile` with `_` appended before `.nwb`. You pass the **raw** filename to `insert_sessions`; everything downstream references the copy. Summary:
 
 ```python
 from spyglass.utils.nwb_helper_fn import get_nwb_copy_filename

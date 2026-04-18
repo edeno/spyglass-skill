@@ -51,7 +51,9 @@ part = PositionOutput.merge_get_part(key, join_master=True)
 **Common pattern:**
 ```python
 merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
-# merge_key = {'merge_id': 'abc123-...'}
+# Treat merge_key as an opaque restriction; don't assume it's only
+# {"merge_id": ...}. Pass it to `&`, don't read fields out of it.
+data = (PositionOutput & merge_key).fetch1_dataframe()
 ```
 
 #### `merge_get_parent(restriction, join_master=False, multi_source=False) -> dj.FreeTable`
