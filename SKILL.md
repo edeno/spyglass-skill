@@ -153,11 +153,12 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 | Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | — | `src/spyglass/common/` |
 | Spike sorting pipeline | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `10_Spike_SortingV1.py`, `11_Spike_Sorting_Analysis.py` | `src/spyglass/spikesorting/` |
 | Position tracking (Trodes / DLC) | [position_pipeline.md](references/position_pipeline.md) | `20_Position_Trodes.py`, `21_DLC.py` | `src/spyglass/position/` |
-| Linearization | [other_pipelines.md](references/other_pipelines.md) | `24_Linearization.py` | `src/spyglass/linearization/` |
-| LFP / theta / ripple | [lfp_pipeline.md](references/lfp_pipeline.md) | `30_LFP.py`, `31_Theta.py`, `32_Ripple_Detection.py` | `src/spyglass/lfp/`, `src/spyglass/ripple/` |
+| Linearization | [linearization_pipeline.md](references/linearization_pipeline.md) | `24_Linearization.py` | `src/spyglass/linearization/` |
+| LFP / theta | [lfp_pipeline.md](references/lfp_pipeline.md) | `30_LFP.py`, `31_Theta.py` | `src/spyglass/lfp/` |
+| Ripple detection | [ripple_pipeline.md](references/ripple_pipeline.md) | `32_Ripple_Detection.py` | `src/spyglass/ripple/` |
 | Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) | `40_Extracting_Clusterless_Waveform_Features.py`, `41_Decoding_Clusterless.py`, `42_Decoding_SortedSpikes.py` | `src/spyglass/decoding/` |
-| MUA detection | [other_pipelines.md](references/other_pipelines.md) | `50_MUA_Detection.py` | `src/spyglass/mua/` |
-| Behavior / MoSeq | [other_pipelines.md](references/other_pipelines.md) | `60_MoSeq.py` | `src/spyglass/behavior/` |
+| MUA detection | [mua_pipeline.md](references/mua_pipeline.md) | `50_MUA_Detection.py` | `src/spyglass/mua/` |
+| Behavior / MoSeq | [behavior_pipeline.md](references/behavior_pipeline.md) | `60_MoSeq.py` | `src/spyglass/behavior/` |
 | Cross-table exploration / troubleshooting | [workflows.md](references/workflows.md) | — | — |
 | Export for papers / reproducible snapshots | [export.md](references/export.md) | `05_Export.py` | `src/spyglass/common/common_usage.py` |
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) | — | `src/spyglass/spikesorting/v1/figurl_curation.py`, `src/spyglass/decoding/decoding_merge.py` |

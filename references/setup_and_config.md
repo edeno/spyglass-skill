@@ -255,6 +255,24 @@ All directories are created automatically on first config load if they do not ex
 | `HD5_USE_FILE_LOCKING` | `FALSE` | HDF5 file locking |
 | `KACHERY_ZONE` | `franklab.default` | Kachery zone for data sharing |
 
+### Data Sharing Tables (Kachery)
+
+Two tables configure kachery-cloud sharing alongside the env vars above:
+
+```python
+from spyglass.sharing import AnalysisNwbfileKachery, KacheryZone
+```
+
+**KacheryZone** (Manual)
+- Key: `kachery_zone_name`
+- Registers the kachery zone(s) this install can publish to.
+
+**AnalysisNwbfileKachery** (Computed)
+- Part table: `AnalysisNwbfileKachery.LinkedFile`
+- Links analysis files to kachery-cloud for sharing.
+
+Use `KACHERY_ZONE` / `KACHERY_CLOUD_EPHEMERAL` env vars above to pick the zone and mode.
+
 
 ## Environment Setup Scenarios
 
