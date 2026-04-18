@@ -1,6 +1,6 @@
 ---
 name: spyglass
-description: Use when writing, debugging, or running Spyglass code — the LorenFrankLab neurophysiology analysis framework built on DataJoint + NWB. Strong signals: `import spyglass` / `from spyglass.*`; Spyglass merge tables (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, `LinearizedPositionOutput`); `insert_sessions` or `SPYGLASS_BASE_DIR`; calls to `merge_get_part` / `merge_restrict`. Do NOT activate for: plain DataJoint code without Spyglass imports; unrelated NWB tooling (pynwb, ndx-*) where Spyglass is not in the call chain; generic electrophysiology analysis unrelated to the Spyglass framework.
+description: Use when writing, debugging, running, installing, or learning Spyglass — the LorenFrankLab neurophysiology analysis framework built on DataJoint + NWB. Activate on plain-language tasks like "install Spyglass", "set up Spyglass", "run the Spyglass tutorials", "ingest an NWB file into Spyglass", "run spike sorting / LFP / ripple detection / decoding / position tracking / linearization in Spyglass", "share Spyglass analysis files", "export a Spyglass paper bundle", "build a custom Spyglass pipeline". Also activate on code signals: `import spyglass` / `from spyglass.*`; merge tables (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, `LinearizedPositionOutput`); `insert_sessions` or `SPYGLASS_BASE_DIR`; `merge_get_part` / `merge_restrict`. Do NOT activate for: plain DataJoint code without Spyglass imports; unrelated NWB tooling (pynwb, ndx-*) where Spyglass is not in the call chain; generic electrophysiology analysis unrelated to the Spyglass framework.
 ---
 
 # Spyglass Data Analysis Skill
@@ -17,9 +17,9 @@ description: Use when writing, debugging, or running Spyglass code — the Loren
 - **Verify schema when unsure**: For tables you haven't worked with or when an example's field names look uncertain, inspect with `Table.describe()` or `Table.heading` before writing the query. For well-known tables already shown in the skill examples (`Session`, `IntervalList`, `PositionOutput`, etc.), don't add an inspection step to routine queries — it's friction
 - **Source of truth**: When skill references conflict with the repo, trust the repo. Key locations:
   - `src/spyglass/common/` — shared tables; `src/spyglass/<pipeline>/` — pipeline code
-  - `src/spyglass/utils/` — SpyglassMixin, _Merge; `notebooks/py_scripts/` — canonical workflows
+  - `src/spyglass/utils/` — SpyglassMixin, _Merge; `notebooks/*.ipynb` — canonical user-facing workflows (per `notebooks/README.md`; `notebooks/py_scripts/*.py` is a jupytext mirror kept for PR review diffs — same content, route users to the `.ipynb` form)
 - **Pip/conda users (no repo checkout)**: The `src/spyglass/` layout lives under the installed package — find it with `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`. Notebooks, docs, and `scripts/` are NOT installed; fetch them from GitHub:
-  - Notebooks: `https://github.com/LorenFrankLab/spyglass/tree/master/notebooks/py_scripts/`
+  - Notebooks: `https://github.com/LorenFrankLab/spyglass/tree/master/notebooks/` (run the `.ipynb` files in Jupyter; `py_scripts/` holds `.py` mirrors for PR review)
   - Docs: `https://lorenfranklab.github.io/spyglass/` (or `https://github.com/LorenFrankLab/spyglass/tree/master/docs/src/`)
 
 ## Safe-Before-Destructive Patterns
@@ -39,7 +39,8 @@ target.fetch(as_dict=True)          # inspect what is there
 # restriction — Python routes classmethod calls to the class, so that
 # pattern deletes EVERY merge entry. Always pass the restriction as an
 # arg: PositionOutput.merge_delete(restriction). Canonical example:
-# notebooks/py_scripts/04_Merge_Tables.py:198.
+# notebooks/04_Merge_Tables.ipynb (see py_scripts/04_Merge_Tables.py:198 for
+# the review-diff mirror of the same content).
 merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
 print((PositionOutput & merge_key).fetch(as_dict=True))   # inspect
 # After confirm:  PositionOutput.merge_delete(merge_key)
@@ -68,9 +69,9 @@ DecodingOutput().cleanup(dry_run=True)   # LOGS what would be removed
 
 Before answering, decide which stage the user is in:
 
-1. **Setup/install** → `scripts/install.py` (interactive installer) is the canonical fast path per the repo's `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md) for install methods and installer/validator scripts, [setup_config.md](references/setup_config.md) for database + directory + env-var configuration, or [setup_troubleshooting.md](references/setup_troubleshooting.md) for setup errors. `00_Setup.py` notebook is a fallback for walking through configuration manually
-2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.py` notebook. Warn that `skip_duplicates=True` is for lookup tables / pipeline reruns only, not raw data — use `reinsert=True` for raw re-ingestion
-3. **Framework concepts** (first time using Spyglass) → this SKILL.md + `01_Concepts.py` notebook for the core DataJoint+NWB mental model. `04_Merge_Tables.py` is a later, specialized concept for pipeline versioning — don't lead with it for novice questions
+1. **Setup/install** → `scripts/install.py` (interactive installer) is the canonical fast path per the repo's `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md) for install methods and installer/validator scripts, [setup_config.md](references/setup_config.md) for database + directory + env-var configuration, or [setup_troubleshooting.md](references/setup_troubleshooting.md) for setup errors. `00_Setup.ipynb` is a fallback for walking through configuration manually
+2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.ipynb`. Warn that `skip_duplicates=True` is for lookup tables / pipeline reruns only, not raw data — use `reinsert=True` for raw re-ingestion
+3. **Framework concepts** (first time using Spyglass) → this SKILL.md + `01_Concepts.ipynb` for the core DataJoint+NWB mental model. `04_Merge_Tables.ipynb` is a later, specialized concept for pipeline versioning — don't lead with it for novice questions
 4. **Pipeline usage** (running or querying existing analyses) → merge table workflow below + pipeline reference files
 5. **Pipeline authoring** (extending a pipeline, building a new analysis off ingested/common tables, writing schema modules) → [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md). Very different surface from usage — different imports, different class conventions, different non-negotiables.
 
@@ -137,27 +138,27 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 
 | User question is about... | Load this reference | Canonical notebook | Repo path |
 | ------------------------- | ------------------- | ------------------ | --------- |
-| Installing Spyglass | [setup_install.md](references/setup_install.md) | `QUICKSTART.md` + `scripts/install.py`; `00_Setup.py` as notebook fallback | `scripts/install.py`, `QUICKSTART.md` |
-| Configuring the database / directories / env vars | [setup_config.md](references/setup_config.md) | `00_Setup.py` | `src/spyglass/settings.py`, `dj_local_conf_example.json` |
+| Installing Spyglass | [setup_install.md](references/setup_install.md) | `QUICKSTART.md` + `scripts/install.py`; `00_Setup.ipynb` as notebook fallback | `scripts/install.py`, `QUICKSTART.md` |
+| Configuring the database / directories / env vars | [setup_config.md](references/setup_config.md) | `00_Setup.ipynb` | `src/spyglass/settings.py`, `dj_local_conf_example.json` |
 | Setup errors and troubleshooting | [setup_troubleshooting.md](references/setup_troubleshooting.md) | — | `scripts/validate.py` |
-| Framework concepts / merge tables | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `01_Concepts.py`, `04_Merge_Tables.py` | `src/spyglass/utils/` |
-| NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.py` | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |
+| Framework concepts / merge tables | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `01_Concepts.ipynb`, `04_Merge_Tables.ipynb` | `src/spyglass/utils/` |
+| NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.ipynb` | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — | — |
 | Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | — | `src/spyglass/common/` |
-| Spike sorting pipeline (current / v1) | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `10_Spike_SortingV1.py`, `11_Spike_Sorting_Analysis.py` | `src/spyglass/spikesorting/v1/` |
-| Reading v0 legacy code / v0 data | [spikesorting_v0_legacy.md](references/spikesorting_v0_legacy.md) | `10_Spike_SortingV0.py` | `src/spyglass/spikesorting/v0/` |
-| Position tracking (Trodes / DLC) | [position_pipeline.md](references/position_pipeline.md) | `20_Position_Trodes.py`, `21_DLC.py` | `src/spyglass/position/` |
-| Linearization | [linearization_pipeline.md](references/linearization_pipeline.md) | `24_Linearization.py` | `src/spyglass/linearization/` |
-| LFP / theta | [lfp_pipeline.md](references/lfp_pipeline.md) | `30_LFP.py`, `31_Theta.py` | `src/spyglass/lfp/` |
-| Ripple detection | [ripple_pipeline.md](references/ripple_pipeline.md) | `32_Ripple_Detection.py` | `src/spyglass/ripple/` |
-| Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) | `40_Extracting_Clusterless_Waveform_Features.py`, `41_Decoding_Clusterless.py`, `42_Decoding_SortedSpikes.py` | `src/spyglass/decoding/` |
-| MUA detection | [mua_pipeline.md](references/mua_pipeline.md) | `50_MUA_Detection.py` | `src/spyglass/mua/` |
-| Behavior / MoSeq | [behavior_pipeline.md](references/behavior_pipeline.md) | `60_MoSeq.py` | `src/spyglass/behavior/` |
+| Spike sorting pipeline (current / v1) | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `10_Spike_SortingV1.ipynb`, `11_Spike_Sorting_Analysis.ipynb` | `src/spyglass/spikesorting/v1/` |
+| Reading v0 legacy code / v0 data | [spikesorting_v0_legacy.md](references/spikesorting_v0_legacy.md) | `10_Spike_SortingV0.ipynb` | `src/spyglass/spikesorting/v0/` |
+| Position tracking (Trodes / DLC) | [position_pipeline.md](references/position_pipeline.md) | `20_Position_Trodes.ipynb`, `21_DLC.ipynb` | `src/spyglass/position/` |
+| Linearization | [linearization_pipeline.md](references/linearization_pipeline.md) | `24_Linearization.ipynb` | `src/spyglass/linearization/` |
+| LFP / theta | [lfp_pipeline.md](references/lfp_pipeline.md) | `30_LFP.ipynb`, `31_Theta.ipynb` | `src/spyglass/lfp/` |
+| Ripple detection | [ripple_pipeline.md](references/ripple_pipeline.md) | `32_Ripple_Detection.ipynb` | `src/spyglass/ripple/` |
+| Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) | `40_Extracting_Clusterless_Waveform_Features.ipynb`, `41_Decoding_Clusterless.ipynb`, `42_Decoding_SortedSpikes.ipynb` | `src/spyglass/decoding/` |
+| MUA detection | [mua_pipeline.md](references/mua_pipeline.md) | `50_MUA_Detection.ipynb` | `src/spyglass/mua/` |
+| Behavior / MoSeq | [behavior_pipeline.md](references/behavior_pipeline.md) | `60_MoSeq.ipynb` | `src/spyglass/behavior/` |
 | Cross-table exploration / troubleshooting | [workflows.md](references/workflows.md) | — | — |
-| Export for papers / reproducible snapshots | [export.md](references/export.md) | `05_Export.py` | `src/spyglass/common/common_usage.py` |
-| Syncing / sharing analysis files with collaborators (Kachery) | [setup_config.md](references/setup_config.md) — "Data Sharing Tables (Kachery)" section | `03_Data_Sync.py` | `src/spyglass/sharing/sharing_kachery.py` |
+| Export for papers / reproducible snapshots | [export.md](references/export.md) | `05_Export.ipynb` | `src/spyglass/common/common_usage.py` |
+| Syncing / sharing analysis files with collaborators (Kachery) | [setup_config.md](references/setup_config.md) — "Data Sharing Tables (Kachery)" section | `03_Data_Sync.ipynb` | `src/spyglass/sharing/sharing_kachery.py` |
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) | — | `src/spyglass/spikesorting/v1/figurl_curation.py`, `src/spyglass/decoding/decoding_merge.py` |
 | External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — | — |
 | Authoring a new pipeline / extending an existing one | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) | — | `docs/src/ForDevelopers/CustomPipelines.md`, `docs/src/ForDevelopers/TableTypes.md`, `docs/src/ForDevelopers/Schema.md`, `docs/src/ForDevelopers/Classes.md`, `docs/src/ForDevelopers/Reuse.md` |
 
-When a reference file and the repo disagree, trust the repo. The `notebooks/py_scripts/` files are the canonical end-to-end examples.
+When a reference file and the repo disagree, trust the repo. The `notebooks/*.ipynb` files are the canonical end-to-end examples that users run; `notebooks/py_scripts/*.py` is a jupytext mirror of those notebooks (kept for PR-review diffs, per `notebooks/README.md`) — cite the `.ipynb` form when pointing users at a tutorial.

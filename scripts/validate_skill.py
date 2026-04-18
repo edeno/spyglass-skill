@@ -954,31 +954,39 @@ def check_prose_paths(src_root, results: ValidationResult):
 
 
 # Notebook filename pattern: `NN_Word_Word.py`. The prefix number and
-# PascalCase-ish tail distinguish canonical-workflow notebook names from
-# arbitrary .py identifiers in prose.
-NOTEBOOK_NAME_PATTERN = re.compile(r"\b(\d{2}_[A-Za-z][A-Za-z_0-9]*\.py)\b")
+# PascalCase-ish tail distinguishes canonical-workflow notebook names from
+# arbitrary .py/.ipynb identifiers in prose. Match both suffixes because
+# .ipynb is the tutorial users run and .py is the py_scripts/ mirror.
+NOTEBOOK_NAME_PATTERN = re.compile(
+    r"\b(\d{2}_[A-Za-z][A-Za-z_0-9]*\.(?:py|ipynb))\b"
+)
 
 
 def check_notebook_names(src_root, results: ValidationResult):
     """Verify notebook filenames mentioned in prose exist in the spyglass repo.
 
     The routing table in SKILL.md references canonical workflows by bare
-    filename (e.g., `10_Spike_SortingV1.py`) without a path prefix. If a
-    notebook is renamed upstream, the skill silently ships a dead pointer.
-    We scan all skill markdown for the NN_Word.py pattern and check each
-    against `notebooks/py_scripts/` in the spyglass repo.
-
-    Pip-install users don't have the notebooks locally, but the validator
-    runs at skill-editing time against the repo — that's where we catch drift.
+    filename (e.g., `10_Spike_SortingV1.ipynb`). If a notebook is renamed
+    upstream, the skill silently ships a dead pointer. We scan all skill
+    markdown for the NN_Word.ipynb OR NN_Word.py pattern. The .ipynb
+    tutorial is canonical (notebooks/); the .py form in notebooks/py_scripts/
+    is a PR-review mirror — accept either suffix as valid.
     """
-    nb_dir = src_root.parent / "notebooks" / "py_scripts"
-    if not nb_dir.is_dir():
+    nb_dir_ipynb = src_root.parent / "notebooks"
+    nb_dir_py = src_root.parent / "notebooks" / "py_scripts"
+    if not nb_dir_ipynb.is_dir():
         results.fail(
-            f"notebooks: expected {nb_dir} to exist for notebook-name "
+            f"notebooks: expected {nb_dir_ipynb} to exist for notebook-name "
             f"validation. Pass --spyglass-src pointing at a repo checkout."
         )
         return
-    available = {p.name for p in nb_dir.glob("*.py")}
+    # Stems exist if either the .ipynb in notebooks/ OR the .py in
+    # notebooks/py_scripts/ is present.
+    stems_ipynb = {p.stem for p in nb_dir_ipynb.glob("*.ipynb")}
+    stems_py = (
+        {p.stem for p in nb_dir_py.glob("*.py")} if nb_dir_py.is_dir() else set()
+    )
+    available_stems = stems_ipynb | stems_py
     seen = set()
     for md_file in collect_md_files():
         content = md_file.read_text()
@@ -990,12 +998,13 @@ def check_notebook_names(src_root, results: ValidationResult):
             seen.add(key)
             line_num = content[: m.start()].count("\n") + 1
             location = f"{md_file.name}:{line_num}"
-            if name in available:
+            stem = name.rsplit(".", 1)[0]
+            if stem in available_stems:
                 results.ok(f"notebook: {location} -> {name} exists")
             else:
                 results.fail(
                     f"{location}: notebook '{name}' not found in "
-                    f"notebooks/py_scripts/"
+                    f"notebooks/ or notebooks/py_scripts/"
                 )
 
 

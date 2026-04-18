@@ -7,7 +7,7 @@
 - [Common Patterns](#common-patterns)
 - [Troubleshooting](#troubleshooting)
 
-For pipeline-specific workflows (position, LFP, spike sorting, decoding), see the corresponding pipeline reference files. For canonical end-to-end examples, inspect `notebooks/py_scripts/` in the repo.
+For pipeline-specific workflows (position, LFP, spike sorting, decoding), see the corresponding pipeline reference files. For canonical end-to-end examples, run the `notebooks/*.ipynb` tutorials in Jupyter (the `notebooks/py_scripts/*.py` files are a jupytext mirror of the same content, kept for PR-review diffs).
 
 ## Exploring Available Data
 

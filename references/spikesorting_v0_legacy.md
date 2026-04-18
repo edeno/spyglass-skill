@@ -63,4 +63,4 @@ for mid in merge_ids:
     spikes = SpikeSortingOutput().get_spike_times({"merge_id": mid})
 ```
 
-Pass `sources=["v0", "v1"]` (or omit `sources`) to mix both. For new sorting/curation work, use v1 — do not populate v0 tables. See `notebooks/py_scripts/10_Spike_SortingV0.py` for the historical v0 populate flow if you need to read existing v0 code.
+Pass `sources=["v0", "v1"]` (or omit `sources`) to mix both. For new sorting/curation work, use v1 — do not populate v0 tables. See `notebooks/10_Spike_SortingV0.ipynb` (or its jupytext mirror `notebooks/py_scripts/10_Spike_SortingV0.py`) for the historical v0 populate flow if you need to read existing v0 code.

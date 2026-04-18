@@ -16,7 +16,7 @@
 
 Ingestion is the first-contact flow for a new NWB file: it walks the file, populates a large set of Spyglass common tables (Session, Subject, Electrode, ElectrodeGroup, Raw, DIOEvents, RawPosition, TaskEpoch, …), and registers the file under `Nwbfile`. Most first-time Spyglass tasks start with ingestion.
 
-Entry point: `spyglass.data_import.insert_sessions`. Canonical notebook: `notebooks/py_scripts/02_Insert_Data.py`. Docs: `docs/src/Features/Ingestion.md`.
+Entry point: `spyglass.data_import.insert_sessions`. Canonical notebook: `notebooks/02_Insert_Data.ipynb` (run this one; `notebooks/py_scripts/02_Insert_Data.py` is the jupytext mirror kept for PR review). Docs: `docs/src/Features/Ingestion.md`.
 
 Some lab-specific or custom metadata (labs, probes, devices) is often populated manually before calling `insert_sessions`, since those lookup tables are shared across sessions.
 

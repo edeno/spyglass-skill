@@ -15,7 +15,7 @@ The export pipeline produces a reproducible snapshot of tables and files used in
 from spyglass.common.common_usage import ExportSelection, Export
 ```
 
-Canonical notebook: `notebooks/py_scripts/05_Export.py`. Source: `src/spyglass/common/common_usage.py`.
+Canonical notebook: `notebooks/05_Export.ipynb` (run this one; `notebooks/py_scripts/05_Export.py` is the jupytext mirror kept for PR review). Source: `src/spyglass/common/common_usage.py`.
 
 ## Workflow
 
