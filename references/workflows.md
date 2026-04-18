@@ -152,8 +152,10 @@ assert len(Session & {'nwb_file_name': nwb_file}) > 0, "Session not found"
 # Check interval exists
 assert len(IntervalList & key) > 0, "Interval not found"
 
-# Preview merge table
-PositionOutput.merge_view()
+# Preview merge table scoped to this session.
+# Don't call merge_view() without a restriction — it prints the entire
+# merge table across all sessions, which is noisy on shared databases.
+PositionOutput.merge_view({'nwb_file_name': nwb_file})
 ```
 
 ### Multiple Results from merge_get_part

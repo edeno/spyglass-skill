@@ -33,10 +33,13 @@ This installs Spyglass and its core Python dependencies but does not create a co
 
 ### conda (from environment file)
 
-Spyglass provides environment files in the `environments/` directory:
+Spyglass provides environment files in the `environments/` directory. Per the repo's `notebooks/py_scripts/00_Setup.py:229-239`, the minimal file is the recommended starting point — `environment.yml` is the full, heavier install.
 
 ```bash
-# Core environment
+# Minimal environment (recommended default — faster install)
+conda env create -f environments/environment_min.yml
+
+# Full environment (includes optional deps — larger install)
 conda env create -f environments/environment.yml
 
 # With DeepLabCut support

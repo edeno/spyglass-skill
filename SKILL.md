@@ -155,6 +155,7 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 | Behavior / MoSeq | [behavior_pipeline.md](references/behavior_pipeline.md) | `60_MoSeq.py` | `src/spyglass/behavior/` |
 | Cross-table exploration / troubleshooting | [workflows.md](references/workflows.md) | — | — |
 | Export for papers / reproducible snapshots | [export.md](references/export.md) | `05_Export.py` | `src/spyglass/common/common_usage.py` |
+| Syncing / sharing analysis files with collaborators (Kachery) | [setup_config.md](references/setup_config.md) — "Data Sharing Tables (Kachery)" section | `03_Data_Sync.py` | `src/spyglass/sharing/sharing_kachery.py` |
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) | — | `src/spyglass/spikesorting/v1/figurl_curation.py`, `src/spyglass/decoding/decoding_merge.py` |
 | External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — | — |
 | Authoring a new pipeline / extending an existing one | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) | — | `docs/src/ForDevelopers/CustomPipelines.md`, `docs/src/ForDevelopers/TableTypes.md`, `docs/src/ForDevelopers/Schema.md`, `docs/src/ForDevelopers/Classes.md`, `docs/src/ForDevelopers/Reuse.md` |
