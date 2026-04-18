@@ -3,7 +3,7 @@
 ## Contents
 
 - [_Merge Class Methods](#_merge-class-methods)
-- [SpyglassMixin Methods](#spyglasmixin-methods)
+- [SpyglassMixin Methods](#spyglassmixin-methods)
 
 ## _Merge Class Methods
 

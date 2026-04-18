@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""Regression fixtures for the Spyglass skill validator.
+
+Each fixture is a previously-fixed bug cast as a synthetic markdown input.
+The test asserts that the validator still catches it. If a future refactor
+accidentally stops detecting one of these classes of bug, the test fails.
+
+Run:  python tests/test_validator_regressions.py --spyglass-src PATH/TO/src
+
+Exit 0 if every fixture is still caught, 1 otherwise.
+"""
+
+import argparse
+import sys
+import tempfile
+import textwrap
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent.parent / "scripts"
+sys.path.insert(0, str(SCRIPT_DIR))
+
+import validate_skill as v  # noqa: E402
+
+
+def _write_md(body):
+    """Write a synthetic markdown file and return its path."""
+    tmp = Path(tempfile.mkdtemp())
+    md = tmp / "fixture.md"
+    md.write_text(textwrap.dedent(body))
+    return md
+
+
+def _run(check_fn, md_path, *args):
+    """Run a single validator check against one synthetic md file."""
+    v.collect_md_files = lambda: [md_path]
+    results = v.ValidationResult()
+    check_fn(*args, results) if args else check_fn(results)
+    return results
+
+
+def _assert_contains(results, needle, label):
+    """Fail loud if the expected substring is missing from results.failed."""
+    hits = [m for m in results.failed if needle in m]
+    if hits:
+        print(f"  [ok] {label}")
+        return True
+    print(f"  [FAIL] {label}")
+    print(f"         expected fail containing: {needle!r}")
+    print(f"         actual failures: {results.failed}")
+    return False
+
+
+def _assert_warn_contains(results, needle, label):
+    hits = [m for m in results.warnings if needle in m]
+    if hits:
+        print(f"  [ok] {label}")
+        return True
+    print(f"  [FAIL] {label}")
+    print(f"         expected warning containing: {needle!r}")
+    print(f"         actual warnings: {results.warnings}")
+    return False
+
+
+def fixture_syntax_ellipsis_after_kwargs(src_root):
+    """Real bug from figurl.md: `f(kw=1, ...)` raises SyntaxError."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        CurationV1.insert_curation(sorting_id=sid, labels={}, ...)
+        ```
+        """
+    )
+    r = _run(v.check_python_syntax, md)
+    return _assert_contains(
+        r, "SyntaxError", "syntax: ellipsis after kwargs caught"
+    )
+
+
+def fixture_trailing_underscore_nwb(src_root):
+    """insert_sessions with copy filename (ends in `_.nwb`)."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        sgi.insert_sessions("my_session_.nwb")
+        ```
+        """
+    )
+    r = _run(v.check_anti_patterns, md)
+    return _assert_contains(
+        r, "trailing-underscore-nwb",
+        "anti-pattern: trailing _.nwb copy name caught",
+    )
+
+
+def fixture_skip_duplicates_raw_ingestion(src_root):
+    """skip_duplicates=True inside insert_sessions, even with nested parens."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        sgi.insert_sessions(
+            ("a.nwb", "b.nwb"),
+            skip_duplicates=True,
+        )
+        ```
+        """
+    )
+    r = _run(v.check_anti_patterns, md)
+    return _assert_contains(
+        r, "skip-duplicates-raw-ingestion",
+        "anti-pattern: skip_duplicates + nested parens caught",
+    )
+
+
+def fixture_broken_anchor(src_root):
+    """Typo in section anchor (#spyglasmixin vs #spyglassmixin)."""
+    md = _write_md(
+        """
+        # Test
+
+        - [Section](#nonexistent-section)
+
+        ## Real Section
+        body
+        """
+    )
+    r = _run(v.check_markdown_links, md)
+    return _assert_contains(
+        r, "broken anchor", "link: broken anchor caught"
+    )
+
+
+def fixture_broken_file_link(src_root):
+    """Typo in referenced file name."""
+    md = _write_md(
+        """
+        # Test
+
+        See [guide](references/does_not_exist.md) for details.
+        """
+    )
+    r = _run(v.check_markdown_links, md)
+    return _assert_contains(
+        r, "broken link target", "link: broken file link caught"
+    )
+
+
+def fixture_stale_prose_path(src_root):
+    """Prose references a non-existent repo path."""
+    md = _write_md(
+        """
+        # Test
+
+        See `src/spyglass/totally_fake_module.py` for details.
+        """
+    )
+    r = _run(v.check_prose_paths, md, src_root)
+    return _assert_contains(
+        r, "totally_fake_module.py", "path: stale prose path caught"
+    )
+
+
+def fixture_glob_not_false_positive(src_root):
+    """Glob pattern in prose must NOT trigger a path failure."""
+    md = _write_md(
+        """
+        # Test
+
+        See `src/spyglass/**/*.py` for the layout.
+        """
+    )
+    r = _run(v.check_prose_paths, md, src_root)
+    # expect no failures related to this glob path
+    bad = [m for m in r.failed if "src/spyglass/**" in m]
+    if not bad:
+        print("  [ok] path: glob pattern not flagged as false positive")
+        return True
+    print("  [FAIL] glob triggered false positive:", bad)
+    return False
+
+
+def fixture_unresolved_uppercase_warns(src_root):
+    """Typo in class name (uppercase-first) should produce a warning."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        SpikeSortingRecordngSelection.insert_selection({"x": 1})
+        ```
+        """
+    )
+    v.collect_md_files = lambda: [md]
+    results = v.ValidationResult()
+    registry = v._ClassRegistry(src_root, results)
+    v.check_methods(src_root, results, registry=registry)
+    return _assert_warn_contains(
+        results,
+        "unresolved class 'SpikeSortingRecordngSelection'",
+        "method: unresolved uppercase class warns",
+    )
+
+
+def fixture_missing_notebook(src_root):
+    """Reference to a notebook that doesn't exist in py_scripts/."""
+    md = _write_md(
+        """
+        # Test
+
+        See `99_Nonexistent_Notebook.py` for details.
+        """
+    )
+    r = _run(v.check_notebook_names, md, src_root)
+    return _assert_contains(
+        r, "99_Nonexistent_Notebook.py",
+        "notebook: missing notebook filename caught",
+    )
+
+
+FIXTURES = [
+    fixture_syntax_ellipsis_after_kwargs,
+    fixture_trailing_underscore_nwb,
+    fixture_skip_duplicates_raw_ingestion,
+    fixture_broken_anchor,
+    fixture_broken_file_link,
+    fixture_stale_prose_path,
+    fixture_glob_not_false_positive,
+    fixture_unresolved_uppercase_warns,
+    fixture_missing_notebook,
+]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--spyglass-src", type=Path, required=True,
+        help="Path to spyglass src/ directory (same as validator)",
+    )
+    args = parser.parse_args()
+
+    if not (args.spyglass_src / "spyglass").is_dir():
+        print(f"ERROR: {args.spyglass_src} is not a spyglass src/ dir")
+        return 1
+
+    print(f"Running {len(FIXTURES)} regression fixtures...")
+    passed = 0
+    for fixture in FIXTURES:
+        print(f"\n{fixture.__name__}:")
+        if fixture(args.spyglass_src):
+            passed += 1
+
+    print(f"\n{'=' * 60}")
+    print(f"{passed}/{len(FIXTURES)} fixtures passed")
+    return 0 if passed == len(FIXTURES) else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -904,6 +904,142 @@ def check_prose_paths(src_root, results: ValidationResult):
                 )
 
 
+# Notebook filename pattern: `NN_Word_Word.py`. The prefix number and
+# PascalCase-ish tail distinguish canonical-workflow notebook names from
+# arbitrary .py identifiers in prose.
+NOTEBOOK_NAME_PATTERN = re.compile(r"\b(\d{2}_[A-Za-z][A-Za-z_0-9]*\.py)\b")
+
+
+def check_notebook_names(src_root, results: ValidationResult):
+    """Verify notebook filenames mentioned in prose exist in the spyglass repo.
+
+    The routing table in SKILL.md references canonical workflows by bare
+    filename (e.g., `10_Spike_SortingV1.py`) without a path prefix. If a
+    notebook is renamed upstream, the skill silently ships a dead pointer.
+    We scan all skill markdown for the NN_Word.py pattern and check each
+    against `notebooks/py_scripts/` in the spyglass repo.
+
+    Pip-install users don't have the notebooks locally, but the validator
+    runs at skill-editing time against the repo — that's where we catch drift.
+    """
+    nb_dir = src_root.parent / "notebooks" / "py_scripts"
+    if not nb_dir.is_dir():
+        results.fail(
+            f"notebooks: expected {nb_dir} to exist for notebook-name "
+            f"validation. Pass --spyglass-src pointing at a repo checkout."
+        )
+        return
+    available = {p.name for p in nb_dir.glob("*.py")}
+    seen = set()
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        for m in NOTEBOOK_NAME_PATTERN.finditer(content):
+            name = m.group(1)
+            key = (md_file.name, name)
+            if key in seen:
+                continue
+            seen.add(key)
+            line_num = content[: m.start()].count("\n") + 1
+            location = f"{md_file.name}:{line_num}"
+            if name in available:
+                results.ok(f"notebook: {location} -> {name} exists")
+            else:
+                results.fail(
+                    f"{location}: notebook '{name}' not found in "
+                    f"notebooks/py_scripts/"
+                )
+
+
+# Markdown link pattern: [text](target). Skips http(s) — those are external
+# and should be caught by a separate link-checker if needed, not by the
+# offline AST validator.
+MD_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+
+
+def _slugify_heading(heading):
+    """Approximate GitHub's anchor-slug algorithm.
+
+    Rules we cover: lowercase, strip markdown symbols, replace spaces with
+    hyphens, drop characters that aren't [a-z0-9_-]. Backticks and periods
+    are dropped too. Good enough for the skill's actual headings — we
+    don't try to handle every edge case GitHub handles.
+    """
+    s = heading.strip().lower()
+    s = re.sub(r"[`*_]", "", s)
+    s = re.sub(r"[^\w\s-]", "", s)
+    s = re.sub(r"\s+", "-", s)
+    return s.strip("-")
+
+
+def check_markdown_links(results: ValidationResult):
+    """Verify internal markdown links resolve.
+
+    Checks two kinds of links that rot silently:
+    1. File links like `[x](references/y.md)` — target file must exist
+    2. Anchor links like `[x](#section)` or `[x](y.md#section)` — anchor
+       must correspond to a heading in the target file (after slugifying)
+
+    External http(s) links are not checked (requires network, out of scope).
+    """
+    # Precompute anchors for each skill md file
+    all_anchors = {}
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        anchors = set()
+        for line in content.split("\n"):
+            stripped = line.lstrip("#").strip() if line.startswith("#") else ""
+            if stripped and line.startswith("#"):
+                anchors.add(_slugify_heading(stripped))
+        all_anchors[md_file.name] = anchors
+
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        for m in MD_LINK_PATTERN.finditer(content):
+            target = m.group(2).strip()
+            if target.startswith(("http://", "https://", "mailto:")):
+                continue
+            line_num = content[: m.start()].count("\n") + 1
+            location = f"{md_file.name}:{line_num}"
+
+            # Split `path#anchor` / `#anchor` / `path`
+            if "#" in target:
+                path_part, anchor = target.split("#", 1)
+            else:
+                path_part, anchor = target, None
+
+            # Resolve the target file (relative to the containing md)
+            if path_part:
+                if path_part.startswith("references/"):
+                    target_file = SKILL_DIR / path_part
+                elif md_file.parent.name == "references":
+                    # Sibling file within references/
+                    target_file = REFERENCES_DIR / path_part
+                else:
+                    target_file = md_file.parent / path_part
+                if not target_file.exists():
+                    results.fail(
+                        f"{location}: broken link target '{target}' "
+                        f"(resolved to {target_file})"
+                    )
+                    continue
+                target_name = target_file.name
+            else:
+                # Same-file anchor
+                target_name = md_file.name
+
+            if anchor is not None:
+                anchors = all_anchors.get(target_name, set())
+                if _slugify_heading(anchor) not in anchors:
+                    results.fail(
+                        f"{location}: broken anchor '#{anchor}' in "
+                        f"'{target}' (target file has no matching heading)"
+                    )
+                else:
+                    results.ok(f"link: {location} -> {target} resolves")
+            else:
+                results.ok(f"link: {location} -> {target} resolves")
+
+
 def _iter_insert_sessions_calls(body):
     """Yield (start_offset, args_str) for each insert_sessions(...) call.
 
@@ -1095,34 +1231,40 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/9] Checking source files and class registry...")
+    print("\n[1/11] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/9] Checking import statements in skill files...")
+    print("[2/11] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/9] Checking method references...")
+    print("[3/11] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/9] Checking keyword arguments...")
+    print("[4/11] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/9] Checking skill structure...")
+    print("[5/11] Checking skill structure...")
     check_structure(results)
 
-    print("[6/9] Checking prose assertions...")
+    print("[6/11] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/9] Parsing Python code blocks (ast.parse)...")
+    print("[7/11] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/9] Verifying prose path references exist in repo...")
+    print("[8/11] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/9] Scanning for documented anti-patterns...")
+    print("[9/11] Verifying notebook names exist in repo...")
+    check_notebook_names(src_root, results)
+
+    print("[10/11] Verifying internal markdown links and anchors...")
+    check_markdown_links(results)
+
+    print("[11/11] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
