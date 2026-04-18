@@ -239,6 +239,37 @@ def extract_code_blocks(content):
     return blocks
 
 
+def extract_fenced_blocks(content):
+    """Like extract_code_blocks, but also yields the fence language tag.
+
+    Returns (start_line, lang, body_source_str) triples. `lang` is the string
+    after the opening ``` (empty string if the block has no language tag).
+    Use this when a check needs to know whether a block is marked as python.
+    """
+    blocks = []
+    in_code = False
+    body = []
+    block_start = 0
+    lang = ""
+
+    for line_num, line in enumerate(content.split("\n"), 1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if in_code:
+                blocks.append((block_start, lang, "\n".join(body)))
+                body = []
+                lang = ""
+            else:
+                lang = stripped[3:].strip()
+                block_start = line_num + 1
+            in_code = not in_code
+            continue
+        if in_code:
+            body.append(line)
+
+    return blocks
+
+
 def join_logical_lines(block_lines):
     """Fuse physical lines into logical lines across open brackets/parens.
 
@@ -795,6 +826,145 @@ def check_prose_assertions(results: ValidationResult):
             )
 
 
+def check_python_syntax(results: ValidationResult):
+    """Parse every ```python fenced block with ast.parse().
+
+    Catches syntax drift (unclosed brackets, broken f-strings, bad indentation)
+    before the model can learn from the mistake. Unlabeled fences are skipped
+    because they may be shell, JSON, or output — only ```python means "this
+    is runnable example code."
+    """
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        for block_start, lang, body in extract_fenced_blocks(content):
+            if lang != "python":
+                continue
+            location = f"{md_file.name}:{block_start}"
+            try:
+                ast.parse(body)
+                results.ok(f"syntax: {location} parses as Python")
+            except SyntaxError as e:
+                # e.lineno is within the block — offset to the file line
+                file_line = block_start + (e.lineno - 1 if e.lineno else 0)
+                results.fail(
+                    f"{md_file.name}:{file_line}: python block has "
+                    f"SyntaxError: {e.msg}"
+                )
+
+
+# Paths matching these prefixes in prose are expected to exist under the
+# spyglass repo root. Ordering matters only for display.
+PROSE_PATH_PREFIXES = (
+    "src/spyglass/",
+    "docs/src/",
+    "notebooks/py_scripts/",
+    "scripts/",
+)
+PROSE_PATH_PATTERN = re.compile(
+    r"(?:`|\(|\s|^)(?P<p>(?:"
+    + "|".join(re.escape(p) for p in PROSE_PATH_PREFIXES)
+    + r")[A-Za-z0-9_./*-]+)"
+)
+
+
+def check_prose_paths(src_root, results: ValidationResult):
+    """Verify that repo paths mentioned in prose actually exist.
+
+    LLMs treat prose paths as authoritative. A stale `src/spyglass/foo/` from
+    an old refactor is more dangerous than a stale code snippet because it
+    looks like a pointer to truth. We check paths under the spyglass repo
+    root (one level above --spyglass-src).
+    """
+    repo_root = src_root.parent
+    seen = set()  # (file, path) to avoid double-reporting
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        for m in PROSE_PATH_PATTERN.finditer(content):
+            raw = m.group("p")
+            # Strip trailing punctuation that often follows inline paths
+            path = raw.rstrip(".,:;)")
+            key = (md_file.name, path)
+            if key in seen:
+                continue
+            seen.add(key)
+            # Find line number for reporting
+            line_num = content[: m.start()].count("\n") + 1
+            location = f"{md_file.name}:{line_num}"
+            target = repo_root / path
+            if target.exists():
+                results.ok(f"path: {location} -> {path} exists")
+            else:
+                results.fail(
+                    f"{location}: referenced path '{path}' does not "
+                    f"exist under {repo_root}"
+                )
+
+
+# Each anti-pattern: (rule_id, description, regex, scope).
+# scope="code": match only inside ```python fenced blocks.
+# scope="any": match anywhere in the markdown (prose + code).
+# Code-scoped rules are the default — prose often quotes bad patterns when
+# warning about them, so matching prose would create false positives.
+ANTI_PATTERNS = [
+    (
+        "trailing-underscore-nwb",
+        "insert_sessions() called with a '_.nwb' copy filename instead of "
+        "the raw filename",
+        re.compile(r'insert_sessions\s*\(\s*\[?\s*["\'][^"\']*_\.nwb["\']'),
+        "code",
+    ),
+    (
+        "skip-duplicates-raw-ingestion",
+        "skip_duplicates=True used inside an insert_sessions() call "
+        "(use reinsert=True for raw re-ingestion)",
+        re.compile(
+            r"insert_sessions\s*\([^)]*skip_duplicates\s*=\s*True",
+            re.DOTALL,
+        ),
+        "code",
+    ),
+]
+
+
+def check_anti_patterns(results: ValidationResult):
+    """Fail on patterns that look correct but teach the wrong thing.
+
+    These are things the skill already warns against in prose — the validator
+    makes sure no code example slips past and contradicts the guidance.
+    """
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        # Precompute code-block spans so we can scope checks to code only
+        code_bodies = [
+            (start, body)
+            for start, lang, body in extract_fenced_blocks(content)
+            if lang == "python"
+        ]
+        for rule_id, description, pattern, scope in ANTI_PATTERNS:
+            if scope == "code":
+                for start_line, body in code_bodies:
+                    m = pattern.search(body)
+                    if m:
+                        offset = body[: m.start()].count("\n")
+                        results.fail(
+                            f"{md_file.name}:{start_line + offset}: "
+                            f"anti-pattern[{rule_id}]: {description}"
+                        )
+                results.ok(f"anti-pattern[{rule_id}]: {md_file.name} clean")
+            elif scope == "any":
+                m = pattern.search(content)
+                if m:
+                    line_num = content[: m.start()].count("\n") + 1
+                    results.fail(
+                        f"{md_file.name}:{line_num}: "
+                        f"anti-pattern[{rule_id}]: {description}"
+                    )
+                else:
+                    results.ok(
+                        f"anti-pattern[{rule_id}]: {md_file.name} clean"
+                    )
+
+
 def check_structure(results: ValidationResult):
     """Check structural conventions: TOCs, ref links, trigger precision."""
     # Check that long reference files have a Contents section
@@ -896,26 +1066,35 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/6] Checking source files and class registry...")
+    print("\n[1/9] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/6] Checking import statements in skill files...")
+    print("[2/9] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/6] Checking method references...")
+    print("[3/9] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/6] Checking keyword arguments...")
+    print("[4/9] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/6] Checking skill structure...")
+    print("[5/9] Checking skill structure...")
     check_structure(results)
 
-    print("[6/6] Checking prose assertions...")
+    print("[6/9] Checking prose assertions...")
     check_prose_assertions(results)
+
+    print("[7/9] Parsing Python code blocks (ast.parse)...")
+    check_python_syntax(results)
+
+    print("[8/9] Verifying prose path references exist in repo...")
+    check_prose_paths(src_root, results)
+
+    print("[9/9] Scanning for documented anti-patterns...")
+    check_anti_patterns(results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.

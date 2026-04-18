@@ -70,7 +70,7 @@ CurationV1.insert_curation(
 `generate_curation_uri()` requires the upstream `CurationV1` NWB to have a `curation_label` column. Add labels when inserting the parent curation — even empty ones are fine:
 
 ```python
-CurationV1.insert_curation(sorting_id=sorting_id, labels={}, ...)
+CurationV1.insert_curation(sorting_id=sorting_id, labels={})  # other args omitted
 ```
 
 ### Key Methods
