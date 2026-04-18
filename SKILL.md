@@ -1,6 +1,6 @@
 ---
 name: spyglass
-description: Use when working with the Spyglass framework, spyglass.* imports, Spyglass merge tables (PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput), Spyglass pipelines or config (SPYGLASS_BASE_DIR, dj_local_conf, insert_sessions), or Spyglass common tables (Session, IntervalList, ElectrodeGroup).
+description: Guides the user through Spyglass — a DataJoint+NWB neurophysiology analysis framework — covering NWB ingestion, running pipelines (position, LFP, spike sorting, decoding, linearization, ripple, MUA, behavior), querying merge tables, exporting for papers, and authoring custom pipelines. Use when the user is writing or debugging Spyglass code, running its pipelines, querying its tables, or building a new analysis on top of it. Signals include: `spyglass.*` imports; Spyglass merge tables (PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput); pipeline config (SPYGLASS_BASE_DIR, dj_local_conf, insert_sessions); common tables (Session, IntervalList, ElectrodeGroup).
 ---
 
 # Spyglass Data Analysis Skill
@@ -14,7 +14,7 @@ description: Use when working with the Spyglass framework, spyglass.* imports, S
 - **Safe-before-destructive idiom**: always show the inspect step before the destroy step. See the paired shapes below — never present the destroy step without the matching inspect step above it.
 - **Writes are normal workflow**: Spyglass pipelines require inserting selection rows and populating tables. When the user asks how to run a pipeline, show the full workflow including inserts and populates. Explain what each write does, but don't refuse to show it
 - **Environment**: Do not assume Jupyter or remote NWB files — detect the user's setup from context. Spyglass supports local Docker, local data, and remote-lab workflows
-- **Verify schema before querying**: Run `Table.describe()` or `Table.heading` to confirm column names before using them in restrictions or fetch calls
+- **Verify schema when unsure**: For tables you haven't worked with or when an example's field names look uncertain, inspect with `Table.describe()` or `Table.heading` before writing the query. For well-known tables already shown in the skill examples (`Session`, `IntervalList`, `PositionOutput`, etc.), don't add an inspection step to routine queries — it's friction
 - **Source of truth**: When skill references conflict with the repo, trust the repo. Key locations:
   - `src/spyglass/common/` — shared tables; `src/spyglass/<pipeline>/` — pipeline code
   - `src/spyglass/utils/` — SpyglassMixin, _Merge; `notebooks/py_scripts/` — canonical workflows
@@ -61,7 +61,7 @@ Before answering, decide which stage the user is in:
 4. **Pipeline usage** (running or querying existing analyses) → merge table workflow below + pipeline reference files
 5. **Pipeline authoring** (extending a pipeline, building a new analysis off ingested/common tables, writing schema modules) → [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md). Very different surface from usage — different imports, different class conventions, different non-negotiables.
 
-Users may span stages — when in doubt, ask.
+Users may span stages. Prefer to infer the stage from the question and any imports/table names visible in context — don't halt the flow to ask. Ask only when (a) the answer would materially change depending on stage (e.g., pipeline usage vs. authoring), or (b) the next step is destructive and the user's intent is ambiguous.
 
 ## Merge Tables — The Key Concept
 
@@ -145,7 +145,9 @@ for mid in merge_ids:
 
 ## Reference Routing
 
-For simple data queries, the examples above are usually sufficient. For deeper questions, load the right reference:
+For simple data queries, the examples above are usually sufficient. For deeper questions, load the right reference.
+
+**Progressive disclosure — load one reference at a time.** Pick the single most relevant row from the table below and read that file first. Only open additional reference files if the first one doesn't cover the user's question, or if you actually need content from a second topic (e.g., a position question that also touches spike sorting). Don't pre-load several references "to be safe" — it wastes context.
 
 | User question is about... | Load this reference | Canonical notebook | Repo path |
 |--------------------------|--------------------|-----|-----------|
