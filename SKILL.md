@@ -1,6 +1,6 @@
 ---
 name: spyglass
-description: Use when working with the Spyglass framework, Spyglass merge tables (PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput), Spyglass pipelines (spike sorting, position tracking, LFP, decoding, linearization, ripple detection), Spyglass setup/config (SPYGLASS_BASE_DIR, dj_local_conf), querying Spyglass common tables (Session, IntervalList, ElectrodeGroup), or Spyglass NWB ingestion (insert_sessions).
+description: Use when working with the Spyglass framework, spyglass.* imports, Spyglass merge tables (PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput), Spyglass pipelines or config (SPYGLASS_BASE_DIR, dj_local_conf, insert_sessions), or Spyglass common tables (Session, IntervalList, ElectrodeGroup).
 ---
 
 # Spyglass Data Analysis Skill
@@ -99,7 +99,7 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 | Spike sorting pipeline | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `src/spyglass/spikesorting/` |
 | Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) | `src/spyglass/decoding/` |
 | Linearization, ripple, MUA, behavior | [other_pipelines.md](references/other_pipelines.md) | `src/spyglass/{linearization,ripple,mua,behavior}/` |
-| NWB ingestion / insert_sessions | [other_pipelines.md](references/other_pipelines.md) | `src/spyglass/data_import/`, `docs/src/Features/Ingestion.md` |
+| NWB ingestion / insert_sessions | — | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |
 | Installation / DB config / directories | [setup_and_config.md](references/setup_and_config.md) | `scripts/install.py`, `src/spyglass/settings.py` |
 | External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — |
 | End-to-end analysis workflows | [workflows.md](references/workflows.md) | `notebooks/py_scripts/` |
