@@ -31,7 +31,7 @@ These two rules are the most common source of ingestion errors. Both are covered
 
 Before calling `insert_sessions`:
 
-1. **Spyglass is installed and `SPYGLASS_BASE_DIR` is set** — see [setup_and_config.md](setup_and_config.md)
+1. **Spyglass is installed and `SPYGLASS_BASE_DIR` is set** — see [setup_install.md](setup_install.md) and [setup_config.md](setup_config.md)
 2. **The NWB file is in the raw directory** — `$SPYGLASS_RAW_DIR`, usually `$SPYGLASS_BASE_DIR/raw/`
 3. **Optional pre-inserts**: `Lab`, `LabMember`, `Institution`, `ProbeType`, `Probe` rows for any custom hardware. The notebook shows this pattern for a custom probe:
 

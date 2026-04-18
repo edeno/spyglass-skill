@@ -1,6 +1,6 @@
 ---
 name: spyglass
-description: Guides the user through Spyglass — a DataJoint+NWB neurophysiology analysis framework — covering NWB ingestion, running pipelines (position, LFP, spike sorting, decoding, linearization, ripple, MUA, behavior), querying merge tables, exporting for papers, and authoring custom pipelines. Use when the user is writing or debugging Spyglass code, running its pipelines, querying its tables, or building a new analysis on top of it. Signals include: `spyglass.*` imports; Spyglass merge tables (PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput); pipeline config (SPYGLASS_BASE_DIR, dj_local_conf, insert_sessions); common tables (Session, IntervalList, ElectrodeGroup).
+description: Use when writing, debugging, or running Spyglass code — the LorenFrankLab neurophysiology analysis framework built on DataJoint + NWB. Strong signals: `import spyglass` / `from spyglass.*`; Spyglass merge tables (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, `LinearizedPositionOutput`); `insert_sessions` or `SPYGLASS_BASE_DIR`; calls to `merge_get_part` / `merge_restrict`. Do NOT activate for: plain DataJoint code without Spyglass imports; unrelated NWB tooling (pynwb, ndx-*) where Spyglass is not in the call chain; generic electrophysiology analysis unrelated to the Spyglass framework.
 ---
 
 # Spyglass Data Analysis Skill
@@ -62,7 +62,7 @@ DecodingOutput().cleanup(dry_run=True)   # LOGS what would be removed
 
 Before answering, decide which stage the user is in:
 
-1. **Setup/install** → `scripts/install.py` (interactive installer) is the canonical fast path per the repo's `QUICKSTART.md`. Route to [setup_and_config.md](references/setup_and_config.md) for details, config files, and troubleshooting; `00_Setup.py` notebook is a fallback for walking through the configuration steps manually
+1. **Setup/install** → `scripts/install.py` (interactive installer) is the canonical fast path per the repo's `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md) for install methods and installer/validator scripts, [setup_config.md](references/setup_config.md) for database + directory + env-var configuration, or [setup_troubleshooting.md](references/setup_troubleshooting.md) for setup errors. `00_Setup.py` notebook is a fallback for walking through configuration manually
 2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.py` notebook. Warn that `skip_duplicates=True` is for lookup tables / pipeline reruns only, not raw data — use `reinsert=True` for raw re-ingestion
 3. **Concepts/merge tables** (first time using the framework) → this SKILL.md + `04_Merge_Tables.py` notebook
 4. **Pipeline usage** (running or querying existing analyses) → merge table workflow below + pipeline reference files
@@ -141,7 +141,9 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 
 | User question is about... | Load this reference | Canonical notebook | Repo path |
 | ------------------------- | ------------------- | ------------------ | --------- |
-| Installation / DB config | [setup_and_config.md](references/setup_and_config.md) | `QUICKSTART.md` + `scripts/install.py` (canonical fast path); `00_Setup.py` as notebook fallback | `scripts/install.py`, `src/spyglass/settings.py`, `QUICKSTART.md` |
+| Installing Spyglass | [setup_install.md](references/setup_install.md) | `QUICKSTART.md` + `scripts/install.py`; `00_Setup.py` as notebook fallback | `scripts/install.py`, `QUICKSTART.md` |
+| Configuring the database / directories / env vars | [setup_config.md](references/setup_config.md) | `00_Setup.py` | `src/spyglass/settings.py`, `dj_local_conf_example.json` |
+| Setup errors and troubleshooting | [setup_troubleshooting.md](references/setup_troubleshooting.md) | — | `scripts/validate.py` |
 | Framework concepts / merge tables | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `01_Concepts.py`, `04_Merge_Tables.py` | `src/spyglass/utils/` |
 | NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.py` | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — | — |

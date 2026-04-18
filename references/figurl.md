@@ -100,7 +100,7 @@ Under the hood, this routes to `non_local_detector.visualization.figurl_1D.creat
 ## Prerequisites
 
 - `sortingview` and `kachery-cloud` installed (core Spyglass dependencies)
-- A valid kachery zone configured — see [setup_and_config.md](setup_and_config.md) for the env vars and the `KacheryZone` / `AnalysisNwbfileKachery` tables
+- A valid kachery zone configured — see [setup_config.md](setup_config.md) for the env vars and the `KacheryZone` / `AnalysisNwbfileKachery` tables
 - Internet access — FigURL uploads to kachery-cloud and returns a hosted URL
 - For curation workflows: the `curation_label` column must exist on the parent `CurationV1` NWB
 
