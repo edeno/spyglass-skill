@@ -33,6 +33,10 @@ DEFAULT_SPYGLASS_SRC = None
 IMPORT_PATTERN = re.compile(
     r"from\s+(spyglass[\w.]+)\s+import\s+([^#\n]+)"
 )
+# Plain module imports: `import spyglass.x.y` or `import spyglass.x.y as alias`
+PLAIN_IMPORT_PATTERN = re.compile(
+    r"import\s+(spyglass[\w.]*)(?:\s+as\s+\w+)?"
+)
 # Match method calls: capture whether `()` was used before the method
 # Group 1: class name; Group 2: "()" if instance-call, "" if bare class access; Group 3: method name
 METHOD_CALL_PATTERN = re.compile(
@@ -120,10 +124,13 @@ KNOWN_CLASSES = {
 
 # Methods to skip — DataJoint builtins, mixin methods, etc.
 SKIP_METHODS = {
+    # DataJoint builtins — always valid on any table, no point checking
     "fetch", "fetch1", "fetch_nwb", "fetch_pynapple",
     "proj", "aggr", "describe", "heading",
     "parents", "children", "insert", "insert1",
     "populate", "delete", "drop",
+    # Note: insert_selection is a Spyglass convention (not DataJoint) and IS
+    # validated when called on known classes — it's deliberately absent here.
     "restrict", "restrict_by",
     "merge_view", "merge_restrict", "merge_fetch",
     "merge_get_part", "merge_get_parent",
@@ -402,12 +409,25 @@ def check_module_exports(src_root, module_path, names, results, location):
             results.fail(f"{location}: '{name}' NOT FOUND in {module_path}")
 
 
+def _resolve_module_file(src_root, module_path):
+    """Return the .py file or __init__.py that a dotted spyglass module resolves to."""
+    parts = module_path.split(".")
+    candidates = [
+        src_root / "/".join(parts[:-1]) / f"{parts[-1]}.py",
+        src_root / "/".join(parts) / "__init__.py",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
 def check_imports(src_root, results):
     """Check that all import statements in code blocks are valid.
 
-    Uses join_logical_lines so that multiline imports
-    (`from x import (a, b, c)` across several lines) are matched as a single
-    logical line.
+    Handles both `from spyglass.x import a, b, c` and
+    plain `import spyglass.x[.y] [as alias]` forms, using join_logical_lines
+    so multiline imports are matched as a single logical line.
     """
     for md_file in collect_md_files():
         content = md_file.read_text()
@@ -415,10 +435,10 @@ def check_imports(src_root, results):
 
         for block_start, block_lines in blocks:
             for line_num, line in join_logical_lines(block_lines):
+                # from spyglass.x import a, b, c
                 for match in IMPORT_PATTERN.finditer(line):
                     module_path = match.group(1)
                     raw_names = match.group(2)
-                    # Handle multi-line imports and trailing comments/parens
                     names = [
                         n.strip().rstrip(",").rstrip(")").lstrip("(")
                         for n in raw_names.split(",")
@@ -428,20 +448,62 @@ def check_imports(src_root, results):
                     check_module_exports(
                         src_root, module_path, names, results, location
                     )
+                # import spyglass.x[.y] [as alias]
+                for match in PLAIN_IMPORT_PATTERN.finditer(line):
+                    module_path = match.group(1)
+                    location = f"{md_file.name}:{line_num}"
+                    mod_file = _resolve_module_file(src_root, module_path)
+                    if mod_file is not None:
+                        results.ok(
+                            f"{location}: import {module_path} resolves"
+                        )
+                    else:
+                        results.fail(
+                            f"{location}: import {module_path} — "
+                            f"module not found"
+                        )
+
+
+def discover_classes(src_root):
+    """Walk the spyglass source tree and index every top-level class definition.
+
+    Returns a dict mapping class_name → repo-relative path. Hand-maintained
+    KNOWN_CLASSES entries take precedence (useful for disambiguating duplicates).
+    """
+    discovered = {}
+    pkg_root = src_root / "spyglass"
+    if not pkg_root.is_dir():
+        return discovered
+    class_pattern = re.compile(r"^class\s+(\w+)\s*[\(:]", re.MULTILINE)
+    for py_file in pkg_root.rglob("*.py"):
+        try:
+            source = py_file.read_text()
+        except Exception:
+            continue
+        for match in class_pattern.finditer(source):
+            name = match.group(1)
+            # Don't overwrite hand-curated entries or earlier discoveries
+            # (first hit wins — ambiguous names should be added to KNOWN_CLASSES)
+            if name not in discovered:
+                discovered[name] = str(py_file.relative_to(src_root))
+    return discovered
 
 
 def check_methods(src_root, results):
     """Check that documented method calls reference real methods."""
     # Cache parsed classes
     class_cache = {}
+    auto_registry = discover_classes(src_root)
 
     def get_class_methods(class_name):
         if class_name in class_cache:
             return class_cache[class_name]
-        if class_name not in KNOWN_CLASSES:
+        # Hand-curated registry takes precedence over auto-discovery
+        rel_path = KNOWN_CLASSES.get(class_name) or auto_registry.get(class_name)
+        if rel_path is None:
             class_cache[class_name] = None
             return None
-        filepath = src_root / KNOWN_CLASSES[class_name]
+        filepath = src_root / rel_path
         methods = parse_class_from_file(filepath, class_name)
         class_cache[class_name] = methods
         return methods
@@ -496,14 +558,16 @@ def check_methods(src_root, results):
 def check_kwargs(src_root, results):
     """Check that documented keyword arguments exist in method signatures."""
     class_cache = {}
+    auto_registry = discover_classes(src_root)
 
     def get_class_methods(class_name):
         if class_name in class_cache:
             return class_cache[class_name]
-        if class_name not in KNOWN_CLASSES:
+        rel_path = KNOWN_CLASSES.get(class_name) or auto_registry.get(class_name)
+        if rel_path is None:
             class_cache[class_name] = None
             return None
-        filepath = src_root / KNOWN_CLASSES[class_name]
+        filepath = src_root / rel_path
         methods = parse_class_from_file(filepath, class_name)
         class_cache[class_name] = methods
         return methods
@@ -582,6 +646,62 @@ def check_class_files_exist(src_root, results):
                 )
         except Exception as e:
             results.fail(f"registry: cannot read {rel_path}: {e}")
+
+
+def check_prose_assertions(results: ValidationResult):
+    """Check a small set of high-risk prose claims for drift.
+
+    These are assertions whose wording matters for LLM correctness but lives
+    outside code blocks. Each rule pairs a required statement with an ID so
+    reviewers can add/remove rules without hunting for magic strings.
+    """
+    # (file, rule_id, description, required_substring (case-insensitive))
+    required_claims = [
+        (
+            "SKILL.md", "destructive-list",
+            "SKILL.md fences merge-table delete helpers",
+            "merge_delete",
+        ),
+        (
+            "SKILL.md", "destructive-confirmation",
+            "SKILL.md requires explicit confirmation for destructive ops",
+            "explicit confirmation",
+        ),
+        (
+            "SKILL.md", "schema-verify",
+            "SKILL.md tells LLM to verify schema before querying",
+            "table.describe()",
+        ),
+        (
+            "SKILL.md", "pip-install-path",
+            "SKILL.md tells pip users how to locate installed source",
+            "os.path.dirname(spyglass.__file__)",
+        ),
+        (
+            "references/ingestion.md", "filename-convention",
+            "ingestion.md distinguishes raw filename vs copy with trailing _",
+            "get_nwb_copy_filename",
+        ),
+        (
+            "references/ingestion.md", "skip-duplicates-warning",
+            "ingestion.md warns skip_duplicates=True is not for raw data",
+            "appropriate for raw data",
+        ),
+    ]
+
+    for rel_path, rule_id, description, needle in required_claims:
+        md_file = SKILL_DIR / rel_path
+        if not md_file.exists():
+            results.fail(f"prose[{rule_id}]: file {rel_path} not found")
+            continue
+        content = md_file.read_text().lower()
+        if needle.lower() in content:
+            results.ok(f"prose[{rule_id}]: {description}")
+        else:
+            results.fail(
+                f"prose[{rule_id}]: {rel_path} missing required claim "
+                f"'{needle}' ({description})"
+            )
 
 
 def check_structure(results: ValidationResult):
@@ -681,20 +801,23 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/5] Checking source files and class registry...")
+    print("\n[1/6] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/5] Checking import statements in skill files...")
+    print("[2/6] Checking import statements in skill files...")
     check_imports(src_root, results)
 
-    print("[3/5] Checking method references...")
+    print("[3/6] Checking method references...")
     check_methods(src_root, results)
 
-    print("[4/5] Checking keyword arguments...")
+    print("[4/6] Checking keyword arguments...")
     check_kwargs(src_root, results)
 
-    print("[5/5] Checking skill structure...")
+    print("[5/6] Checking skill structure...")
     check_structure(results)
+
+    print("[6/6] Checking prose assertions...")
+    check_prose_assertions(results)
 
     # Report
     print("\n" + "=" * 60)
