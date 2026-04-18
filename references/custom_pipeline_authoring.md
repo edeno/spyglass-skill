@@ -44,6 +44,7 @@ These are the rules most likely to cause mysterious failures if ignored:
 3. **Keep Parameters, Selection, and Computed tables separate.** Combining them (e.g., putting a `params` blob directly on a Computed table) breaks reproducibility and makes re-runs with different params impossible without deleting rows.
 4. **Write analysis outputs to `AnalysisNwbfile`** when the result is sizeable (arrays, waveforms, posteriors). Keep only small metadata in DataJoint columns. Tables should reference exactly one AnalysisNwbfile table — Spyglass validates this on declaration.
 5. **Only introduce a merge table for genuinely multi-source outputs.** If you only have one implementation, skip the merge table and let downstream tables FK-ref your Computed table directly.
+6. **Never use `skip_duplicates=True` when your `make()` inserts into `IntervalList`.** Spyglass's built-in pipelines protect against orphaned-interval drift by nuking orphans on every delete — but custom `make()`s that call `IntervalList.insert1(..., skip_duplicates=True)` bypass that protection. Scenario: you delete the downstream entry, leave the interval row in place, re-run `make()` — the new computation silently attaches to the OLD interval row. Silent wrong data. If your pipeline needs a new `IntervalList` row, either insert without `skip_duplicates` (let it raise) or delete the old interval first. See `docs/src/ForDevelopers/Management.md`.
 
 ## Canonical Schema Skeleton
 

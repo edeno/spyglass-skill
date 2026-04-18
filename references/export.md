@@ -61,6 +61,13 @@ Materializes the export from `ExportSelection`.
 ### `ExportErrorLog` (Manual)
 Logs errors encountered during export.
 
+## Pitfalls (read before running an export)
+
+1. **Only one export can be active per Python instance.** Calling `start_export` while another is running silently stops the first. If multiple people share a Python process (e.g., shared notebook kernel), coordinate export sessions or use separate processes.
+2. **Every logged table must inherit `SpyglassMixin`.** Custom tables that inherit plain `dj.Manual`/`dj.Computed` are silently excluded from the export — no error, just missing data. This is one of the reasons the authoring reference puts SpyglassMixin first in the non-negotiables list.
+3. **Compound `&` restrictions inside an export are logged as OR, not AND.** A query built like `(Table & a) & b` during an active export produces an export bundle that includes every row matching `a` OR `b`, not just the intersection. For AND semantics, use `Table & dj.AndList([a, b])` or a single SQL string `Table & "a AND b"`. Verify with `preview_tables(paper_id=...)` after stopping the export.
+4. **`Export().populate_paper(paper_id="foo")` overwrites any previous export for the same `paper_id`.** No prompt, no confirmation — the prior bash script and `Export` rows are replaced. Use a new `paper_id` (or a new `analysis_id` within the same paper) for iterative exports.
+
 ## Common Patterns
 
 ### Logging a paper's queries

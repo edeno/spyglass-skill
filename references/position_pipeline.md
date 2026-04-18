@@ -159,6 +159,8 @@ from spyglass.position.v1 import (
 )
 ```
 
+**Gotcha — pose estimation hangs silently if the target video file already exists.** `DLCPoseEstimationSelection.insert_estimation_task(...)` never completes (no error, no progress) when an `.mp4` with the same name already sits in the DLC target dir (typically `/nimbus/deeplabcut/video/` on Frank Lab hosts). Manually delete the stale `.mp4` before re-running. If the call appears to hang, this is the first thing to check.
+
 ### DLC Parameter Tables
 
 | Table | Key |

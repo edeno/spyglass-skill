@@ -124,6 +124,13 @@ sgi.insert_sessions("my_session.nwb", reinsert=True)
 
 **Before reinserting**, delete existing downstream entries — otherwise foreign keys will block the replacement. Review the delete implications carefully (see the destructive ops warning in SKILL.md).
 
+### Delete Quirks (read before deleting a Session)
+
+Two non-obvious behaviors:
+
+1. **Delete requires LabTeam membership.** Deleting a `Session` raises a cryptic permissions error unless (a) the session has an `Experimenter` row and (b) the user doing the delete shares a `LabTeam` with that experimenter. If you get a permissions error on delete, check `LabMember & {"lab_member_name": "..."}` and `LabTeam.LabTeamMember` before touching anything else.
+2. **Session delete does NOT delete the `Nwbfile` row or the file on disk.** After `(Session & key).delete()`, the corresponding `Nwbfile` entry still blocks re-ingestion (with "already exists") and the file stays on disk until you explicitly run `Nwbfile().cleanup(delete_files=True)` — itself destructive. Full re-ingest therefore needs: delete downstream → delete `Session` → delete `Nwbfile` row → (optional) cleanup files.
+
 ## Common Errors
 
 - **File not found**: `insert_sessions` looks in `$SPYGLASS_RAW_DIR`. Confirm the file is there and `SPYGLASS_BASE_DIR` is set correctly.
