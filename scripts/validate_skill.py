@@ -887,6 +887,10 @@ def check_prose_paths(src_root, results: ValidationResult):
             if key in seen:
                 continue
             seen.add(key)
+            # Skip glob patterns — `src/spyglass/**/*.py` is valid prose but
+            # won't resolve via Path.exists()
+            if "*" in path:
+                continue
             # Find line number for reporting
             line_num = content[: m.start()].count("\n") + 1
             location = f"{md_file.name}:{line_num}"
@@ -900,27 +904,52 @@ def check_prose_paths(src_root, results: ValidationResult):
                 )
 
 
-# Each anti-pattern: (rule_id, description, regex, scope).
-# scope="code": match only inside ```python fenced blocks.
-# scope="any": match anywhere in the markdown (prose + code).
-# Code-scoped rules are the default — prose often quotes bad patterns when
-# warning about them, so matching prose would create false positives.
+def _iter_insert_sessions_calls(body):
+    """Yield (start_offset, args_str) for each insert_sessions(...) call.
+
+    Uses _extract_arg_list for balanced-paren extraction so nested parens
+    (tuples, method calls, list comps inside args) don't terminate the match
+    early — a simple `[^)]*` regex evades this exact case. Multi-line calls
+    are handled because _extract_arg_list walks the full body, not a line.
+    """
+    for m in re.finditer(r"insert_sessions\s*\(", body):
+        paren_idx = m.end() - 1
+        args = _extract_arg_list(body, paren_idx)
+        if args is not None:
+            yield m.start(), args
+
+
+# Each anti-pattern: (rule_id, description, matcher_fn, scope).
+# matcher_fn(body_or_content) -> iterator of (start_offset, matched_repr).
+# scope="code": run matcher on ```python block bodies only.
+# scope="any": run matcher on the full markdown (prose + code). Avoid this
+#   scope when the skill prose legitimately quotes the pattern to warn
+#   against it — use scope="code" instead, which is the default.
+#
+# Note: these matchers are deliberately structural (find `insert_sessions(`
+# then inspect balanced args) rather than one flat regex. A flat regex
+# using `[^)]*` would evade any call with nested parens in an earlier arg.
 ANTI_PATTERNS = [
     (
         "trailing-underscore-nwb",
         "insert_sessions() called with a '_.nwb' copy filename instead of "
-        "the raw filename",
-        re.compile(r'insert_sessions\s*\(\s*\[?\s*["\'][^"\']*_\.nwb["\']'),
+        "the raw filename (f-string filenames are not detected)",
+        lambda body: [
+            (start, args)
+            for start, args in _iter_insert_sessions_calls(body)
+            if re.search(r'["\'][^"\']*_\.nwb["\']', args)
+        ],
         "code",
     ),
     (
         "skip-duplicates-raw-ingestion",
         "skip_duplicates=True used inside an insert_sessions() call "
         "(use reinsert=True for raw re-ingestion)",
-        re.compile(
-            r"insert_sessions\s*\([^)]*skip_duplicates\s*=\s*True",
-            re.DOTALL,
-        ),
+        lambda body: [
+            (start, args)
+            for start, args in _iter_insert_sessions_calls(body)
+            if re.search(r"skip_duplicates\s*=\s*True", args)
+        ],
         "code",
     ),
 ]
@@ -940,28 +969,28 @@ def check_anti_patterns(results: ValidationResult):
             for start, lang, body in extract_fenced_blocks(content)
             if lang == "python"
         ]
-        for rule_id, description, pattern, scope in ANTI_PATTERNS:
+        for rule_id, description, matcher, scope in ANTI_PATTERNS:
+            matched = False
             if scope == "code":
                 for start_line, body in code_bodies:
-                    m = pattern.search(body)
-                    if m:
-                        offset = body[: m.start()].count("\n")
+                    for offset_pos, _text in matcher(body):
+                        line_offset = body[:offset_pos].count("\n")
                         results.fail(
-                            f"{md_file.name}:{start_line + offset}: "
+                            f"{md_file.name}:{start_line + line_offset}: "
                             f"anti-pattern[{rule_id}]: {description}"
                         )
-                results.ok(f"anti-pattern[{rule_id}]: {md_file.name} clean")
+                        matched = True
             elif scope == "any":
-                m = pattern.search(content)
-                if m:
-                    line_num = content[: m.start()].count("\n") + 1
+                for offset_pos, _text in matcher(content):
+                    line_num = content[:offset_pos].count("\n") + 1
                     results.fail(
                         f"{md_file.name}:{line_num}: "
                         f"anti-pattern[{rule_id}]: {description}"
                     )
-                else:
-                    results.ok(
-                        f"anti-pattern[{rule_id}]: {md_file.name} clean"
+                    matched = True
+            if not matched:
+                results.ok(
+                    f"anti-pattern[{rule_id}]: {md_file.name} clean"
                     )
 
 
