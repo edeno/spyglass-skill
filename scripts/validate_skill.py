@@ -156,7 +156,7 @@ SKIP_METHODS = {
     # AnalysisMixin methods (inherited by AnalysisNwbfile via SpyglassAnalysis,
     # so method resolution via parse_class_from_file finds nothing on the
     # class itself — the real definitions live in utils/mixins/analysis.py)
-    "add_nwb_object", "add_units",
+    "add_nwb_object", "add_units", "build",
     # "create" and "add" are generic names, but within the skill they're
     # only documented on AnalysisNwbfile (inherited from AnalysisMixin).
     # Listed last in this section so the intent stays clear.

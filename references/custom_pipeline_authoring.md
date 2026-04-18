@@ -107,11 +107,16 @@ class MyAnalysis(SpyglassMixin, dj.Computed):
         params = (MyAnalysisParams & key).fetch1("myanalysis_params")
         # ... compute using upstream data + params ...
         nwb_file_name = (Session & key).fetch1("nwb_file_name")
-        analysis_file_name = AnalysisNwbfile().create(nwb_file_name)
-        result_object_id = AnalysisNwbfile().add_nwb_object(
-            analysis_file_name, result_array, table_name="result"
-        )
-        AnalysisNwbfile().add(nwb_file_name, analysis_file_name)
+
+        # Builder context manages CREATE -> POPULATE -> REGISTER for you.
+        # Do NOT mix builder with separate create()/add()/add_nwb_object()
+        # calls — that path raises "Cannot call add_nwb_object() in state:
+        # REGISTERED" (see AnalysisTables.md troubleshooting).
+        with AnalysisNwbfile().build(nwb_file_name) as builder:
+            result_object_id = builder.add_nwb_object(
+                result_array, table_name="result"
+            )
+            analysis_file_name = builder.analysis_file_name
 
         self.insert1({
             **key,
@@ -201,23 +206,34 @@ Common upstream tables for authoring: `Session`, `IntervalList`, `Raw`, `RawPosi
 
 Outputs too large for DataJoint columns (arrays, waveforms, posteriors, timeseries) go into an AnalysisNwbfile. The DataJoint row stores only the filename and object IDs.
 
+**Use the `build()` context manager** for all analysis-file writes. It handles the CREATE → POPULATE → REGISTER lifecycle atomically and prevents the common "Cannot call add_nwb_object() in state: REGISTERED" error that arises when separate `create()`, `add_nwb_object()`, `add()` calls are interleaved.
+
 ```python
 from spyglass.common.common_nwbfile import AnalysisNwbfile
 
 # Inside a Computed table's make(key):
 nwb_file_name = (Session & key).fetch1("nwb_file_name")
 
-analysis_file_name = AnalysisNwbfile().create(nwb_file_name)
-# Third arg is the NWB object NAME (becomes the scratch-space key),
-# not a description. Pandas DataFrames and numpy arrays are auto-wrapped
-# into DynamicTable / ScratchData respectively.
-obj_id = AnalysisNwbfile().add_nwb_object(
-    analysis_file_name, my_numpy_array, table_name="result"
-)
-AnalysisNwbfile().add(nwb_file_name, analysis_file_name)
+# table_name is the NAME the object gets in the NWB scratch space
+# (the retrieval key), not a description. DataFrames and numpy arrays
+# are auto-wrapped into DynamicTable / ScratchData respectively.
+with AnalysisNwbfile().build(nwb_file_name) as builder:
+    obj_id = builder.add_nwb_object(my_numpy_array, table_name="result")
+    analysis_file_name = builder.analysis_file_name
+# File is auto-registered on context exit. Builder methods cannot be
+# called after exit — the state machine blocks it.
 
 self.insert1({**key, "analysis_file_name": analysis_file_name,
               "result_object_id": obj_id})
+```
+
+**Anti-pattern (do not do this):**
+
+```python
+# ❌ Raises "Cannot call add_nwb_object() in state: REGISTERED"
+analysis_file_name = AnalysisNwbfile().create(nwb_file_name)
+AnalysisNwbfile().add(nwb_file_name, analysis_file_name)  # registers
+AnalysisNwbfile().add_nwb_object(...)                      # fails
 ```
 
 **Constraint**: a table may reference only one AnalysisNwbfile table (either `common.common_nwbfile.AnalysisNwbfile` or a custom per-user one, not both). Spyglass validates this on declaration.
