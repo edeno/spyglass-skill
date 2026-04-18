@@ -62,7 +62,7 @@ DecodingOutput().cleanup(dry_run=True)   # LOGS what would be removed
 
 Before answering, decide which stage the user is in:
 
-1. **Setup/install** → route to `setup_and_config.md` or `00_Setup.py` notebook
+1. **Setup/install** → `scripts/install.py` (interactive installer) is the canonical fast path per the repo's `QUICKSTART.md`. Route to [setup_and_config.md](references/setup_and_config.md) for details, config files, and troubleshooting; `00_Setup.py` notebook is a fallback for walking through the configuration steps manually
 2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.py` notebook. Warn that `skip_duplicates=True` is for lookup tables / pipeline reruns only, not raw data — use `reinsert=True` for raw re-ingestion
 3. **Concepts/merge tables** (first time using the framework) → this SKILL.md + `04_Merge_Tables.py` notebook
 4. **Pipeline usage** (running or querying existing analyses) → merge table workflow below + pipeline reference files
@@ -131,25 +131,7 @@ Session.fetch(limit=10)                                  # List sessions — fin
 IntervalList & {"nwb_file_name": nwb_file}               # Find intervals for that session
 ```
 
-```python
-from spyglass.position import PositionOutput
-
-# Discover what exists, then build your key
-PositionOutput.merge_restrict({"nwb_file_name": nwb_file})
-key = {"nwb_file_name": nwb_file, "interval_list_name": interval_name,
-       "trodes_pos_params_name": "default"}
-merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
-position_df = (PositionOutput & merge_key).fetch1_dataframe()
-```
-
-```python
-from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput
-
-merge_ids = SpikeSortingOutput().get_restricted_merge_ids(
-    {"nwb_file_name": nwb_file, "interval_list_name": interval_name}, sources=["v1"])
-for mid in merge_ids:
-    spikes = SpikeSortingOutput().get_spike_times({"merge_id": mid})
-```
+From here, open the relevant pipeline reference — each one starts with a Canonical Example: [position_pipeline.md](references/position_pipeline.md), [lfp_pipeline.md](references/lfp_pipeline.md), [spikesorting_pipeline.md](references/spikesorting_pipeline.md), [decoding_pipeline.md](references/decoding_pipeline.md), [linearization_pipeline.md](references/linearization_pipeline.md), [ripple_pipeline.md](references/ripple_pipeline.md), [mua_pipeline.md](references/mua_pipeline.md), [behavior_pipeline.md](references/behavior_pipeline.md). Do not expand the full workflow inline — load the one file you need.
 
 ## Reference Routing
 
@@ -159,7 +141,7 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 
 | User question is about... | Load this reference | Canonical notebook | Repo path |
 | ------------------------- | ------------------- | ------------------ | --------- |
-| Installation / DB config | [setup_and_config.md](references/setup_and_config.md) | `00_Setup.py` | `scripts/install.py`, `src/spyglass/settings.py` |
+| Installation / DB config | [setup_and_config.md](references/setup_and_config.md) | `QUICKSTART.md` + `scripts/install.py` (canonical fast path); `00_Setup.py` as notebook fallback | `scripts/install.py`, `src/spyglass/settings.py`, `QUICKSTART.md` |
 | Framework concepts / merge tables | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `01_Concepts.py`, `04_Merge_Tables.py` | `src/spyglass/utils/` |
 | NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.py` | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — | — |

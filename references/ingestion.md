@@ -49,23 +49,27 @@ ProbeType.insert1(
 ```python
 import spyglass.data_import as sgi
 
-# Single file
+# Single file — the supported path
 sgi.insert_sessions("my_session.nwb")
 
-# Multiple files
-sgi.insert_sessions(["session_01.nwb", "session_02.nwb"])
-
-# Glob wildcard matching exactly one file
+# Glob wildcard resolving to exactly one file is also accepted
 sgi.insert_sessions("j1620210710_*.nwb")
 ```
 
 `insert_sessions` accepts just the filename (it looks in `$SPYGLASS_RAW_DIR`), not a full path. If you pass a path, only the basename is used.
 
+**Gotcha — multi-file input is broken in the current implementation.** Passing a list (`sgi.insert_sessions(["a.nwb", "b.nwb"])`) only processes the first file: the function wraps a single-file value in a list, then returns from inside the loop on the first iteration (see `src/spyglass/data_import/insert_sessions.py:90`). Process multiple files by looping yourself:
+
+```python
+for fname in ["session_01.nwb", "session_02.nwb"]:
+    sgi.insert_sessions(fname)
+```
+
 ## insert_sessions Parameters
 
 ```python
 insert_sessions(
-    nwb_file_names,           # str or List[str] — filename(s) in $SPYGLASS_RAW_DIR
+    nwb_file_names,           # str — one filename in $SPYGLASS_RAW_DIR; list input is broken (see Gotcha above)
     rollback_on_fail=False,   # Undo all inserts if any table fails
     raise_err=False,          # Raise on first error instead of logging and continuing
     reinsert=False,           # Allow re-insertion of a file already in Nwbfile
