@@ -28,7 +28,8 @@ Before answering, decide which stage the user is in:
 1. **Setup/install** → route to `setup_and_config.md` or `00_Setup.py` notebook
 2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.py` notebook. Warn that `skip_duplicates=True` is for lookup tables / pipeline reruns only, not raw data — use `reinsert=True` for raw re-ingestion
 3. **Concepts/merge tables** (first time using the framework) → this SKILL.md + `04_Merge_Tables.py` notebook
-4. **Pipeline work** (running or querying analyses) → merge table workflow below + pipeline reference files
+4. **Pipeline usage** (running or querying existing analyses) → merge table workflow below + pipeline reference files
+5. **Pipeline authoring** (extending a pipeline, building a new analysis off ingested/common tables, writing schema modules) → [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md). Very different surface from usage — different imports, different class conventions, different non-negotiables.
 
 Users may span stages — when in doubt, ask.
 
@@ -134,5 +135,6 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 | Export for papers / reproducible snapshots | [export.md](references/export.md) | `05_Export.py` | `src/spyglass/common/common_usage.py` |
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) | — | `src/spyglass/spikesorting/v1/figurl_curation.py`, `src/spyglass/decoding/decoding_merge.py` |
 | External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — | — |
+| Authoring a new pipeline / extending an existing one | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) | — | `docs/src/ForDevelopers/CustomPipelines.md`, `docs/src/ForDevelopers/TableTypes.md`, `docs/src/ForDevelopers/Schema.md`, `docs/src/ForDevelopers/Classes.md`, `docs/src/ForDevelopers/Reuse.md` |
 
 When a reference file and the repo disagree, trust the repo. The `notebooks/py_scripts/` files are the canonical end-to-end examples.

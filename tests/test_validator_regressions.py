@@ -206,6 +206,62 @@ def fixture_unresolved_uppercase_warns(src_root):
     )
 
 
+def fixture_spyglassmixin_not_first(src_root):
+    """Class inherits from dj.X without SpyglassMixin/SpyglassMixinPart first."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        import datajoint as dj
+
+        @schema
+        class BadComputed(dj.Computed):
+            definition = ""
+
+        @schema
+        class AlsoBad(SomeOtherMixin, dj.Manual):
+            definition = ""
+        ```
+        """
+    )
+    r = _run(v.check_anti_patterns, md)
+    hits = [m for m in r.failed if "spyglassmixin-not-first" in m]
+    if len(hits) >= 2:
+        print("  [ok] anti-pattern: SpyglassMixin-not-first caught (both cases)")
+        return True
+    print(f"  [FAIL] expected >=2 hits, got {len(hits)}: {r.failed}")
+    return False
+
+
+def fixture_spyglassmixin_ordering_ok(src_root):
+    """Correct ordering (SpyglassMixin first) must NOT trigger the check."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        import datajoint as dj
+
+        @schema
+        class GoodComputed(SpyglassMixin, dj.Computed):
+            definition = ""
+
+        @schema
+        class GoodPart(SpyglassMixinPart):
+            definition = ""
+        ```
+        """
+    )
+    r = _run(v.check_anti_patterns, md)
+    hits = [m for m in r.failed if "spyglassmixin-not-first" in m]
+    if not hits:
+        print("  [ok] anti-pattern: correct ordering not false-positive")
+        return True
+    print(f"  [FAIL] correct ordering triggered check: {hits}")
+    return False
+
+
 def fixture_missing_notebook(src_root):
     """Reference to a notebook that doesn't exist in py_scripts/."""
     md = _write_md(
@@ -232,6 +288,8 @@ FIXTURES = [
     fixture_glob_not_false_positive,
     fixture_unresolved_uppercase_warns,
     fixture_missing_notebook,
+    fixture_spyglassmixin_not_first,
+    fixture_spyglassmixin_ordering_ok,
 ]
 
 

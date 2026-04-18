@@ -153,6 +153,14 @@ SKIP_METHODS = {
     "get_params_blob_from_key",
     # _Merge methods (inherited, hard to resolve via AST)
     "merge_get_parent_class", "parts", "merge_populate",
+    # AnalysisMixin methods (inherited by AnalysisNwbfile via SpyglassAnalysis,
+    # so method resolution via parse_class_from_file finds nothing on the
+    # class itself — the real definitions live in utils/mixins/analysis.py)
+    "add_nwb_object", "add_units",
+    # "create" and "add" are generic names, but within the skill they're
+    # only documented on AnalysisNwbfile (inherited from AnalysisMixin).
+    # Listed last in this section so the intent stays clear.
+    "create", "add",
     # Part table access patterns (dynamic attributes)
     "CurationV1", "TrodesPosV1", "DLCPosV1", "LFPV1",
     "ImportedSpikeSorting", "CuratedSpikeSorting",
@@ -809,6 +817,45 @@ def check_prose_assertions(results: ValidationResult):
             "ingestion.md warns skip_duplicates=True is not for raw data",
             "appropriate for raw data",
         ),
+        (
+            "SKILL.md", "authoring-stage",
+            "SKILL.md's stage classifier includes pipeline authoring",
+            "pipeline authoring",
+        ),
+        (
+            "SKILL.md", "authoring-reference-link",
+            "SKILL.md links to custom_pipeline_authoring reference",
+            "custom_pipeline_authoring.md",
+        ),
+        (
+            "references/custom_pipeline_authoring.md", "authoring-mixin-rule",
+            "authoring ref states SpyglassMixin must be first in inheritance",
+            "spyglassmixin",
+        ),
+        (
+            "references/custom_pipeline_authoring.md",
+            "authoring-analysisnwbfile",
+            "authoring ref teaches AnalysisNwbfile storage pattern",
+            "analysisnwbfile",
+        ),
+        (
+            "references/custom_pipeline_authoring.md",
+            "authoring-selection-separation",
+            "authoring ref enforces params/selection/computed separation",
+            "selection",
+        ),
+        (
+            "references/custom_pipeline_authoring.md",
+            "authoring-merge-guardrail",
+            "authoring ref warns against merge tables for single-source pipelines",
+            "single-source",
+        ),
+        (
+            "references/custom_pipeline_authoring.md",
+            "authoring-devdocs-links",
+            "authoring ref links to all five ForDevelopers docs",
+            "custompipelines.md",  # just check one; the others are tested below
+        ),
     ]
 
     for rel_path, rule_id, description, needle in required_claims:
@@ -1085,6 +1132,25 @@ ANTI_PATTERNS = [
             (start, args)
             for start, args in _iter_insert_sessions_calls(body)
             if re.search(r"skip_duplicates\s*=\s*True", args)
+        ],
+        "code",
+    ),
+    (
+        "spyglassmixin-not-first",
+        "class inherits from dj.{Manual,Lookup,Computed,Imported,Part} "
+        "without SpyglassMixin/SpyglassMixinPart as the first parent — "
+        "required for Spyglass method overrides to work correctly",
+        # Match `class Foo(X, dj.Manual):` where X is the first parent but
+        # is not SpyglassMixin/SpyglassMixinPart. Also catches
+        # `class Foo(dj.Manual):` (no mixin at all). Allows `master` (used
+        # inside Part table definition strings, not class declarations).
+        lambda body: [
+            (m.start(), m.group(0))
+            for m in re.finditer(
+                r"class\s+\w+\s*\(\s*(?!SpyglassMixin\b|SpyglassMixinPart\b)"
+                r"[^)]*\bdj\.(?:Manual|Lookup|Computed|Imported|Part)\b",
+                body,
+            )
         ],
         "code",
     ),
