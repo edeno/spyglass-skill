@@ -5,6 +5,7 @@
 
 - [Overview](#overview)
 - [v0 vs v1 (Read First)](#v0-vs-v1-read-first)
+- [Canonical Example (v1)](#canonical-example-v1)
 - [SpikeSortingOutput Merge Table](#spikesortingoutput-merge-table)
 - [V1 Pipeline Flow](#v1-pipeline-flow)
 - [Step 1: Recording Preprocessing](#step-1-recording-preprocessing)
@@ -39,6 +40,60 @@ Concrete divergences to watch for when reading examples:
 - **Class-name collisions**: several names (`SpikeSortingRecordingSelection`, `SpikeSortingRecording`, `SpikeSortingSelection`, `ArtifactDetectionSelection`, etc.) exist in both v0 and v1 modules. When reading code, confirm which module is imported at the top of the file.
 
 If you see a v0 import in someone's code and they're *asking how to do something new*, answer in v1 and note that v0 still works for querying existing data.
+
+## Canonical Example (v1)
+
+End-to-end v1 flow: recording → artifact detection (optional) → sorting → curation → publish to `SpikeSortingOutput`. Each step uses the `insert_selection()` classmethod convention to generate UUIDs and validate keys — calling `.insert1()` directly on a v1 Selection table skips that validation.
+
+```python
+from spyglass.spikesorting.v1 import (
+    SortGroup,
+    SpikeSortingRecordingSelection, SpikeSortingRecording,
+    SpikeSortingSelection, SpikeSorting,
+    CurationV1,
+)
+from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput
+
+# 1. Group electrodes by shank (warning: overwrites existing groups for
+#    this session — cascades to downstream sorts; see doc #11 gotcha).
+SortGroup().set_group_by_shank(nwb_file_name=nwb_file)
+
+# 2. Recording preprocessing
+rec_key = SpikeSortingRecordingSelection.insert_selection({
+    "nwb_file_name": nwb_file, "sort_group_id": 0,
+    "interval_list_name": interval_name,
+    "preproc_param_name": "default", "team_name": "my_team",
+})
+SpikeSortingRecording.populate(rec_key)
+
+# 3. Sort. `sorter_params` is sorter-specific — mountainsort5 params do
+#    NOT interchange with kilosort / ironclust. Use the paired defaults
+#    in SpikeSorterParameters.
+sort_key = SpikeSortingSelection.insert_selection({
+    **rec_key, "sorter": "mountainsort4",
+    "sorter_param_name": "franklab_tetrode_hippocampus_30KHz",
+    "interval_list_name": interval_name,
+})
+SpikeSorting.populate(sort_key)
+
+# 4. Register an initial curation (no edits — just anchors the sort_id)
+curation_id = CurationV1.insert_curation(
+    sorting_id=sort_key["sorting_id"], description="initial"
+)
+
+# 5. Publish to the merge table
+SpikeSortingOutput.insert({"source": "CurationV1",
+                            "sorting_id": sort_key["sorting_id"],
+                            "curation_id": curation_id})
+
+# 6. Downstream: get spike times via the merge
+merge_ids = SpikeSortingOutput().get_restricted_merge_ids(
+    {"nwb_file_name": nwb_file, "interval_list_name": interval_name},
+    sources=["v1"],
+)
+for mid in merge_ids:
+    spikes = SpikeSortingOutput().get_spike_times({"merge_id": mid})
+```
 
 ## SpikeSortingOutput Merge Table
 

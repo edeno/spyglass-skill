@@ -4,6 +4,7 @@
 ## Contents
 
 - [Overview](#overview)
+- [Canonical Example (Trodes)](#canonical-example-trodes)
 - [PositionOutput Merge Table](#positionoutput-merge-table)
 - [Pipeline 1: Trodes LED Tracking](#pipeline-1-trodes-led-tracking)
 - [Pipeline 2: DeepLabCut (DLC)](#pipeline-2-deeplabcut-dlc)
@@ -16,6 +17,32 @@ The position pipeline tracks animal location using multiple methods, all consoli
 
 ```python
 from spyglass.position import PositionOutput
+```
+
+## Canonical Example (Trodes)
+
+Minimal end-to-end flow for LED-based tracking. DLC and imported-pose sources follow the same 3-step shape (params → selection → populate → fetch via merge). Everything below this expands on the pieces.
+
+```python
+from spyglass.position import PositionOutput
+from spyglass.position.v1 import TrodesPosParams, TrodesPosSelection, TrodesPosV1
+
+# 1. Params — insert once; reuse for many sessions
+TrodesPosParams().insert_default()
+
+# 2. Selection — pick the input (session + interval + params)
+key = {"nwb_file_name": nwb_file,
+       "interval_list_name": "pos 1 valid times",
+       "trodes_pos_params_name": "default"}
+TrodesPosSelection.insert1(key, skip_duplicates=True)
+
+# 3. Populate — runs computation, writes to PositionOutput merge
+TrodesPosV1.populate(key)
+
+# Fetch via the merge table
+merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
+position_df = (PositionOutput & merge_key).fetch1_dataframe()
+# Columns: position_x, position_y, orientation, velocity_x, velocity_y, speed
 ```
 
 ## PositionOutput Merge Table

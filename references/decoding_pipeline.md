@@ -4,6 +4,7 @@
 ## Contents
 
 - [Overview](#overview)
+- [Canonical Example (Clusterless)](#canonical-example-clusterless)
 - [DecodingOutput Merge Table](#decodingoutput-merge-table)
 - [Results Structure (xarray.Dataset)](#results-structure-xarraydataset)
 - [Shared Components](#shared-components)
@@ -18,6 +19,40 @@ The decoding pipeline performs Bayesian position decoding from neural activity u
 
 ```python
 from spyglass.decoding import DecodingOutput
+```
+
+## Canonical Example (Clusterless)
+
+Minimal end-to-end flow. Sorted-spikes decoding uses the same shape with `SortedSpikesDecodingSelection` / `SortedSpikesDecodingV1` and a `SortedSpikesGroup` in place of the waveform-features group. Everything below expands on pieces.
+
+```python
+from spyglass.decoding import DecodingOutput
+from spyglass.decoding.v1.clusterless import (
+    ClusterlessDecodingSelection, ClusterlessDecodingV1,
+)
+
+# Prereqs (not shown here): UnitWaveformFeaturesGroup + PositionGroup rows
+# created upstream; DecodingParameters row with name "contfrag_clusterless";
+# encoding_interval_name and decoding_interval_name exist in IntervalList.
+
+# 1. Selection + populate
+selection_key = {
+    "waveform_features_group_name": features_group_name,
+    "position_group_name": position_group_name,
+    "decoding_param_name": "contfrag_clusterless",
+    "encoding_interval": encoding_interval_name,
+    "decoding_interval": decoding_interval_name,
+    "estimate_decoding_params": 0,  # 1 silently treats out-of-interval
+                                     # times as missing — read the docs
+                                     # before flipping this on
+}
+ClusterlessDecodingSelection.insert1(selection_key, skip_duplicates=True)
+ClusterlessDecodingV1.populate(selection_key)
+
+# 2. Fetch via DecodingOutput (friendly key resolves internally — no
+#    merge_get_part needed for this merge table)
+results = DecodingOutput.fetch_results(selection_key)
+model = DecodingOutput.fetch_model(selection_key)
 ```
 
 ## DecodingOutput Merge Table

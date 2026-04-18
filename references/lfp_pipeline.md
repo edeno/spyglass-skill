@@ -4,6 +4,7 @@
 ## Contents
 
 - [Overview](#overview)
+- [Canonical Example](#canonical-example)
 - [LFPOutput Merge Table](#lfpoutput-merge-table)
 - [Pipeline Flow](#pipeline-flow)
 - [Step 1: Define Electrode Groups](#step-1-define-electrode-groups)
@@ -19,6 +20,39 @@ The LFP pipeline filters raw electrophysiology data, detects artifacts, and comp
 
 ```python
 from spyglass.lfp import LFPOutput, LFPElectrodeGroup
+```
+
+## Canonical Example
+
+Minimal end-to-end flow: define an electrode group, run FIR filtering via `LFPV1`, fetch the filtered LFP as a DataFrame. Everything below expands on pieces of this.
+
+```python
+from spyglass.lfp import LFPOutput, LFPElectrodeGroup
+from spyglass.lfp.v1 import LFPSelection, LFPV1
+
+# 1. Define which electrodes go into this LFP
+LFPElectrodeGroup.create_lfp_electrode_group(
+    nwb_file_name=nwb_file,
+    group_name="my_lfp_group",
+    electrode_list=[0, 1, 2, 3],
+)
+
+# 2. Insert selection + populate — target_interval_list_name must already
+#    exist in IntervalList, otherwise LFPSelection.insert1 raises a
+#    cryptic FK error. Use (IntervalList & {"nwb_file_name": nwb_file}) to
+#    confirm the interval is there first.
+key = {"nwb_file_name": nwb_file,
+       "lfp_electrode_group_name": "my_lfp_group",
+       "target_interval_list_name": "02_r1",
+       "filter_name": "LFP 0-400 Hz",
+       "filter_sampling_rate": 30000,
+       "target_sampling_rate": 1000}
+LFPSelection.insert1(key, skip_duplicates=True)
+LFPV1.populate(key)
+
+# 3. Fetch via the merge table
+merge_key = LFPOutput.merge_get_part(key).fetch1("KEY")
+lfp_df = (LFPOutput & merge_key).fetch1_dataframe()
 ```
 
 ## LFPOutput Merge Table
