@@ -42,11 +42,12 @@ PLAIN_IMPORT_PATTERN = re.compile(
 METHOD_CALL_PATTERN = re.compile(
     r"(\w+)(\(\))?\.(\w+)\s*\("
 )
-# Match keyword arguments: Class(?).method(kwarg=
-# Group 1: class name; Group 2: "()" or ""; Group 3: method name; Group 4: kwarg
-KWARG_PATTERN = re.compile(
-    r"(\w+)(\(\))?\.(\w+)\s*\([^)]*?(\w+)\s*="
-)
+# Keyword-argument extraction is done in two stages: locate the method call
+# (METHOD_CALL_PATTERN above), then scan all `name=value` pairs inside its
+# argument list with KWARG_SCAN. The two-stage approach avoids the single-regex
+# pitfall of only matching the first kwarg per call.
+# Matches a bare `name=` (but not `==`, `<=`, `>=`, `!=`), capturing the name.
+KWARG_SCAN = re.compile(r"(?<![=!<>])\b(\w+)\s*=(?!=)")
 
 # Known classes and the module file that defines them
 # Format: "ClassName": "dotted.module.path" (relative to spyglass src)
@@ -74,6 +75,15 @@ KNOWN_CLASSES = {
     "SortGroup": "spyglass/spikesorting/v1/recording.py",
     "SpikeSorting": "spyglass/spikesorting/v1/sorting.py",
     "SpikeSorterParameters": "spyglass/spikesorting/v1/sorting.py",
+    # Ambiguous between v0 and v1 — skill documents v1
+    "SpikeSortingRecordingSelection": "spyglass/spikesorting/v1/recording.py",
+    "SpikeSortingRecording": "spyglass/spikesorting/v1/recording.py",
+    "SpikeSortingSelection": "spyglass/spikesorting/v1/sorting.py",
+    "SpikeSortingPreprocessingParameters": "spyglass/spikesorting/v1/recording.py",
+    "ArtifactDetectionSelection": "spyglass/spikesorting/v1/artifact.py",
+    "WaveformParameters": "spyglass/spikesorting/v1/metric_curation.py",
+    "MetricParameters": "spyglass/spikesorting/v1/metric_curation.py",
+    "LinearizationParameters": "spyglass/linearization/v1/main.py",
     "ArtifactDetection": "spyglass/spikesorting/v1/artifact.py",
     "ArtifactDetectionParameters": "spyglass/spikesorting/v1/artifact.py",
     "MetricCuration": "spyglass/spikesorting/v1/metric_curation.py",
@@ -439,11 +449,14 @@ def check_imports(src_root, results):
                 for match in IMPORT_PATTERN.finditer(line):
                     module_path = match.group(1)
                     raw_names = match.group(2)
-                    names = [
-                        n.strip().rstrip(",").rstrip(")").lstrip("(")
-                        for n in raw_names.split(",")
-                        if n.strip() and not n.strip().startswith("#")
-                    ]
+                    names = []
+                    for n in raw_names.split(","):
+                        n = n.strip().rstrip(",").rstrip(")").lstrip("(")
+                        if not n or n.startswith("#"):
+                            continue
+                        # Strip `as alias` — we validate the original name
+                        n = n.split(" as ")[0].strip()
+                        names.append(n)
                     location = f"{md_file.name}:{line_num}"
                     check_module_exports(
                         src_root, module_path, names, results, location
@@ -464,49 +477,76 @@ def check_imports(src_root, results):
                         )
 
 
-def discover_classes(src_root):
+def discover_classes(src_root, results=None):
     """Walk the spyglass source tree and index every top-level class definition.
 
     Returns a dict mapping class_name → repo-relative path. Hand-maintained
-    KNOWN_CLASSES entries take precedence (useful for disambiguating duplicates).
+    KNOWN_CLASSES entries take precedence. When a class name appears in
+    multiple files, the first hit wins and a warning is emitted (unless the
+    name is in KNOWN_CLASSES, in which case the collision is expected).
     """
     discovered = {}
     pkg_root = src_root / "spyglass"
     if not pkg_root.is_dir():
         return discovered
     class_pattern = re.compile(r"^class\s+(\w+)\s*[\(:]", re.MULTILINE)
-    for py_file in pkg_root.rglob("*.py"):
+    for py_file in sorted(pkg_root.rglob("*.py")):
         try:
             source = py_file.read_text()
         except Exception:
             continue
         for match in class_pattern.finditer(source):
             name = match.group(1)
-            # Don't overwrite hand-curated entries or earlier discoveries
-            # (first hit wins — ambiguous names should be added to KNOWN_CLASSES)
-            if name not in discovered:
-                discovered[name] = str(py_file.relative_to(src_root))
+            rel = str(py_file.relative_to(src_root))
+            if name in discovered:
+                if name not in KNOWN_CLASSES and results is not None:
+                    results.warn(
+                        f"discover_classes: class '{name}' appears in both "
+                        f"{discovered[name]} and {rel} — first wins. Add to "
+                        f"KNOWN_CLASSES to disambiguate."
+                    )
+            else:
+                discovered[name] = rel
     return discovered
 
 
-def check_methods(src_root, results):
+class _ClassRegistry:
+    """Resolve class names to their parsed method signatures.
+
+    Combines the hand-curated KNOWN_CLASSES map (wins on name collisions)
+    with auto-discovered classes from src/spyglass/**/*.py. Caches parse
+    results so subsequent checks reuse the same data.
+    """
+
+    def __init__(self, src_root, results):
+        self.src_root = src_root
+        self.results = results
+        self.auto_registry = discover_classes(src_root, results)
+        self._cache = {}
+
+    def methods(self, class_name):
+        if class_name in self._cache:
+            return self._cache[class_name]
+        rel_path = (
+            KNOWN_CLASSES.get(class_name)
+            or self.auto_registry.get(class_name)
+        )
+        if rel_path is None:
+            self._cache[class_name] = None
+            return None
+        filepath = self.src_root / rel_path
+        parsed = parse_class_from_file(filepath, class_name)
+        self._cache[class_name] = parsed
+        return parsed
+
+
+def check_methods(src_root, results, registry=None):
     """Check that documented method calls reference real methods."""
-    # Cache parsed classes
-    class_cache = {}
-    auto_registry = discover_classes(src_root)
+    if registry is None:
+        registry = _ClassRegistry(src_root, results)
 
     def get_class_methods(class_name):
-        if class_name in class_cache:
-            return class_cache[class_name]
-        # Hand-curated registry takes precedence over auto-discovery
-        rel_path = KNOWN_CLASSES.get(class_name) or auto_registry.get(class_name)
-        if rel_path is None:
-            class_cache[class_name] = None
-            return None
-        filepath = src_root / rel_path
-        methods = parse_class_from_file(filepath, class_name)
-        class_cache[class_name] = methods
-        return methods
+        return registry.methods(class_name)
 
     for md_file in collect_md_files():
         content = md_file.read_text()
@@ -555,22 +595,13 @@ def check_methods(src_root, results):
                         )
 
 
-def check_kwargs(src_root, results):
+def check_kwargs(src_root, results, registry=None):
     """Check that documented keyword arguments exist in method signatures."""
-    class_cache = {}
-    auto_registry = discover_classes(src_root)
+    if registry is None:
+        registry = _ClassRegistry(src_root, results)
 
     def get_class_methods(class_name):
-        if class_name in class_cache:
-            return class_cache[class_name]
-        rel_path = KNOWN_CLASSES.get(class_name) or auto_registry.get(class_name)
-        if rel_path is None:
-            class_cache[class_name] = None
-            return None
-        filepath = src_root / rel_path
-        methods = parse_class_from_file(filepath, class_name)
-        class_cache[class_name] = methods
-        return methods
+        return registry.methods(class_name)
 
     for md_file in collect_md_files():
         content = md_file.read_text()
@@ -578,14 +609,12 @@ def check_kwargs(src_root, results):
 
         for block_start, block_lines in blocks:
             for line_num, line in join_logical_lines(block_lines):
-                for match in KWARG_PATTERN.finditer(line):
+                # Find each method call, then scan its full arg list for kwargs
+                for match in METHOD_CALL_PATTERN.finditer(line):
                     class_name = match.group(1)
                     method_name = match.group(3)
-                    kwarg_name = match.group(4)
 
                     if method_name in SKIP_METHODS:
-                        continue
-                    if kwarg_name in SKIP_KWARGS:
                         continue
                     if method_name.startswith("_"):
                         continue
@@ -593,28 +622,54 @@ def check_kwargs(src_root, results):
                     methods = get_class_methods(class_name)
                     if methods is None:
                         continue
-
                     if method_name not in methods:
                         continue  # Caught by check_methods
 
                     method_info = methods[method_name]
-                    location = f"{md_file.name}:{line_num}"
+                    arg_list = _extract_arg_list(line, match.end() - 1)
+                    if arg_list is None:
+                        continue
 
-                    if (
-                        kwarg_name in method_info["params"]
-                        or method_info["has_kwargs"]
-                    ):
-                        results.ok(
-                            f"{location}: "
-                            f"{class_name}.{method_name}({kwarg_name}=) valid"
-                        )
-                    else:
-                        results.fail(
-                            f"{location}: "
-                            f"{class_name}.{method_name}() has no parameter "
-                            f"'{kwarg_name}' "
-                            f"(has: {method_info['params']})"
-                        )
+                    for kmatch in KWARG_SCAN.finditer(arg_list):
+                        kwarg_name = kmatch.group(1)
+                        if kwarg_name in SKIP_KWARGS:
+                            continue
+                        location = f"{md_file.name}:{line_num}"
+                        if (
+                            kwarg_name in method_info["params"]
+                            or method_info["has_kwargs"]
+                        ):
+                            results.ok(
+                                f"{location}: "
+                                f"{class_name}.{method_name}({kwarg_name}=) valid"
+                            )
+                        else:
+                            results.fail(
+                                f"{location}: "
+                                f"{class_name}.{method_name}() has no parameter "
+                                f"'{kwarg_name}' "
+                                f"(has: {method_info['params']})"
+                            )
+
+
+def _extract_arg_list(line, open_paren_idx):
+    """Return the text between matched parens starting at open_paren_idx.
+
+    Tracks nested parens/brackets. Returns None if the parens don't close
+    within the line (join_logical_lines usually handles that upstream).
+    """
+    if open_paren_idx >= len(line) or line[open_paren_idx] != "(":
+        return None
+    depth = 0
+    for i in range(open_paren_idx, len(line)):
+        ch = line[i]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+            if depth == 0:
+                return line[open_paren_idx + 1 : i]
+    return None
 
 
 def check_class_files_exist(src_root, results):
@@ -807,11 +862,14 @@ def main():
     print("[2/6] Checking import statements in skill files...")
     check_imports(src_root, results)
 
+    # Build the class registry once and share it across method + kwarg checks
+    registry = _ClassRegistry(src_root, results)
+
     print("[3/6] Checking method references...")
-    check_methods(src_root, results)
+    check_methods(src_root, results, registry=registry)
 
     print("[4/6] Checking keyword arguments...")
-    check_kwargs(src_root, results)
+    check_kwargs(src_root, results, registry=registry)
 
     print("[5/6] Checking skill structure...")
     check_structure(results)
