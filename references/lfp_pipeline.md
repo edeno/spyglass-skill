@@ -1,6 +1,5 @@
 # LFP Pipeline
 
-
 ## Contents
 
 - [Overview](#overview)
@@ -62,7 +61,7 @@ lfp_df = (LFPOutput & merge_key).fetch1_dataframe()
 ### Part Tables
 
 | Part Table | Source Class | Description |
-|------------|-------------|-------------|
+| ------------ | ------------- | ------------- |
 | `LFPOutput.LFPV1` | `LFPV1` | FIR-filtered LFP from raw data |
 | `LFPOutput.ImportedLFP` | `ImportedLFP` | Pre-computed LFP from NWB |
 | `LFPOutput.CommonLFP` | `CommonLFP` | Legacy common LFP |
@@ -73,7 +72,7 @@ lfp_df = (LFPOutput & merge_key).fetch1_dataframe()
 
 ## Pipeline Flow
 
-```
+```text
 ElectrodeGroup (common) → LFPElectrodeGroup → LFPSelection → LFPV1
     ↑                                              ↑              ↓
 Electrode (common)                          FirFilterParameters   ↓
@@ -105,6 +104,7 @@ LFPElectrodeGroup.create_lfp_electrode_group(
 ```
 
 **LFPElectrodeGroup** (Manual)
+
 - Key: `nwb_file_name`, `lfp_electrode_group_name`
 - Part table: `LFPElectrodeGroup.LFPElectrode` (adds `electrode_id`)
 
@@ -115,10 +115,12 @@ from spyglass.lfp.v1 import LFPSelection, LFPV1
 ```
 
 **LFPSelection** (Manual)
+
 - Key: `nwb_file_name`, `lfp_electrode_group_name`, `target_interval_list_name`, `filter_name`, `filter_sampling_rate`
 - Also stores: `target_sampling_rate`
 
 **LFPV1** (Computed)
+
 - Applies FIR filter from `FirFilterParameters` to raw data
 - Stores filtered data in analysis NWB file
 - Methods: `fetch1_dataframe()` — Returns filtered LFP as DataFrame
@@ -162,6 +164,7 @@ from spyglass.lfp.v1 import (
 ```
 
 **LFPArtifactDetectionParameters** (Manual)
+
 - Key: `artifact_params_name`
 - Default presets:
   - `"default_difference"` — Amplitude threshold detection
@@ -170,6 +173,7 @@ from spyglass.lfp.v1 import (
   - `"none"` — No artifact detection
 
 **LFPArtifactDetection** (Computed)
+
 - Detects artifacts and creates clean interval lists
 - Outputs: `artifact_times` (array), `artifact_removed_valid_times` (array), `artifact_removed_interval_list_name`
 
@@ -185,11 +189,13 @@ from spyglass.lfp.analysis.v1 import LFPBandSelection, LFPBandV1
 ```
 
 **LFPBandSelection** (Manual)
+
 - Key: includes `nwb_file_name`, `lfp_merge_id`, `filter_name`, `filter_sampling_rate`, `target_interval_list_name`, `lfp_band_sampling_rate`
 - Part table: `LFPBandSelection.LFPBandElectrode` — per-electrode reference configuration
 - Method: `set_lfp_band_electrodes(nwb_file_name, lfp_merge_id, electrode_list, filter_name, interval_list_name, reference_electrode_list, lfp_band_sampling_rate)`
 
 **LFPBandV1** (Computed)
+
 - Applies band filter to already-filtered LFP
 - Key methods:
   - `fetch1_dataframe()` — Returns band-filtered LFP

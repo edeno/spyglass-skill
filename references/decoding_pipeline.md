@@ -1,6 +1,5 @@
 # Decoding Pipeline
 
-
 ## Contents
 
 - [Overview](#overview)
@@ -65,14 +64,14 @@ model = DecodingOutput.fetch_model(selection_key)
 ### Part Tables
 
 | Part Table | Source Class | Description |
-|------------|-------------|-------------|
+| ------------ | ------------- | ------------- |
 | `DecodingOutput.ClusterlessDecodingV1` | `ClusterlessDecodingV1` | Decode from waveform features |
 | `DecodingOutput.SortedSpikesDecodingV1` | `SortedSpikesDecodingV1` | Decode from sorted spike times |
 
 ### Key Methods on DecodingOutput
 
 | Method | Returns | Description |
-|--------|---------|-------------|
+| -------- | --------- | ------------- |
 | `fetch_results(key)` | xarray.Dataset | Posterior probabilities and metadata |
 | `fetch_model(key)` | Classifier | Fitted non_local_detector model |
 | `fetch_environments(key)` | list[TrackGraph] | Track graph environments |
@@ -147,7 +146,7 @@ from spyglass.decoding import PositionGroup
 
 Decodes from spike waveform features (amplitude, location) without explicit unit clustering.
 
-```
+```text
 SpikeSortingOutput → UnitWaveformFeaturesSelection → UnitWaveformFeatures
                                                             ↓
 UnitWaveformFeaturesGroup (groups features)
@@ -175,23 +174,28 @@ from spyglass.decoding.v1.waveform_features import (
 ```
 
 **WaveformFeaturesParams** (Lookup)
+
 - Key: `features_param_name`
 - Defaults: `"amplitude"`, `"amplitude, spike_location"`
 
 **UnitWaveformFeatures** (Computed)
+
 - Methods: `fetch_data()` — Returns (spike_times, features) tuples per unit
 
 **UnitWaveformFeaturesGroup** (Manual)
+
 - Key: `nwb_file_name`, `waveform_features_group_name`
 - Part table: `UnitWaveformFeaturesGroup.UnitFeatures`
 - Method: `create_group(nwb_file_name, group_name, keys)`
 
 **ClusterlessDecodingSelection** (Manual)
+
 - Foreign keys to: UnitWaveformFeaturesGroup, PositionGroup, DecodingParameters
 - Plus: `encoding_interval` and `decoding_interval` (from IntervalList)
 - Flag: `estimate_decoding_params` (bool) — use Baum-Welch vs fixed params
 
 **ClusterlessDecodingV1** (Computed)
+
 - Outputs: `results_path` (.nc file), `classifier_path` (.pkl file)
 - Key methods:
   - `fetch_results()` — xarray Dataset
@@ -221,7 +225,7 @@ results = DecodingOutput.fetch_results(selection_key)
 
 Decodes from explicitly sorted spike times.
 
-```
+```text
 SpikeSortingOutput → SortedSpikesGroup (analysis grouping)
         ↓
 SortedSpikesDecodingSelection (+ PositionGroup + DecodingParameters + IntervalList)
@@ -231,7 +235,7 @@ SortedSpikesDecodingV1 (Computed)
 DecodingOutput.SortedSpikesDecodingV1
 ```
 
-### Key Tables
+### Key Tables (Sorted Spikes)
 
 ```python
 from spyglass.decoding import (
@@ -242,10 +246,12 @@ from spyglass.spikesorting.analysis.v1.group import SortedSpikesGroup
 ```
 
 **SortedSpikesDecodingSelection** (Manual)
+
 - Foreign keys to: SortedSpikesGroup, PositionGroup, DecodingParameters
 - Plus: encoding/decoding intervals, `estimate_decoding_params` flag
 
 **SortedSpikesDecodingV1** (Computed)
+
 - Same output structure as ClusterlessDecodingV1
 - Additional method: `spike_times_sorted_by_place_field_peak(time_slice)` — neurons ordered by place field
 
@@ -298,6 +304,7 @@ merge_key = DecodingOutput.merge_get_part({
 ## Storage
 
 Results are saved as files in `{SPYGLASS_ANALYSIS_DIR}/{nwb_file_name}/`:
+
 - `.nc` files — xarray Dataset with posteriors
 - `.pkl` files — Pickled classifier model
 

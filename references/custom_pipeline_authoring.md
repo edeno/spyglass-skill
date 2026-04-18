@@ -59,7 +59,6 @@ from spyglass.utils import SpyglassMixin, SpyglassMixinPart
 
 schema = dj.schema("my_username_myanalysis")
 
-
 @schema
 class MyAnalysisParams(SpyglassMixin, dj.Lookup):
     """Parameters for MyAnalysis. Lookup tier: contents baked in."""
@@ -73,7 +72,6 @@ class MyAnalysisParams(SpyglassMixin, dj.Lookup):
         ["default", {"window_s": 0.5, "threshold": 3.0}],
     ]
 
-
 @schema
 class MyAnalysisSelection(SpyglassMixin, dj.Manual):
     """One row per (session interval, params) pair to analyze."""
@@ -83,7 +81,6 @@ class MyAnalysisSelection(SpyglassMixin, dj.Manual):
     -> IntervalList
     -> MyAnalysisParams
     """
-
 
 @schema
 class MyAnalysis(SpyglassMixin, dj.Computed):
@@ -136,7 +133,6 @@ When your analysis consumes output from an existing merge table, FK-ref the merg
 ```python
 from spyglass.position import PositionOutput
 
-
 @schema
 class PosDerivedAnalysis(SpyglassMixin, dj.Computed):
     definition = """
@@ -168,7 +164,6 @@ When your analysis consumes raw/ingested data directly, FK-ref the relevant comm
 ```python
 from spyglass.common import Session, IntervalList, ElectrodeGroup
 
-
 @schema
 class MyElectrodeGroup(SpyglassMixin, dj.Manual):
     """Set of electrodes to analyze together."""
@@ -183,7 +178,6 @@ class MyElectrodeGroup(SpyglassMixin, dj.Manual):
         -> master
         -> ElectrodeGroup
         """
-
 
 @schema
 class MyRawAnalysis(SpyglassMixin, dj.Computed):

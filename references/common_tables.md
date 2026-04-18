@@ -1,6 +1,5 @@
 # Spyglass Common Tables Reference
 
-
 ## Contents
 
 - [Session and File Management](#session-and-file-management)
@@ -203,7 +202,7 @@ FirFilterParameters & 'filter_name LIKE "Theta%"'
 
 ## Table Relationship Summary
 
-```
+```text
 Nwbfile
 └── Session (1:1)
     ├── Subject (many:1)

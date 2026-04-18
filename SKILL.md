@@ -100,7 +100,7 @@ key = {"nwb_file_name": nwb_file, "interval_list_name": "02_r1",
 ### All Pipelines
 
 | Output Table | Import Path | Type | Data Access |
-|-------------|-------------|------|-------------|
+| ------------ | ----------- | ---- | ----------- |
 | `PositionOutput` | `spyglass.position` | Merge | `.fetch1_dataframe()`, `.fetch_pose_dataframe()` (DLC/imported only) |
 | `LFPOutput` | `spyglass.lfp` | Merge | `.fetch1_dataframe()` |
 | `SpikeSortingOutput` | `spyglass.spikesorting.spikesorting_merge` | Merge | `.get_spike_times()`, `.get_firing_rate()`, `.get_sorting()` |
@@ -142,7 +142,6 @@ for mid in merge_ids:
     spikes = SpikeSortingOutput().get_spike_times({"merge_id": mid})
 ```
 
-
 ## Reference Routing
 
 For simple data queries, the examples above are usually sufficient. For deeper questions, load the right reference.
@@ -150,7 +149,7 @@ For simple data queries, the examples above are usually sufficient. For deeper q
 **Progressive disclosure — load one reference at a time.** Pick the single most relevant row from the table below and read that file first. Only open additional reference files if the first one doesn't cover the user's question, or if you actually need content from a second topic (e.g., a position question that also touches spike sorting). Don't pre-load several references "to be safe" — it wastes context.
 
 | User question is about... | Load this reference | Canonical notebook | Repo path |
-|--------------------------|--------------------|-----|-----------|
+| ------------------------- | ------------------- | ------------------ | --------- |
 | Installation / DB config | [setup_and_config.md](references/setup_and_config.md) | `00_Setup.py` | `scripts/install.py`, `src/spyglass/settings.py` |
 | Framework concepts / merge tables | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `01_Concepts.py`, `04_Merge_Tables.py` | `src/spyglass/utils/` |
 | NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.py` | `src/spyglass/data_import/insert_sessions.py`, `docs/src/Features/Ingestion.md` |

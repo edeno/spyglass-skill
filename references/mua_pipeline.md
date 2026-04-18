@@ -19,7 +19,7 @@ MUA detection uses the same `ripple_detection` library as ripple detection (`mul
 
 ## Pipeline Flow
 
-```
+```text
 SortedSpikesGroup (spikesorting) → MuaEventsV1
 PositionOutput (for speed)              ↑
 IntervalList (valid times)        MuaEventsParameters
@@ -28,10 +28,12 @@ IntervalList (valid times)        MuaEventsParameters
 ## Key Tables
 
 **MuaEventsParameters** (Manual)
+
 - Key: `mua_param_name`
 - Parameters for the `multiunit_HSE_detector` algorithm
 
 **MuaEventsV1** (Computed)
+
 - Uses `ripple_detection.multiunit_HSE_detector()` to detect high synchrony events
 - Depends on SortedSpikesGroup for spike data and PositionOutput for speed filtering
 

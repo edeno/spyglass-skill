@@ -1,6 +1,5 @@
 # NWB Ingestion
 
-
 ## Contents
 
 - [Overview](#overview)

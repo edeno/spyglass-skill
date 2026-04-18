@@ -1,6 +1,5 @@
 # FigURL Interactive Visualization
 
-
 ## Contents
 
 - [Overview](#overview)

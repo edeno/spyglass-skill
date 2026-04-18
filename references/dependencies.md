@@ -1,6 +1,5 @@
 # External Dependencies Reference
 
-
 ## Contents
 
 - [Core Dependencies](#core-dependencies)
@@ -118,7 +117,7 @@ interval_0 = results.where(results.interval_labels == 0, drop=True)
 ## Optional Dependencies
 
 | Package | Install extra | Spyglass integration |
-|---------|--------------|---------------------|
+| --------- | -------------- | --------------------- |
 | DeepLabCut | `[dlc]` | DLC position pipeline wraps it for pose estimation. Interact via Spyglass tables, not DLC directly |
 | keypoint_moseq | `[moseq-cpu]` or `[moseq-gpu]` | Behavior pipeline's MoSeq module for behavioral syllable discovery |
 | pynapple | — | Available via `fetch_pynapple()` on all tables |
@@ -127,7 +126,7 @@ interval_0 = results.where(results.interval_labels == 0, drop=True)
 ## Dependency Tiers
 
 | Tier | Packages | Required? |
-|------|----------|-----------|
+| ------ | ---------- | ----------- |
 | **Core** | datajoint, pynwb, hdmf, spikeinterface, probeinterface | Yes |
 | **Analysis** | non_local_detector, track_linearization, position_tools, ripple_detection, xarray | Yes |
 | **Pose Estimation** | deeplabcut | Optional (`[dlc]`) |

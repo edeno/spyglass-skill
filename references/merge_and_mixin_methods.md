@@ -193,7 +193,7 @@ Session() >> 'trodes_pos_params_name="default"'
 #### `ban_search_table(table)` / `unban_search_table(table)` / `see_banned_tables()`
 Control which tables are excluded from restrict_by graph traversal.
 
-### Deletion
+### Deletion (Mixin)
 
 #### `cautious_delete(force_permission=False, dry_run=False, *args, **kwargs)`
 Permission-checked deletion. Checks that the user is an admin or on a team with the session's experimenter(s).
@@ -247,7 +247,7 @@ Validates that a key corresponds to exactly one table entry.
 #### `load_shared_schemas(additional_prefixes=None)`
 Loads shared schemas for graph traversal (needed for `restrict_by` across schemas).
 
-### Population
+### Population (Mixin)
 
 #### `populate(*restrictions, **kwargs)`
 Populate computed table entries. Supports parallel processing via `_parallel_make` class variable.

@@ -1,6 +1,5 @@
 # Spyglass Analysis Workflows
 
-
 ## Contents
 
 - [Exploring Available Data](#exploring-available-data)

@@ -18,6 +18,7 @@ from spyglass.behavior.v1.core import PoseGroup
 ## PoseGroup
 
 **PoseGroup** (Manual)
+
 - Key: `pose_group_name`
 - Part table: `PoseGroup.Pose` — links to PositionOutput entries
 - Groups pose data from multiple bodyparts for behavioral analysis
@@ -31,17 +32,21 @@ from spyglass.behavior.v1.moseq import MoseqModel, MoseqModelParams, MoseqModelS
 ```
 
 **MoseqModelParams** (Lookup)
+
 - Key: `moseq_model_params_name`
 - Parameters for keypoint-moseq model training
 
 **MoseqModelSelection** (Manual)
+
 - Links PoseGroup to MoseqModelParams
 
 **MoseqModel** (Computed)
+
 - Trains a keypoint-moseq model on pose data
 - Discovers behavioral syllables from keypoint trajectories
 
 ## Dependency: keypoint_moseq
 
 Optional dependency (`pip install spyglass-neuro[moseq-cpu]` or `[moseq-gpu]`).
+
 - `keypoint_moseq` (imported as `kpms`) — Motion sequencing from keypoint data

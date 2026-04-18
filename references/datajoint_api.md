@@ -1,6 +1,5 @@
 # DataJoint & Spyglass API Reference
 
-
 ## Contents
 
 - [DataJoint Core Operators](#datajoint-core-operators)

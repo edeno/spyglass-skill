@@ -1,6 +1,5 @@
 # Position Tracking Pipeline
 
-
 ## Contents
 
 - [Overview](#overview)
@@ -52,7 +51,7 @@ position_df = (PositionOutput & merge_key).fetch1_dataframe()
 ### Part Tables (Sources)
 
 | Part Table | Source Class | Description |
-|------------|-------------|-------------|
+| ------------ | ------------- | ------------- |
 | `PositionOutput.TrodesPosV1` | `TrodesPosV1` | LED-based tracking via SpikeGadgets/Trodes |
 | `PositionOutput.DLCPosV1` | `DLCPosV1` | DeepLabCut pose estimation |
 | `PositionOutput.CommonPos` | `IntervalPositionInfo` | Legacy common position |
@@ -68,7 +67,7 @@ position_df = (PositionOutput & merge_key).fetch1_dataframe()
 
 Simple pipeline: raw LED positions → smoothed/interpolated position.
 
-```
+```text
 RawPosition (common) → TrodesPosSelection → TrodesPosV1 → PositionOutput.TrodesPosV1
                                 ↑
                         TrodesPosParams
@@ -81,14 +80,17 @@ from spyglass.position.v1 import TrodesPosParams, TrodesPosSelection, TrodesPosV
 ```
 
 **TrodesPosParams** (Manual, parameter table)
+
 - Key: `trodes_pos_params_name`
 - Methods: `insert_default()`, `get_default()`
 - Use `TrodesPosParams.describe()` or `TrodesPosParams.heading` for exact parameter names
 
 **TrodesPosSelection** (Manual)
+
 - Key: `nwb_file_name`, `interval_list_name`, `trodes_pos_params_name`
 
 **TrodesPosV1** (Computed)
+
 - Key: inherits from TrodesPosSelection
 - Methods: `fetch1_dataframe(add_frame_ind=True)`, `fetch_video_path()`
 
@@ -129,7 +131,7 @@ position_df = (PositionOutput & merge_key).fetch1_dataframe()
 
 Complex multi-stage pipeline for video-based pose estimation.
 
-```
+```text
 DLCProject → DLCModelSource → DLCModelSelection → DLCModel
                                                        ↓
 DLCPoseEstimationSelection → DLCPoseEstimation → DLCPoseEstimation.BodyPart
@@ -164,7 +166,7 @@ from spyglass.position.v1 import (
 ### DLC Parameter Tables
 
 | Table | Key |
-|-------|-----|
+| ------- | ----- |
 | `DLCModelParams` | `dlc_model_params_name` |
 | `DLCSmoothInterpParams` | `dlc_si_params_name` |
 | `DLCCentroidParams` | `dlc_centroid_params_name` |
@@ -196,6 +198,7 @@ from spyglass.position.v1.imported_pose import ImportedPose
 ```
 
 **ImportedPose** (Manual)
+
 - Key: `nwb_file_name`, `interval_list_name`
 - Part table: `ImportedPose.BodyPart` (key adds `part_name`)
 - Methods:

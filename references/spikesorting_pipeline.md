@@ -1,6 +1,5 @@
 # Spike Sorting Pipeline
 
-
 ## Contents
 
 - [Overview](#overview)
@@ -106,7 +105,7 @@ for mid in merge_ids:
 ### Part Tables
 
 | Part Table | Source Class | Description |
-|------------|-------------|-------------|
+| ------------ | ------------- | ------------- |
 | `SpikeSortingOutput.CurationV1` | `CurationV1` | V1 curated spike sorting |
 | `SpikeSortingOutput.ImportedSpikeSorting` | `ImportedSpikeSorting` | Pre-sorted spikes from NWB |
 | `SpikeSortingOutput.CuratedSpikeSorting` | `CuratedSpikeSorting` | V0 legacy curated sorting |
@@ -114,7 +113,7 @@ for mid in merge_ids:
 ### Key Methods on SpikeSortingOutput
 
 | Method | Returns | Description |
-|--------|---------|-------------|
+| -------- | --------- | ------------- |
 | `get_spike_times(key)` | list[np.array] | Spike times for each unit |
 | `get_spike_indicator(key, time)` | np.array | Binary spike indicator matrix (n_time × n_units) |
 | `get_firing_rate(key, time, multiunit, smoothing_sigma)` | np.array | Smoothed firing rate(s) |
@@ -125,7 +124,7 @@ for mid in merge_ids:
 
 ## V1 Pipeline Flow
 
-```
+```text
 Raw (common)
     ↓
 SortGroup (electrode grouping)
@@ -159,15 +158,18 @@ from spyglass.spikesorting.v1 import (
 ```
 
 **SortGroup** (Manual)
+
 - Key: `nwb_file_name`, `sort_group_id`
 - Part table: `SortGroup.SortGroupElectrode`
 - Method: `set_group_by_shank()` — Auto-organizes electrodes by probe shank
 
 **SpikeSortingPreprocessingParameters** (Lookup)
+
 - Key: `preproc_param_name`
 - Default: `"default"` with `frequency_min`, `frequency_max`, `margin_ms`
 
 **SpikeSortingRecording** (Computed)
+
 - Applies bandpass filter and referencing to raw data
 - Methods: `get_recording(key)` — Returns SpikeInterface BaseRecording
 
@@ -203,6 +205,7 @@ from spyglass.spikesorting.v1 import (
 ```
 
 **ArtifactDetectionParameters** (Lookup)
+
 - Key: `artifact_param_name`
 - Defaults: `"default"`, `"none"`
 - Use `ArtifactDetectionParameters.describe()` for exact parameter fields
@@ -218,6 +221,7 @@ from spyglass.spikesorting.v1 import (
 ```
 
 **SpikeSorterParameters** (Lookup)
+
 - Key: `sorter`, `sorter_param_name`
 - Defaults include:
   - `mountainsort4` / `franklab_tetrode_hippocampus_30KHz`
@@ -225,6 +229,7 @@ from spyglass.spikesorting.v1 import (
   - `clusterless_thresholder` / `default_clusterless`
 
 **SpikeSorting** (Computed)
+
 - Runs SpikeInterface sorter
 - Methods: `get_sorting(key)` — Returns SpikeInterface BaseSorting
 
@@ -235,6 +240,7 @@ from spyglass.spikesorting.v1 import CurationV1
 ```
 
 **CurationV1** (Manual)
+
 - Key: `sorting_id`, `curation_id`
 - Valid labels: `"reject"`, `"noise"`, `"artifact"`, `"mua"`, `"accept"`
 - Methods:
@@ -257,10 +263,12 @@ from spyglass.spikesorting.v1 import (
 ```
 
 **MetricParameters** (Lookup)
+
 - Available metrics: `snr`, `isi_violation`, `nn_isolation`, `nn_noise_overlap`, `peak_offset`, `peak_channel`, `num_spikes`
 - Method: `show_available_metrics()`
 
 **MetricCuration** (Computed)
+
 - Extracts waveforms, computes quality metrics, generates labels/merge groups
 - Methods: `get_waveforms(key)`, internal metric computation
 
@@ -273,10 +281,12 @@ from spyglass.spikesorting.analysis.v1.group import SortedSpikesGroup, UnitSelec
 ```
 
 **UnitSelectionParams** (Manual)
+
 - Key: `unit_filter_params_name`
 - Defaults: `"all_units"`, `"exclude_noise"`, `"default_exclusion"`
 
 **SortedSpikesGroup** (Manual)
+
 - Key: `nwb_file_name`, `unit_filter_params_name`, `sorted_spikes_group_name`
 - Part table: `SortedSpikesGroup.Units` — links to SpikeSortingOutput entries
 
@@ -315,6 +325,7 @@ from spyglass.spikesorting.analysis.v1.unit_annotation import UnitAnnotation
 ```
 
 **UnitAnnotation** (Manual)
+
 - Key: `spikesorting_merge_id`, `unit_id`
 - Part table: `UnitAnnotation.Annotation` — stores label + quantification
 - Methods: `add_annotation(key, **kwargs)`, `fetch_unit_spikes(return_unit_ids)`

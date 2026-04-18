@@ -1,6 +1,5 @@
 # Setup and Configuration Reference
 
-
 ## Contents
 
 - [Installation Methods](#installation-methods)
@@ -11,7 +10,6 @@
 - [Common Setup Troubleshooting](#common-setup-troubleshooting)
 
 This reference covers installing Spyglass, configuring the database connection, setting up data directories, and troubleshooting setup issues. For authoritative details, always consult the source files: `src/spyglass/settings.py` (runtime config), `scripts/install.py` (installer), and `scripts/validate.py` (validator).
-
 
 ## Installation Methods
 
@@ -72,7 +70,6 @@ The `-e` flag installs in editable mode so changes to the source are reflected i
 - ~10 GB disk space for minimal install, ~25 GB for full
 - macOS or Linux (Windows is experimental)
 
-
 ## Database Configuration
 
 Spyglass uses DataJoint, which requires a MySQL-compatible database. Configuration is stored in a `dj_local_conf.json` file (DataJoint's standard config) or in a global DataJoint config file.
@@ -127,6 +124,7 @@ config.save_dj_config(
 ```
 
 Save methods:
+
 - **`global`**: Saves to `~/.datajoint_config.json`
 - **`local`**: Saves to `./dj_local_conf.json` in the current directory
 - **`custom`**: Saves to the path specified by `output_filename`
@@ -152,7 +150,6 @@ DataJoint "stores" tell the database where externally stored files (raw data, an
 }
 ```
 
-
 ## Directory Configuration
 
 Spyglass organizes data into a tree of directories under a base path. The directory structure is defined in `src/spyglass/directory_schema.json` (the single source of truth).
@@ -175,7 +172,7 @@ export SPYGLASS_BASE_DIR=/data/spyglass
 
 All subdirectories are relative to the base directory. The schema is loaded from `directory_schema.json` at runtime. The standard layout (check the JSON file for current values):
 
-```
+```text
 $SPYGLASS_BASE_DIR/
   raw/              # Raw NWB files
   analysis/         # Analysis NWB output files
@@ -248,7 +245,7 @@ All directories are created automatically on first config load if they do not ex
 `SpyglassConfig` sets several environment variables with defaults (see `env_defaults` in `settings.py`):
 
 | Variable | Default | Purpose |
-|----------|---------|---------|
+| ---------- | --------- | --------- |
 | `FIGURL_CHANNEL` | `franklab2` | figurl visualization channel |
 | `DJ_SUPPORT_FILEPATH_MANAGEMENT` | `TRUE` | Enable DataJoint filepath management |
 | `KACHERY_CLOUD_EPHEMERAL` | `TRUE` | Kachery cloud mode |
@@ -264,15 +261,16 @@ from spyglass.sharing import AnalysisNwbfileKachery, KacheryZone
 ```
 
 **KacheryZone** (Manual)
+
 - Key: `kachery_zone_name`
 - Registers the kachery zone(s) this install can publish to.
 
 **AnalysisNwbfileKachery** (Computed)
+
 - Part table: `AnalysisNwbfileKachery.LinkedFile`
 - Links analysis files to kachery-cloud for sharing.
 
 Use `KACHERY_ZONE` / `KACHERY_CLOUD_EPHEMERAL` env vars above to pick the zone and mode.
-
 
 ## Environment Setup Scenarios
 
@@ -325,7 +323,6 @@ Lab admins can pre-configure shared settings so new members only need to provide
 
 2. **Lab-specific setup script** -- see `scripts/setup_franklab.sh` for an example wrapper.
 
-
 ## Installer and Validator Scripts
 
 ### `scripts/install.py`
@@ -335,7 +332,7 @@ Automated installer that handles environment creation, database setup, and valid
 **Key CLI flags:**
 
 | Flag | Description |
-|------|-------------|
+| ------ | ------------- |
 | `--minimal` | Core dependencies only (~5 min) |
 | `--full` | All optional dependencies (~15 min) |
 | `--docker` | Set up local MySQL via Docker |
@@ -352,6 +349,7 @@ Automated installer that handles environment creation, database setup, and valid
 | `--force` | Overwrite existing environment without prompting |
 
 **What it does:**
+
 1. Checks prerequisites (Python version, conda/mamba, disk space)
 2. Creates conda environment from the appropriate environment file
 3. Installs Spyglass in editable mode (`pip install -e .`)
@@ -371,7 +369,7 @@ python scripts/validate.py
 **Checks performed:**
 
 | Check | Critical? | What it verifies |
-|-------|-----------|------------------|
+| ------- | ----------- | ------------------ |
 | Python version | Yes | Meets minimum from `pyproject.toml` |
 | Conda/Mamba | Yes | Package manager available |
 | Spyglass import | Yes | `import spyglass` works, version available |
@@ -379,7 +377,6 @@ python scripts/validate.py
 | Database connection | No | Can connect to MySQL via DataJoint |
 
 Exit code 0 means all critical checks passed (warnings are non-fatal). Exit code 1 means a critical check failed.
-
 
 ## Common Setup Troubleshooting
 
