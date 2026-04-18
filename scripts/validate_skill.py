@@ -1138,6 +1138,31 @@ ANTI_PATTERNS = [
         "code",
     ),
     (
+        "merge-classmethod-discard",
+        "merge-table classmethod called on a restricted relation "
+        "(Table & key).method() — Python dispatches classmethod calls "
+        "to the class, silently dropping the `& key`. Pass the "
+        "restriction as an argument: Table.method(restriction) instead.",
+        # Match `(SomeMergeTable & anything).merge_xxx(` where xxx is one
+        # of the known _Merge classmethods. Bracket-balanced `[^)]*` in
+        # the restriction expression works for typical one-line cases.
+        # Skip matches whose line already contains `#` before the match —
+        # those are demonstration comments explaining the bad pattern,
+        # not runnable code.
+        lambda body: [
+            (m.start(), m.group(0))
+            for m in re.finditer(
+                r"\(\s*\w+\s*&[^)]+\)\s*\."
+                r"(?:merge_delete|merge_delete_parent|merge_restrict"
+                r"|merge_get_part|merge_get_parent|merge_view|merge_html)"
+                r"\s*\(",
+                body,
+            )
+            if "#" not in body[body.rfind("\n", 0, m.start()) + 1 : m.start()]
+        ],
+        "code",
+    ),
+    (
         "spyglassmixin-not-first",
         "class inherits from dj.{Manual,Lookup,Computed,Imported,Part} "
         "without SpyglassMixin/SpyglassMixinPart as the first parent — "

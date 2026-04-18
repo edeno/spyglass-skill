@@ -2,8 +2,46 @@
 
 ## Contents
 
+- [Classmethod Restriction Discard (Read First)](#classmethod-restriction-discard-read-first)
 - [_Merge Class Methods](#_merge-class-methods)
 - [SpyglassMixin Methods](#spyglassmixin-methods)
+
+## Classmethod Restriction Discard (Read First)
+
+Most `_Merge` methods you reach for are **classmethods** whose restriction parameter defaults to `True` (= every row). Python dispatches classmethod calls to the class regardless of instance context, so `(Table & key).method()` silently discards the `& key` and the method runs with the default — i.e., on the entire table.
+
+**High-impact examples** from `src/spyglass/utils/dj_merge_tables.py`:
+
+| Method | Shape | What silent discard does |
+|--------|-------|--------------------------|
+| `merge_delete(restriction=True)` (line 444) | `@classmethod`, destructive | Deletes master + all parts across the whole merge table |
+| `merge_delete_parent(restriction=True, dry_run=True)` (line 468) | `@classmethod`, destructive (dry_run=True is the only safety net on default) | Same as above plus deletes all part-parent rows |
+| `merge_restrict(restriction=True)` (line 424) | `@classmethod`, read-only | Returns a view across the whole table |
+| `merge_get_part(restriction=True, ...)` (line 580) | `@classmethod`, read-only (raises on multi-source) | Returns wrong part or raises |
+| `merge_get_parent(restriction=True, ...)` (line 657) | `@classmethod`, read-only | Same |
+| `merge_view(restriction=True)` (line 400) | `@classmethod`, read-only | Prints the whole table |
+| `merge_html(restriction=True)` (line 418) | `@classmethod`, read-only | HTML of whole table |
+
+Plus the staticmethod `Nwbfile.cleanup(delete_files=False)` at `src/spyglass/common/common_nwbfile.py:139` — same shape, same footgun.
+
+**Always pass the restriction as an argument:**
+
+```python
+# ❌ Wrong (shown as a comment so nobody copies it by accident):
+#   (PositionOutput & merge_key).merge_delete()
+# The `& merge_key` is silently dropped and this call deletes every row.
+
+# ✅ Correct — restriction is the first positional arg:
+PositionOutput.merge_delete(merge_key)
+PositionOutput.merge_delete_parent(merge_key, dry_run=True)
+PositionOutput.merge_restrict(merge_key)
+PositionOutput.merge_get_part(merge_key)
+PositionOutput.merge_view(merge_key)
+```
+
+**Instance methods are safe** — these respect `self.restriction`, so `(Table & key).method()` works as expected: `merge_fetch`, `merge_populate`, `merge_restrict_class`, `merge_get_parent_class`, `fetch_nwb`, `delete` (the mixin override), plus SpyglassMixin helpers like `delete_orphans`, `delete_downstream_parts`, `fetch1`, `fetch`.
+
+If you are uncertain whether a method is a classmethod, read the source or err on the side of passing the restriction as an argument.
 
 ## _Merge Class Methods
 

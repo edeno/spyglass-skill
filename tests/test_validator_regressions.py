@@ -293,6 +293,53 @@ def fixture_missing_notebook(src_root):
     )
 
 
+def fixture_merge_classmethod_discard(src_root):
+    """(Table & key).merge_*() classmethod-restriction-discard footgun."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        # Dangerous: merge_delete is a classmethod, `& merge_key` discarded
+        (PositionOutput & merge_key).merge_delete()
+
+        # Also dangerous: merge_restrict returns whole-table view here
+        (LFPOutput & {"nwb_file_name": f}).merge_restrict()
+        ```
+        """
+    )
+    r = _run(v.check_anti_patterns, md)
+    hits = [m for m in r.failed if "merge-classmethod-discard" in m]
+    if len(hits) >= 2:
+        print("  [ok] anti-pattern: (Table & k).merge_*() discard caught (both)")
+        return True
+    print(f"  [FAIL] expected >=2 hits, got {len(hits)}: {r.failed}")
+    return False
+
+
+def fixture_merge_classmethod_correct_form_ok(src_root):
+    """Correct forms `Table.merge_*(restriction)` must NOT trigger."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        PositionOutput.merge_delete(merge_key)
+        PositionOutput.merge_delete_parent(merge_key, dry_run=True)
+        LFPOutput.merge_restrict({"nwb_file_name": f})
+        LFPOutput.merge_get_part(key)
+        ```
+        """
+    )
+    r = _run(v.check_anti_patterns, md)
+    hits = [m for m in r.failed if "merge-classmethod-discard" in m]
+    if not hits:
+        print("  [ok] anti-pattern: correct Table.merge_*() form not false-positive")
+        return True
+    print(f"  [FAIL] correct form triggered check: {hits}")
+    return False
+
+
 FIXTURES = [
     fixture_syntax_ellipsis_after_kwargs,
     fixture_trailing_underscore_nwb,
@@ -305,6 +352,8 @@ FIXTURES = [
     fixture_missing_notebook,
     fixture_spyglassmixin_not_first,
     fixture_spyglassmixin_ordering_ok,
+    fixture_merge_classmethod_discard,
+    fixture_merge_classmethod_correct_form_ok,
 ]
 
 
