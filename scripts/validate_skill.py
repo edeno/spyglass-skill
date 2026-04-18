@@ -7,10 +7,14 @@ Uses AST parsing (no database connection needed) to check:
 3. Method signatures: do documented keyword arguments actually exist?
 
 Usage:
-    python scripts/validate_skill.py [--spyglass-src PATH]
+    python3 scripts/validate_skill.py [--spyglass-src PATH]
 
     # Verbose mode (show passing checks too):
-    python scripts/validate_skill.py -v
+    python3 scripts/validate_skill.py -v
+
+    # (Use `python3` explicitly. On some systems `python` points to Python 2
+    # or is missing entirely; the file contains non-ASCII characters and
+    # relies on Python 3's default UTF-8 source decoding.)
 
 Exit codes:
     0: All checks passed
@@ -1303,6 +1307,30 @@ def check_structure(results: ValidationResult):
         )
     else:
         results.ok(f"description: length {len(desc_body)}/1024 chars")
+
+    # SKILL.md body size — Anthropic guidance says frequently-loaded skills
+    # should aim for <500 words. A routing-heavy skill like this one with
+    # many pipeline references won't hit that, but a soft cap prevents bloat.
+    body = re.sub(r"^---\n.*?\n---\n", "", skill_content, count=1, flags=re.DOTALL)
+    body_words = len(body.split())
+    body_lines = body.count("\n") + 1
+    WORD_SOFT_CAP = 1200    # ~2.4x Anthropic target; allows headroom for router table
+    LINE_HARD_CAP = 500     # Anthropic's explicit cap on SKILL.md body
+    if body_words > WORD_SOFT_CAP:
+        results.warn(
+            f"body: SKILL.md body is {body_words} words "
+            f"(soft cap {WORD_SOFT_CAP}; Anthropic target <500 for "
+            f"frequently-loaded skills). Consider migrating content to references."
+        )
+    else:
+        results.ok(f"body: SKILL.md body {body_words} words (<{WORD_SOFT_CAP})")
+    if body_lines > LINE_HARD_CAP:
+        results.fail(
+            f"body: SKILL.md body is {body_lines} lines; "
+            f"Anthropic caps it at {LINE_HARD_CAP}"
+        )
+    else:
+        results.ok(f"body: SKILL.md body {body_lines} lines (<{LINE_HARD_CAP})")
 
     # First/second person detection — Anthropic guidance says descriptions
     # are injected into the system prompt and must be third-person.
