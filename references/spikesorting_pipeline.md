@@ -4,6 +4,7 @@
 ## Contents
 
 - [Overview](#overview)
+- [v0 vs v1 (Read First)](#v0-vs-v1-read-first)
 - [SpikeSortingOutput Merge Table](#spikesortingoutput-merge-table)
 - [V1 Pipeline Flow](#v1-pipeline-flow)
 - [Step 1: Recording Preprocessing](#step-1-recording-preprocessing)
@@ -25,6 +26,19 @@ from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput
 from spyglass.spikesorting.analysis.v1.group import SortedSpikesGroup, UnitSelectionParams
 from spyglass.spikesorting.analysis.v1.unit_annotation import UnitAnnotation
 ```
+
+## v0 vs v1 (Read First)
+
+**Use v1 for new work.** v0 remains in the codebase so existing sortings stay queryable through `SpikeSortingOutput`, but all new sorting, curation, and analysis should go through the v1 tables.
+
+Concrete divergences to watch for when reading examples:
+
+- **Imports**: `spyglass.spikesorting.v1.*` (current) vs `spyglass.spikesorting.v0.*` (legacy). Module names also differ — `v1/recording.py`, `v1/sorting.py`, `v1/curation.py`, `v1/metric_curation.py` vs a different v0 layout.
+- **Selection inserts**: v1 uses the `insert_selection(...)` classmethod convention (`SpikeSortingSelection.insert_selection(key)`). v0 uses plain `.insert1(key)` on the selection table. Using `insert1` on a v1 table skips the validation/UUID generation `insert_selection` performs.
+- **Curation**: v1 has a dedicated `CurationV1` table with `insert_curation(...)`, linking back to a specific `SpikeSorting` row via `sorting_id`. v0 threads curation through separate tables.
+- **Class-name collisions**: several names (`SpikeSortingRecordingSelection`, `SpikeSortingRecording`, `SpikeSortingSelection`, `ArtifactDetectionSelection`, etc.) exist in both v0 and v1 modules. When reading code, confirm which module is imported at the top of the file.
+
+If you see a v0 import in someone's code and they're *asking how to do something new*, answer in v1 and note that v0 still works for querying existing data.
 
 ## SpikeSortingOutput Merge Table
 

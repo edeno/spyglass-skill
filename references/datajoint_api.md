@@ -105,6 +105,17 @@ names, times = (Session & key).fetch('nwb_file_name', 'session_start_time')
 # Returns list of dicts with only primary key fields
 ```
 
+**Footgun — too-loose restriction.** `fetch1()` (and anything that wraps it — `merge_get_part`, `fetch_nwb`, `fetch_results`, `fetch1_dataframe`) raises "expected one row, got N" when the restriction matches multiple rows. The usual cause is under-specifying the key: `{"nwb_file_name": nwb_file}` alone typically matches every interval, every parameter set, and every pipeline version for that session. Fix: include enough primary-key fields to pick exactly one row. When unsure what fields exist, print the loose-restriction result first and use it to build a fully-specified key:
+
+```python
+# Discover
+(SomeTable & {"nwb_file_name": nwb_file})   # shows all matching rows
+# Specify (include every primary-key field needed for uniqueness)
+key = {"nwb_file_name": nwb_file, "interval_list_name": "02_r1",
+       "trodes_pos_params_name": "default"}
+(SomeTable & key).fetch1()                   # now safe
+```
+
 ### Aggregation (`.aggr()`)
 
 On-the-fly aggregation across joined tables.

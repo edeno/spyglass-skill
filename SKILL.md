@@ -56,6 +56,16 @@ data = (MergeTable & merge_key).fetch1_dataframe()  # for position, LFP, lineari
 
 **Gotcha**: Don't restrict merge tables with friendly keys directly — use `merge_get_part()`, `merge_restrict()`, or `<<`.
 
+**Gotcha — too-loose restriction** (common, not merge-specific): a restriction like `{"nwb_file_name": nwb_file}` alone usually matches MANY rows — every interval, every parameter set, every pipeline version for that session. That's what causes `fetch1()`, `merge_get_part()`, `fetch_results()`, and `fetch_nwb()` to raise "expected one row, got N" — the restriction was under-specified. The same footgun applies to any Spyglass or DataJoint table, not just merge tables. Fix: include enough primary-key fields to pick exactly one row (typically `nwb_file_name` + `interval_list_name` + a params name). When unsure what exists, restrict loosely first, print the result, then build a fully-specified key:
+
+```python
+# Discover, don't guess — shows you every matching row and its full key
+PositionOutput.merge_restrict({"nwb_file_name": nwb_file})
+# Once you see the options, pick ONE and build a fully-specified key
+key = {"nwb_file_name": nwb_file, "interval_list_name": "02_r1",
+       "trodes_pos_params_name": "default"}
+```
+
 ### All Pipelines
 
 | Output Table | Import Path | Type | Data Access |

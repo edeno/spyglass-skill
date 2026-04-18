@@ -4,6 +4,7 @@
 ## Contents
 
 - [Overview](#overview)
+- [Two Filename-Convention Rules (Read First)](#two-filename-convention-rules-read-first)
 - [Prerequisites](#prerequisites)
 - [The Standard Flow](#the-standard-flow)
 - [insert_sessions Parameters](#insert_sessions-parameters)
@@ -19,6 +20,13 @@ Ingestion is the first-contact flow for a new NWB file: it walks the file, popul
 Entry point: `spyglass.data_import.insert_sessions`. Canonical notebook: `notebooks/py_scripts/02_Insert_Data.py`. Docs: `docs/src/Features/Ingestion.md`.
 
 Some lab-specific or custom metadata (labs, probes, devices) is often populated manually before calling `insert_sessions`, since those lookup tables are shared across sessions.
+
+## Two Filename-Convention Rules (Read First)
+
+These two rules are the most common source of ingestion errors. Both are covered in detail below, but mentioning them up front so they're not missed:
+
+1. **Pass the RAW filename** (`my_session.nwb`) to `insert_sessions`, not the "copy" name. Spyglass copies the file on ingestion and appends `_` before `.nwb`, then stores that under `Nwbfile`. Downstream queries use the copy name (`my_session_.nwb`). Mixing these up is a common footgun — see [Inspecting After Ingestion](#inspecting-after-ingestion).
+2. **Do NOT use `skip_duplicates=True` for raw NWB re-ingestion.** Use `reinsert=True` instead. `skip_duplicates` is for lookup-table inserts (ProbeType, Lab, etc.). See [skip_duplicates: When to Use It](#skip_duplicates-when-to-use-it).
 
 ## Prerequisites
 
