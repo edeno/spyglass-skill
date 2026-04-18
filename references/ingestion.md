@@ -43,10 +43,10 @@ ProbeType.insert1(
 import spyglass.data_import as sgi
 
 # Single file
-sgi.insert_sessions("my_session_.nwb")
+sgi.insert_sessions("my_session.nwb")
 
 # Multiple files
-sgi.insert_sessions(["session_01_.nwb", "session_02_.nwb"])
+sgi.insert_sessions(["session_01.nwb", "session_02.nwb"])
 
 # Glob wildcard matching exactly one file
 sgi.insert_sessions("j1620210710_*.nwb")
@@ -87,23 +87,31 @@ It is **not** appropriate for raw data ingestion. `insert_sessions` uses `reinse
 from spyglass.common import Session, Nwbfile
 
 # Was the file registered?
-Nwbfile & {"nwb_file_name": "my_session_.nwb"}
+Nwbfile & {"nwb_file_name": "my_session.nwb"}
 
 # What got ingested into Session?
-Session & {"nwb_file_name": "my_session_.nwb"}
+Session & {"nwb_file_name": "my_session.nwb"}
 
 # Who was the experimenter?
-Session.Experimenter & {"nwb_file_name": "my_session_.nwb"}
+Session.Experimenter & {"nwb_file_name": "my_session.nwb"}
 ```
 
-Spyglass copies the NWB file and registers a "copy" filename with `_` appended before `.nwb` (e.g., `mysession_.nwb`). Downstream tables reference the copy, not the original.
+Spyglass copies the NWB file on ingestion and registers a "copy" filename with `_` appended before `.nwb`. You pass the **raw** filename (e.g., `my_session.nwb`) to `insert_sessions`; Spyglass derives the copy name (`my_session_.nwb`) internally via `get_nwb_copy_filename()`. Downstream tables reference the copy, so when you query `Session`, `Nwbfile`, etc. you'll see the trailing-underscore form:
+
+```python
+from spyglass.utils.nwb_helper_fn import get_nwb_copy_filename
+
+nwb_file_name = "my_session.nwb"          # what you pass to insert_sessions
+nwb_copy_file_name = get_nwb_copy_filename(nwb_file_name)  # "my_session_.nwb"
+# Session & {"nwb_file_name": nwb_copy_file_name}
+```
 
 ## Re-ingesting a File
 
 To overwrite an existing ingestion:
 
 ```python
-sgi.insert_sessions("my_session_.nwb", reinsert=True)
+sgi.insert_sessions("my_session.nwb", reinsert=True)
 ```
 
 **Before reinserting**, delete existing downstream entries — otherwise foreign keys will block the replacement. Review the delete implications carefully (see the destructive ops warning in SKILL.md).

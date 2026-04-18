@@ -403,19 +403,24 @@ def check_module_exports(src_root, module_path, names, results, location):
 
 
 def check_imports(src_root, results):
-    """Check that all import statements in code blocks are valid."""
+    """Check that all import statements in code blocks are valid.
+
+    Uses join_logical_lines so that multiline imports
+    (`from x import (a, b, c)` across several lines) are matched as a single
+    logical line.
+    """
     for md_file in collect_md_files():
         content = md_file.read_text()
         blocks = extract_code_blocks(content)
 
         for block_start, block_lines in blocks:
-            for line_num, line in block_lines:
+            for line_num, line in join_logical_lines(block_lines):
                 for match in IMPORT_PATTERN.finditer(line):
                     module_path = match.group(1)
                     raw_names = match.group(2)
-                    # Handle multi-line imports and trailing comments
+                    # Handle multi-line imports and trailing comments/parens
                     names = [
-                        n.strip().rstrip(",").rstrip(")")
+                        n.strip().rstrip(",").rstrip(")").lstrip("(")
                         for n in raw_names.split(",")
                         if n.strip() and not n.strip().startswith("#")
                     ]
