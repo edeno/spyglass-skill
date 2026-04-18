@@ -1291,6 +1291,37 @@ def check_structure(results: ValidationResult):
         else:
             results.ok(f"trigger: no broad phrase '{phrase}'")
 
+    # Hard constraints from Anthropic skill-authoring guidance:
+    # https://docs.anthropic.com/.../agent-skills/best-practices
+    # 1. description must be <= 1024 chars (published cap)
+    # 2. description must be third-person (no "I can", "you can", ...)
+    desc_body = description[len("description:"):].strip() if description else ""
+    if len(desc_body) > 1024:
+        results.fail(
+            f"description: frontmatter description is {len(desc_body)} chars; "
+            f"Anthropic caps it at 1024 (best-practices.md)"
+        )
+    else:
+        results.ok(f"description: length {len(desc_body)}/1024 chars")
+
+    # First/second person detection — Anthropic guidance says descriptions
+    # are injected into the system prompt and must be third-person.
+    person_patterns = [
+        (r"\bI\s+(can|will|help)\b", "first-person ('I can/will/help')"),
+        (r"\byou\s+(can|should|will|may)\b", "second-person ('you can/should/...')"),
+        (r"\byour\b", "second-person possessive ('your')"),
+    ]
+    person_hit = False
+    for pat, label in person_patterns:
+        if re.search(pat, desc_body, flags=re.IGNORECASE):
+            results.fail(
+                f"description: contains {label} — must be third-person per "
+                f"Anthropic guidance"
+            )
+            person_hit = True
+    if not person_hit:
+        results.ok("description: third-person wording")
+
 
 def main():
     parser = argparse.ArgumentParser(
