@@ -20,6 +20,8 @@ Two main use cases:
 
 Sources: `src/spyglass/spikesorting/v1/figurl_curation.py`, `src/spyglass/decoding/decoding_merge.py` (`create_decoding_view`). Dependencies: `sortingview`, `kachery-cloud`, `figurl`.
 
+Upstream project (FigURL itself, for questions beyond Spyglass integration): <https://github.com/flatironinstitute/figurl>
+
 ## Spike Sorting Curation via FigURL
 
 ```python
