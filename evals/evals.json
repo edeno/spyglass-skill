@@ -1,6 +1,6 @@
 {
   "skill_name": "spyglass",
-  "notes": "Baseline eval prompts for the Spyglass skill. Prompts are written in the realistic, detailed style skill-creator recommends (file paths, error messages, lab context). Assertions are intentionally left empty — per the skill-creator workflow, assertions are drafted during the first test-run pass, not before. Cover one prompt per major stage in SKILL.md's stage classifier plus one Common Mistake, so a baseline run exercises the full routing surface.",
+  "notes": "Baseline eval prompts for the Spyglass skill. Prompts are written in the realistic, detailed style skill-creator recommends (file paths, error messages, lab context). Assertions are intentionally left empty — per the skill-creator workflow, assertions are drafted during the first test-run pass, not before. Coverage: one prompt per major stage in SKILL.md's stage classifier — setup (#1), ingestion (#2), framework concepts (#7), pipeline usage (#6), pipeline authoring (#8), runtime debugging (#3, #4) — plus one Common Mistake (#5). Runtime debugging has two evals because cardinality failures and populate key-isolation failures are distinct diagnostic patterns.",
   "evals": [
     {
       "id": 1,
@@ -25,7 +25,7 @@
       "eval_name": "fetch1-cardinality-error",
       "stage": "runtime-debugging",
       "prompt": "getting this error when trying to fetch position data: `datajoint.errors.DataJointError: fetch1 should only be called on one tuple, but 14 were returned`. My code is `(PositionOutput & {'nwb_file_name': 'j1620210710_.nwb'}).fetch1_dataframe()`. What am I doing wrong? I thought that key uniquely identified the position for that session.",
-      "expected_output": "Identifies this as the too-loose-restriction footgun (Common Mistake #2). Explains that `{nwb_file_name: ...}` alone matches every interval × every params × every pipeline version. Routes to runtime_debugging.md or datajoint_api.md. Shows the discovery pattern: run `PositionOutput.merge_restrict({'nwb_file_name': ...})` first to see the 14 options, then build a fully-specified key (nwb_file_name + interval_list_name + trodes_pos_params_name).",
+      "expected_output": "Identifies this as the too-loose-restriction footgun (Common Mistake #2). Explains that `{nwb_file_name: ...}` alone matches every interval × every param set × every upstream position source (PositionOutput is a multi-source merge over Trodes, DLC, CommonPos, ImportedPose — see position_pipeline.md). Routes to runtime_debugging.md or datajoint_api.md. Shows the discovery pattern FIRST: run `PositionOutput.merge_restrict({'nwb_file_name': ...})` to see the 14 rows and which source each came from, then either (a) build a fully-specified key with the source-specific params name (e.g., `trodes_pos_params_name` if Trodes, `dlc_pos_params_name` if DLC) plus `interval_list_name`, or (b) stay source-agnostic by tightening to the one merge_id of interest via `merge_get_part`. A correct answer MUST NOT hardcode Trodes without establishing from the discovery step that the user is working with Trodes — the prompt doesn't say.",
       "files": [],
       "assertions": []
     },
@@ -53,6 +53,24 @@
       "stage": "pipeline-usage",
       "prompt": "I've already ingested j1620210710_.nwb and I want to run the LFP pipeline on the 'sleep' interval for tetrodes 4, 5, and 12 using the default filter. Once that's done I want the band-filtered signal out as a dataframe so I can look at theta power. Walk me through the full flow.",
       "expected_output": "Routes to lfp_pipeline.md. Shows the full V1 flow: (1) build the LFPElectrodeGroup restriction and insert LFPSelection, (2) call `LFPV1.populate(key)` for the target session+interval, (3) resolve the merge entry via `LFPOutput.merge_get_part(key).fetch1('KEY')`, (4) `(LFPOutput & merge_key).fetch1_dataframe()` to get the dataframe. Flags any missing cardinality check before the `fetch1`. Does NOT collapse this into a single one-liner — the selection-insert / populate / merge-resolve / fetch shape is the canonical pattern every V1 pipeline follows, and surfacing each step is the teaching win.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 7,
+      "eval_name": "framework-concepts-merge-tables",
+      "stage": "framework-concepts",
+      "prompt": "I'm new to spyglass. Every time I look at PositionOutput or LFPOutput I see this `merge_id` column plus weird helper methods like `merge_get_part` and `merge_restrict` — but none of this shows up in the DataJoint docs I've been reading. What are these actually? And while we're at it, I keep seeing `SpyglassMixin` in the class hierarchy on top of `dj.Computed` — what does that layer do that plain DataJoint doesn't?",
+      "expected_output": "Routes to merge_and_mixin_methods.md (+ `01_Concepts.ipynb` as canonical notebook). Explains that a merge table is a Spyglass convention on top of DataJoint — not a DataJoint primitive — that consolidates outputs from multiple pipeline versions/sources behind a single `merge_id`, with one part table per upstream source (e.g., PositionOutput parts: TrodesPosV1, DLCPosV1, CommonPos, ImportedPose). Explains that the `merge_*` methods are classmethods/staticmethods on the merge table that resolve or operate on the merge. Explains that SpyglassMixin adds: `fetch_nwb` for NWB-aware fetches, `<<` / `>>` upstream/downstream traversal, export hooks for reproducibility (ExportMixin), and PopulateMixin transaction/hash-check behavior. Does NOT lead with 04_Merge_Tables.ipynb (the skill explicitly flags that as a later specialized concept for novices). Does NOT teach classmethod-discard gotcha as the FIRST thing — save that for when the user is actually writing code.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 8,
+      "eval_name": "author-custom-pipeline-off-lfp",
+      "stage": "pipeline-authoring",
+      "prompt": "I want to build a custom analysis pipeline that takes LFPOutput as upstream and computes per-interval theta/gamma power ratios. Each interval + LFP entry should produce one row with mean power in theta (6-10 Hz), mean power in gamma (30-50 Hz), and their ratio. Give me a schema sketch — which DataJoint tiers for the parameters vs selection vs computed tables, how to reference LFPOutput without violating merge conventions, and what goes in `make()`. I want this in a new schema called `spyglass_edeno_theta_gamma`. Also: should the computed table inherit SpyglassMixin?",
+      "expected_output": "Routes to custom_pipeline_authoring.md (+ `docs/src/ForDevelopers/` under the hood). Proposes the canonical 3-tier layout: ThetaGammaParams (dj.Lookup or dj.Manual), ThetaGammaSelection (dj.Manual — joins LFPOutput merge-key + params + interval), ThetaGamma (dj.Computed, inherits SpyglassMixin). STRONGLY flags that the Computed table MUST inherit SpyglassMixin first in the MRO (a validator regression fixture exists for this exact mistake). For referencing LFPOutput: foreign-key on the merge primary key (`-> LFPOutput`), NOT on any part-table fields directly — that's the merge-convention rule. Shows a `make()` skeleton that: (1) resolves the merge entry via `LFPOutput.merge_get_part(key)`, (2) fetches the band-filtered dataframe, (3) computes power ratios, (4) inserts the result row. Notes the schema name should follow `spyglass_<user_or_team>_<topic>` convention. Does NOT collapse LFPOutput into a direct part-table dependency.",
       "files": [],
       "assertions": []
     }
