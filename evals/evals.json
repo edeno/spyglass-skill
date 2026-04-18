@@ -34,7 +34,7 @@
       "eval_name": "populate-fails-halfway-through",
       "stage": "runtime-debugging",
       "prompt": "I ran `LFPV1.populate()` on about 20 sessions last night and woke up to find it failed somewhere in the middle. The traceback goes 30+ frames deep into datajoint internals and I can't tell which session is broken. Is there a way to figure out the failing key without rerunning everything one at a time by hand?",
-      "expected_output": "Routes to runtime_debugging.md. Walks through the isolate-single-key pattern: enumerate keys via `LFPV1.key_source.fetch('KEY')`, loop with `try/except` printing each key before populate, break on first failure. Explains that Spyglass doesn't ship a debug_populate helper — this pattern is manual. Mentions checking the `~jobs` table for reserved/errored keys. Notes that `use_transaction=True` (Spyglass default) rolls back partial state, so post-mortem inspection shows no residue.",
+      "expected_output": "Routes to runtime_debugging.md. Walks through the isolate-single-key pattern: enumerate keys via `LFPV1.key_source.fetch('KEY')`, loop with `try/except` printing each key before populate, break on first failure. Explains that Spyglass doesn't ship a debug_populate helper — this pattern is manual. Notes that `use_transaction=True` (Spyglass default) rolls back partial state, so post-mortem inspection shows no residue. Recommends re-running the failing key serially with `reserve_jobs=False, processes=1` to get a clean traceback.",
       "files": [],
       "assertions": []
     },
@@ -44,6 +44,15 @@
       "stage": "common-mistakes",
       "prompt": "I inserted a bad position entry (the tracking was corrupted on that session) and I'm trying to delete just that one merge_id from PositionOutput. I did `merge_key = PositionOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'interval_list_name': '02_r1'}).fetch1('KEY')` and then `(PositionOutput & merge_key).merge_delete()` — but it's asking me to confirm deletion of like 200 rows? I only want the one.",
       "expected_output": "Catches the classmethod-restriction-discard (Common Mistake #1). Explains that `merge_delete` is a classmethod with `restriction=True` default, so `(PositionOutput & merge_key).merge_delete()` dispatches to the class and drops the `& merge_key`. Fix: `PositionOutput.merge_delete(merge_key)`. Shows the paired inspect-before-destroy pattern from destructive_operations.md. STRONGLY warns the user NOT to confirm the 200-row deletion, since that cascade is not what they asked for.",
+      "files": [],
+      "assertions": []
+    },
+    {
+      "id": 6,
+      "eval_name": "run-lfp-v1-pipeline",
+      "stage": "pipeline-usage",
+      "prompt": "I've already ingested j1620210710_.nwb and I want to run the LFP pipeline on the 'sleep' interval for tetrodes 4, 5, and 12 using the default filter. Once that's done I want the band-filtered signal out as a dataframe so I can look at theta power. Walk me through the full flow.",
+      "expected_output": "Routes to lfp_pipeline.md. Shows the full V1 flow: (1) build the LFPElectrodeGroup restriction and insert LFPSelection, (2) call `LFPV1.populate(key)` for the target session+interval, (3) resolve the merge entry via `LFPOutput.merge_get_part(key).fetch1('KEY')`, (4) `(LFPOutput & merge_key).fetch1_dataframe()` to get the dataframe. Flags any missing cardinality check before the `fetch1`. Does NOT collapse this into a single one-liner — the selection-insert / populate / merge-resolve / fetch shape is the canonical pattern every V1 pipeline follows, and surfacing each step is the teaching win.",
       "files": [],
       "assertions": []
     }

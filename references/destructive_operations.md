@@ -44,18 +44,26 @@ print((PositionOutput & merge_key).fetch(as_dict=True))
 # PositionOutput.merge_delete(merge_key)
 ```
 
-The same classmethod-dispatch shape applies to `merge_delete_parent`, `merge_restrict`, `merge_get_part`, `merge_get_parent`, `merge_view`, `merge_html`, and to `Nwbfile.cleanup` (staticmethod). The complete list of affected methods with correct call forms is in [merge_and_mixin_methods.md](merge_and_mixin_methods.md). Canonical worked example: `notebooks/04_Merge_Tables.ipynb` (jupytext mirror at `py_scripts/04_Merge_Tables.py:198`).
+The same classmethod-dispatch shape applies to `merge_delete_parent`, `merge_restrict`, `merge_get_part`, `merge_get_parent`, `merge_view`, and `merge_html`. The complete list of affected methods with correct call forms is in [merge_and_mixin_methods.md](merge_and_mixin_methods.md). Canonical worked example: `notebooks/04_Merge_Tables.ipynb` (jupytext mirror at `py_scripts/04_Merge_Tables.py:198`).
 
 ### File cleanup
 
-`cleanup()` is pipeline-scoped. `DecodingOutput().cleanup()` removes only orphaned `.nc`/`.pkl` files from the decoding pipeline; `AnalysisNwbfile.cleanup()` removes orphaned analysis NWB files across tables. Both follow the same dry-run-first discipline.
+Two cleanup surfaces with **different signatures** — they do not share a safe-call pattern.
 
-`cleanup()` returns `None` in both modes — it **logs** paths it would remove when `dry_run=True` and deletes them when `dry_run=False`. Read the logs before the destroy call.
+**`AnalysisNwbfile().cleanup(dry_run=False)`** (instance method, `common_nwbfile.py:754`) removes orphaned analysis NWB files across common and custom analysis tables. The same shape applies to pipeline-scoped helpers like `DecodingOutput().cleanup(dry_run=True)`, which removes orphaned `.nc`/`.pkl` files only from the decoding pipeline. Both return `None` in both modes and **log** paths they would remove when `dry_run=True`, then delete when `dry_run=False`. Read the logs before the destroy call.
 
 ```python
 DecodingOutput().cleanup(dry_run=True)   # LOGS what would be removed
 # After confirming the logs look right:
 # DecodingOutput().cleanup(dry_run=False)
+```
+
+**`Nwbfile.cleanup(delete_files=False)`** (staticmethod, `common_nwbfile.py:140`) removes DataJoint filepath entries for raw NWB files not currently referenced. The default (`delete_files=False`) removes only the DB-level entries, leaving the files on disk — use this as the inspect-equivalent step. Setting `delete_files=True` also removes the files themselves. There is **no** `dry_run` argument, and passing `dry_run=True` raises `TypeError`. Do not conflate with `AnalysisNwbfile.cleanup` above.
+
+```python
+Nwbfile.cleanup()                    # entries only; files stay on disk
+# After confirming entries-removed is what you intended:
+# Nwbfile.cleanup(delete_files=True)
 ```
 
 ### delete_downstream_parts
