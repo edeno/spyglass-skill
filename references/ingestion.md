@@ -128,7 +128,7 @@ sgi.insert_sessions("my_session.nwb", reinsert=True)
 
 Two non-obvious behaviors:
 
-1. **Delete requires LabTeam membership.** Deleting a `Session` raises a cryptic permissions error unless (a) the session has an `Experimenter` row and (b) the user doing the delete shares a `LabTeam` with that experimenter. If you get a permissions error on delete, check `LabMember & {"lab_member_name": "..."}` and `LabTeam.LabTeamMember` before touching anything else.
+1. **Delete requires Experimenter + LabTeam wiring.** Deleting a `Session` raises `PermissionError` in two distinct cases (see `src/spyglass/utils/mixins/cautious_delete.py`): (a) **the session has no `Experimenter` row** — checked first, raises with "Please ensure all Sessions have an experimenter in Session.Experimenter"; (b) the user doing the delete does not share a `LabTeam` with the session's experimenter — checked second. If the error mentions "experimenter", fix (a) by inserting into `Session.Experimenter` before trying again. Only if (a) passes do you need to check `LabTeam.LabTeamMember` for shared team membership.
 2. **Session delete does NOT delete the `Nwbfile` row or the file on disk.** After `(Session & key).delete()`, the corresponding `Nwbfile` entry still blocks re-ingestion (with "already exists") and the file stays on disk until you explicitly run `Nwbfile().cleanup(delete_files=True)` — itself destructive. Full re-ingest therefore needs: delete downstream → delete `Session` → delete `Nwbfile` row → (optional) cleanup files.
 
 ## Common Errors

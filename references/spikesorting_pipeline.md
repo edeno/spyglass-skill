@@ -81,10 +81,14 @@ curation_id = CurationV1.insert_curation(
     sorting_id=sort_key["sorting_id"], description="initial"
 )
 
-# 5. Publish to the merge table
-SpikeSortingOutput.insert({"source": "CurationV1",
-                            "sorting_id": sort_key["sorting_id"],
-                            "curation_id": curation_id})
+# 5. Publish to the merge table. `insert` takes a LIST of dicts (not a
+#    bare dict — that raises TypeError). Use `part_name` to pick which
+#    part table's parent to look the row up in.
+merge_insert_key = (CurationV1 & {"sorting_id": sort_key["sorting_id"],
+                                   "curation_id": curation_id}).fetch(
+    "KEY", as_dict=True
+)
+SpikeSortingOutput.insert(merge_insert_key, part_name="CurationV1")
 
 # 6. Downstream: get spike times via the merge
 merge_ids = SpikeSortingOutput().get_restricted_merge_ids(

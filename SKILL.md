@@ -39,7 +39,10 @@ print((PositionOutput & merge_key).fetch(as_dict=True))
 # After confirm:  (PositionOutput & merge_key).merge_delete()
 
 # File cleanup: dry_run=True first, read the returned list, THEN rerun.
-# cleanup is an instance method — note the () on DecodingOutput.
+# cleanup() is pipeline-scoped — DecodingOutput().cleanup() removes only
+# orphaned .nc/.pkl files from the decoding pipeline. AnalysisNwbfile
+# has its own cleanup() that sweeps orphaned analysis NWB files across
+# tables; same dry_run discipline applies.
 pending = DecodingOutput().cleanup(dry_run=True)   # returns what WOULD be removed
 # After confirm:  DecodingOutput().cleanup(dry_run=False)
 

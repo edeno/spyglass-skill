@@ -42,9 +42,12 @@ selection_key = {
     "decoding_param_name": "contfrag_clusterless",
     "encoding_interval": encoding_interval_name,
     "decoding_interval": decoding_interval_name,
-    "estimate_decoding_params": 0,  # 1 silently treats out-of-interval
-                                     # times as missing — read the docs
-                                     # before flipping this on
+    "estimate_decoding_params": 0,  # 1 lets the decoder estimate params
+                                     # from the encoding interval; times
+                                     # outside intervals are marked -1
+                                     # and excluded from fit/output (see
+                                     # src/spyglass/decoding/v1/
+                                     # clusterless.py:266-289).
 }
 ClusterlessDecodingSelection.insert1(selection_key, skip_duplicates=True)
 ClusterlessDecodingV1.populate(selection_key)

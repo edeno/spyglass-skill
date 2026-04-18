@@ -5,15 +5,52 @@ Converts 2D position to 1D linearized position using track graphs. Essential for
 ## Contents
 
 - [Overview](#overview)
+- [Canonical Example](#canonical-example)
 - [LinearizedPositionOutput Merge Table](#linearizedpositionoutput-merge-table)
 - [Key Tables](#key-tables)
-- [Example](#example)
+- [Fetch Example](#fetch-example)
 - [Dependency: track_linearization](#dependency-track_linearization)
 
 ## Overview
 
 ```python
 from spyglass.linearization.merge import LinearizedPositionOutput
+```
+
+## Canonical Example
+
+Linearization takes a 2D position (from the `PositionOutput` merge table) and projects it onto a track graph. Minimal end-to-end flow:
+
+```python
+from spyglass.linearization.merge import LinearizedPositionOutput
+from spyglass.linearization.v1 import (
+    TrackGraph,
+    LinearizationParameters,
+    LinearizationSelection,
+    LinearizedPositionV1,
+)
+
+# 1. Prereqs: a TrackGraph row defining the track geometry, a
+#    LinearizationParameters row, and a PositionOutput entry for the
+#    session/interval you want linearized. Discover the PositionOutput
+#    merge_id the same way as the position pipeline.
+pos_merge_key = {"merge_id": position_merge_id}
+
+# 2. Selection — ties together PositionOutput, TrackGraph, params, interval
+selection_key = {
+    **pos_merge_key,
+    "track_graph_name": "6-arm-radial",
+    "linearization_param_name": "default",
+    "interval_list_name": interval_name,
+}
+LinearizationSelection.insert1(selection_key, skip_duplicates=True)
+
+# 3. Populate
+LinearizedPositionV1.populate(selection_key)
+
+# 4. Fetch via the merge table
+merge_key = LinearizedPositionOutput.merge_get_part(selection_key).fetch1("KEY")
+linear_pos = (LinearizedPositionOutput & merge_key).fetch1_dataframe()
 ```
 
 ## LinearizedPositionOutput Merge Table
@@ -50,10 +87,10 @@ from spyglass.linearization.v1 import (
 **LinearizedPositionV1** (Computed)
 - Outputs linearized position projected onto track graph
 
-## Example
+## Fetch Example
 
 ```python
-# Get linearized position
+# Get linearized position for an already-populated merge entry
 merge_key = LinearizedPositionOutput.merge_get_part(key).fetch1("KEY")
 linear_pos = (LinearizedPositionOutput & merge_key).fetch1_dataframe()
 ```

@@ -218,6 +218,9 @@ nwb_file_name = (Session & key).fetch1("nwb_file_name")
 # table_name is the NAME the object gets in the NWB scratch space
 # (the retrieval key), not a description. DataFrames and numpy arrays
 # are auto-wrapped into DynamicTable / ScratchData respectively.
+# ALWAYS pass table_name explicitly — default is "pandas_table", so
+# multiple add_nwb_object() calls without distinct names collide in
+# scratch space and later retrieval fails.
 with AnalysisNwbfile().build(nwb_file_name) as builder:
     obj_id = builder.add_nwb_object(my_numpy_array, table_name="result")
     analysis_file_name = builder.analysis_file_name
