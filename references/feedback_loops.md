@@ -5,6 +5,7 @@ Quality-critical Spyglass operations have a **validator → fix → proceed** sh
 ## Contents
 
 - [Post-ingestion verification](#post-ingestion-verification)
+- [Pre-`populate()` upstream check](#pre-populate-upstream-check)
 - [Pre-`fetch1()` cardinality check](#pre-fetch1-cardinality-check)
 - [Post-`populate()` verification](#post-populate-verification)
 - [Inspect-before-destroy](#inspect-before-destroy)
@@ -19,6 +20,25 @@ f = "j1620210710_.nwb"                                  # copy-form; Spyglass ap
 print(len(IntervalList & {"nwb_file_name": f}))         # must be > 0
 print(len(Electrode & {"nwb_file_name": f}))            # compare to NWB metadata
 ```
+
+## Pre-`populate()` upstream check
+
+Before `MyTable.populate(key)` on a narrow `key`, confirm the upstream selection/dependency has a matching row. DataJoint's `populate()` silently does nothing when `key_source & key` is empty — no error, no warning — and downstream work then fails or produces empty outputs with no obvious cause. Symmetric to the post-populate check; cheap insurance.
+
+```python
+# About to run: MyPipelineV1.populate(key)
+# First confirm upstream has something to populate from:
+print(len(MyPipelineV1.key_source & key))       # must be > 0
+print(len(UpstreamSelection & key))             # the selection table feeding this pipeline
+# If either is 0: the upstream selection wasn't inserted for this key, or the
+# restriction uses a field name the upstream doesn't have. Inspect with
+# (UpstreamSelection & key).fetch(as_dict=True, limit=3) to see what's actually there.
+```
+
+Common causes when this fails:
+- Selection-table insert used a different value for a key field (typical: interval name mismatch — see runtime_debugging.md Signature F).
+- Selection row exists but references an interval/params/group that was never populated upstream.
+- The key you built includes a field that doesn't exist on `key_source` — DataJoint silently ignores unknown fields in a restriction, producing an empty match.
 
 ## Pre-`fetch1()` cardinality check
 

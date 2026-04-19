@@ -16,6 +16,7 @@ Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin`
   - [C. Silent row multiplication from joins](#c-silent-row-multiplication-from-joins)
   - [D. Special-case key failures](#d-special-case-key-failures)
   - [E. Transaction / reservation confusion](#e-transaction-reservation-confusion)
+  - [F. Interval / epoch mismatch across pipelines](#f-interval-epoch-mismatch-across-pipelines)
 - [Automatic heuristics](#automatic-heuristics)
 - [Sub-modes](#sub-modes)
 - [Output shape](#output-shape)
@@ -343,6 +344,58 @@ jobs.delete_quick()   # only after confirming you want to re-run those keys
 **Robust fix.** For pipelines that routinely hit this, document the "debug single key" idiom in the pipeline's README and wrap common diagnostic calls in a small helper. If `use_transaction=False` is required (for long-running populates with external file writes), know that Spyglass adds an upstream-hash check around it (`src/spyglass/utils/mixins/populate.py:88-108`) that will raise if an upstream table changes mid-populate.
 
 **Watch-outs.** A reserved job from a previous crashed run will silently skip in subsequent populates and look like "nothing is happening." Always check `jobs` before concluding that `populate()` is broken.
+
+### F. Interval / epoch mismatch across pipelines
+
+**Symptom.** Upstream tables look populated, restrictions look sensible, but the downstream output is empty, suspiciously small, or the populate silently does nothing. Joining two upstream tables returns zero rows even though each has rows for the session.
+
+**Most likely root cause.** Different pipelines take different interval-name fields as input, and a selection was made against one interval while a downstream step expected another. Spyglass does **not** use a single universal `target_interval_list_name` — pipelines name their interval selection differently, and some pipelines take *two* intervals that can differ from each other.
+
+Field names vary across the codebase. A non-exhaustive map:
+
+| Pipeline / table | Interval field in its selection |
+|---|---|
+| `IntervalList` (the source) | `interval_list_name` (primary key, at `common_interval.py:28`) |
+| `LFPSelection` / `LFPV1` | `target_interval_list_name` (`lfp/v1/lfp.py`) |
+| `LFPArtifactRemovedIntervalList` | `artifact_removed_interval_list_name` |
+| `LFPBandSelection` | `target_interval_list_name` |
+| `SpikeSortingRecordingSelection` (v0) | `sort_interval_name` |
+| `SpikeSortingArtifactDetectionSelection` | `artifact_removed_interval_list_name` |
+| `RippleTimesV1` selection | `target_interval_list_name` |
+| Decoding V1 selections | `encoding_interval` AND `decoding_interval` (both projected from `IntervalList.interval_list_name`, `decoding/v1/clusterless.py:88-89`) |
+| Position pipelines | project off `IntervalList` — may use different aliases |
+
+Two intervals can overlap in time but live under different names (e.g., one session's raw epoch vs. a trimmed "valid_times" version; a position-computed interval vs. the raw recording interval). A restriction that works on the LFP selection table may match zero rows on the decoding selection table because the field name, the interval name, or both differ.
+
+**Why that explanation fits.** DataJoint silently ignores restriction fields that aren't present on the table (the field is treated as a no-op), and silently produces empty joins when key fields match on name but not on value. Both shapes look "correct" to the user but return nothing.
+
+**Fastest confirmation checks.**
+
+```python
+# List all intervals actually defined for this session
+(IntervalList & {"nwb_file_name": f}).fetch("interval_list_name")
+
+# Inspect the selection table's interval field(s) directly
+print(UpstreamSelection.heading.primary_key)  # shows the exact field names
+(UpstreamSelection & {"nwb_file_name": f}).fetch(as_dict=True, limit=5)
+
+# If a downstream populate is empty, check key_source:
+print(len(DownstreamTable.key_source & key))  # 0 = no upstream rows match
+
+# For two-interval pipelines (decoding), check BOTH explicitly:
+# encoding_interval and decoding_interval may differ — and they often should,
+# but not by accident.
+```
+
+**Minimal fix.** Align the interval name(s) with what the downstream table's selection expects. Either (a) re-insert the downstream selection using the correct interval-name value, or (b) if the intervals really are different epochs and need intersection, compute the intersection explicitly using `IntervalList.fetch1("valid_times")` and build a new `IntervalList` row for the intersected span.
+
+**Robust fix.** In custom pipelines, project the upstream interval field onto the downstream selection so the name travels with the data instead of being re-specified (`-> IntervalList.proj(my_interval='interval_list_name')`, matching the decoding V1 pattern). When the name is a projection you can't accidentally typo it on the downstream side.
+
+**Watch-outs.**
+
+- **Empty populate ≠ error.** DataJoint's `populate()` silently does nothing when `key_source & key` is empty. See the pre-populate feedback loop in [feedback_loops.md](feedback_loops.md) — a `len(key_source & key) > 0` assertion before populate catches this immediately.
+- **Name equality ≠ time equality.** `"02_r1"` in one table and `"02_r1"` in another probably refer to the same IntervalList row (same PK), but `"02_r1_valid"` is a different row even if its `valid_times` overlap. Check by joining on the `IntervalList` PK when in doubt.
+- **Decoding specifically.** `encoding_interval` and `decoding_interval` are intentional separate inputs. They CAN be the same; they often SHOULDN'T be (train on encoding, evaluate on decoding). Verify by design intent, not by assuming they're equal.
 
 ## Automatic heuristics
 

@@ -9,6 +9,7 @@ Expanded prose for the top-5 Spyglass footguns summarized in SKILL.md. Each sect
 - [3. Passing `skip_duplicates=True` to `insert_sessions`](#3-passing-skip_duplicatestrue-to-insert_sessions)
 - [4. `fetch_nwb()` silently returns a list](#4-fetch_nwb-silently-returns-a-list)
 - [5. Destructive call without the paired inspect step](#5-destructive-call-without-the-paired-inspect-step)
+- [6. Interval / epoch mismatch between pipeline selections](#6-interval-epoch-mismatch-between-pipeline-selections)
 
 ## 1. Classmethod restriction discard on merge tables
 
@@ -41,3 +42,18 @@ Unlike `fetch1()`, `fetch_nwb()` does NOT raise when the restriction matches mul
 Every destructive helper in Spyglass — `delete`, `drop`, `cautious_delete`, `super_delete`, `delete_quick`, `merge_delete`, `merge_delete_parent`, `delete_downstream_parts`, `cleanup`, `delete_orphans` — has a preview shape that must run first. `dry_run=True` for cleanups, `fetch(as_dict=True)` before `.delete()`, etc. The pattern is inspect → get user confirmation → destroy.
 
 **Fix.** Never produce a destroy step without the matching inspect step above it. Full paired shapes for every helper: [destructive_operations.md](destructive_operations.md).
+
+## 6. Interval / epoch mismatch between pipeline selections
+
+Spyglass pipelines take different interval-name fields, and two upstream tables populated individually for a session may not actually refer to the same temporal support. Symptoms: a downstream populate silently does nothing; a join between two upstream tables returns empty even though each has rows for the session; decoding or ripple outputs are suspiciously short.
+
+No universal `target_interval_list_name` exists. The field varies by pipeline:
+- `IntervalList.interval_list_name` — the primary key of the source table
+- `LFPSelection` / `LFPBandSelection` — `target_interval_list_name`
+- `SpikeSortingRecordingSelection` (v0) — `sort_interval_name`
+- Artifact removal outputs — `artifact_removed_interval_list_name`
+- Decoding V1 — `encoding_interval` AND `decoding_interval` (two separate intervals, both projected from `IntervalList.interval_list_name`)
+
+A restriction that works on one selection table can silently match zero rows on another because the field name, the interval-name value, or both differ. DataJoint does not warn when a restriction field is missing from the table — the field is silently ignored.
+
+**Fix.** Inspect the downstream table's primary key (`Table.heading.primary_key`) to see the actual interval-field name. Confirm the value exists for the session with `(IntervalList & {"nwb_file_name": f}).fetch("interval_list_name")`. If the selection was inserted against a different interval than the one you're now restricting, re-insert with the correct value. Full triage including diagnostic queries and the two-interval decoding case: [runtime_debugging.md](runtime_debugging.md) Signature F.
