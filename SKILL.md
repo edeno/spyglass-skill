@@ -43,7 +43,7 @@ Users may span stages. Infer from the question and any imports/table names in co
 
 ## Merge Tables
 
-Two phases, different APIs. **Inspect / find the merge_id**: `MergeTable & key` or `MergeTable.merge_restrict(key)` (classmethod — pass restriction as arg), then `.fetch(as_dict=True)`. **Not `fetch_results`** — that is a decoding-only *data-loading* method, not a discovery helper. **Load the actual result**: manual path for every pipeline — `part = MergeTable.merge_get_part(key); merge_key = part.fetch1("KEY"); (MergeTable & merge_key).fetch1_dataframe()`. `DecodingOutput.fetch_results(key)` returns an xarray Dataset for decoding only; **no other `*Output` table ships `fetch_results`**. Treat `merge_key` as opaque. Full surface: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
+Two phases, different I/O. **Inspect (SQL only — cheap)**: `MergeTable & key` or `MergeTable.merge_restrict(key)` (classmethod — pass restriction as arg), then `.fetch(as_dict=True)`. `fetch_results` is not a discovery helper — decoding-only data loader. **Load (disk read — slow, can fail independently of the DB)**: manual path for every pipeline — `part = MergeTable.merge_get_part(key); merge_key = part.fetch1("KEY"); (MergeTable & merge_key).fetch1_dataframe()`. `DecodingOutput.fetch_results(key)` returns xarray for decoding only; **no other `*Output` ships `fetch_results`**. `fetch_nwb` / `fetch1_dataframe` / `fetch_results` all open files on disk — run the cardinality check first. Treat `merge_key` as opaque. Full DB-vs-disk: [datajoint_api.md](references/datajoint_api.md). Full merge surface: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
 
 ## Querying an Already-Configured DB
 

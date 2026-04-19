@@ -112,8 +112,34 @@ names, times = (Session & key).fetch('nwb_file_name', 'session_start_time')
 # Specify (include every primary-key field needed for uniqueness)
 key = {"nwb_file_name": nwb_file, "interval_list_name": "02_r1",
        "trodes_pos_params_name": "default"}
-(SomeTable & key).fetch1()                   # now safe
 ```
+
+### DB reads vs. disk reads — know which one you're doing
+
+Spyglass fetch methods split into two categories. Plain DataJoint fetches read metadata from the MySQL DataJoint tables; Spyglass's NWB-aware fetches additionally read files from disk (AnalysisNwbfile in the filestore, `.nc` files for decoding outputs, sometimes Kachery/DANDI pulls). This matters for performance, failure modes, and debugging.
+
+**DB-only reads** (SQL rows from MySQL — fast, ~ms, fail only on connection/cardinality):
+
+- `.fetch()` / `.fetch1()` / `.fetch(as_dict=True)` — returns table rows
+- `.fetch('KEY')` — primary-key dicts only
+- `.fetch('some_attr')` — a single attribute column
+- Restrictions and joins (`&`, `*`, `proj`, `aggr`) — build query, no I/O until you fetch
+
+Use these freely when exploring or finding the right `merge_id`. They are what the inspect phase of merge-table workflows (see SKILL.md) should rely on.
+
+**Disk reads** (opens a file; slower, variable latency; can fail independently of the DB):
+
+- `.fetch_nwb()` — loads an NWB object from the filestore. `SpyglassMixin.fetch_nwb` calls `_download_missing_files` internally (`src/spyglass/utils/mixins/fetch.py:330`), so it will trigger Kachery/DANDI pulls if the file isn't local.
+- `.fetch1_dataframe()` — loads a DataFrame from an AnalysisNwbfile. Defined on many tables that store time series, including the `PositionOutput`, `LFPOutput`, and `LinearizedPositionOutput` merge tables and V1 tables like `LFPV1`, `LFPBandV1`, `TrodesPosV1`, `RippleTimesV1`. **Not** on `SpikeSortingOutput` or `DecodingOutput` — those use different data-loading paths.
+- `DecodingOutput.fetch_results(key)` — loads an xarray Dataset from an `.nc` file on disk (`src/spyglass/decoding/decoding_merge.py:74`). Decoding-only.
+- `DecodingOutput.fetch_model(key)` — loads the trained decoder model from disk (`src/spyglass/decoding/decoding_merge.py:79`). Decoding-only.
+
+Implications for writing Spyglass code:
+
+1. **Confirm cardinality before committing to a disk fetch.** The cardinality check (see `len(rel)` pattern above) is cheap — it's a DB read. A wrong-key `fetch1_dataframe()` wastes disk I/O *and* raises after the slow operation.
+2. **Different failure modes.** A `fetch1_dataframe()` can raise `FileNotFoundError` or time out on Kachery even when the table row exists and the restriction is correct — that means the file wasn't synced, not that the query is wrong. Don't debug the restriction; check the filestore.
+3. **Prefer one disk fetch over many.** `for k in keys: (T & k).fetch_nwb()` hits the filestore N times. If you need all of them, look for a pipeline-specific batched accessor before rolling your own; HDF5 read concurrency across files generally works but within a single file requires care.
+4. **`fetch_nwb()` returns a list, not a scalar.** On a single-row restriction it returns `[nwb_obj]` — a separate gotcha from the disk-vs-DB distinction, covered in SKILL.md Common Mistake #4.
 
 ### Aggregation (`.aggr()`)
 
