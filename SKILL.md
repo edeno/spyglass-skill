@@ -21,7 +21,7 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 Top-frequency bugs. If the user's code shows any of these shapes, flag it before answering the rest of the question.
 
 1. **Classmethod restriction discard on merge tables.** `(PositionOutput & merge_key).merge_delete()` silently drops the `& merge_key` — Python routes classmethod calls to the class. Always pass the restriction as an arg: `PositionOutput.merge_delete(merge_key)`. Full affected-method list: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
-2. **Too-loose restriction + `fetch1()`.** `{"nwb_file_name": f}` alone usually matches many rows (every interval, every param set, every pipeline version). `fetch1()`, `merge_get_part()`, `fetch_results()`, and `fetch1_dataframe()` all raise "expected one row, got N". Add enough primary-key fields to pick exactly one row. Discovery pattern: [datajoint_api.md](references/datajoint_api.md).
+2. **Too-loose restriction + `fetch1()`.** `{"nwb_file_name": f}` alone usually matches many rows (every interval, every param set, every pipeline version). `fetch1()`, `merge_get_part()`, and `fetch1_dataframe()` all raise "expected one row, got N" under a too-loose restriction. (The decoding-only `DecodingOutput.fetch_results()` shares this behavior since it wraps `fetch1()` internally — but do not assume other `*Output` tables expose `fetch_results`; see the Merge Tables paragraph below.) Add enough primary-key fields to pick exactly one row. Discovery pattern: [datajoint_api.md](references/datajoint_api.md).
 3. **Passing `skip_duplicates=True` to `insert_sessions`.** `skip_duplicates` is a DataJoint `.insert1()` / `.insert()` flag (valid for manual lookup-table inserts like `ProbeType`, `Lab`). `insert_sessions` does not accept it — passing it raises `TypeError: unexpected keyword argument 'skip_duplicates'`. For re-ingesting raw NWB data, use `reinsert=True` on `insert_sessions` instead. Details: [ingestion.md](references/ingestion.md).
 4. **`fetch_nwb()` silently returns a list** when the restriction matches multiple rows — unlike `fetch1()`, it does not raise. `(Table & key).fetch_nwb()[0]` on an under-specified restriction picks an arbitrary row. Fix: restrict to exactly one row before calling.
 5. **Destructive call without the paired inspect step.** Every destructive helper has a preview shape (`dry_run=True`, `fetch(as_dict=True)` first, etc.). Inspect step, user confirmation, THEN destroy. See [destructive_operations.md](references/destructive_operations.md).
@@ -79,7 +79,13 @@ Users may span stages. Infer from the question and any imports/table names in co
 
 ## Merge Tables in One Paragraph
 
-Merge tables consolidate outputs from multiple pipeline versions behind a single `merge_id`. Two access paths: **direct** (e.g., `DecodingOutput.fetch_results(key)` handles resolution internally) and **manual** (`part = MergeTable.merge_get_part(key); merge_key = part.fetch1("KEY"); (MergeTable & merge_key).fetch1_dataframe()`). Treat `merge_key` as an opaque restriction — pass it to `&`, don't read fields out of it. For the full surface (classmethod rules, `<<`/`>>` semantics, canonical example), load [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
+Merge tables consolidate outputs from multiple pipeline versions behind a single `merge_id`. There are **two distinct phases** that use different APIs — confusing them is a common source of wrong answers:
+
+- **Inspect / find the right merge_id** (what rows exist for this session? which part table did each come from?): query `MergeTable & key` or `MergeTable.merge_restrict(key)` (classmethod — pass the restriction as an argument, not via `&`), then `.fetch(as_dict=True)` to see the PK fields that distinguish candidate rows. Do **NOT** use `fetch_results` for inspection — it is a decoding-only *data-loading* method, not a discovery helper.
+
+- **Load the actual analysis result**: the API depends on the pipeline. For position / LFP / linearization, use the manual path: `part = MergeTable.merge_get_part(key); merge_key = part.fetch1("KEY"); (MergeTable & merge_key).fetch1_dataframe()`. For decoding specifically, `DecodingOutput.fetch_results(key)` returns an xarray Dataset and handles merge resolution internally — **this convenience exists only on `DecodingOutput`**; no other `*Output` merge table ships a `fetch_results` method. Treat `merge_key` as an opaque restriction — pass it to `&`, don't read fields out of it.
+
+Full surface (classmethod rules, `<<`/`>>` semantics, canonical example): [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
 
 ## Querying an Already-Configured DB
 

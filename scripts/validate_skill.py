@@ -1314,7 +1314,7 @@ def check_structure(results: ValidationResult):
     body = re.sub(r"^---\n.*?\n---\n", "", skill_content, count=1, flags=re.DOTALL)
     body_words = len(body.split())
     body_lines = body.count("\n") + 1
-    WORD_SOFT_CAP = 1500    # ~3x Anthropic target; router-heavy skill with inline feedback loops
+    WORD_SOFT_CAP = 1700    # router-heavy skill with feedback loops + merge-tables precision
     LINE_HARD_CAP = 500     # Anthropic's explicit cap on SKILL.md body
     if body_words > WORD_SOFT_CAP:
         results.warn(

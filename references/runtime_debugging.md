@@ -191,11 +191,11 @@ Each signature follows the same shape so the triage output is consistent.
 
 ### A. fetch1() cardinality
 
-**Symptom.** `DataJointError: fetch1 should only be called on relations with exactly one tuple` (or `no tuples`). Sometimes surfaces as `ValueError` from wrappers like `merge_get_part()`, `fetch_results()`, `fetch1_dataframe()`.
+**Symptom.** `DataJointError: fetch1 should only be called on relations with exactly one tuple` (or `no tuples`). Sometimes surfaces as `ValueError` from wrappers like `merge_get_part()` or `fetch1_dataframe()`. The decoding-specific `DecodingOutput.fetch_results()` wraps `fetch1()` under the hood and raises the same error shape — but that method only exists on `DecodingOutput`, not on other merge tables.
 
 **Most likely root cause.** The restriction in front of `fetch1()` is either too loose (matches multiple rows — every interval, every parameter set, every pipeline version) or too tight (matches zero rows because a field was wrong).
 
-**Why that explanation fits.** `fetch1()` is defined to raise on anything other than exactly one row, and Spyglass's wrappers `merge_get_part` / `fetch_results` / `fetch1_dataframe` all call it internally.
+**Why that explanation fits.** `fetch1()` is defined to raise on anything other than exactly one row, and Spyglass's universal wrappers `merge_get_part` and `fetch1_dataframe` call it internally (as does the decoding-only `DecodingOutput.fetch_results`).
 
 **Fastest confirmation checks.**
 
