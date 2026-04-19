@@ -1308,22 +1308,21 @@ def check_structure(results: ValidationResult):
     else:
         results.ok(f"description: length {len(desc_body)}/1024 chars")
 
-    # SKILL.md body size — Anthropic guidance says frequently-loaded skills
-    # should aim for <500 words. A routing-heavy skill like this one with
-    # many pipeline references won't hit that, but a soft cap prevents bloat.
+    # SKILL.md body size — hard caps. Don't bump without migrating content
+    # to references first. Anthropic target is <500 words for frequently-loaded
+    # skills; 1100 gives a 20% buffer over the realistic post-migration size.
     body = re.sub(r"^---\n.*?\n---\n", "", skill_content, count=1, flags=re.DOTALL)
     body_words = len(body.split())
     body_lines = body.count("\n") + 1
-    WORD_SOFT_CAP = 1700    # router-heavy skill with feedback loops + merge-tables precision
+    WORD_HARD_CAP = 1100
     LINE_HARD_CAP = 500     # Anthropic's explicit cap on SKILL.md body
-    if body_words > WORD_SOFT_CAP:
-        results.warn(
-            f"body: SKILL.md body is {body_words} words "
-            f"(soft cap {WORD_SOFT_CAP}; Anthropic target <500 for "
-            f"frequently-loaded skills). Consider migrating content to references."
+    if body_words > WORD_HARD_CAP:
+        results.fail(
+            f"body: SKILL.md body is {body_words} words (hard cap {WORD_HARD_CAP}); "
+            f"migrate content to a reference file rather than raising the cap"
         )
     else:
-        results.ok(f"body: SKILL.md body {body_words} words (<{WORD_SOFT_CAP})")
+        results.ok(f"body: SKILL.md body {body_words} words (<{WORD_HARD_CAP})")
     if body_lines > LINE_HARD_CAP:
         results.fail(
             f"body: SKILL.md body is {body_lines} lines; "
@@ -1331,6 +1330,22 @@ def check_structure(results: ValidationResult):
         )
     else:
         results.ok(f"body: SKILL.md body {body_lines} lines (<{LINE_HARD_CAP})")
+
+    # Over-generalization detector — flag "e.g." in non-code prose. Every past
+    # over-generalization bug was introduced via "e.g." lists where a pipeline-
+    # specific API got framed as a generic example (e.g. fetch_results on
+    # DecodingOutput, which does not exist on other *Output tables). This is a
+    # warning, not a fail — forces a human decision rather than silent acceptance.
+    body_text_only = re.sub(r"```.*?```", "", body, flags=re.DOTALL)
+    body_text_only = re.sub(r"`[^`]+`", "", body_text_only)  # strip inline code too
+    eg_hits = re.findall(r"\be\.g\.,?\s+\S", body_text_only)
+    if eg_hits:
+        results.warn(
+            f"prose: 'e.g.' pattern found in SKILL.md body ({len(eg_hits)} hits) — "
+            f"verify no pipeline-specific APIs are implied as generic examples"
+        )
+    else:
+        results.ok("prose: no 'e.g.' patterns in SKILL.md body")
 
     # First/second person detection — Anthropic guidance says descriptions
     # are injected into the system prompt and must be third-person.

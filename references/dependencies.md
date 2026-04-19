@@ -64,7 +64,7 @@ from non_local_detector import (
     ContFragSortedSpikesClassifier, # Continuous fragment (sorted)
 )
 
-# Spyglass integration:
+# Spyglass integration (decoding-only convenience; not available on other *Output tables):
 model = DecodingOutput.fetch_model(key)      # Returns one of the above classes
 results = DecodingOutput.fetch_results(key)  # Returns xarray Dataset
 ```

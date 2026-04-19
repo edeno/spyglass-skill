@@ -11,60 +11,24 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 
 - **NEVER delete or drop without explicit confirmation.** The database contains irreplaceable neuroscience research data. Destructive helpers (`delete`, `drop`, `cautious_delete`, `super_delete`, `delete_quick`, `merge_delete`, `merge_delete_parent`, `delete_downstream_parts`, `cleanup`, `delete_orphans`) must be paired with an inspect step first and user confirmation second. Canonical paired shapes: [destructive_operations.md](references/destructive_operations.md).
 - **Do NOT activate** for plain DataJoint code without Spyglass imports, unrelated NWB tooling (pynwb, ndx-*) outside Spyglass, or generic Python/NumPy/pandas debugging when no Spyglass table is in the call chain.
-- **Writes are normal workflow.** Spyglass pipelines are designed around inserting selection rows and calling `populate()` — these writes are the pipeline's intended shape, not signs of user confusion. Show the full flow including the inserts; explain what each write does, but don't refuse or hedge on them.
-- **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`**, including on well-known tables. Recognizing `PositionOutput`, `IntervalList`, or any `*Output` merge table is not the same as knowing its cardinality under a given restriction — that depends on the data (how many intervals, param sets, and pipeline versions exist for this session). Use `print(len(rel))` on the restricted relation, and if it returns more than one, inspect those rows (`rel.fetch(as_dict=True)` or `merge_restrict` on a merge table) to see which primary-key fields still need narrowing. `Table.describe()` / `Table.heading` show schema, not row count — useful for learning which PK fields exist, but not for confirming uniqueness. This is where Common Mistake #2 comes from.
+- **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
+- **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** — on any table, including well-known ones. Use `print(len(rel))`; if >1, inspect with `rel.fetch(as_dict=True)` or `merge_restrict` to see which PK fields still need narrowing. `Table.describe()`/`Table.heading` show schema, not row count. See Common Mistake #2.
 - **Environment**: detect the user's setup (local Docker, local data, remote lab) — don't assume Jupyter or remote NWB.
 - **Source of truth**: when the skill and the repo disagree, trust the repo. Source lives at `src/spyglass/` (under the installed package for pip/conda — find with `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`). User-facing tutorials are `notebooks/*.ipynb` per `notebooks/README.md`; `notebooks/py_scripts/*.py` is a jupytext mirror for PR-review diffs — cite the `.ipynb` form.
 
 ## Common Mistakes
 
-Top-frequency bugs. If the user's code shows any of these shapes, flag it before answering the rest of the question.
+Top-frequency bugs. Flag any of these shapes before answering the rest of the question. Expanded prose + fixes: [common_mistakes.md](references/common_mistakes.md).
 
-1. **Classmethod restriction discard on merge tables.** `(PositionOutput & merge_key).merge_delete()` silently drops the `& merge_key` — Python routes classmethod calls to the class. Always pass the restriction as an arg: `PositionOutput.merge_delete(merge_key)`. Full affected-method list: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
-2. **Too-loose restriction + `fetch1()`.** `{"nwb_file_name": f}` alone usually matches many rows (every interval, every param set, every pipeline version). `fetch1()`, `merge_get_part()`, and `fetch1_dataframe()` all raise "expected one row, got N" under a too-loose restriction. (The decoding-only `DecodingOutput.fetch_results()` shares this behavior since it wraps `fetch1()` internally — but do not assume other `*Output` tables expose `fetch_results`; see the Merge Tables paragraph below.) Add enough primary-key fields to pick exactly one row. Discovery pattern: [datajoint_api.md](references/datajoint_api.md).
-3. **Passing `skip_duplicates=True` to `insert_sessions`.** `skip_duplicates` is a DataJoint `.insert1()` / `.insert()` flag (valid for manual lookup-table inserts like `ProbeType`, `Lab`). `insert_sessions` does not accept it — passing it raises `TypeError: unexpected keyword argument 'skip_duplicates'`. For re-ingesting raw NWB data, use `reinsert=True` on `insert_sessions` instead. Details: [ingestion.md](references/ingestion.md).
-4. **`fetch_nwb()` silently returns a list** when the restriction matches multiple rows — unlike `fetch1()`, it does not raise. `(Table & key).fetch_nwb()[0]` on an under-specified restriction picks an arbitrary row. Fix: restrict to exactly one row before calling.
-5. **Destructive call without the paired inspect step.** Every destructive helper has a preview shape (`dry_run=True`, `fetch(as_dict=True)` first, etc.). Inspect step, user confirmation, THEN destroy. See [destructive_operations.md](references/destructive_operations.md).
+1. **Classmethod restriction discard on merge tables** — `(PositionOutput & merge_key).merge_delete()` drops the `& merge_key`; use `PositionOutput.merge_delete(merge_key)`. Affected methods: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
+2. **Too-loose restriction + `fetch1()`** — `{"nwb_file_name": f}` matches many rows; add PK fields until `len(rel) == 1`. [datajoint_api.md](references/datajoint_api.md).
+3. **`skip_duplicates=True` on `insert_sessions`** — raises `TypeError`; use `reinsert=True` for re-ingestion. [ingestion.md](references/ingestion.md).
+4. **`fetch_nwb()` silently returns a list** on multiple matches (unlike `fetch1()`) — restrict to one row before `[0]`-indexing.
+5. **Destructive call without the paired inspect step** — always inspect, confirm, then destroy. [destructive_operations.md](references/destructive_operations.md).
 
-## Common Feedback Loops
+## Feedback Loops
 
-Quality-critical Spyglass operations have a **validator → fix → proceed** shape: run a check, fix anything unexpected, only advance when the check passes. These are proactive versions of the rules in Common Mistakes — they prevent bugs rather than diagnose them.
-
-**Post-ingestion verification.** After `sgi.insert_sessions(fname)`, confirm the session landed cleanly before any pipeline populates. If any check fails, fix the NWB file and rerun with `reinsert=True`. Full ingestion flow: [ingestion.md](references/ingestion.md).
-
-```python
-f = "j1620210710_.nwb"                                  # copy-form; Spyglass appends the "_"
-(Session & {"nwb_file_name": f}).fetch1("session_id")   # must return 1 row
-print(len(IntervalList & {"nwb_file_name": f}))         # must be > 0
-print(len(Electrode & {"nwb_file_name": f}))            # compare to NWB metadata
-```
-
-**Pre-`fetch1()` cardinality check.** Before any `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`. Proactive form of Common Mistake #2.
-
-```python
-rel = (SomeTable & key)
-print(len(rel))          # must be exactly 1
-# If != 1: add more primary-key fields, rerun the print
-result = rel.fetch1()    # only call after len == 1 is confirmed
-```
-
-**Post-`populate()` verification.** After a pipeline `populate()`, confirm rows landed and one output has the expected shape. If the count or shape is off, debug the failing key before moving on — see [runtime_debugging.md](references/runtime_debugging.md).
-
-```python
-MyPipelineV1.populate(key)
-print(len(MyPipelineV1 & key))                   # keys you asked for get processed?
-sample = (MyPipelineV1 & key).fetch(limit=1, as_dict=True)[0]
-# Eyeball dtypes/shapes against downstream code's assumptions
-```
-
-**Inspect-before-destroy.** Canonical feedback-loop shape — inspect is the validator, user confirmation is the pass gate, the destructive call is the proceed step. Paired shapes for every destructive helper: [destructive_operations.md](references/destructive_operations.md).
-
-```python
-target = (SomeTable & restriction)
-target.fetch(as_dict=True)   # inspect scope; cascade preview for .delete()
-# Get explicit user confirmation here
-target.delete()              # only after confirmation
-```
+Quality-critical operations use a validator → fix → proceed shape. Four loops cover the highest-friction points: post-ingestion verification, pre-`fetch1` cardinality check, post-`populate` verification, and inspect-before-destroy. Full patterns with code: [feedback_loops.md](references/feedback_loops.md).
 
 ## Classify the User's Stage
 
@@ -77,15 +41,9 @@ target.delete()              # only after confirmation
 
 Users may span stages. Infer from the question and any imports/table names in context — don't halt to ask unless (a) the answer would change materially (pipeline usage vs. authoring), or (b) the next step is destructive and intent is ambiguous.
 
-## Merge Tables in One Paragraph
+## Merge Tables
 
-Merge tables consolidate outputs from multiple pipeline versions behind a single `merge_id`. There are **two distinct phases** that use different APIs — confusing them is a common source of wrong answers:
-
-- **Inspect / find the right merge_id** (what rows exist for this session? which part table did each come from?): query `MergeTable & key` or `MergeTable.merge_restrict(key)` (classmethod — pass the restriction as an argument, not via `&`), then `.fetch(as_dict=True)` to see the PK fields that distinguish candidate rows. Do **NOT** use `fetch_results` for inspection — it is a decoding-only *data-loading* method, not a discovery helper.
-
-- **Load the actual analysis result**: the API depends on the pipeline. For position / LFP / linearization, use the manual path: `part = MergeTable.merge_get_part(key); merge_key = part.fetch1("KEY"); (MergeTable & merge_key).fetch1_dataframe()`. For decoding specifically, `DecodingOutput.fetch_results(key)` returns an xarray Dataset and handles merge resolution internally — **this convenience exists only on `DecodingOutput`**; no other `*Output` merge table ships a `fetch_results` method. Treat `merge_key` as an opaque restriction — pass it to `&`, don't read fields out of it.
-
-Full surface (classmethod rules, `<<`/`>>` semantics, canonical example): [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
+Two phases, different APIs. **Inspect / find the merge_id**: `MergeTable & key` or `MergeTable.merge_restrict(key)` (classmethod — pass restriction as arg), then `.fetch(as_dict=True)`. **Not `fetch_results`** — that is a decoding-only *data-loading* method, not a discovery helper. **Load the actual result**: manual path for every pipeline — `part = MergeTable.merge_get_part(key); merge_key = part.fetch1("KEY"); (MergeTable & merge_key).fetch1_dataframe()`. `DecodingOutput.fetch_results(key)` returns an xarray Dataset for decoding only; **no other `*Output` table ships `fetch_results`**. Treat `merge_key` as opaque. Full surface: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
 
 ## Querying an Already-Configured DB
 
@@ -113,6 +71,8 @@ Repo paths (source, docs) are listed in each reference file — this table route
 | Setup errors and troubleshooting | [setup_troubleshooting.md](references/setup_troubleshooting.md) | — |
 | Runtime debugging — populate/make failures, fetch1 cardinality, ambiguous-truth, join multiplicity, one-key-fails | [runtime_debugging.md](references/runtime_debugging.md) | — |
 | Destructive operations — deletes, cleanup, inspect-before-destroy patterns | [destructive_operations.md](references/destructive_operations.md) | — |
+| Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) | — |
+| Expanded prose on the top-5 Spyglass footguns | [common_mistakes.md](references/common_mistakes.md) | — |
 | Framework concepts / merge tables | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `01_Concepts.ipynb`, `04_Merge_Tables.ipynb` |
 | NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.ipynb` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — |
