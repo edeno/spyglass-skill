@@ -20,6 +20,42 @@ This reference owns the canonical paired shapes for every destructive helper in 
 
 Any helper that removes rows or files goes through this file's patterns.
 
+## Team-based protection: `.delete()` is `cautious_delete()`
+
+**Spyglass enforces team-based permissions on deletes.** On any `SpyglassMixin` table, `.delete()` is aliased to `cautious_delete()` — calling `.delete()` automatically invokes the permission check. You do not need to (and should not) reach for `cautious_delete()` by name; just call `.delete()`.
+
+**How the check works** (`src/spyglass/utils/mixins/cautious_delete.py:90-150`):
+
+1. Reads the DataJoint user from `dj.config["database.user"]`.
+2. If that user is flagged `admin=1` in `LabMember.LabMemberInfo`, the check is skipped.
+3. Otherwise, walks to `Session.Experimenter` through the table's dependencies and collects the experimenter(s) of every session that would be affected.
+4. For each experimenter, checks whether the current user shares a team via `LabTeam.get_team_members(experimenter)`. By convention every experimenter has a personal team auto-created at ingest, so the user must either be on that personal team or on a broader team that includes the experimenter.
+5. If any session has no experimenter or the user shares no team with an experimenter, raises `PermissionError` naming the user, the experimenter, and the blocking sessions.
+
+**What the PermissionError means.** It is not a bug in your query or restriction. It means another lab member owns the session(s) you're about to delete. Read the error message — it names who owns the data. The fix is social, not technical: coordinate with the data owner, not bypass the check.
+
+```python
+# You ran:
+(Session & {"nwb_file_name": "j1620210710_.nwb"}).delete()
+# It raised:
+# PermissionError: User 'edeno' is not on a team with 'jsmith', an experimenter for session(s):
+#   nwb_file_name: j1620210710_.nwb
+# -> Talk to jsmith, not to super_delete().
+```
+
+**The two bypass mechanisms and when they are appropriate.**
+
+- **`super_delete()`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` for audit. Appropriate only when you are the data owner OR have explicit written permission from the owner AND there is a specific reason the team check is misfiring.
+- **`.delete(force_permission=True)`** — same effect, also logs. Same guidance.
+
+Both exist for legitimate edge cases (admin cleanup after a lab member leaves, fixing a misconfigured experimenter). Neither is a fallback for "the PermissionError is annoying." Treat either call as if it had a social cost — because it does.
+
+**Coverage gaps to know about.**
+
+- Tables with no `Session` link bypass the check with a warning log (`cautious_delete.py:114-119`). Lookup tables like `ProbeType` or `FirFilterParameters` fall in this category — `.delete()` will work without a team check. Use extra caution with shared lookup rows; someone else's pipeline may depend on them.
+- Sessions with no `Session.Experimenter` row raise `PermissionError` with a different message. Fix by ensuring every Session has an experimenter populated, not by bypassing.
+- Merge-table `merge_delete()` / `merge_delete_parent()` are classmethods on `_Merge` (see below) — they go through DataJoint's delete path but the team check applies via the part-table `delete()` calls. Still: inspect before calling.
+
 ## Paired shapes
 
 ### Row deletion

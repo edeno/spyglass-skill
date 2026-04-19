@@ -9,7 +9,7 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 
 ## Core Directives
 
-- **NEVER delete or drop without explicit confirmation.** The database contains irreplaceable neuroscience research data. Destructive helpers (`delete`, `drop`, `cautious_delete`, `super_delete`, `delete_quick`, `merge_delete`, `merge_delete_parent`, `delete_downstream_parts`, `cleanup`, `delete_orphans`) must be paired with an inspect step first and user confirmation second. Canonical paired shapes: [destructive_operations.md](references/destructive_operations.md).
+- **NEVER delete or drop without explicit confirmation.** The database holds irreplaceable neuroscience data. Any destructive helper (`delete`, `drop`, `cleanup`, `merge_delete`, etc.) must be paired with an inspect step and user confirmation first. `.delete()` on SpyglassMixin tables aliases to `cautious_delete` — it enforces team-based permissions so you can't accidentally delete another lab member's sessions. Paired shapes + protection model: [destructive_operations.md](references/destructive_operations.md).
 - **Do NOT activate** for plain DataJoint code without Spyglass imports, unrelated NWB tooling (pynwb, ndx-*) outside Spyglass, or generic Python/NumPy/pandas debugging when no Spyglass table is in the call chain.
 - **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
 - **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** — on any table, including well-known ones. Use `print(len(rel))`; if >1, inspect with `rel.fetch(as_dict=True)` or `merge_restrict` to see which PK fields still need narrowing. `Table.describe()`/`Table.heading` show schema, not row count. See Common Mistake #2.
@@ -24,7 +24,7 @@ Top-frequency bugs. Flag any of these shapes before answering the rest of the qu
 2. **Too-loose restriction + `fetch1()`** — `{"nwb_file_name": f}` matches many rows; add PK fields until `len(rel) == 1`. [datajoint_api.md](references/datajoint_api.md).
 3. **`skip_duplicates=True` on `insert_sessions`** — raises `TypeError`; use `reinsert=True` for re-ingestion. [ingestion.md](references/ingestion.md).
 4. **`fetch_nwb()` silently returns a list** on multiple matches (unlike `fetch1()`) — restrict to one row before `[0]`-indexing.
-5. **Destructive call without the paired inspect step** — always inspect, confirm, then destroy. [destructive_operations.md](references/destructive_operations.md).
+5. **Bypassing `cautious_delete` to silence a `PermissionError`** — `.delete()` is team-gated; the error means another lab member owns the session. Coordinate with them, don't reach for `super_delete()` or `force_permission=True`. Protection model + inspect-before-destroy: [destructive_operations.md](references/destructive_operations.md).
 
 ## Feedback Loops
 
@@ -43,7 +43,7 @@ Users may span stages. Infer from the question and any imports/table names in co
 
 ## Merge Tables
 
-Two phases, different I/O. **Inspect (SQL only — cheap)**: `MergeTable & key` or `MergeTable.merge_restrict(key)` (classmethod — pass restriction as arg), then `.fetch(as_dict=True)`. `fetch_results` is not a discovery helper — decoding-only data loader. **Load (disk read — slow, can fail independently of the DB)**: manual path for every pipeline — `part = MergeTable.merge_get_part(key); merge_key = part.fetch1("KEY"); (MergeTable & merge_key).fetch1_dataframe()`. `DecodingOutput.fetch_results(key)` returns xarray for decoding only; **no other `*Output` ships `fetch_results`**. `fetch_nwb` / `fetch1_dataframe` / `fetch_results` all open files on disk — run the cardinality check first. Treat `merge_key` as opaque. Full DB-vs-disk: [datajoint_api.md](references/datajoint_api.md). Full merge surface: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
+Two phases. **Inspect (SQL only)**: `MergeTable & key` or `MergeTable.merge_restrict(key)` (classmethod — pass as arg), then `.fetch(as_dict=True)`. `fetch_results` is a decoding-only data loader, not a discovery helper. **Load (disk read — can fail when the row exists)**: `part = MergeTable.merge_get_part(key); merge_key = part.fetch1("KEY"); (MergeTable & merge_key).fetch1_dataframe()`. `DecodingOutput.fetch_results(key)` returns xarray for decoding only; **no other `*Output` ships `fetch_results`**. Treat `merge_key` as opaque. Cardinality-check before any disk fetch. See: [datajoint_api.md](references/datajoint_api.md), [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
 
 ## Querying an Already-Configured DB
 
