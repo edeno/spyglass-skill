@@ -10,6 +10,7 @@ Expanded prose for the top-5 Spyglass footguns summarized in SKILL.md. Each sect
 - [4. `fetch_nwb()` silently returns a list](#4-fetch_nwb-silently-returns-a-list)
 - [5. Destructive call without the paired inspect step](#5-destructive-call-without-the-paired-inspect-step)
 - [6. Interval / epoch mismatch between pipeline selections](#6-interval-epoch-mismatch-between-pipeline-selections)
+- [7. Fragmenting lab-wide search with inconsistent names](#7-fragmenting-lab-wide-search-with-inconsistent-names)
 
 ## 1. Classmethod restriction discard on merge tables
 
@@ -57,3 +58,24 @@ No universal `target_interval_list_name` exists. The field varies by pipeline:
 A restriction that works on one selection table can silently match zero rows on another because the field name, the interval-name value, or both differ. DataJoint does not warn when a restriction field is missing from the table — the field is silently ignored.
 
 **Fix.** Inspect the downstream table's primary key (`Table.heading.primary_key`) to see the actual interval-field name. Confirm the value exists for the session with `(IntervalList & {"nwb_file_name": f}).fetch("interval_list_name")`. If the selection was inserted against a different interval than the one you're now restricting, re-insert with the correct value. Full triage including diagnostic queries and the two-interval decoding case: [runtime_debugging.md](runtime_debugging.md) Signature F.
+
+## 7. Fragmenting lab-wide search with inconsistent names
+
+DataJoint restrictions are exact string matches. When lab members insert the same anatomical structure as `CA1`, `hippocampus`, `HPC`, `CA1_1`, `Hippocampus`, and `Hipp`, a query like `(Electrode & {"region_name": "CA1"})` returns only the `CA1` rows — the other five spellings are invisible. Lab-wide analyses silently return partial data, and nobody notices until someone audits row counts by hand.
+
+The same splits happen with any free-form string PK field: subject names (`j16` vs `J16` vs `j1620210710`), electrode group names (`tet1` vs `tetrode_1` vs `1`), interval list names (`sleep` vs `Sleep` vs `sleep_1`), parameter-set names (`default` vs `default_v2` vs `lab_default`), experimenter names, filter names, sort-group labels. Each variant fragments a field that downstream joins and restrictions depend on.
+
+**Fix.** Before inserting a new string into any free-form PK field, query existing values for that table and align to the convention already in use:
+
+```python
+# What region names does the lab already use?
+BrainRegion.fetch("region_name")
+# Electrode groups already inserted for this session
+(ElectrodeGroup & {"nwb_file_name": f}).fetch("electrode_group_name")
+# Existing parameter-set names on a selection table
+ParamsTable.fetch("params_name")
+```
+
+Treat existing values in `BrainRegion`, `LabMember`, `LabTeam`, and the lab's established parameter tables as the de facto naming convention — they are what downstream analyses pin to. Diverge only with a specific reason, and when you do, pick an informatively-distinct name (not a typo-variant that collides under casing or whitespace normalization).
+
+This skill can route you to the tables to inspect, but it cannot tell you "the right spelling" — that is lab convention. Surface the existing options to the user and let them choose alignment vs. a justified new name. Related proactive pattern (before inserting a duplicate-content parameter set): [feedback_loops.md](feedback_loops.md) "Pre-insert check on parameter/selection tables".

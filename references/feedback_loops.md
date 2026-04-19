@@ -5,6 +5,7 @@ Quality-critical Spyglass operations have a **validator → fix → proceed** sh
 ## Contents
 
 - [Post-ingestion verification](#post-ingestion-verification)
+- [Pre-insert check on parameter/selection tables](#pre-insert-check-on-parameterselection-tables)
 - [Pre-`populate()` upstream check](#pre-populate-upstream-check)
 - [Pre-`fetch1()` cardinality check](#pre-fetch1-cardinality-check)
 - [Post-`populate()` verification](#post-populate-verification)
@@ -20,6 +21,36 @@ f = "j1620210710_.nwb"                                  # copy-form; Spyglass ap
 print(len(IntervalList & {"nwb_file_name": f}))         # must be > 0
 print(len(Electrode & {"nwb_file_name": f}))            # compare to NWB metadata
 ```
+
+## Pre-insert check on parameter/selection tables
+
+Before inserting a new row into a parameter or selection table, look for an existing row that already captures what you want. Duplicates fragment downstream queries: two rows with identical content but different names mean half the lab's analyses pin to one name and half to the other, and `(ParamsTable & {"params_name": "default"}).fetch1()` returns whichever user's "default" was inserted first. The fix is a before-insert search, not a post-hoc cleanup.
+
+```python
+# Before inserting, look at what already exists in the lab
+existing = ParamsTable.fetch(as_dict=True)
+for row in existing:
+    # Compare content, not name — two rows can mean the same thing under different labels
+    if (row["low_hz"] == 6.0 and row["high_hz"] == 10.0
+            and row["welch_nperseg"] == 1024):
+        print(f"Equivalent set already exists as '{row['params_name']}' — reuse this")
+        break
+else:
+    # Genuinely new — insert with an informative, self-describing name
+    ParamsTable.insert1({
+        "params_name": "theta_6_10_hz_welch_1024",
+        "low_hz": 6.0, "high_hz": 10.0, "welch_nperseg": 1024,
+    })
+```
+
+This is not "never insert." Genuinely new parameter sets *should* exist — the loop is "check-then-decide," and the decision often legitimately lands on insert. What it prevents is unintentional duplication that quietly splits downstream work.
+
+When the decision lands on insert, name quality matters:
+
+- Poor (ambiguous, collides easily, doesn't survive a grep): `default`, `my_params`, `v2`, `test`, `tmp`.
+- Informative (self-describing, searchable, collision-resistant): `theta_6_10_hz_welch_1024`, `dlc_smoothed_5px_conf_05`, `lfp_60hz_notch_1khz`.
+
+The same check-then-decide loop applies to any free-form string primary key where a user picks the value: electrode-group names, interval-list names, filter names, sort-group names. Whenever you're about to create a new string that downstream work will join on, first ask: *is there already a row in this table that means the same thing?*
 
 ## Pre-`populate()` upstream check
 
