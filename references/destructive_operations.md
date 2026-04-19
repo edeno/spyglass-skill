@@ -45,16 +45,18 @@ Any helper that removes rows or files goes through this file's patterns.
 
 **The two bypass mechanisms and when they are appropriate.**
 
-- **`super_delete()`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` for audit. Appropriate only when you are the data owner OR have explicit written permission from the owner AND there is a specific reason the team check is misfiring.
-- **`.delete(force_permission=True)`** — same effect, also logs. Same guidance.
+- **`super_delete(warn=True)`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` by default; `warn=False` suppresses both the warning and the log, so the audit trail depends on the default. Appropriate only when you are the data owner OR have explicit written permission from the owner AND there is a specific reason the team check is misfiring.
+- **`.delete(force_permission=True)`** — skips the check and logs. Same guidance.
 
 Both exist for legitimate edge cases (admin cleanup after a lab member leaves, fixing a misconfigured experimenter). Neither is a fallback for "the PermissionError is annoying." Treat either call as if it had a social cost — because it does.
 
-**Coverage gaps to know about.**
+**Coverage gaps where the team check does NOT fire (know these — they let data through):**
 
-- Tables with no `Session` link bypass the check with a warning log (`cautious_delete.py:114-119`). Lookup tables like `ProbeType` or `FirFilterParameters` fall in this category — `.delete()` will work without a team check. Use extra caution with shared lookup rows; someone else's pipeline may depend on them.
-- Sessions with no `Session.Experimenter` row raise `PermissionError` with a different message. Fix by ensuring every Session has an experimenter populated, not by bypassing.
-- Merge-table `merge_delete()` / `merge_delete_parent()` are classmethods on `_Merge` (see below) — they go through DataJoint's delete path but the team check applies via the part-table `delete()` calls. Still: inspect before calling.
+- **Tables with no Session dependency path** (`cautious_delete.py:110-119`). `.delete()` logs a warning and proceeds without the team check. Lookup tables like `ProbeType`, `FirFilterParameters`, `Lab`, `Institution` fall in this category, and so do any tables whose dependency graph doesn't reach `Session`. Use extra caution with shared lookup rows — someone else's pipeline may depend on them.
+- **Tables where the session summary can't be resolved** (`cautious_delete.py:121-126`). A second escape path: if the dependency path to `Session` exists nominally but `_get_exp_summary()` returns empty, the check logs "Could not find a connection from {table} to Session" and returns without raising. This is rarer than the no-Session case but equally silent.
+- **Sessions with no `Session.Experimenter` row** raise `PermissionError` with a different message. Fix by populating `Session.Experimenter`, not by bypassing.
+- **`merge_delete()`** (classmethod on `_Merge`) dispatches to `(cls() & uuids).delete(**kwargs)` at `dj_merge_tables.py:465`, which routes through `_Merge.delete()` → each part table's `.delete()` → `cautious_delete`. Team check DOES apply.
+- **`merge_delete_parent()` BYPASSES the team check** (`dj_merge_tables.py:499, 505`). Both the master delete and the part-parent deletes call `super().delete(...)` directly — jumping to `datajoint.Table.delete` without routing through `cautious_delete`. A user who can't `.delete()` a Session due to team-permissions CAN still `merge_delete_parent()` the same Session's pipeline outputs. Treat `merge_delete_parent()` as the merge-table equivalent of `super_delete()`: use only when you're the data owner or have explicit permission, and always preview with `dry_run=True` first.
 
 ## Paired shapes
 
