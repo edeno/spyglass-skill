@@ -272,7 +272,7 @@ set(UpstreamA.heading.names) & set(UpstreamB.heading.names)
 **Minimal fix.** Tighten the restriction so the join side that multiplies is reduced to one row first:
 
 ```python
-one_param = (ParamTable & {"params_name": "default"}).fetch1("KEY")
+one_param = (TrodesPosParams & {"trodes_pos_params_name": "default"}).fetch1("KEY")
 (UpstreamA & key) * (UpstreamB & one_param)
 ```
 

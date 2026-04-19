@@ -33,7 +33,7 @@ from spyglass.behavior.v1.moseq import MoseqModel, MoseqModelParams, MoseqModelS
 
 **MoseqModelParams** (Lookup)
 
-- Key: `moseq_model_params_name`
+- Key: `model_params_name`
 - Parameters for keypoint-moseq model training
 
 **MoseqModelSelection** (Manual)

@@ -150,7 +150,6 @@ SKIP_METHODS = {
     "merge_get_part", "merge_get_parent",
     "fetch1_dataframe",
     "cautious_delete", "super_delete", "file_like",
-    "delete_downstream_parts",  # set on SpyglassMixin dynamically
     "restrict_by_list", "find_insert_fail",
     "get_fully_defined_key", "ensure_single_entry",
     "load_shared_schemas", "delete_orphans",

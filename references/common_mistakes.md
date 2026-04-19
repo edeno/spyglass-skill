@@ -40,7 +40,7 @@ Unlike `fetch1()`, `fetch_nwb()` does NOT raise when the restriction matches mul
 
 ## 5. Destructive call without the paired inspect step
 
-Every destructive helper in Spyglass — `delete`, `drop`, `cautious_delete`, `super_delete`, `delete_quick`, `merge_delete`, `merge_delete_parent`, `delete_downstream_parts`, `cleanup`, `delete_orphans` — has a preview shape that must run first. `dry_run=True` for cleanups, `fetch(as_dict=True)` before `.delete()`, etc. The pattern is inspect → get user confirmation → destroy.
+Every destructive helper in Spyglass — `delete`, `drop`, `cautious_delete`, `super_delete`, `delete_quick`, `merge_delete`, `merge_delete_parent`, `cleanup`, `delete_orphans` — has a preview shape that must run first. `dry_run=True` for cleanups, `fetch(as_dict=True)` before `.delete()`, etc. The pattern is inspect → get user confirmation → destroy.
 
 **Fix.** Never produce a destroy step without the matching inspect step above it. Full paired shapes for every helper: [destructive_operations.md](destructive_operations.md).
 

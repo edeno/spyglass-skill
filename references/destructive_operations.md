@@ -9,13 +9,13 @@ This reference owns the canonical paired shapes for every destructive helper in 
   - [Row deletion](#row-deletion)
   - [Merge-table delete helpers](#merge-table-delete-helpers)
   - [File cleanup](#file-cleanup)
-  - [delete_downstream_parts](#delete_downstream_parts)
+  - [Session-wide cleanup](#session-wide-cleanup)
 - [Cross-references](#cross-references)
 
 ## Helpers this file covers
 
 - **DataJoint**: `delete()`, `drop()`, `cautious_delete()`, `super_delete()`, `delete_quick()`
-- **Merge-table helpers**: `merge_delete()`, `merge_delete_parent()`, `delete_downstream_parts()`
+- **Merge-table helpers**: `merge_delete()`, `merge_delete_parent()`
 - **File cleanup**: `cleanup()`, `delete_orphans()` — these remove analysis files from disk
 
 Any helper that removes rows or files goes through this file's patterns.
@@ -104,17 +104,14 @@ Nwbfile.cleanup()                    # entries only; files stay on disk
 # Nwbfile.cleanup(delete_files=True)
 ```
 
-### delete_downstream_parts
+### Session-wide cleanup
 
-Always call on a restricted relation, never the whole table. `reload_cache=True` because the cache can be stale and silently return "nothing to delete" when entries actually exist:
+There is no single "delete everything downstream of this session" helper in current Spyglass. The Spyglass-specific `delete_downstream_parts`/`delete_downstream_merge` helpers were removed in the mixin split refactor (`src/spyglass/utils/mixins/` reorganization). What remains:
 
-```python
-(Nwbfile & {"nwb_file_name": nwb_copy_file_name}).delete_downstream_parts(
-    reload_cache=True, dry_run=True,
-)
-# After inspecting the dry_run output:
-# (Nwbfile & {...}).delete_downstream_parts(reload_cache=True, dry_run=False)
-```
+- `(Nwbfile & {"nwb_file_name": f}).delete()` — DataJoint's cascade removes rows from tables with a foreign-key path to `Nwbfile`, routed through `cautious_delete` for the team check. Preview with `.fetch(as_dict=True)` on the restricted relation first.
+- For each merge table whose part entries reference the session, call `SomeMergeOutput.merge_delete_parent({"nwb_file_name": f}, dry_run=True)` explicitly. Run `dry_run=True` first, inspect, then `dry_run=False`. `merge_delete_parent` bypasses the team check (see the protection section above), so treat every call as if the data owner were watching.
+
+Do not look for a current method that wraps both steps. If you see `delete_downstream_parts` in an older notebook (`04_Merge_Tables.ipynb`, `02_Insert_Data.ipynb`) or a stale wrapper, treat it as removed — the notebook examples need updating, not replicating.
 
 ## Cross-references
 

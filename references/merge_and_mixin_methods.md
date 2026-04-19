@@ -39,7 +39,7 @@ PositionOutput.merge_get_part(merge_key)
 PositionOutput.merge_view(merge_key)
 ```
 
-**Instance methods are safe** — these respect `self.restriction`, so `(Table & key).method()` works as expected: `merge_fetch`, `merge_populate`, `merge_restrict_class`, `merge_get_parent_class`, `fetch_nwb`, `delete` (the mixin override), plus SpyglassMixin helpers like `delete_orphans`, `delete_downstream_parts`, `fetch1`, `fetch`.
+**Instance methods are safe** — these respect `self.restriction`, so `(Table & key).method()` works as expected: `merge_fetch`, `merge_populate`, `merge_restrict_class`, `merge_get_parent_class`, `fetch_nwb`, `delete` (the mixin override), plus SpyglassMixin helpers like `delete_orphans`, `fetch1`, `fetch`.
 
 If you are uncertain whether a method is a classmethod, read the source or err on the side of passing the restriction as an argument.
 
