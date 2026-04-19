@@ -355,15 +355,17 @@ Field names vary across the codebase. A non-exhaustive map:
 
 | Pipeline / table | Interval field in its selection |
 |---|---|
-| `IntervalList` (the source) | `interval_list_name` (primary key, at `common_interval.py:28`) |
+| `IntervalList` (the source) | `interval_list_name` (primary key, `common_interval.py:28`) |
 | `LFPSelection` / `LFPV1` | `target_interval_list_name` (`lfp/v1/lfp.py`) |
-| `LFPArtifactRemovedIntervalList` | `artifact_removed_interval_list_name` |
-| `LFPBandSelection` | `target_interval_list_name` |
-| `SpikeSortingRecordingSelection` (v0) | `sort_interval_name` |
-| `SpikeSortingArtifactDetectionSelection` | `artifact_removed_interval_list_name` |
-| `RippleTimesV1` selection | `target_interval_list_name` |
+| `LFPArtifactRemovedIntervalList` | `artifact_removed_interval_list_name` (`lfp/v1/lfp_artifact.py:162`) |
+| `LFPBandSelection` | `target_interval_list_name` (`lfp/analysis/v1/lfp_band.py:28`) |
+| `SpikeSortingRecordingSelection` (v0) | `sort_interval_name` — inherited via `-> SortInterval` (`spikesorting_recording.py:324-332`; field defined in `SortInterval` at `:241`) |
+| `SpikeSortingArtifactDetectionSelection` | `artifact_removed_interval_list_name` (`spikesorting/v0/spikesorting_artifact.py:88`) |
+| `RippleLFPSelection` (feeds `RippleTimesV1`) | `target_interval_list_name` — **inherited two hops** via `-> LFPBandV1 -> LFPBandSelection`. `RippleLFPSelection` (`ripple/v1/ripple.py:33-37`) has no interval field of its own; the inherited name only shows up in the transitive primary key, so check `RippleLFPSelection.heading.primary_key` to see it. |
+| `MuaEventsV1` | `detection_interval` (projected from `IntervalList.interval_list_name` at `mua/v1/mua.py:68`) |
 | Decoding V1 selections | `encoding_interval` AND `decoding_interval` (both projected from `IntervalList.interval_list_name`, `decoding/v1/clusterless.py:88-89`) |
-| Position pipelines | project off `IntervalList` — may use different aliases |
+| `TrodesPosSelection` | `interval_list_name` (unaliased — inherited via `-> RawPosition -> IntervalList`) |
+| DLC position selections | Interval is not set at the user-facing selection level; it flows in through the pose-estimation chain. Inspect the specific selection's primary key to confirm. |
 
 Two intervals can overlap in time but live under different names (e.g., one session's raw epoch vs. a trimmed "valid_times" version; a position-computed interval vs. the raw recording interval). A restriction that works on the LFP selection table may match zero rows on the decoding selection table because the field name, the interval name, or both differ.
 

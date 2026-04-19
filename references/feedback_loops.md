@@ -38,7 +38,7 @@ print(len(UpstreamSelection & key))             # the selection table feeding th
 Common causes when this fails:
 - Selection-table insert used a different value for a key field (typical: interval name mismatch — see runtime_debugging.md Signature F).
 - Selection row exists but references an interval/params/group that was never populated upstream.
-- The key you built includes a field that doesn't exist on `key_source` — DataJoint silently ignores unknown fields in a restriction, producing an empty match.
+- The key you built includes a field that doesn't exist on `key_source` — for standard computed tables, DataJoint typically ignores unknown fields in a dictionary restriction, producing an empty match with no error. Tables with custom `key_source` properties may behave differently; if the restriction seems valid but `len(key_source & key) == 0`, print the `key_source.heading.primary_key` to confirm which fields it actually accepts.
 
 ## Pre-`fetch1()` cardinality check
 
