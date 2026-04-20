@@ -355,18 +355,22 @@
       "eval_name": "merge-key-lfp-default",
       "stage": "pipeline-usage",
       "tier": "merge-key-discovery",
-      "prompt": "I need the LFP merge entry for j1620210710_ with the `default` filter — get me the `merge_id` so I can pass it to my downstream code.",
-      "expected_output": "`LFPOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'filter_name': 'default'}).fetch1('merge_id')`. If the response prefers the full KEY dict, `fetch1('KEY')` is also acceptable.",
+      "prompt": "I need the LFP merge entry for j1620210710_ with the standard lab wideband filter — get me the `merge_id` so I can pass it to my downstream code.",
+      "expected_output": "`LFPOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'filter_name': 'LFP 0-400 Hz'}).fetch1('merge_id')`. `'LFP 0-400 Hz'` is the canonical Frank Lab wideband filter name registered in `FirFilterParameters` (see common_filter.py:583). If the response doesn't know the exact name, it should discover it via `FirFilterParameters.fetch('filter_name')` first rather than guess. If the response prefers the full KEY dict, `fetch1('KEY')` is also acceptable.",
       "assertions": {
         "required_substrings": [
           "LFPOutput",
           "merge_get_part",
           "filter_name"
         ],
-        "forbidden_substrings": [],
+        "forbidden_substrings": [
+          "filter_name='default'",
+          "filter_name=\"default\""
+        ],
         "behavioral_checks": [
           "Uses merge_get_part classmethod form",
-          "Includes filter_name in the restriction (not just nwb_file_name)"
+          "Includes filter_name in the restriction (not just nwb_file_name)",
+          "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (FirFilterParameters.fetch) rather than guessing 'default'"
         ]
       },
       "files": []
@@ -398,7 +402,7 @@
       "stage": "pipeline-usage",
       "tier": "joins",
       "prompt": "List all sessions that have both `RippleTimesV1` populated AND `ClusterlessDecodingV1` populated.",
-      "expected_output": "`(RippleTimesV1 * ClusterlessDecodingV1).fetch('nwb_file_name', as_dict=True)` or similar. The `*` is the DataJoint join; restricting isn't needed here because the join already intersects on shared PK fields (`nwb_file_name`). Uses `set()` / distinct if the join multiplies rows (which it will — ripple has interval parts; decoding has encoding/decoding intervals).",
+      "expected_output": "`(RippleTimesV1 * ClusterlessDecodingV1).fetch('nwb_file_name', as_dict=True)` or similar. DataJoint's `*` is a natural join — it joins on ALL shared attribute names, not just direct primary-key fields. Neither RippleTimesV1 nor ClusterlessDecodingV1 declares `nwb_file_name` in its own `definition`, but both inherit it (and many other Session-derived attributes) via FK chains back to `Session`, so `*` intersects on them and produces only sessions that have both populated. Uses `set()` / distinct if the join multiplies rows (which it will — ripple has interval parts; decoding has encoding/decoding intervals).",
       "assertions": {
         "required_substrings": [
           "RippleTimesV1",
@@ -600,8 +604,8 @@
       "eval_name": "compound-full-session-pipeline",
       "stage": "pipeline-usage",
       "tier": "compound",
-      "prompt": "I'm new to the Frank lab and I need to: (1) ingest `j1620210710.nwb` which I just converted, (2) set up the Trodes position pipeline for the 02_r1 interval, (3) run LFP on the sleep epoch using default filter, (4) eventually export everything for a paper. Give me the end-to-end flow. Assume defaults where reasonable and flag anywhere I need to supply a choice.",
-      "expected_output": "Multi-reference handoff routing through ingestion.md → position_pipeline.md → lfp_pipeline.md → export.md. (1) `insert_sessions('j1620210710.nwb')` (raw filename). (2) Insert `TrodesPosSelection` for 02_r1 with `trodes_pos_params_name='default'`, populate `TrodesPosV1`. (3) Insert `LFPSelection` for the sleep interval with `filter_name='default'` and target electrodes, populate `LFPV1`. (4) Flags that the Export pipeline wants the SKILL user to pick an Export name and will capture everything the population steps touched — route to `05_Export.ipynb`. Each step names the restriction the user needs to choose, e.g. which electrodes for LFP.",
+      "prompt": "I'm new to the Frank lab and I need to: (1) ingest `j1620210710.nwb` which I just converted, (2) set up the Trodes position pipeline for the 02_r1 interval, (3) run LFP on the sleep epoch using the standard wideband filter, (4) eventually export everything for a paper. Give me the end-to-end flow. Assume defaults where reasonable and flag anywhere I need to supply a choice.",
+      "expected_output": "Multi-reference handoff routing through ingestion.md → position_pipeline.md → lfp_pipeline.md → export.md. (1) `insert_sessions('j1620210710.nwb')` (raw filename). (2) Insert `TrodesPosSelection` for 02_r1 with `trodes_pos_params_name='default'` (the TrodesPosParams canonical default name IS `'default'`), populate `TrodesPosV1`. (3) Insert `LFPSelection` for the sleep interval with `filter_name='LFP 0-400 Hz'` (the canonical Frank Lab wideband filter registered in `FirFilterParameters`) and target electrodes, populate `LFPV1`. (4) Flags that the Export pipeline wants the user to pick an Export name and will capture everything the population steps touched — route to `05_Export.ipynb`. Each step names the restriction the user needs to choose, e.g. which electrodes for LFP.",
       "assertions": {
         "required_substrings": [
           "insert_sessions",
@@ -648,7 +652,7 @@
       "stage": "pipeline-usage",
       "tier": "joins",
       "prompt": "I have a curated sorting in `CurationV1` with `curation_id='d3b7f9a2-4c1e-11ee-b962-0242ac120002'` and I'm looking at `unit_id=5` from it. What brain region is this unit in?",
-      "expected_output": "Routes to spikesorting_pipeline.md + common_tables.md. Units don't carry brain region directly — region comes from the electrodes in the unit's sort group, and all units in a sort group share electrodes, so the region is the same for every unit in that group (unit_id doesn't affect the answer). Join chain: CurationV1 (curation_id) → SpikeSorting → SpikeSortingRecordingSelection (to get `sort_group_id` + `nwb_file_name`) → SortGroup.SortGroupElectrode (maps sort_group_id to electrode_ids) → Electrode (each row has `region_id`) → BrainRegion (has `region_name`). DataJoint form: resolve the recording context first (`rec_key = (CurationV1 * SpikeSorting * SpikeSortingRecordingSelection & {'curation_id': ...}).fetch1('nwb_file_name', 'sort_group_id')` as a dict), then `(SortGroup.SortGroupElectrode * Electrode * BrainRegion & rec_key).fetch('region_name')`. For tetrodes, all 4 electrodes are in the same region so the result is a single name (wrap with `set()` or `np.unique()` if expecting one); for polymer probes spanning regions, multiple names may come back.",
+      "expected_output": "Routes to spikesorting_pipeline.md + common_tables.md. Units don't carry brain region directly — region comes from the electrodes in the unit's sort group, and all units in a sort group share electrodes, so the region is the same for every unit in that group (unit_id doesn't affect the answer). FK chain by declaration: CurationV1 → SpikeSorting → SpikeSortingSelection → SpikeSortingRecording → SpikeSortingRecordingSelection (which carries `sort_group_id` + `nwb_file_name` via its own FKs to SortGroup and Raw); SortGroup.SortGroupElectrode maps sort_group_id to electrode_ids; Electrode has `region_id`; BrainRegion has `region_name`. DataJoint form: because `*` is a natural join on shared attributes (propagated transitively through FK inheritance), the query does NOT need every bridge table named explicitly — `(CurationV1 * SpikeSortingRecordingSelection & {'curation_id': ...})` joins on the inherited `recording_id` shared between them. Recommended shape: `rec_key = (CurationV1 * SpikeSortingRecordingSelection & {'curation_id': ...}).fetch1('nwb_file_name', 'sort_group_id', as_dict=True)`, then `(SortGroup.SortGroupElectrode * Electrode * BrainRegion & rec_key).fetch('region_name')`. For tetrodes, all 4 electrodes are in the same region so the result is a single name (wrap with `set()` or `np.unique()` if expecting one); for polymer probes spanning regions, multiple names may come back.",
       "assertions": {
         "required_substrings": [
           "SortGroup",
