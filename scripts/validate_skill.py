@@ -33,25 +33,14 @@ REFERENCES_DIR = SKILL_DIR / "references"
 # No hardcoded default — use --spyglass-src or run from the repo root
 DEFAULT_SPYGLASS_SRC = None
 
-# Patterns to extract from markdown (inside code blocks only)
-IMPORT_PATTERN = re.compile(
-    r"from\s+(spyglass[\w.]+)\s+import\s+([^#\n]+)"
-)
-# Plain module imports: `import spyglass.x.y` or `import spyglass.x.y as alias`
-PLAIN_IMPORT_PATTERN = re.compile(
-    r"import\s+(spyglass[\w.]*)(?:\s+as\s+\w+)?"
-)
-# Match method calls: capture whether `()` was used before the method
-# Group 1: class name; Group 2: "()" if instance-call, "" if bare class access; Group 3: method name
-METHOD_CALL_PATTERN = re.compile(
-    r"(\w+)(\(\))?\.(\w+)\s*\("
-)
-# Keyword-argument extraction is done in two stages: locate the method call
-# (METHOD_CALL_PATTERN above), then scan all `name=value` pairs inside its
-# argument list with KWARG_SCAN. The two-stage approach avoids the single-regex
-# pitfall of only matching the first kwarg per call.
-# Matches a bare `name=` (but not `==`, `<=`, `>=`, `!=`), capturing the name.
-KWARG_SCAN = re.compile(r"(?<![=!<>])\b(\w+)\s*=(?!=)")
+# Import / method-call / kwarg extraction all now go through the AST walk
+# in iter_python_blocks. Regex was retired in the Phase 1 refactor —
+# Method-call and kwarg extraction are done via AST walk (see
+# iter_python_blocks / resolve_receiver / check_methods / check_kwargs).
+# A single AST walker replaces the previous regex-based scan so that aliased
+# imports (`from spyglass.common import Session as Sess`) and module-qualified
+# receivers (`import spyglass.common as sgc; sgc.Session.fetch()`) — both
+# common in real notebooks — resolve correctly to their canonical classes.
 
 # Known classes and the module file that defines them
 # Format: "ClassName": "dotted.module.path" (relative to spyglass src)
@@ -227,33 +216,6 @@ def collect_md_files():
     return files
 
 
-def extract_code_blocks(content):
-    """Extract code block contents with line numbers.
-
-    Returns a list of (start_line, [(line_num, line)]) tuples. Callers that
-    need to match multi-line expressions should also consider join_logical_lines
-    which fuses lines that continue inside open brackets/parens.
-    """
-    blocks = []
-    in_code = False
-    block_lines = []
-    block_start = 0
-
-    for line_num, line in enumerate(content.split("\n"), 1):
-        if line.strip().startswith("```"):
-            if in_code:
-                blocks.append((block_start, block_lines))
-                block_lines = []
-            else:
-                block_start = line_num + 1
-            in_code = not in_code
-            continue
-        if in_code:
-            block_lines.append((line_num, line))
-
-    return blocks
-
-
 def extract_fenced_blocks(content):
     """Like extract_code_blocks, but also yields the fence language tag.
 
@@ -285,41 +247,110 @@ def extract_fenced_blocks(content):
     return blocks
 
 
-def join_logical_lines(block_lines):
-    """Fuse physical lines into logical lines across open brackets/parens.
+def iter_python_blocks(md_file):
+    """Yield (block_start_line, tree) for each ```python block that parses.
 
-    Returns a list of (start_line_num, joined_source) tuples. The line number
-    is the line where the logical line begins, so failures can be reported at
-    a sensible location even when the offending call spans multiple lines.
+    Blocks whose source fails ast.parse() are skipped here (check_python_syntax
+    reports those separately). Downstream callers should use this instead of
+    regex-scanning code lines — the AST handles multi-line calls natively and
+    lets aliased / module-qualified receivers resolve via build_alias_map.
     """
-    joined = []
-    buf = []
-    buf_start = None
-    depth = 0
+    content = md_file.read_text()
+    for block_start, lang, body in extract_fenced_blocks(content):
+        if lang != "python":
+            continue
+        try:
+            tree = ast.parse(body)
+        except SyntaxError:
+            continue
+        yield block_start, tree
 
-    for line_num, line in block_lines:
-        if buf_start is None:
-            buf_start = line_num
-        buf.append(line)
-        # Count unmatched opening brackets on this line to decide continuation
-        # Simple counter; strings with brackets are rare in the skill examples
-        # and the validator is regex-based anyway so minor miscounts are
-        # self-correcting on the next closing line
-        for ch in line:
-            if ch in "([{":
-                depth += 1
-            elif ch in ")]}":
-                depth = max(0, depth - 1)
-        if depth == 0:
-            joined.append((buf_start, " ".join(buf)))
-            buf = []
-            buf_start = None
 
-    # Flush any remaining buffer (unbalanced — shouldn't happen for valid code)
-    if buf:
-        joined.append((buf_start, " ".join(buf)))
+def build_alias_map(tree):
+    """Build {local_name: canonical_name} for spyglass imports in one block.
 
-    return joined
+    Maps:
+      from spyglass.X import Name          -> {"Name": "Name"}
+      from spyglass.X import Name as Alias -> {"Alias": "Name"}
+      import spyglass.X as sgc             -> {"sgc": "<module:spyglass.X>"}
+      import spyglass.X                    -> {"spyglass": "<module:spyglass>"}
+
+    The "<module:...>" sentinel tells resolve_receiver that the local name is
+    a module binding rather than a class — so `sgc.Session` must go one attr
+    deeper to find the class. Non-spyglass imports are ignored.
+    """
+    alias_map = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if not node.module or not node.module.startswith("spyglass"):
+                continue
+            for alias in node.names:
+                local = alias.asname or alias.name
+                alias_map[local] = alias.name
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if not alias.name.startswith("spyglass"):
+                    continue
+                if alias.asname:
+                    alias_map[alias.asname] = f"<module:{alias.name}>"
+                else:
+                    # `import spyglass.common` binds `spyglass` locally
+                    local = alias.name.split(".")[0]
+                    alias_map[local] = f"<module:{alias.name}>"
+    return alias_map
+
+
+def resolve_receiver(call_node, alias_map):
+    """Resolve a Call's receiver to (class_name, is_instance_call, lineno).
+
+    Returns None for receivers we intentionally don't validate:
+    - BinOp (e.g., `(Table & key).method()` — restriction expressions)
+    - complex expressions (lambdas, subscripts, conditional exprs)
+    - plain module accesses (`sgc.some_func()` — no class in between)
+    - lowercase variable names (instance vars like `sel.start_export`)
+
+    Handled shapes:
+    - Class.method()          → ("Class", False)
+    - Class().method()        → ("Class", True)
+    - alias.method()          → (alias_map[alias], False) if alias is a class
+    - module_alias.Class.method()   → ("Class", False)
+    - module_alias.Class().method() → ("Class", True)
+    """
+    if not isinstance(call_node.func, ast.Attribute):
+        return None
+    method_attr = call_node.func
+    receiver = method_attr.value
+    instance_call = False
+
+    # Unwrap `Class()` — instance-construction before method call
+    if isinstance(receiver, ast.Call):
+        instance_call = True
+        receiver = receiver.func
+
+    if isinstance(receiver, ast.Name):
+        canonical = alias_map.get(receiver.id, receiver.id)
+        if canonical.startswith("<module:"):
+            return None  # `module.method()` — no class to validate
+        return (canonical, instance_call, method_attr.lineno)
+
+    if isinstance(receiver, ast.Attribute):
+        # Walk the chain to its root Name. For `sgc.Session.Part` the chain
+        # (in traversal order) is ["Part", "Session"] and the root is Name('sgc').
+        chain = []
+        node = receiver
+        while isinstance(node, ast.Attribute):
+            chain.append(node.attr)
+            node = node.value
+        if not isinstance(node, ast.Name):
+            return None
+        root = alias_map.get(node.id, node.id)
+        if root.startswith("<module:"):
+            # module.Class.method() — the outermost attr is the class
+            return (chain[0], instance_call, method_attr.lineno)
+        # Class.Attr.method() / other rare chain; leave to future work
+        return None
+
+    return None
 
 
 def parse_class_from_file(filepath, class_name, include_inherited=True):
@@ -488,46 +519,39 @@ def _resolve_module_file(src_root, module_path):
 def check_imports(src_root, results):
     """Check that all import statements in code blocks are valid.
 
-    Handles both `from spyglass.x import a, b, c` and
-    plain `import spyglass.x[.y] [as alias]` forms, using join_logical_lines
-    so multiline imports are matched as a single logical line.
+    AST-based. `from spyglass.x import a, b` is validated by checking each
+    imported name exists in the target module; `import spyglass.x[.y]` is
+    validated by resolving the dotted module path to a file/package.
     """
     for md_file in collect_md_files():
-        content = md_file.read_text()
-        blocks = extract_code_blocks(content)
-
-        for block_start, block_lines in blocks:
-            for line_num, line in join_logical_lines(block_lines):
-                # from spyglass.x import a, b, c
-                for match in IMPORT_PATTERN.finditer(line):
-                    module_path = match.group(1)
-                    raw_names = match.group(2)
-                    names = []
-                    for n in raw_names.split(","):
-                        n = n.strip().rstrip(",").rstrip(")").lstrip("(")
-                        if not n or n.startswith("#"):
-                            continue
-                        # Strip `as alias` — we validate the original name
-                        n = n.split(" as ")[0].strip()
-                        names.append(n)
+        for block_start, tree in iter_python_blocks(md_file):
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    module_path = node.module
+                    if not module_path or not module_path.startswith("spyglass"):
+                        continue
+                    names = [alias.name for alias in node.names]
+                    line_num = block_start + node.lineno - 1
                     location = f"{md_file.name}:{line_num}"
                     check_module_exports(
                         src_root, module_path, names, results, location
                     )
-                # import spyglass.x[.y] [as alias]
-                for match in PLAIN_IMPORT_PATTERN.finditer(line):
-                    module_path = match.group(1)
-                    location = f"{md_file.name}:{line_num}"
-                    mod_file = _resolve_module_file(src_root, module_path)
-                    if mod_file is not None:
-                        results.ok(
-                            f"{location}: import {module_path} resolves"
-                        )
-                    else:
-                        results.fail(
-                            f"{location}: import {module_path} — "
-                            f"module not found"
-                        )
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if not alias.name.startswith("spyglass"):
+                            continue
+                        line_num = block_start + node.lineno - 1
+                        location = f"{md_file.name}:{line_num}"
+                        mod_file = _resolve_module_file(src_root, alias.name)
+                        if mod_file is not None:
+                            results.ok(
+                                f"{location}: import {alias.name} resolves"
+                            )
+                        else:
+                            results.fail(
+                                f"{location}: import {alias.name} — "
+                                f"module not found"
+                            )
 
 
 def discover_classes(src_root):
@@ -609,7 +633,11 @@ class _ClassRegistry:
 
 
 def check_methods(src_root, results, registry=None):
-    """Check that documented method calls reference real methods."""
+    """Check that documented method calls reference real methods.
+
+    AST-based. Handles aliased imports, module-qualified receivers, and
+    multi-line calls — see iter_python_blocks / resolve_receiver.
+    """
     if registry is None:
         registry = _ClassRegistry(src_root, results)
 
@@ -617,68 +645,80 @@ def check_methods(src_root, results, registry=None):
         return registry.methods(class_name)
 
     for md_file in collect_md_files():
-        content = md_file.read_text()
-        blocks = extract_code_blocks(content)
+        for block_start, tree in iter_python_blocks(md_file):
+            alias_map = build_alias_map(tree)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                if not isinstance(node.func, ast.Attribute):
+                    continue
+                method_name = node.func.attr
+                if method_name in SKIP_METHODS:
+                    continue
+                if method_name.startswith("_"):
+                    continue
 
-        for block_start, block_lines in blocks:
-            for line_num, line in join_logical_lines(block_lines):
-                for match in METHOD_CALL_PATTERN.finditer(line):
-                    class_name = match.group(1)
-                    instance_call = bool(match.group(2))  # True if "()" used
-                    method_name = match.group(3)
+                resolved = resolve_receiver(node, alias_map)
+                if resolved is None:
+                    # Unresolvable receiver (BinOp restriction, lowercase var,
+                    # complex expression). Match prior regex behavior: skip.
+                    continue
+                class_name, instance_call, call_line = resolved
+                line_num = block_start + call_line - 1
+                location = f"{md_file.name}:{line_num}"
 
-                    if method_name in SKIP_METHODS:
-                        continue
-                    if method_name.startswith("_"):
-                        continue
-
-                    methods = get_class_methods(class_name)
-                    location = f"{md_file.name}:{line_num}"
-                    if methods is None:
-                        # Heuristic: uppercase-first identifiers that don't
-                        # resolve are probably typos or classes missing from
-                        # the registry. Lowercase names are instance vars
-                        # (e.g. `sel.start_export`) — skip those silently.
-                        if (
-                            class_name[:1].isupper()
-                            and class_name not in DOC_PLACEHOLDERS
-                        ):
-                            results.warn(
-                                f"{location}: unresolved class "
-                                f"'{class_name}' in '{class_name}."
-                                f"{method_name}()' — typo, or add to "
-                                f"KNOWN_CLASSES/DOC_PLACEHOLDERS"
-                            )
-                        continue
-
-                    if method_name not in methods:
-                        results.fail(
-                            f"{location}: {class_name}.{method_name}() "
-                            f"NOT FOUND on {class_name}"
-                        )
-                        continue
-
-                    info = methods[method_name]
-                    # Instance-only method called on bare class?
+                methods = get_class_methods(class_name)
+                if methods is None:
+                    # Uppercase-first identifier that isn't registered —
+                    # probably a typo or a missing entry. Lowercase names
+                    # (instance vars) never reach this branch because
+                    # resolve_receiver returns a bare Name's id unchanged
+                    # and the registry has no lowercase keys.
                     if (
-                        not instance_call
-                        and not info.get("is_classmethod")
-                        and not info.get("is_staticmethod")
+                        class_name[:1].isupper()
+                        and class_name not in DOC_PLACEHOLDERS
                     ):
-                        results.fail(
-                            f"{location}: {class_name}.{method_name}() is an "
-                            f"instance method — use {class_name}()."
-                            f"{method_name}(...)"
+                        results.warn(
+                            f"{location}: unresolved class "
+                            f"'{class_name}' in '{class_name}."
+                            f"{method_name}()' — typo, or add to "
+                            f"KNOWN_CLASSES/DOC_PLACEHOLDERS"
                         )
-                    else:
-                        results.ok(
-                            f"{location}: {class_name}.{method_name}() valid "
-                            f"({'instance' if instance_call else 'class/static'} call)"
-                        )
+                    continue
+
+                if method_name not in methods:
+                    results.fail(
+                        f"{location}: {class_name}.{method_name}() "
+                        f"NOT FOUND on {class_name}"
+                    )
+                    continue
+
+                info = methods[method_name]
+                # Instance-only method called on bare class?
+                if (
+                    not instance_call
+                    and not info.get("is_classmethod")
+                    and not info.get("is_staticmethod")
+                ):
+                    results.fail(
+                        f"{location}: {class_name}.{method_name}() is an "
+                        f"instance method — use {class_name}()."
+                        f"{method_name}(...)"
+                    )
+                else:
+                    results.ok(
+                        f"{location}: {class_name}.{method_name}() valid "
+                        f"({'instance' if instance_call else 'class/static'} call)"
+                    )
 
 
 def check_kwargs(src_root, results, registry=None):
-    """Check that documented keyword arguments exist in method signatures."""
+    """Check that documented keyword arguments exist in method signatures.
+
+    AST-based; shares receiver resolution with check_methods. Uses
+    node.keywords directly, so we don't have to re-scan argument text
+    with a regex.
+    """
     if registry is None:
         registry = _ClassRegistry(src_root, results)
 
@@ -686,59 +726,59 @@ def check_kwargs(src_root, results, registry=None):
         return registry.methods(class_name)
 
     for md_file in collect_md_files():
-        content = md_file.read_text()
-        blocks = extract_code_blocks(content)
+        for block_start, tree in iter_python_blocks(md_file):
+            alias_map = build_alias_map(tree)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                if not isinstance(node.func, ast.Attribute):
+                    continue
+                method_name = node.func.attr
+                if method_name in SKIP_METHODS:
+                    continue
+                if method_name.startswith("_"):
+                    continue
 
-        for block_start, block_lines in blocks:
-            for line_num, line in join_logical_lines(block_lines):
-                # Find each method call, then scan its full arg list for kwargs
-                for match in METHOD_CALL_PATTERN.finditer(line):
-                    class_name = match.group(1)
-                    method_name = match.group(3)
+                resolved = resolve_receiver(node, alias_map)
+                if resolved is None:
+                    continue
+                class_name, _, call_line = resolved
+                line_num = block_start + call_line - 1
+                location = f"{md_file.name}:{line_num}"
 
-                    if method_name in SKIP_METHODS:
+                methods = get_class_methods(class_name)
+                if methods is None or method_name not in methods:
+                    continue  # method existence handled by check_methods
+
+                method_info = methods[method_name]
+                for kw in node.keywords:
+                    if kw.arg is None:  # **kwargs unpacking
                         continue
-                    if method_name.startswith("_"):
+                    if kw.arg in SKIP_KWARGS:
                         continue
-
-                    methods = get_class_methods(class_name)
-                    if methods is None:
-                        continue
-                    if method_name not in methods:
-                        continue  # Caught by check_methods
-
-                    method_info = methods[method_name]
-                    arg_list = _extract_arg_list(line, match.end() - 1)
-                    if arg_list is None:
-                        continue
-
-                    for kmatch in KWARG_SCAN.finditer(arg_list):
-                        kwarg_name = kmatch.group(1)
-                        if kwarg_name in SKIP_KWARGS:
-                            continue
-                        location = f"{md_file.name}:{line_num}"
-                        if (
-                            kwarg_name in method_info["params"]
-                            or method_info["has_kwargs"]
-                        ):
-                            results.ok(
-                                f"{location}: "
-                                f"{class_name}.{method_name}({kwarg_name}=) valid"
-                            )
-                        else:
-                            results.fail(
-                                f"{location}: "
-                                f"{class_name}.{method_name}() has no parameter "
-                                f"'{kwarg_name}' "
-                                f"(has: {method_info['params']})"
-                            )
+                    if (
+                        kw.arg in method_info["params"]
+                        or method_info["has_kwargs"]
+                    ):
+                        results.ok(
+                            f"{location}: "
+                            f"{class_name}.{method_name}({kw.arg}=) valid"
+                        )
+                    else:
+                        results.fail(
+                            f"{location}: "
+                            f"{class_name}.{method_name}() has no parameter "
+                            f"'{kw.arg}' "
+                            f"(has: {method_info['params']})"
+                        )
 
 
 def _extract_arg_list(line, open_paren_idx):
     """Return the text between matched parens starting at open_paren_idx.
 
     Tracks nested parens/brackets. Returns None if the parens don't close
-    within the line (join_logical_lines usually handles that upstream).
+    within `line` (which for anti-pattern callers is the full block body,
+    not a single physical line, so multi-line calls are handled).
     """
     if open_paren_idx >= len(line) or line[open_paren_idx] != "(":
         return None

@@ -317,6 +317,137 @@ def fixture_merge_classmethod_discard(src_root):
     return False
 
 
+def fixture_alias_import_resolves(src_root):
+    """Aliased `from spyglass.X import Class as Alias` must resolve through
+    the alias to validate `Alias.method()` against the real class.
+
+    Regression: pre-AST validator only matched bare class names via regex and
+    silently skipped `Sess.insert_selection(...)` as an unresolved name.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.spikesorting.v1 import SpikeSortingRecordingSelection as SSR
+
+        # Real method — must resolve through alias and pass
+        SSR.insert_selection({"nwb_file_name": "x"})
+
+        # Bogus method — must resolve through alias and fail
+        SSR.nonexistent_method({"x": 1})
+        ```
+        """
+    )
+    v.collect_md_files = lambda: [md]
+    results = v.ValidationResult()
+    registry = v._ClassRegistry(src_root, results)
+    v.check_methods(src_root, results, registry=registry)
+    bad = [m for m in results.failed if "nonexistent_method" in m]
+    good = [m for m in results.passed if "insert_selection" in m]
+    if bad and good:
+        print("  [ok] method: alias import resolves (valid + invalid)")
+        return True
+    print(f"  [FAIL] expected one fail and one pass")
+    print(f"         failures: {results.failed}")
+    print(f"         passes:   {[p for p in results.passed if 'SpikeSorting' in p]}")
+    return False
+
+
+def fixture_module_qualified_resolves(src_root):
+    """`import spyglass.X as sgc; sgc.Class.method()` must resolve to Class.
+
+    Regression: module-qualified receivers (two dots) did not match the old
+    regex at all and were silently skipped.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        import spyglass.spikesorting.v1 as ssv1
+
+        # Real method via module alias
+        ssv1.SpikeSortingRecordingSelection.insert_selection({"nwb_file_name": "x"})
+
+        # Bogus method via module alias
+        ssv1.SpikeSortingRecordingSelection.nonexistent_method({"x": 1})
+        ```
+        """
+    )
+    v.collect_md_files = lambda: [md]
+    results = v.ValidationResult()
+    registry = v._ClassRegistry(src_root, results)
+    v.check_methods(src_root, results, registry=registry)
+    bad = [m for m in results.failed if "nonexistent_method" in m]
+    good = [m for m in results.passed if "insert_selection" in m]
+    if bad and good:
+        print("  [ok] method: module-qualified call resolves (valid + invalid)")
+        return True
+    print(f"  [FAIL] expected one fail and one pass")
+    print(f"         failures: {results.failed}")
+    print(f"         passes:   {[p for p in results.passed if 'SpikeSorting' in p]}")
+    return False
+
+
+def fixture_alias_kwarg_validation(src_root):
+    """Kwarg checking must follow aliases too — `Sess.method(bogus_kw=...)`
+    should fail exactly like `Session.method(bogus_kw=...)` would.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.spikesorting.v1 import SpikeSortingRecordingSelection as SSR
+
+        SSR.insert_selection({"nwb_file_name": "x"}, totally_fake_kwarg=True)
+        ```
+        """
+    )
+    v.collect_md_files = lambda: [md]
+    results = v.ValidationResult()
+    registry = v._ClassRegistry(src_root, results)
+    v.check_kwargs(src_root, results, registry=registry)
+    return _assert_contains(
+        results, "totally_fake_kwarg",
+        "kwarg: alias-resolved call still kwarg-checks",
+    )
+
+
+def fixture_binop_receiver_not_false_positive(src_root):
+    """`(Table & key).method()` must NOT produce a bogus method-not-found
+    failure. BinOp receivers resolve to None in the new AST checker, which
+    is the same intentional skip the old regex accidentally produced.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.position.position_merge import PositionOutput
+
+        # Restricted relation — receiver is a BinOp expression. This is
+        # the merge-classmethod anti-pattern for merge_delete (caught by
+        # the dedicated check), but for a non-merge method like
+        # insert_selection it's a legitimate if-unusual pattern we don't
+        # want to flag as a method lookup failure.
+        result = (PositionOutput & {"x": 1}).fetch(limit=10)
+        ```
+        """
+    )
+    v.collect_md_files = lambda: [md]
+    results = v.ValidationResult()
+    registry = v._ClassRegistry(src_root, results)
+    v.check_methods(src_root, results, registry=registry)
+    bad = [m for m in results.failed if "PositionOutput" in m]
+    if not bad:
+        print("  [ok] method: BinOp receiver not flagged as unresolved method")
+        return True
+    print(f"  [FAIL] BinOp receiver triggered false positive: {bad}")
+    return False
+
+
 def fixture_merge_classmethod_correct_form_ok(src_root):
     """Correct forms `Table.merge_*(restriction)` must NOT trigger."""
     md = _write_md(
@@ -354,6 +485,10 @@ FIXTURES = [
     fixture_spyglassmixin_ordering_ok,
     fixture_merge_classmethod_discard,
     fixture_merge_classmethod_correct_form_ok,
+    fixture_alias_import_resolves,
+    fixture_module_qualified_resolves,
+    fixture_alias_kwarg_validation,
+    fixture_binop_receiver_not_false_positive,
 ]
 
 
