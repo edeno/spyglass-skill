@@ -63,6 +63,31 @@ pip install -e .
 
 The `-e` flag installs in editable mode so changes to the source are reflected immediately.
 
+### Env drift and upstream breakages
+
+`pip install <onepkg>` into an existing Spyglass env silently upgrades
+transitive deps (especially `numpy`, `setuptools`, `pydot`, `networkx`)
+and breaks otherwise-working installs. Symptoms include:
+
+- `AttributeError` deep in `cv2.gapi` on import
+- `"ndx-franklab-novela is not a namespace"`
+- `dj.Diagram(...)._repr_svg_` → "Node names and attributes should not contain ':'"
+- `pkg_resources` errors after `setuptools>=82`
+- `RuntimeError: Undefined plan with nthreads` from `pyfftw 0.13.0`
+
+**Fix.** Recreate the env from the current `environment.yml`:
+
+```bash
+mamba env update --file environment.yml --prune
+# OR for a clean rebuild:
+mamba env remove -n spyglass && mamba env create -f environment.yml
+```
+
+Do NOT `pip install <pkg>` piecemeal into a working env — the next `pip
+install` will almost certainly overwrite a pinned version Spyglass
+relies on. When you must, run `pip install --dry-run <pkg>` first and
+check which transitive deps pip wants to move.
+
 ### Prerequisites
 
 - Python 3.10 – 3.12 (check `pyproject.toml` `requires-python` for the
@@ -81,6 +106,14 @@ The `-e` flag installs in editable mode so changes to the source are reflected i
 - conda or mamba package manager (miniforge recommended)
 - ~10 GB disk space for minimal install, ~25 GB for full
 - macOS or Linux (Windows is experimental)
+- **Self-hosted MySQL 8 only** — vanilla MySQL 8 caps InnoDB composite-PK
+  index size at 3072 bytes, and some Spyglass tables exceed this with
+  default `utf8mb4` widths. Set `innodb_large_prefix=ON` and
+  `ROW_FORMAT=DYNAMIC` in `my.cnf` before declaring Spyglass schemas,
+  or use `datajoint/mysql:8.0` Docker image which has compatible
+  defaults. A production lab DB that has been running Spyglass for a
+  while is usually pre-tuned by its admin; you will generally only
+  hit this on a fresh self-host.
 
 ## Environment Setup Scenarios
 

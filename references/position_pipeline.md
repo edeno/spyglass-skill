@@ -161,7 +161,26 @@ from spyglass.position.v1 import (
 )
 ```
 
-**Gotcha — pose estimation hangs silently if the target video file already exists.** `DLCPoseEstimationSelection.insert_estimation_task(...)` never completes (no error, no progress) when an `.mp4` with the same name already sits in the DLC target video directory. The path is whatever the install sets for `dlc_video_dir` (see `spyglass.settings`; Frank Lab hosts use `/nimbus/deeplabcut/video/`, but this is a lab-specific default, not a Spyglass default). Manually delete the stale `.mp4` before re-running. If the call appears to hang, this is the first thing to check.
+**Gotcha — pose estimation hangs silently if the target video file already exists.** `DLCPoseEstimationSelection.insert_estimation_task(...)` never completes (no error, no progress) when an `.mp4` with the same name already sits in the DLC target video directory. The path is whatever the install sets for `dlc_video_dir` (check `spyglass.settings` or `dj.config['custom']['dlc_dirs']`; this is a site/lab-specific path, not a Spyglass-shipped default). Manually delete the stale `.mp4` before re-running. If the call appears to hang, this is the first thing to check.
+
+**Gotcha — empty `PositionIntervalMap` on old ingestions or DLC-only
+sessions.** If DLC populate crashes with `IndexError: index 0 is out
+of bounds for axis 0 with size 0` from
+`convert_epoch_interval_name_to_position_interval_name`, the session
+has no `PositionIntervalMap` rows. For each `TaskEpoch`, run:
+
+```python
+from spyglass.position import convert_epoch_interval_name_to_position_interval_name
+
+convert_epoch_interval_name_to_position_interval_name(
+    {'nwb_file_name': nwb_file, 'epoch': epoch_id},
+    populate_missing=True,
+)
+```
+
+For DLC-only sessions (no Trodes-derived position), there's no
+`'pos N valid times'` IntervalList to match against; insert the
+`RawPosition` / `PositionSource` rows first, or upgrade past PR #1160.
 
 ### DLC Parameter Tables
 

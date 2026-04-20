@@ -13,6 +13,7 @@ Common errors during installation and first-run. For installation steps, see [se
 - [Reinstalling or Resetting](#reinstalling-or-resetting)
 - [Import-time failures (`from spyglass.settings ...`)](#import-time-failures-from-spyglasssettings-)
 - [`ImportError` / symbol-moved errors after `git pull` — editable-install drift](#importerror--symbol-moved-errors-after-git-pull--editable-install-drift)
+- [`KeyError: '<column>' is not in the table heading` after `git pull`](#keyerror-column-is-not-in-the-table-heading-after-git-pull)
 
 ## "Could not find SPYGLASS_BASE_DIR"
 
@@ -267,5 +268,48 @@ pip install -e .
 If you installed Spyglass via `pip install spyglass-neuro` originally,
 uninstall that first: `pip uninstall spyglass-neuro` before `pip install -e .`
 on the source tree.
+
+## `KeyError: '<column>' is not in the table heading` after `git pull`
+
+Between Spyglass releases, some table definitions change but the
+required `Table().alter()` is not always listed in release notes.
+Symptoms include:
+
+- `KeyError: 'accessed'` on `AnalysisNwbfileLog.increment_access`
+- `KeyError: 'pipeline'` on `SpikeSortingRecording.populate`
+- `KeyError: 'target_sampling_rate'` on `LFPV1.populate`
+- `DataError (1406): Data too long for column ...`
+
+**Confirm drift.**
+
+```python
+Table().describe()                                              # Python-side
+dj.conn().query(f'SHOW CREATE TABLE `<schema>`.`<table>`').fetchall()  # DB-side
+```
+
+Columns that only appear on one side are the drift.
+
+**Fix.** Run the altered table's `.alter()` as a user with ALTER
+privilege:
+
+```python
+from spyglass.common import *   # pull every FK-referenced class into scope;
+                                # otherwise `.alter()` raises
+                                # "Foreign key reference Session could not be resolved"
+SomeTable().alter()
+```
+
+For tables where `.alter()` doesn't detect the drift (rare), drop
+and recreate — only when the table is empty. Track these cases with
+an admin before acting.
+
+**DataJoint version drift after `git pull`.** Spyglass sometimes
+starts using a new DataJoint feature (`dj.Top`, `force_parts`,
+tripart `make`) without bumping the hard datajoint requirement. If
+imports fail referencing a missing DataJoint symbol:
+
+```bash
+pip install -U datajoint       # target >= 0.14.6 as of late 2025
+```
 
 For more troubleshooting guidance, see `docs/src/GettingStarted/TROUBLESHOOTING.md` and `docs/src/GettingStarted/DATABASE.md` in the repository.

@@ -154,6 +154,17 @@ from spyglass.spikesorting.v1 import (
 - Part table: `SortGroup.SortGroupElectrode`
 - Method: `set_group_by_shank()` — Auto-organizes electrodes by probe shank
 
+**Parallel HDF5 reads can fail intermittently.** `SpikeSortingRecording.populate(...)`
+may crash inside `write_binary_recording` with
+`OSError: Can't read data (wrong B-tree signature)` when
+SpikeInterface's default multi-worker `save_to_folder` opens the NWB
+HDF5 file concurrently — h5py/HDF5 doesn't support concurrent reads
+on one file handle on some NWB layouts.
+
+**Fix.** Re-run with `n_jobs=1` (pass via preprocessing params or set
+`recording.save(n_jobs=1, total_memory='10G')`). Upgrading
+`h5py` / `pynwb` / `hdmf` also helps — older stacks are more exposed.
+
 **SpikeSortingPreprocessingParameters** (Lookup)
 
 - Key: `preproc_param_name`

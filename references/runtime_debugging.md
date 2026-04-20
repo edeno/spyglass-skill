@@ -399,6 +399,36 @@ print(len(DownstreamTable.key_source & key))  # 0 = no upstream rows match
 - **Name equality ≠ time equality.** `"02_r1"` in one table and `"02_r1"` in another probably refer to the same IntervalList row (same PK), but `"02_r1_valid"` is a different row even if its `valid_times` overlap. Check by joining on the `IntervalList` PK when in doubt.
 - **Decoding specifically.** `encoding_interval` and `decoding_interval` are intentional separate inputs. They CAN be the same; they often SHOULDN'T be (train on encoding, evaluate on decoding). Verify by design intent, not by assuming they're equal.
 
+### `populate(key)` with a non-PK dict iterates the whole Selection
+
+Unlike `fetch1()`, `populate(key)` does NOT raise on a loose dict.
+Passing `{'nwb_file_name': ..., 'sorter': 'mountainsort4'}` to
+`SpikeSorting.populate` when only `sorting_id` is on the selection
+table's primary key silently walks every unprocessed row in the
+selection table — which may include other users' keys, different
+sorters, or wrong sessions. Example of the resulting confusion:
+
+```
+Exception: The sorter kilosort2 is not installed
+# ...but I asked for mountainsort4!
+```
+
+**Fix.** Resolve the key to a selection-table primary-key projection
+before `populate`:
+
+```python
+sel_key = (SpikeSortingRecordingSelection & key).fetch1('KEY')
+SpikeSortingRecording.populate(sel_key)
+
+# or for multi-row populates:
+SpikeSortingRecording.populate((SpikeSortingRecordingSelection & key).proj())
+```
+
+Applies to every `*V1.populate(...)` entry point
+(`ArtifactDetection`, `SpikeSorting`, `MetricCuration`,
+`FigURLCuration`, etc.) and to any custom pipeline whose Selection
+table primary key doesn't include the fields you naturally restrict by.
+
 ## Automatic heuristics
 
 Apply these before asking the user:

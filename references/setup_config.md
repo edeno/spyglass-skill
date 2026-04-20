@@ -101,6 +101,27 @@ DataJoint "stores" tell the database where externally stored files (raw data, an
 }
 ```
 
+**Cross-machine mount drift.** `dj.config['stores']` is machine-local
+and persisted in `dj_local_conf.json`. Changing `SPYGLASS_BASE_DIR`
+does NOT update it. If stores were written on a workstation where the
+shared drive is mounted at one path (e.g. `/data/shared/nwb/...`) and
+you connect from another machine mounting the same drive at a
+different path (e.g. `/mnt/shared/nwb/...`), fetches fail with
+`FileNotFoundError: Inaccessible local directory ...`.
+
+Fix: regenerate config on each workstation, or edit `dj.config['stores']`
+in-place and `dj.config.save_local()`. A useful check at session start:
+
+```python
+import datajoint as dj, os
+assert 'stores' in dj.config, 'dj.config has no stores block'
+raw_loc = dj.config['stores']['raw']['location']
+assert raw_loc.startswith(os.environ['SPYGLASS_BASE_DIR']), (
+    f'stores.raw.location={raw_loc} does not share prefix with '
+    f'SPYGLASS_BASE_DIR={os.environ["SPYGLASS_BASE_DIR"]}'
+)
+```
+
 ## Directory Configuration
 
 Spyglass organizes data into a tree of directories under a base path. The directory structure is defined in `src/spyglass/directory_schema.json` (the single source of truth).
@@ -202,6 +223,12 @@ All directories are created automatically on first config load if they do not ex
 | `KACHERY_CLOUD_EPHEMERAL` | `TRUE` | Kachery cloud mode |
 | `HDF5_USE_FILE_LOCKING` | `FALSE` | HDF5 file locking |
 | `KACHERY_ZONE` | `franklab.default` | Kachery zone for data sharing |
+
+> **Note:** `FIGURL_CHANNEL` and `KACHERY_ZONE` defaults are hardcoded
+> to Frank Lab values in `settings.py` (historical). Labs running their
+> own figurl/kachery infrastructure should override these in the shell
+> or via `dj.config['custom']` before importing `spyglass.settings` —
+> the defaults will not match your zone.
 
 ### Data Sharing Tables (Kachery)
 
