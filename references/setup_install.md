@@ -65,7 +65,19 @@ The `-e` flag installs in editable mode so changes to the source are reflected i
 
 ### Prerequisites
 
-- Python 3.10+ (check `pyproject.toml` `requires-python` for the current range)
+- Python 3.10 – 3.12 (check `pyproject.toml` `requires-python` for the
+  current range). Common version-pin symptoms:
+
+  | Python version | Error you'll see |
+  |---|---|
+  | 3.9 | `ImportError: cannot import name 'TypeAlias' from 'typing'` |
+  | 3.10+ against an old MySQL server | `OperationalError (2003) [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE]` — either upgrade the server's TLS or set `database.use_tls: false` for local dev |
+
+- On macOS, `pyfftw` has no PyPI wheels; use conda-forge:
+  `conda install -c conda-forge pyfftw pybind11` before `pip install -e .`.
+- If you see `Cargo, the Rust package manager, is not installed` during
+  a jupyter-lab dependency build, install Rust via rustup — or
+  preferably install via `environment.yml` which pulls prebuilt wheels.
 - conda or mamba package manager (miniforge recommended)
 - ~10 GB disk space for minimal install, ~25 GB for full
 - macOS or Linux (Windows is experimental)

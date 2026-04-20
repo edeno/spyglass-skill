@@ -43,6 +43,36 @@ PositionOutput.merge_view(merge_key)
 
 If you are uncertain whether a method is a classmethod, read the source or err on the side of passing the restriction as an argument.
 
+#### Import merge masters before cascade-deleting upstream keys
+
+`SpyglassMixin.cautious_delete` walks the DataJoint dependency graph to
+cascade deletes and check permissions. The graph only contains tables
+whose Python classes have been **imported in the current session**.
+Merge masters (`LFPOutput`, `SpikeSortingOutput`, `PositionOutput`,
+`LinearizedPositionOutput`, `MuaEventsV1`, etc.) are not auto-imported
+by `spyglass.common` — deleting from `Nwbfile`, `Session`, or
+`IntervalList` without first importing them raises:
+
+- `NetworkXError: The node \`<schema>.<table>\` is not in the digraph`
+- `ValueError: Table <schema>.<name> not found in graph. Please import this table and rerun`
+
+**Fix.** Import all relevant merge masters (and any custom
+merge-extending modules in your lab) before the delete:
+
+```python
+from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput
+from spyglass.lfp import LFPOutput
+from spyglass.position.position_merge import PositionOutput
+from spyglass.linearization.merge import LinearizedPositionOutput
+# plus any lab-specific merge-extending modules
+```
+
+The sibling error `ValueError: Please import <merge>.<part> and try
+again` (or `DataJointError: Attempt to delete part table ... before
+deleting from its master first`) means you're deleting from a part-
+table row directly. Always restrict via the master using
+`merge_get_part(key)` and delete through `merge_delete(key)`.
+
 ## _Merge Class Methods
 
 All merge tables (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, `LinearizedPositionOutput`) inherit from `_Merge` and have these methods.
@@ -74,6 +104,22 @@ PositionOutput.merge_restrict({'nwb_file_name': nwb_file}) & 'source = "TrodesPo
 Returns the part table(s) containing entries matching the restriction. This is the key method for the merge workflow.
 
 **Raises `ValueError`** if zero or multiple sources match when `multi_source=False` (default). Always wrap in try/except or use `multi_source=True`.
+
+**Misleading-error note.** When `merge_get_part` reports
+`ValueError: Found multiple potential parts: []` — the empty list means
+zero sources matched, not multiple. The usual cause is that the
+upstream source table (e.g. `IntervalPositionInfo`) has rows but they
+were never inserted into the merge part table (e.g.
+`PositionOutput.CommonPos`).
+
+Check:
+
+```python
+len(PositionOutput.CommonPos & restriction)    # zero means not inserted
+```
+
+Fix by running the merge insert path (e.g. `PositionOutput.insert(...)`
+with the correct `part_name`) before retrying the fetch.
 
 ```python
 # Single source (default) - raises ValueError if 0 or >1 matches

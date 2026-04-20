@@ -70,6 +70,40 @@ target.fetch(as_dict=True)          # inspect what is there
 # After user confirms:  target.delete()
 ```
 
+#### When `.delete()` raises `IntegrityError (1217)` or `'NoneType' object has no attribute 'groupdict'`
+
+MySQL 8 reports only the top blocking FK row during a cascade. The
+blocking row is often in **another user's schema** that your DataJoint
+account has no `DELETE` grant on, so the cascade halts and leaves you
+with either the raw 1217 error or — if DataJoint's regex-based error
+parser fails on the MySQL 8 message text — a downstream `NoneType has
+no groupdict` in `datajoint/table.py`.
+
+**Disambiguate.** Run:
+
+```python
+dj.conn().query('SHOW GRANTS FOR CURRENT_USER()').fetchall()
+```
+
+Look for `DELETE` on the schema named in the FK error. If missing, the
+cascade is blocked by a permissions gap, not a bug in your query.
+
+**Fix.** Either (a) ask a DB admin to grant `DELETE` on the blocking
+schema, (b) ask the owner of the blocking downstream entry to delete
+their row first, or (c) use the per-row workaround when only some rows
+are blocked:
+
+```python
+for row in (Table & restriction).fetch('KEY', as_dict=True):
+    try:
+        (Table & row).delete()
+    except dj.errors.IntegrityError:
+        continue   # keep going; admin will clean up the blocked rows
+```
+
+Do not reach for `super_delete()` — it bypasses Spyglass's file cleanup
+and the team-permission audit trail.
+
 ### Merge-table delete helpers
 
 `merge_delete` is a **classmethod** with `restriction=True` as the default. Calling it on a restricted relation — `(PositionOutput & merge_key).merge_delete()` — silently drops the restriction because Python routes classmethod calls to the class, not the restricted instance. That pattern deletes **every** merge entry. Always pass the restriction as an argument:

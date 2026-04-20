@@ -8,8 +8,11 @@ Common errors during installation and first-run. For installation steps, see [se
 - [Database Connection Fails](#database-connection-fails)
 - ["Cannot import spyglass"](#cannot-import-spyglass)
 - [Stores Mismatch Warning](#stores-mismatch-warning)
+- [`AccessError` / `PermissionError` on a shared installation](#accesserror--permissionerror-on-a-shared-installation)
 - [Environment Creation Fails](#environment-creation-fails)
 - [Reinstalling or Resetting](#reinstalling-or-resetting)
+- [Import-time failures (`from spyglass.settings ...`)](#import-time-failures-from-spyglasssettings-)
+- [`ImportError` / symbol-moved errors after `git pull` — editable-install drift](#importerror--symbol-moved-errors-after-git-pull--editable-install-drift)
 
 ## "Could not find SPYGLASS_BASE_DIR"
 
@@ -55,6 +58,88 @@ Or in `dj_local_conf.json`:
 
 If `SpyglassConfig` logs a stores mismatch warning, the `raw` or `analysis` paths in `dj.config['stores']` differ from the resolved directory paths. This is auto-corrected at startup. To fix permanently, update your config file so `stores.raw.location` matches `custom.spyglass_dirs.raw`.
 
+## `AccessError` / `PermissionError` on a shared installation
+
+Three distinct permission failures show up during `populate()` /
+insert / delete and are easy to confuse:
+
+**1. MySQL grants (for INSERT/UPDATE/DELETE/CREATE).**
+
+```python
+dj.conn().query('SHOW GRANTS FOR CURRENT_USER();').fetchall()
+```
+
+Grants are per-schema-prefix on shared installations. A brand-new
+schema (e.g. `ripple_v1`, `spikesorting_recording`, or a user-custom
+prefix) may not be covered by your grants. If `SHOW GRANTS` has no
+entry for the schema named in the error, ask the DB admin for an
+explicit `GRANT` on that prefix, or name your custom schemas with a
+prefix you already have grants for.
+
+**2. Filesystem permissions (for analysis / recording / kachery
+directories).**
+
+```bash
+ls -ld /path/to/failing/dir
+python -c "import os; print(os.access('/path/to/failing/dir', os.W_OK))"
+```
+
+Directories under `${SPYGLASS_BASE_DIR}/analysis/<session>/` and
+`${SPYGLASS_BASE_DIR}/recording/` are created by whichever user first
+populated them, so later writers hit `EACCES` unless the directory is
+group-writable. The data owner runs `chmod -R g+w <dir>` (or the
+admin chmods to `2775` / `2777` depending on lab policy); avoid
+piecemeal chmods that drift. Many labs running Spyglass on a shared
+filesystem operate a cron or admin-run script that periodically
+re-asserts group-write on the whole tree — if yours does, flag to
+the admin instead of chmod-ing piecemeal.
+
+**3. `cautious_delete` prerequisite: your DataJoint user must exist
+in `LabMember.LabMemberInfo`.**
+
+```
+ValueError: Could not find exactly 1 datajoint user <name> in
+common.LabMember.LabMemberInfo. Please add one: []
+```
+
+Fix (insert both the master and part rows in one shot):
+
+```python
+import spyglass.common as sgc
+import datajoint as dj
+
+sgc.LabMember.insert1({
+    'lab_member_name': 'Jane Doe',
+    'first_name': 'Jane',
+    'last_name': 'Doe',
+}, skip_duplicates=True)
+
+sgc.LabMember.LabMemberInfo.insert1({
+    'lab_member_name': 'Jane Doe',
+    'google_user_name': 'jane@lab.org',
+    'datajoint_user_name': dj.config['database.user'],
+    'admin': 0,
+}, skip_duplicates=True)
+```
+
+Setting `admin=1` skips the team-permission check; reserve for lab
+admins. Do NOT reach for `super_delete()` to bypass this — it skips
+Spyglass's analysis-file cleanup and leaves orphan NWBs on disk.
+
+Each of the three presents as "permission denied" but has a different
+fix — always run `SHOW GRANTS` and the `LabMember` check before
+assuming it's a filesystem issue.
+
+**On shared lab filesystems.** Analysis, recording, export, and
+kachery directories drift out of group-writable as new subdirs are
+created by different users. If `ls -ld` shows the failing dir isn't
+group-writable, fix it through your lab's shared-permission process
+(cron, admin-run script, or `chown -R`) rather than chmod-ing per
+session. `Nwbfile().cleanup()` removes orphan NWB files from disk but
+does NOT fix permission bits on existing directories —
+filesystem-permission fixes must happen at the filesystem level, not
+via Spyglass helpers.
+
 ## Environment Creation Fails
 
 ```bash
@@ -76,5 +161,111 @@ python scripts/install.py
 ```
 
 Data directories are preserved -- only the conda environment and config are recreated.
+
+## Import-time failures (`from spyglass.settings ...`)
+
+Two symptoms fail `import spyglass.*` / `from spyglass.settings ...`
+BEFORE you get to call `save_dj_config` or `populate()`. Diagnose by
+error class:
+
+**1. `OperationalError (2003)` — MySQL connect during import.**
+
+Symptom: `OperationalError: (2003, "Can't connect to MySQL server...")`
+from `from spyglass.settings import SpyglassConfig` or `from
+spyglass.utils ...`, even though you haven't touched a table.
+
+Spyglass's settings/utils modules historically triggered a DataJoint
+connection at import time (`ExportErrorLog` in `dj_helper_fn` pulled in
+a handshake). If `dj.config` wasn't valid yet — bad host, no password,
+wrong TLS — the import failed.
+
+**Fixed in Spyglass post-#1563** (merged 2026-04-09): `ExportErrorLog`
+moved out of `dj_helper_fn.py` to `common_usage.py`, breaking the
+circular dependency. Upgrade (`git pull && pip install -e .`) and the
+lazy-init fix applies.
+
+Workaround for older installs — populate `dj.config` BEFORE the first
+`from spyglass...`:
+
+```python
+import datajoint as dj
+dj.config.load('dj_local_conf.json')   # or dj.config['database.host'] = ...
+dj.conn()                              # prove it connects
+# only now:
+from spyglass.settings import SpyglassConfig
+```
+
+**2. `PermissionError` — `SpyglassConfig.load_config` tries to mkdir
+an unwritable path.**
+
+Symptom: `PermissionError: [Errno 13] Permission denied:
+'/nimbus/deeplabcut'` (or similar) during `from spyglass.settings ...`
+— you can't even call `save_dj_config` to fix it because the error
+happens during import.
+
+Cause: `SpyglassConfig.load_config` runs
+`Path(self._dlc_base).mkdir(exist_ok=True)` unconditionally. `_dlc_base`
+resolves from stored `dj.config['custom']['dlc_dirs']`, then
+`DLC_BASE_DIR` / `DLC_PROJECT_PATH`, then a fallback under
+`${SPYGLASS_BASE_DIR}/deeplabcut`. If any of those resolves to a path
+you can't write, import fails.
+
+Fix without importing Spyglass — edit the DataJoint config directly:
+
+```bash
+python3 -c '
+import json, datajoint as dj
+dj.config.load()                   # ~/.datajoint_config.json / local
+dj.config["custom"].setdefault("dlc_dirs", {})["base"] = "/your/writable/path"
+dj.config.save_global()
+'
+```
+
+or in a shell:
+
+```bash
+unset DLC_BASE_DIR DLC_PROJECT_PATH
+```
+
+then re-import.
+
+Both modes are import-time, so neither can be fixed from a live
+Spyglass session — the fix goes through the raw DataJoint config or
+through upgrading Spyglass past #1563.
+
+## `ImportError` / symbol-moved errors after `git pull` — editable-install drift
+
+Symptom: stack trace shows `AttributeError: module 'spyglass...' has
+no attribute ...` or `ImportError: cannot import name '...'`, and the
+traceback paths point at `.../site-packages/spyglass/...` rather than
+your checkout (e.g. `~/spyglass/src/spyglass/...`).
+
+This means `python` is loading a pip-installed Spyglass from the env's
+`site-packages`, ignoring your pulled source.
+
+**Confirm.**
+
+```python
+import spyglass
+print(spyglass.__file__)   # should be the source checkout, not site-packages
+```
+
+```bash
+(cd <your spyglass source>; git log -1 --oneline)
+```
+
+**Fix (editable install recipe).**
+
+```bash
+conda activate spyglass
+cd <your spyglass source>
+git pull
+pip install -e .
+# then RESTART the Jupyter kernel / Python process so the old import cache clears
+```
+
+If you installed Spyglass via `pip install spyglass-neuro` originally,
+uninstall that first: `pip uninstall spyglass-neuro` before `pip install -e .`
+on the source tree.
 
 For more troubleshooting guidance, see `docs/src/GettingStarted/TROUBLESHOOTING.md` and `docs/src/GettingStarted/DATABASE.md` in the repository.

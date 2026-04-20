@@ -102,3 +102,37 @@ Every Spyglass table inherits `ExportMixin`. When an export session is active, c
 ### Scoping an export to a single analysis
 
 `analysis_id` within a `paper_id` lets you run multiple analyses and export them together or separately. Use `paper_export_id(paper_id, return_all=True)` to see all exports for a paper.
+
+## Preparing an export for DANDI
+
+`Export().populate_paper(...)` produces analysis NWBs that Spyglass
+wrote with older pynwb conventions; `pynwb.validate()` and Dandi
+upload check against current pynwb rules. The most common validation
+failures point at:
+
+- `/specifications/...` — unused extension namespaces left on the file
+- `scratch/<pandas_table>` — `DynamicTable.add_nwb_obj` omitted the
+  `id` ElementIdentifiers column
+- `general/source_script` — missing `source_script_file_name`
+- Multi-dim `SpatialSeries` — legacy multi-LED layout not accepted
+
+**Run the patcher first.**
+
+```python
+from spyglass.common.common_usage import Export
+
+Export.update_analysis_for_dandi_standard(paper_key)
+# Then re-validate:
+import pynwb
+for path in ExportSelection().list_file_paths(paper_key):
+    pynwb.validate(path)
+```
+
+**Admin-permission gate note.** `update_analysis_for_dandi_standard`
+currently calls `LabMember.check_admin_privilege()`. If you are a
+non-admin preparing your own export, work with a lab admin rather
+than modifying the analysis files manually; do NOT edit the original
+files in place — re-checksum will fail on every subsequent
+`fetch_nwb()`. The DANDI-prep tracking issue lists the individual
+h5py patch scripts that implement each sub-fix if you need a
+fine-grained workaround.

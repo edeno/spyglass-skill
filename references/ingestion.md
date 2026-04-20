@@ -147,3 +147,45 @@ Two non-obvious behaviors:
 - **Device/probe not in lookup table**: pre-insert `ProbeType`, `Probe`, `DataAcquisitionDevice` etc. with `skip_duplicates=True` before ingestion.
 - **Partial ingestion after failure**: if `rollback_on_fail=False` (default) and something failed midway, some tables have entries and some don't. Easiest recovery: `rollback_on_fail=True` on a retry, or manually delete the `Nwbfile` entry and its downstream cascades.
 - **Extension not registered**: NWB extensions (`ndx-franklab-novela`, `ndx-pose`) must be importable. They're installed with Spyglass's core deps.
+- **"A different version of X.nwb has already been placed"** or
+  **"downloaded but did not pass checksum"**: DataJoint tracks
+  content-hash for external-store files. Deleting the NWB with plain
+  `rm` (instead of `Nwbfile().cleanup(delete_files=True)`) leaves an
+  orphan external-store row, and re-ingesting a file with a different
+  hash is rejected. Editing the raw NWB in place breaks the same
+  check. Always delete via
+  `(Nwbfile & key).delete(); Nwbfile().cleanup(delete_files=True)`
+  and never edit an ingested NWB in place — work on a copy.
+
+## Probe / electrode conflicts from the NWB
+
+Several ingestion failures trace back to the identity model that
+Spyglass's `common_ephys` tables enforce on top of the NWB electrodes
+table. The symptom depends on which invariant your NWB breaks:
+
+| Symptom | What's wrong in the NWB |
+|---|---|
+| `PopulateException: Probe type properties ... do not match` | Multiple physical probes share the same `probe_type` / `description`, so Spyglass collapses them to one row |
+| `IntegrityError (_electrode_ibfk_2 ...)` | Electrode `name` / `id` is not globally unique across probes (post-#1454 uniqueness) |
+| DataJoint formatting error on `Probe.Electrode() & key` / `NaN` in queries | `rel_x` / `rel_y` / `rel_z` is NaN or None in the NWB electrodes table |
+| `AssertionError: ChannelSliceRecording: channel ids are not all in parents` | NWB electrodes table has a `channel_name` column; SpikeInterface >=0.99 reads that column instead of `electrode_id` |
+
+**Check before inserting.**
+
+```python
+import pynwb
+with pynwb.NWBHDF5IO(path, 'r') as io:
+    nwb = io.read()
+    print('colnames:', nwb.electrodes.colnames)    # look for 'channel_name'
+    df = nwb.electrodes.to_dataframe()
+    print('duplicate names per probe:',
+          df.groupby(['group_name', 'name']).size().max())
+    print('NaN geometry:',
+          df[['rel_x', 'rel_y', 'rel_z']].isna().sum().to_dict())
+```
+
+**Fix.** Assign a distinct `probe_type` per physical probe, ensure
+electrode `name` + `id` are unique across probes (generate globally
+unique integer IDs at NWB creation), replace NaN geometry with `-1`
+or require real coordinates, and if the NWB uses `channel_name` make
+sure Spyglass is on a version that handles it (post-PR #1447).

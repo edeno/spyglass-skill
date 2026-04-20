@@ -241,6 +241,19 @@ from spyglass.spikesorting.v1 import CurationV1
   - `get_merged_sorting(key)` — Sorting with merge groups applied
   - `get_sort_group_info(key)` — Electrode/brain region info
 
+**Gotcha — `FigURLCurationSelection.generate_curation_uri` requires
+metrics even if `insert_curation` didn't store them.**
+
+`CurationV1.insert_curation(..., labels=None)` writes no
+`curation_label` column to the analysis NWB. Downstream,
+`FigURLCurationSelection.generate_curation_uri` reads that column
+unconditionally and raises `KeyError: 'curation_label'`.
+
+Workaround: pass explicit labels to `insert_curation`, OR generate
+figurl only from a curation that has metrics attached (i.e. one
+inserted from `MetricCuration`). Tracked + fixed by #1530 — upgrade
+Spyglass if you're on an older release.
+
 ## Step 5: Quality Metrics (Optional)
 
 ```python

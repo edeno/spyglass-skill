@@ -50,6 +50,40 @@ spike_train = sorting.get_unit_spike_train(unit_id=0)
 
 Available sorters: mountainsort4, kilosort2, kilosort3, clusterless_thresholder, and others via SpikeInterface.
 
+### SpikeInterface / Spyglass version coupling
+
+Spyglass's spike sorting pipeline pins a specific SpikeInterface range.
+Installing a different upstream version breaks every stage (recording,
+sorter, waveforms, metrics, curation) because SpikeInterface changes its
+public API across minor releases.
+
+**Check pinning before debugging sorter/metric errors.**
+
+```bash
+python -c 'import spikeinterface; print(spikeinterface.__version__)'
+grep -E 'spikeinterface' environment.yml pyproject.toml
+```
+
+Common symptom → upstream version that changed it:
+
+| Error fragment | SpikeInterface version that introduced/removed it |
+|---|---|
+| `module 'spikeinterface' has no attribute 'WaveformExtractor'` | removed after 0.99.x (replaced by `SortingAnalyzer`) |
+| `NumpySorting' has no attribute 'from_unit_dict'` | renamed post-0.99 |
+| `For recording with dtype=int you must set dtype=float32 OR set a int_scale` | required from 0.97+ |
+| `compute_snrs() got an unexpected keyword argument 'num_chunks_per_segment'` | moved under `random_chunk_kwargs_dict` |
+| `extract_waveforms() got multiple values for keyword argument 'sparse'` | 0.99+ signature |
+| `check_params() got an unexpected keyword argument 'outputs'` | dropped from `detect_peaks` |
+| `BinaryRecordingExtractor' object has no attribute 'recording_list'` | pre-0.96 only |
+
+**Fix.** Reinstall SpikeInterface at the pinned version (e.g.
+`pip install 'spikeinterface==0.99.1'`) rather than patching the Spyglass
+parameter dict. For `MetricParameters`, wrap `num_chunks_per_segment` /
+`chunk_size` / `seed` under `random_chunk_kwargs_dict`. For whitening,
+use `spikeinterface.preprocessing.whiten(rec, dtype='float32')` or pass
+`int_scale=256` — never `float16`. v0 pipeline code paths are not kept
+in sync with modern SpikeInterface; migrate to v1.
+
 ## Analysis Dependencies
 
 ### non_local_detector (Bayesian Decoding)

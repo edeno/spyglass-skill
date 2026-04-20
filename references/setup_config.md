@@ -222,3 +222,35 @@ from spyglass.sharing import AnalysisNwbfileKachery, KacheryZone
 - Links analysis files to kachery-cloud for sharing.
 
 Use `KACHERY_ZONE` / `KACHERY_CLOUD_EPHEMERAL` env vars above to pick the zone and mode.
+
+**Common kachery failure modes + diagnostics.**
+
+**`KACHERY_CLOUD_DIR` mismatch.** Spyglass sets `KACHERY_CLOUD_DIR` to
+`${SPYGLASS_BASE_DIR}/.kachery_cloud` on import. `kachery-cloud-init`
+by default writes a `client_id` to `~/.kachery-cloud`. If the two
+don't agree, the Spyglass process can't find the client and Kachery
+calls fail with "Client not registered" or silent 500s.
+
+**Zone authorization.** `KACHERY_ZONE` must be set BEFORE importing
+Spyglass, and the DB admin must have added your github user to that
+zone. Ask your DB admin for the correct zone name; Kachery admins
+manage access via the kachery-gateway admin page at
+<https://kachery-gateway.figurl.org/admin>.
+
+**Diagnostic recipe.**
+
+```python
+import os
+from spyglass.settings import config
+print('KACHERY_ZONE      =', os.environ.get('KACHERY_ZONE'))
+print('KACHERY_CLOUD_DIR =', os.environ.get('KACHERY_CLOUD_DIR'))
+print('spyglass config   =', config.get('kachery_cloud_dir'))
+```
+
+If the three don't agree, align them (set both env vars to the spyglass
+config value, OR put `kachery_dirs` in `dj.config['custom']` so a single
+source of truth covers every user), then re-run `kachery-cloud-init`.
+
+VSCode-over-SSH frequently drops env vars from `~/.bashrc`; prefer
+`dj.config['custom']['kachery_dirs']` + `dj.config.save_global()` over
+bashrc so all shells/kernels pick it up.
