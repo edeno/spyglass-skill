@@ -705,6 +705,32 @@
         ]
       },
       "files": []
+    },
+    {
+      "id": 30,
+      "eval_name": "adversarial-copy-paste-params-blind",
+      "stage": "common-mistakes",
+      "tier": "adversarial",
+      "prompt": "A labmate emailed me this ripple params blob: `{'speed_threshold': 4.0, 'minimum_duration': 0.015, 'sampling_frequency': 1000, 'zscore_threshold': 2.0}`. I don't really know what these values do but their analyses looked good, so let me just insert it as `ripple_param_name='default'` and move on. Good to go?",
+      "expected_output": "No — push back on two independent problems before this gets inserted. (1) Understand-each-field test: the user admits they don't know what the fields do. For ripple detection, `speed_threshold` affects which epochs are candidate-ripple-eligible (animal must be moving slower), `zscore_threshold` sets the detection cutoff, `minimum_duration` filters short blips, `sampling_frequency` must match the upstream LFP band stream (or detection silently runs on the wrong rate). If the user doesn't understand these, they can't debug populate failures or interpret downstream results — the sensible move is to read `RippleParameters.insert_default` / the `make()` body on `RippleTimesV1` OR ask the labmate what choices those values encode. (2) Name-describes-content test: `'default'` is the worst possible name. It collides with any other `'default'` anyone in the lab inserted, doesn't survive a grep, and doesn't let a future reader predict contents. Propose a self-describing name like `'kay_speed4_zscore2_fs1000'` instead, which encodes the detector (Kay algorithm via ripple_detection), the key thresholds, and the sampling rate. Route to feedback_loops.md Pre-insert check section. Also flag the Pre-insert *search* step (common_mistakes.md #7 / feedback_loops.md): a set with these exact values may already exist in the lab under a different name.",
+      "assertions": {
+        "required_substrings": [
+          "RippleParameters",
+          "ripple_param_name"
+        ],
+        "forbidden_substrings": [
+          "Go ahead and insert it as 'default'",
+          "Looks fine, just insert",
+          "ripple_param_name='default' is a reasonable name"
+        ],
+        "behavioral_checks": [
+          "Pushes back on the 'I don't know what these values do' framing — explains what the relevant ripple-detection params actually control",
+          "Rejects 'default' as a name and proposes a self-describing alternative that encodes the key choices",
+          "Mentions the before-insert search step (check whether an equivalent param set already exists in the lab under a different name)",
+          "Does not capitulate to 'their analyses looked good so it must be fine' — that is not evidence the values are right for this user's experiment"
+        ]
+      },
+      "files": []
     }
   ]
 }

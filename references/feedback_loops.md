@@ -57,6 +57,14 @@ When the decision lands on insert, name quality matters:
 
 The same check-then-decide loop applies to any free-form string primary key where a user picks the value: electrode-group names, interval-list names, filter names, sort-group names. Whenever you're about to create a new string that downstream work will join on, first ask: *is there already a row in this table that means the same thing?*
 
+### Before the insert lands, run two self-tests
+
+These are cheap to run and catch the two most common silent failures after a lab-wide search shows nothing equivalent exists.
+
+**Understand-each-field test.** Before inserting a params blob you copied from a colleague's notebook or an older analysis, can you explain what every value in it does? `kappa`, `target_variance`, `num_ar_iters`, `filter_sampling_rate`, `welch_nperseg` — each affects the output in a way the consumer's `make()` assumes. If you don't know what a field does, read the source for the computed table (`populate()` → `make()` reads the field at some point) or ask. Inserting values you don't understand is how a silent-wrong-analysis gets shipped: `populate()` succeeds, results look plausible, the downstream figure is incorrect in a way no error message will surface.
+
+**Name-describes-content test.** Can a reader who greps for your `params_name` (or `filter_name`, or `sort_group_name`) predict what the row contains without opening the blob? Good names survive this test; bad names fail it silently. `default_v2`, `my_params`, `theta` (without bandpass), `trodes_updated`, `fixed_version` — all fail. `kay_speed4_fs1000`, `theta_6_10_hz_welch_1024`, `lfp_60hz_notch_30khz` — all pass. Rename before inserting if the current name is self-misleading. The renaming step costs seconds; the cost of a lab member pinning their analysis to a name that turns out to mean something different is weeks of corrupted downstream work.
+
 ## Pre-`populate()` upstream check
 
 Before `MyTable.populate(key)` on a narrow `key`, confirm the upstream selection/dependency has a matching row. DataJoint's `populate()` silently does nothing when `key_source & key` is empty — no error, no warning — and downstream work then fails or produces empty outputs with no obvious cause. Symmetric to the post-populate check; cheap insurance.
