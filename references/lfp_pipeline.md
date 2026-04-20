@@ -119,6 +119,8 @@ from spyglass.lfp.v1 import LFPSelection, LFPV1
 - Key: `nwb_file_name`, `lfp_electrode_group_name`, `target_interval_list_name`, `filter_name`, `filter_sampling_rate`
 - Also stores: `target_sampling_rate`
 
+**Nyquist note on filter/sampling-rate fields.** The three sampling-rate fields interact strictly; mis-setting any one aliases real signal into the passband. The rules: `filter_sampling_rate` must match the actual sampling rate of the input the filter will be applied to (30000 Hz for Frank Lab raw recordings), `target_sampling_rate` must strictly exceed 2× the filter's high cutoff (e.g., `LFP 0-400 Hz` → target > 800; Spyglass's 1000 Hz LFP default is the canonical choice), and a downstream `LFPBandSelection` picking a band filter must choose a `filter_sampling_rate` that matches LFPV1's `target_sampling_rate` (1000 Hz), with the band's high cutoff strictly below 500 Hz (Nyquist of the LFP stream). `FirFilterParameters` keys on `(filter_name, filter_sampling_rate)` — a filter named for one rate won't apply to a stream at another rate. Picking an arbitrary `target_sampling_rate` without checking it against the filter passband is the most common mis-configuration.
+
 **LFPV1** (Computed)
 
 - Applies FIR filter from `FirFilterParameters` to raw data
