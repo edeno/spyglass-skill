@@ -129,7 +129,7 @@
       "stage": "pipeline-usage",
       "tier": "baseline",
       "prompt": "I've already ingested j1620210710_.nwb and I want to run the LFP pipeline on the 'sleep' interval for tetrodes 4, 5, and 12 using the default filter. Once that's done I want the band-filtered signal out as a dataframe so I can look at theta power. Walk me through the full flow.",
-      "expected_output": "Routes to lfp_pipeline.md. The response MUST cover BOTH the wideband LFP pipeline AND the LFPBand pipeline — asking for 'theta power' means LFPV1 alone is insufficient. Full flow: (1) `LFPElectrodeGroup.create_lfp_electrode_group(...)` with the three tetrodes' electrode ids, (2) insert `LFPSelection` with `filter_name='LFP 0-400 Hz'` and `target_interval_list_name='sleep'`, (3) `LFPV1.populate(key)` to produce the wideband LFP, (4) resolve the LFP merge entry via `LFPOutput.merge_get_part(key).fetch1('KEY')`, (5) `LFPBandSelection.set_lfp_band_electrodes(...)` with a theta filter name, reference electrodes, and target band sampling rate — passing the `lfp_merge_id` from step 4, (6) `LFPBandV1.populate(band_key)`, (7) either `(LFPBandV1 & band_key).fetch1_dataframe()` to get the theta-band time series, or `LFPBandV1.compute_signal_power(electrode_list=[...])` to get theta power directly (Hilbert analytic signal → |.|²). Flags that a theta filter must exist in `FirFilterParameters` — if not, the user needs to insert one first.",
+      "expected_output": "Routes to lfp_pipeline.md. The response MUST cover BOTH the wideband LFP pipeline AND the LFPBand pipeline — asking for 'theta power' means LFPV1 alone is insufficient. Full flow: (1) `LFPElectrodeGroup.create_lfp_electrode_group(...)` with the three tetrodes' electrode ids, (2) insert `LFPSelection` with `filter_name='LFP 0-400 Hz'` and `target_interval_list_name='sleep'`, (3) `LFPV1.populate(key)` to produce the wideband LFP, (4) resolve the LFP merge UUID via `LFPOutput.merge_get_part(key).fetch1('merge_id')` — this is a scalar UUID, not the full KEY dict, (5) `LFPBandSelection().set_lfp_band_electrodes(nwb_file_name=..., lfp_merge_id=<uuid from step 4>, electrode_list=[...], filter_name='Theta 5-11 Hz', interval_list_name='sleep', reference_electrode_list=-1, lfp_band_sampling_rate=...)` — `interval_list_name` is REQUIRED (no default), `reference_electrode_list` (note the exact kwarg name, with `_list`) takes -1 for no reference or a per-electrode list, (6) `LFPBandV1.populate(band_key)`, (7) either `(LFPBandV1 & band_key).fetch1_dataframe()` to get the theta-band time series, or `LFPBandV1.compute_signal_power(electrode_list=[...])` to get theta power directly as a DataFrame (Hilbert analytic signal → |.|²). Flags that the theta filter must exist in `FirFilterParameters` for the session's raw sampling rate — if not, the user inserts one first.",
       "assertions": {
         "required_substrings": [
           "LFPSelection",
@@ -138,14 +138,19 @@
           "merge_get_part",
           "LFPBandSelection",
           "LFPBandV1",
-          "set_lfp_band_electrodes"
+          "set_lfp_band_electrodes",
+          "interval_list_name",
+          "reference_electrode_list"
         ],
         "forbidden_substrings": [
-          "compute theta power from LFPV1.fetch1_dataframe"
+          "compute theta power from LFPV1.fetch1_dataframe",
+          "lfp_merge_id=LFPOutput.merge_get_part(key).fetch1('KEY')"
         ],
         "behavioral_checks": [
           "Covers BOTH the wideband LFPV1 pipeline AND the LFPBandV1 pipeline — theta power requires the band pipeline, not LFPV1 alone",
-          "Passes the LFPOutput merge_id from LFPV1 into LFPBandSelection (not an LFPV1 key directly)",
+          "Passes the UUID scalar from `.fetch1('merge_id')` as `lfp_merge_id`, NOT the full dict from `.fetch1('KEY')` (which would be a DataJoint query error at runtime)",
+          "Includes `interval_list_name` in the set_lfp_band_electrodes call — it is required with no default",
+          "Uses the exact kwarg name `reference_electrode_list` (with `_list`), not `reference_electrodes` or `reference_electrode`",
           "Either shows LFPBandV1.fetch1_dataframe() for the band-filtered signal, or compute_signal_power() for theta power directly",
           "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)"
         ]
