@@ -14,6 +14,7 @@ import argparse
 import sys
 import tempfile
 import textwrap
+from contextlib import contextmanager
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent.parent / "scripts"
@@ -30,11 +31,27 @@ def _write_md(body):
     return md
 
 
+@contextmanager
+def _with_md_files(md_path):
+    """Temporarily point `v.collect_md_files` at one synthetic file.
+
+    Restores the original binding on exit so a fixture that forgets to
+    patch can't inherit the previous fixture's synthetic file. Use this
+    anywhere a check reads through `collect_md_files`.
+    """
+    saved = v.collect_md_files
+    v.collect_md_files = lambda: [md_path]
+    try:
+        yield
+    finally:
+        v.collect_md_files = saved
+
+
 def _run(check_fn, md_path, *args):
     """Run a single validator check against one synthetic md file."""
-    v.collect_md_files = lambda: [md_path]
-    results = v.ValidationResult()
-    check_fn(*args, results) if args else check_fn(results)
+    with _with_md_files(md_path):
+        results = v.ValidationResult()
+        check_fn(*args, results) if args else check_fn(results)
     return results
 
 
@@ -195,10 +212,10 @@ def fixture_unresolved_uppercase_warns(src_root):
         ```
         """
     )
-    v.collect_md_files = lambda: [md]
-    results = v.ValidationResult()
-    registry = v._ClassRegistry(src_root, results)
-    v.check_methods(src_root, results, registry=registry)
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        registry = v._ClassRegistry(src_root, results)
+        v.check_methods(src_root, results, registry=registry)
     return _assert_warn_contains(
         results,
         "unresolved class 'SpikeSortingRecordngSelection'",
@@ -358,12 +375,12 @@ def fixture_merge_classmethod_multiline(src_root):
 def fixture_required_claim_alternatives(src_root):
     """Grouped-alternative needles: any of the listed phrasings should pass.
 
-    Regression: after Phase 2, `required_claims` accepts `list[str]` as
-    needle. Verify both branches: a content with one alternative passes;
-    content with none fails.
+    Routes through the real `_evaluate_required_claim` helper (extracted
+    from `check_prose_assertions` so this test doesn't have to mirror the
+    whole SKILL_DIR). A prior version re-implemented the match logic
+    inline, which meant the test couldn't catch a refactor that broke the
+    isinstance(needle, str) branch.
     """
-    # Temporarily monkeypatch the required_claims rule set by feeding our
-    # synthetic file through the same machinery. Use an explicit small test.
     positive = _write_md(
         """
         # Test
@@ -378,18 +395,101 @@ def fixture_required_claim_alternatives(src_root):
         Just delete whatever you need.
         """
     )
-    # Mirror check_prose_assertions' alternative-matching logic inline
-    def matches(md, alternatives):
-        text = md.read_text().lower()
-        return any(alt.lower() in text for alt in alternatives)
-
     alts = ["explicit confirmation", "user confirmation",
             "user confirms", "get user confirmation"]
-    if matches(positive, alts) and not matches(negative, alts):
+    pos_results = v.ValidationResult()
+    v._evaluate_required_claim(
+        positive, "fixture.md", "test-rule", "alt-form accepted",
+        alts, pos_results,
+    )
+    neg_results = v.ValidationResult()
+    v._evaluate_required_claim(
+        negative, "fixture.md", "test-rule", "alt-form accepted",
+        alts, neg_results,
+    )
+    passed = len(pos_results.passed) == 1 and len(pos_results.failed) == 0
+    failed = len(neg_results.failed) == 1 and len(neg_results.passed) == 0
+    if passed and failed:
         print("  [ok] prose: grouped-alternative needle accepts any match")
         return True
-    print(f"  [FAIL] positive match={matches(positive, alts)}, "
-          f"negative match={matches(negative, alts)}")
+    print(f"  [FAIL] positive {pos_results.passed=} {pos_results.failed=}; "
+          f"negative {neg_results.passed=} {neg_results.failed=}")
+    return False
+
+
+def fixture_harness_restores_collect_md_files(src_root):
+    """The `_with_md_files` context manager must restore the original
+    binding, even when the body raises. If restore ever breaks, a later
+    fixture that forgets to patch will silently inherit this fixture's
+    md_path — a class of flaky-test bug the code review flagged.
+    """
+    sentinel = _write_md("# Test\n")
+    before = v.collect_md_files
+    try:
+        with _with_md_files(sentinel):
+            raise RuntimeError("forced")
+    except RuntimeError:
+        pass
+    after = v.collect_md_files
+    if before is after:
+        print("  [ok] harness: _with_md_files restores on exception")
+        return True
+    print(f"  [FAIL] collect_md_files not restored (before={before!r} "
+          f"after={after!r})")
+    return False
+
+
+def fixture_dash_range_citation(src_root):
+    """Dash-range `file.py:N-M` must validate both endpoints, not just N.
+
+    Regression: the first-cut regex matched only `N,M` (comma lists); any
+    `N-M` range silently under-checked because the engine stopped at the
+    dash. Stale upper bounds slipped through on citations like `:88-108`.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        In-range range `src/spyglass/common/common_nwbfile.py:1-5` is fine,
+        but `src/spyglass/common/common_nwbfile.py:1-9999999` must fail.
+        """
+    )
+    r = _run(v.check_citation_lines, md, src_root)
+    # The in-range line should pass, the out-of-range endpoint should fail
+    hits = [m for m in r.failed if "9999999" in m and "out of range" in m]
+    if hits:
+        print("  [ok] citation: dash-range upper bound bounds-checked")
+        return True
+    print(f"  [FAIL] dash-range upper not caught: {r.failed}")
+    return False
+
+
+def fixture_aliased_merge_classmethod_discard(src_root):
+    """Aliased merge-table class in `(Alias & key).merge_delete()` must
+    still fire the classmethod-discard anti-pattern.
+
+    Regression: the check originally compared `left.id` directly to
+    MERGE_TABLE_CLASSES, missing aliased imports like
+    `from ... import PositionOutput as PO`. Fixed by routing the receiver
+    name through `build_alias_map` before the membership test.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.position.position_merge import PositionOutput as PO
+
+        (PO & merge_key).merge_delete()
+        ```
+        """
+    )
+    r = _run(v.check_anti_patterns, md)
+    hits = [m for m in r.failed if "merge-classmethod-discard" in m]
+    if hits:
+        print("  [ok] anti-pattern: aliased merge-table discard caught")
+        return True
+    print(f"  [FAIL] aliased merge-table discard missed: {r.failed}")
     return False
 
 
@@ -465,9 +565,9 @@ def fixture_wrong_field_name_warns(src_root):
         ```
         """
     )
-    v.collect_md_files = lambda: [md]
-    results = v.ValidationResult()
-    v.check_restriction_fields(src_root, results)
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        v.check_restriction_fields(src_root, results)
     return _assert_warn_contains(
         results, "moseq_model_params_name",
         "schema: wrong field name in dict restriction warns",
@@ -487,9 +587,9 @@ def fixture_correct_field_name_no_warn(src_root):
         ```
         """
     )
-    v.collect_md_files = lambda: [md]
-    results = v.ValidationResult()
-    v.check_restriction_fields(src_root, results)
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        v.check_restriction_fields(src_root, results)
     bad = [w for w in results.warnings if "model_params_name" in w]
     if not bad:
         print("  [ok] schema: correct field name does not warn")
@@ -515,9 +615,9 @@ def fixture_merge_restriction_not_false_positive(src_root):
         ```
         """
     )
-    v.collect_md_files = lambda: [md]
-    results = v.ValidationResult()
-    v.check_restriction_fields(src_root, results)
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        v.check_restriction_fields(src_root, results)
     bad = [w for w in results.warnings if "nwb_file_name" in w]
     if not bad:
         print("  [ok] schema: merge-table restriction not flagged")
@@ -548,10 +648,10 @@ def fixture_alias_import_resolves(src_root):
         ```
         """
     )
-    v.collect_md_files = lambda: [md]
-    results = v.ValidationResult()
-    registry = v._ClassRegistry(src_root, results)
-    v.check_methods(src_root, results, registry=registry)
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        registry = v._ClassRegistry(src_root, results)
+        v.check_methods(src_root, results, registry=registry)
     bad = [m for m in results.failed if "nonexistent_method" in m]
     good = [m for m in results.passed if "insert_selection" in m]
     if bad and good:
@@ -584,10 +684,10 @@ def fixture_module_qualified_resolves(src_root):
         ```
         """
     )
-    v.collect_md_files = lambda: [md]
-    results = v.ValidationResult()
-    registry = v._ClassRegistry(src_root, results)
-    v.check_methods(src_root, results, registry=registry)
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        registry = v._ClassRegistry(src_root, results)
+        v.check_methods(src_root, results, registry=registry)
     bad = [m for m in results.failed if "nonexistent_method" in m]
     good = [m for m in results.passed if "insert_selection" in m]
     if bad and good:
@@ -614,10 +714,10 @@ def fixture_alias_kwarg_validation(src_root):
         ```
         """
     )
-    v.collect_md_files = lambda: [md]
-    results = v.ValidationResult()
-    registry = v._ClassRegistry(src_root, results)
-    v.check_kwargs(src_root, results, registry=registry)
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        registry = v._ClassRegistry(src_root, results)
+        v.check_kwargs(src_root, results, registry=registry)
     return _assert_contains(
         results, "totally_fake_kwarg",
         "kwarg: alias-resolved call still kwarg-checks",
@@ -645,10 +745,10 @@ def fixture_binop_receiver_not_false_positive(src_root):
         ```
         """
     )
-    v.collect_md_files = lambda: [md]
-    results = v.ValidationResult()
-    registry = v._ClassRegistry(src_root, results)
-    v.check_methods(src_root, results, registry=registry)
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        registry = v._ClassRegistry(src_root, results)
+        v.check_methods(src_root, results, registry=registry)
     bad = [m for m in results.failed if "PositionOutput" in m]
     if not bad:
         print("  [ok] method: BinOp receiver not flagged as unresolved method")
@@ -706,6 +806,9 @@ FIXTURES = [
     fixture_bogus_citation_line,
     fixture_valid_citation_passes,
     fixture_multi_line_citation,
+    fixture_harness_restores_collect_md_files,
+    fixture_dash_range_citation,
+    fixture_aliased_merge_classmethod_discard,
 ]
 
 

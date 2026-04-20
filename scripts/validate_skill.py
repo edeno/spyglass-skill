@@ -155,11 +155,6 @@ SKIP_METHODS = {
     # only documented on AnalysisNwbfile (inherited from AnalysisMixin).
     # Listed last in this section so the intent stays clear.
     "create", "add",
-    # Part table access patterns (dynamic attributes)
-    "CurationV1", "TrodesPosV1", "DLCPosV1", "LFPV1",
-    "ImportedSpikeSorting", "CuratedSpikeSorting",
-    "ClusterlessDecodingV1", "SortedSpikesDecodingV1",
-    "ImportedLFP", "CommonLFP", "CommonPos", "ImportedPose",
     # Common builtins
     "append", "extend", "items", "keys", "values",
     "format", "join", "split", "strip",
@@ -171,12 +166,26 @@ SKIP_METHODS = {
 }
 
 # Uppercase-first identifiers that appear before a `.method(` but are NOT
-# Spyglass classes — doc placeholders, generic table stand-ins. Without this
-# list, the unresolved-class warning would fire spuriously on them.
+# Spyglass classes — doc placeholders, generic table stand-ins, or
+# dynamic part-table attribute patterns like `PositionOutput.DLCPosV1`
+# where the outer Class.Attr chain surfaces the part name as the receiver.
+# Without this set, the unresolved-class warning would fire spuriously
+# on any of these names. Part table entries used to live in SKIP_METHODS
+# alongside method names; pulled out here so the semantic boundary is
+# obvious (method-skip vs. class-placeholder-skip).
 DOC_PLACEHOLDERS = {
+    # Generic doc-example stand-ins
     "Table", "Table1", "Table2", "MergeTable",
     "MyTable", "SomeTable", "UpstreamTable", "UpstreamA", "UpstreamB",
     "ParamTable", "SelectionTable",
+    # Part-table names accessed via dynamic attribute on merge masters
+    # (e.g., `PositionOutput.DLCPosV1.fetch_nwb()`). Listed here rather
+    # than in KNOWN_CLASSES because they're part-table references, not
+    # top-level classes the skill documents.
+    "CurationV1", "TrodesPosV1", "DLCPosV1", "LFPV1",
+    "ImportedSpikeSorting", "CuratedSpikeSorting",
+    "ClusterlessDecodingV1", "SortedSpikesDecodingV1",
+    "ImportedLFP", "CommonLFP", "CommonPos", "ImportedPose",
 }
 
 SKIP_KWARGS = {
@@ -1139,21 +1148,35 @@ def check_prose_assertions(results: ValidationResult):
 
     for rel_path, rule_id, description, needle in required_claims:
         md_file = SKILL_DIR / rel_path
-        if not md_file.exists():
-            results.fail(f"prose[{rule_id}]: file {rel_path} not found")
-            continue
-        content = md_file.read_text().lower()
-        alternatives = [needle] if isinstance(needle, str) else list(needle)
-        if any(alt.lower() in content for alt in alternatives):
-            results.ok(f"prose[{rule_id}]: {description}")
-        else:
-            shown = alternatives[0] if len(alternatives) == 1 else (
-                " | ".join(f"'{a}'" for a in alternatives)
-            )
-            results.fail(
-                f"prose[{rule_id}]: {rel_path} missing required claim "
-                f"{shown} ({description})"
-            )
+        _evaluate_required_claim(md_file, rel_path, rule_id, description,
+                                 needle, results)
+
+
+def _evaluate_required_claim(
+    md_file, rel_path, rule_id, description, needle, results
+):
+    """Evaluate one required-claim rule against a single file.
+
+    Extracted from the loop body so tests can exercise the real
+    alternative-matching logic without having to stage a whole mirror
+    of SKILL_DIR. Pass any readable file path; mismatch between that
+    file and rel_path is fine — rel_path is display-only here.
+    """
+    if not md_file.exists():
+        results.fail(f"prose[{rule_id}]: file {rel_path} not found")
+        return
+    content = md_file.read_text().lower()
+    alternatives = [needle] if isinstance(needle, str) else list(needle)
+    if any(alt.lower() in content for alt in alternatives):
+        results.ok(f"prose[{rule_id}]: {description}")
+    else:
+        shown = alternatives[0] if len(alternatives) == 1 else (
+            " | ".join(f"'{a}'" for a in alternatives)
+        )
+        results.fail(
+            f"prose[{rule_id}]: {rel_path} missing required claim "
+            f"{shown} ({description})"
+        )
 
 
 def check_python_syntax(results: ValidationResult):
@@ -1243,22 +1266,48 @@ NOTEBOOK_NAME_PATTERN = re.compile(
 )
 
 
-# `src/spyglass/path.py:123`, `src/spyglass/path.py:123, 456`, etc.
-# Captures the path and the full line-number list so we can split later.
+# `src/spyglass/path.py:123`, `:123, 456`, `:90-150`, or mixed `:1-5, 10, 20-30`.
 PROSE_CITATION_PATTERN = re.compile(
     r"(?P<path>src/spyglass/[A-Za-z0-9_./-]+\.py):"
-    r"(?P<lines>\d+(?:\s*,\s*\d+)*)"
+    r"(?P<lines>\d+(?:\s*[-,]\s*\d+)*)"
 )
 
 
+def _parse_cited_lines(expr):
+    """Expand a citation line-expression into a list of line numbers.
+
+    Accepts comma-separated integers and dash-ranges, in any combination:
+      "499"         -> [499]
+      "499, 505"    -> [499, 505]
+      "88-108"      -> [88, 108]   (both endpoints; bounds-only check)
+      "1-5, 10, 20" -> [1, 5, 10, 20]
+
+    We deliberately list only the two range endpoints rather than every
+    line in between — upper-bound rot is the failure we care about, and
+    exhaustive enumeration would dominate the pass count.
+    """
+    out = []
+    for part in expr.split(","):
+        part = part.strip()
+        if "-" in part:
+            lo, hi = part.split("-", 1)
+            out.append(int(lo.strip()))
+            out.append(int(hi.strip()))
+        else:
+            out.append(int(part))
+    return out
+
+
 def check_citation_lines(src_root, results: ValidationResult):
-    """Verify that `file.py:N[, M, ...]` citations in prose point at real lines.
+    """Verify that `file.py:N[, M][, A-B]` citations in prose point at real lines.
 
     Catches stale citations after refactors: if the skill says
     `dj_merge_tables.py:499, 505` but the file has been truncated or
-    rewritten, the citations no longer land on relevant code. We can't
-    check *semantic* accuracy without parsing the surrounding prose, but
-    we can at least require N <= len(lines).
+    rewritten, the citations no longer land on relevant code. Supports
+    comma lists and dash ranges — for ranges, both endpoints are checked
+    (the classic failure mode is an upper bound that rotted past EOF).
+    Semantic accuracy (does line N contain the claimed symbol) is still
+    out of scope; bounds only.
     """
     for md_file in collect_md_files():
         content = md_file.read_text()
@@ -1274,7 +1323,7 @@ def check_citation_lines(src_root, results: ValidationResult):
                 continue
             md_line_num = content[: m.start()].count("\n") + 1
             location = f"{md_file.name}:{md_line_num}"
-            cited = [int(x.strip()) for x in lines_str.split(",")]
+            cited = _parse_cited_lines(lines_str)
             out_of_range = [n for n in cited if n < 1 or n > line_count]
             if out_of_range:
                 results.fail(
@@ -1454,12 +1503,16 @@ def _iter_merge_classmethod_discard(body):
     """Yield (offset, desc) for each `(MergeTable & ...).merge_method()`.
 
     AST-based so we catch multi-line restrictions and nested parens in the
-    restriction expression, both of which the prior regex missed.
+    restriction expression, both of which the prior regex missed. Resolves
+    aliased imports via `build_alias_map` so that
+    `from ... import PositionOutput as PO; (PO & key).merge_delete()` is
+    also caught — the canonical-name check alone would miss that shape.
     """
     try:
         tree = ast.parse(body)
     except SyntaxError:
         return
+    alias_map = build_alias_map(tree)
     # Prefix-sum of physical-line lengths so we can convert a (lineno,
     # col_offset) pair from the AST into a character offset into `body`.
     lines = body.splitlines(keepends=True)
@@ -1472,6 +1525,14 @@ def _iter_merge_classmethod_discard(body):
         if 0 <= idx < len(prefix):
             return prefix[idx] + node.col_offset
         return 0
+
+    def resolve(name):
+        """Map a local name through alias_map to its canonical class,
+        or return the local name unchanged if not aliased."""
+        canonical = alias_map.get(name, name)
+        if canonical.startswith("<module:"):
+            return None  # module binding, not a class
+        return canonical
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
@@ -1486,18 +1547,22 @@ def _iter_merge_classmethod_discard(body):
         if not isinstance(receiver.op, ast.BitAnd):
             continue
         left = receiver.left
-        # Bare class: `PositionOutput & key`
-        if isinstance(left, ast.Name) and left.id in MERGE_TABLE_CLASSES:
-            yield offset_of(node), f"({left.id} & ...).{node.func.attr}(...)"
-        # Instance form: `PositionOutput() & key`
-        elif (
-            isinstance(left, ast.Call)
-            and isinstance(left.func, ast.Name)
-            and left.func.id in MERGE_TABLE_CLASSES
-        ):
-            yield offset_of(node), (
-                f"({left.func.id}() & ...).{node.func.attr}(...)"
-            )
+        # Bare class: `PositionOutput & key` or `PO & key` (PO aliased)
+        if isinstance(left, ast.Name):
+            canonical = resolve(left.id)
+            if canonical in MERGE_TABLE_CLASSES:
+                yield (
+                    offset_of(node),
+                    f"({left.id} & ...).{node.func.attr}(...)",
+                )
+        # Instance form: `PositionOutput() & key` or `PO() & key`
+        elif isinstance(left, ast.Call) and isinstance(left.func, ast.Name):
+            canonical = resolve(left.func.id)
+            if canonical in MERGE_TABLE_CLASSES:
+                yield (
+                    offset_of(node),
+                    f"({left.func.id}() & ...).{node.func.attr}(...)",
+                )
 
 
 # Each anti-pattern: (rule_id, description, matcher_fn, scope).
