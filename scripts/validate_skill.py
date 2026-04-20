@@ -1364,6 +1364,17 @@ def check_evals_content(src_root, results: ValidationResult, registry=None):
     Scans expected_output + behavioral_checks + required_substrings.
     Skips forbidden_substrings (those are intentionally-wrong patterns
     the eval is designed to reject).
+
+    When evals.json is absent the check is a no-op — skills without an
+    evals/ directory shouldn't fail validation. Malformed JSON fails hard
+    so CI catches edit mistakes.
+
+    Regex-match discipline: matches inside inline-backtick code spans
+    (`Class.method()`) are always evaluated. Matches in bare prose are
+    evaluated for method-existence and instance-vs-classmethod (high-
+    signal failures), but the "unresolved class" warning is suppressed
+    outside backticks — camelcase prose words like "Uses" or "Either"
+    otherwise trigger false positives on `Uses .fetch()` constructs.
     """
     if registry is None:
         registry = _ClassRegistry(src_root, results)
@@ -1390,6 +1401,11 @@ def check_evals_content(src_root, results: ValidationResult, registry=None):
             class_name = match.group(1)
             instance_call = bool(match.group(2))
             method_name = match.group(3)
+            # Matches inside inline-backtick spans are high-confidence code;
+            # prose matches are lower-confidence and we suppress the weakest
+            # signal (unresolved-class warnings) for them below.
+            start = match.start()
+            in_backticks = start > 0 and text[start - 1] == "`"
 
             if method_name in SKIP_METHODS or method_name.startswith("_"):
                 continue
@@ -1399,7 +1415,8 @@ def check_evals_content(src_root, results: ValidationResult, registry=None):
 
             if methods is None:
                 if (
-                    class_name[:1].isupper()
+                    in_backticks
+                    and class_name[:1].isupper()
                     and class_name not in DOC_PLACEHOLDERS
                 ):
                     results.warn(

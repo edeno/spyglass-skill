@@ -494,12 +494,15 @@ def fixture_aliased_merge_classmethod_discard(src_root):
 
 
 def fixture_eval_hallucinated_method(src_root):
-    """Synthetic evals.json with a hallucinated method must be caught by
-    check_evals_content. Regression: before this check, eval 6 shipped
-    `LFPBandV1.compute_signal_power()` (instance method called on bare
-    class) and `set_lfp_band_electrodes(reference_electrodes=...)` (wrong
-    kwarg name); both survived two rounds of review because the validator
-    only scanned reference prose, not evals.
+    """Synthetic evals.json must catch three distinct failure shapes:
+
+    1. Hallucinated method (AttributeError at runtime) — this was the
+       first class of bug the check was designed to prevent.
+    2. Instance method called on bare class like `LFPBandV1.compute_signal_power(...)`
+       (TypeError: missing self) — this is the bug that actually shipped
+       in eval 6 and motivated extending the validator to scan evals.
+    3. forbidden_substrings entries must be SKIPPED entirely, since
+       they're adversarial wrong-by-design patterns the eval rejects.
     """
     import json, tempfile
     from pathlib import Path as P
@@ -513,7 +516,10 @@ def fixture_eval_hallucinated_method(src_root):
             "eval_name": "synthetic-hallucination",
             "expected_output": (
                 "The answer is `LFPBandV1.totally_fake_method(foo=1)` "
-                "which does not exist."
+                "which does not exist. Also `LFPBandV1.compute_signal_power(band_key)` "
+                "on the bare class should be flagged — compute_signal_power "
+                "is an instance method and must be called on "
+                "`(LFPBandV1 & key)()` / `LFPBandV1().compute_signal_power(...)`."
             ),
             "assertions": {
                 "required_substrings": [],
@@ -522,8 +528,6 @@ def fixture_eval_hallucinated_method(src_root):
             },
         }],
     }))
-    # Temporarily redirect SKILL_DIR so the check reads our synthetic
-    # evals file instead of the real one.
     original = v.SKILL_DIR
     v.SKILL_DIR = tmp
     try:
@@ -531,15 +535,24 @@ def fixture_eval_hallucinated_method(src_root):
         v.check_evals_content(src_root, results)
     finally:
         v.SKILL_DIR = original
-    # Verify the hallucinated method was caught, AND the one in
-    # forbidden_substrings was NOT scanned (intentionally excluded).
-    hits = [m for m in results.failed if "totally_fake_method" in m]
+
+    hits_hallucinated = [m for m in results.failed if "totally_fake_method" in m]
+    # The instance-method failure message includes "instance method" in the
+    # standard format produced by check_evals_content.
+    hits_instance = [
+        m for m in results.failed
+        if "compute_signal_power" in m and "instance method" in m
+    ]
     bad_hits = [m for m in results.failed if "yet_another_fake" in m]
-    if hits and not bad_hits:
-        print("  [ok] evals: hallucinated method caught; forbidden_substrings skipped")
+
+    if hits_hallucinated and hits_instance and not bad_hits:
+        print("  [ok] evals: hallucinated method + instance-on-bare-class caught; forbidden_substrings skipped")
         return True
-    print(f"  [FAIL] expected totally_fake_method flagged, yet_another_fake skipped")
-    print(f"         failed: {results.failed}")
+    print(f"  [FAIL] expected both failure shapes flagged; forbidden skipped")
+    print(f"         hallucinated hits: {hits_hallucinated}")
+    print(f"         instance hits:     {hits_instance}")
+    print(f"         forbidden bad:     {bad_hits}")
+    print(f"         failed:            {results.failed}")
     return False
 
 
