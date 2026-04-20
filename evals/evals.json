@@ -152,7 +152,8 @@
           "Includes `interval_list_name` in the set_lfp_band_electrodes call — it is required with no default",
           "Uses the exact kwarg name `reference_electrode_list` (with `_list`), not `reference_electrodes` or `reference_electrode`",
           "Either shows LFPBandV1.fetch1_dataframe() for the band-filtered signal, or compute_signal_power() for theta power directly",
-          "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)"
+          "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)",
+          "Respects Nyquist: filter_sampling_rate (30000 for raw) must exceed 2× the filter's high cutoff (400 Hz → fs ≥ 800), and target_sampling_rate for the wideband stage (1000 Hz) must exceed 2× its high cutoff. The theta band filter's source sampling rate must match the LFPV1 target_sampling_rate (1000), and the band passband (e.g. 5-11 Hz) is well below 1000/2=500 Hz. Flags that picking a band filter whose high cutoff exceeds LFPV1's target_sampling_rate/2 would alias."
         ]
       },
       "files": []
@@ -370,7 +371,8 @@
         "behavioral_checks": [
           "Uses merge_get_part classmethod form",
           "Includes filter_name in the restriction (not just nwb_file_name)",
-          "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (FirFilterParameters.fetch) rather than guessing 'default'"
+          "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (FirFilterParameters.fetch) rather than guessing 'default'",
+          "Notes that filter_name alone doesn't uniquely identify a filter — FirFilterParameters keys on (filter_name, filter_sampling_rate), so a Nyquist-aware answer mentions the sampling rate if the session's raw fs could differ from 30000 Hz (typical for Frank Lab trodes)."
         ]
       },
       "files": []
@@ -620,7 +622,8 @@
         "behavioral_checks": [
           "Uses raw filename (no underscore) for insert_sessions",
           "Walks through all four phases in order (ingest → position → LFP → export)",
-          "Flags user-choice points (which electrodes, which interval, which params)"
+          "Flags user-choice points (which electrodes, which interval, which params)",
+          "For the LFP step, respects Nyquist: the `filter_name='LFP 0-400 Hz'` requires filter_sampling_rate ≥ 800 Hz (typical Frank Lab raw fs is 30000), and target_sampling_rate must be > 2× the filter's high cutoff (400 Hz → typically 1000 Hz target). A response that picks an arbitrary target_sampling_rate without sanity-checking against the filter passband is a miss."
         ]
       },
       "files": []
@@ -672,6 +675,33 @@
           "Notes that unit_id doesn't affect the region — all units in a sort group share the same electrodes",
           "Handles the polymer-probe case where a sort group may span multiple regions (multiple region_name values)",
           "Does not invent a direct `region` attribute on CurationV1 or on the unit itself"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 29,
+      "eval_name": "brain-region-for-lfp-electrode",
+      "stage": "pipeline-usage",
+      "tier": "joins",
+      "prompt": "I'm pulling out the LFP trace for just one contact — electrode_id=7 on session j1620210710_ — and I want to label my plot with the anatomical region. What's the brain region for that electrode? I already have the LFPOutput merge_id for the session's wideband LFP.",
+      "expected_output": "Brain region is anatomical metadata on `Electrode`, not on the LFP artifact — filtering a signal doesn't change where the electrode was implanted. Simplest correct answer: `(Electrode * BrainRegion & {'nwb_file_name': 'j1620210710_.nwb', 'electrode_id': 7}).fetch1('region_name')`. The LFP merge_id is not needed for region lookup; the question is purely about anatomy. If the user wants to verify electrode 7 was actually included in the LFPV1 computation (not just that it exists on the probe), join through `LFPElectrodeGroup.LFPElectrode`: `(LFPElectrodeGroup.LFPElectrode * Electrode * BrainRegion & {'nwb_file_name': ..., 'electrode_id': 7, 'lfp_merge_id': <uuid>}).fetch1('region_name')` — but this is only meaningful if the LFPV1 entry's `lfp_merge_id` is available via `LFPOutput.LFPV1.proj(lfp_merge_id='merge_id')`. Note that the region on `Electrode` is inherited via `-> BrainRegion` and populated at ingest from the probe's `electrode_group.location`; sampling rate and Nyquist are irrelevant to this query since it's a metadata lookup, not a signal-processing step.",
+      "assertions": {
+        "required_substrings": [
+          "Electrode",
+          "BrainRegion",
+          "region_name",
+          "electrode_id"
+        ],
+        "forbidden_substrings": [
+          "LFPV1.region",
+          "LFPOutput.region",
+          "compute_signal_power.*region"
+        ],
+        "behavioral_checks": [
+          "Recognizes that brain region is anatomical metadata on Electrode, not derived from LFP processing — filter/sampling rate do not affect it",
+          "Uses the simple join Electrode * BrainRegion as the primary answer; does not require routing through LFPOutput unless the user specifically asks to verify inclusion in the LFP group",
+          "Does not invent a `region` attribute on LFPV1, LFPOutput, or any LFP-pipeline table"
         ]
       },
       "files": []
