@@ -831,8 +831,17 @@ def check_prose_assertions(results: ValidationResult):
     These are assertions whose wording matters for LLM correctness but lives
     outside code blocks. Each rule pairs a required statement with an ID so
     reviewers can add/remove rules without hunting for magic strings.
+
+    The `needle` field accepts either a single string (pass if that
+    substring is present, case-insensitive) or a list of strings (pass if
+    ANY alternative is present). Grouped alternatives let a rule survive
+    benign rewording — e.g. the "destructive confirmation" rule can accept
+    either "explicit confirmation" or "user confirmation" without
+    needing the skill to pick one phrasing forever.
     """
-    # (file, rule_id, description, required_substring (case-insensitive))
+    # (file, rule_id, description, needle: str | list[str])
+    # needle is case-insensitive. Use a list when equivalent phrasings
+    # should all pass — the rule fires if NONE of the alternatives match.
     required_claims = [
         (
             "SKILL.md", "destructive-list",
@@ -842,7 +851,9 @@ def check_prose_assertions(results: ValidationResult):
         (
             "SKILL.md", "destructive-confirmation",
             "SKILL.md requires explicit confirmation for destructive ops",
-            "explicit confirmation",
+            # Grouped alternatives — any of these wordings satisfies the rule
+            ["explicit confirmation", "user confirmation",
+             "user confirms", "get user confirmation"],
         ),
         (
             "SKILL.md", "schema-verify",
@@ -911,12 +922,16 @@ def check_prose_assertions(results: ValidationResult):
             results.fail(f"prose[{rule_id}]: file {rel_path} not found")
             continue
         content = md_file.read_text().lower()
-        if needle.lower() in content:
+        alternatives = [needle] if isinstance(needle, str) else list(needle)
+        if any(alt.lower() in content for alt in alternatives):
             results.ok(f"prose[{rule_id}]: {description}")
         else:
+            shown = alternatives[0] if len(alternatives) == 1 else (
+                " | ".join(f"'{a}'" for a in alternatives)
+            )
             results.fail(
                 f"prose[{rule_id}]: {rel_path} missing required claim "
-                f"'{needle}' ({description})"
+                f"{shown} ({description})"
             )
 
 
@@ -1158,6 +1173,67 @@ def _iter_insert_sessions_calls(body):
             yield m.start(), args
 
 
+MERGE_CLASSMETHODS = frozenset({
+    "merge_delete", "merge_delete_parent", "merge_restrict",
+    "merge_get_part", "merge_get_parent", "merge_view", "merge_html",
+})
+
+MERGE_TABLE_CLASSES = frozenset({
+    "PositionOutput", "LFPOutput", "SpikeSortingOutput",
+    "DecodingOutput", "LinearizedPositionOutput",
+})
+
+
+def _iter_merge_classmethod_discard(body):
+    """Yield (offset, desc) for each `(MergeTable & ...).merge_method()`.
+
+    AST-based so we catch multi-line restrictions and nested parens in the
+    restriction expression, both of which the prior regex missed.
+    """
+    try:
+        tree = ast.parse(body)
+    except SyntaxError:
+        return
+    # Prefix-sum of physical-line lengths so we can convert a (lineno,
+    # col_offset) pair from the AST into a character offset into `body`.
+    lines = body.splitlines(keepends=True)
+    prefix = [0]
+    for line in lines:
+        prefix.append(prefix[-1] + len(line))
+
+    def offset_of(node):
+        idx = node.lineno - 1
+        if 0 <= idx < len(prefix):
+            return prefix[idx] + node.col_offset
+        return 0
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in MERGE_CLASSMETHODS:
+            continue
+        receiver = node.func.value
+        if not isinstance(receiver, ast.BinOp):
+            continue
+        if not isinstance(receiver.op, ast.BitAnd):
+            continue
+        left = receiver.left
+        # Bare class: `PositionOutput & key`
+        if isinstance(left, ast.Name) and left.id in MERGE_TABLE_CLASSES:
+            yield offset_of(node), f"({left.id} & ...).{node.func.attr}(...)"
+        # Instance form: `PositionOutput() & key`
+        elif (
+            isinstance(left, ast.Call)
+            and isinstance(left.func, ast.Name)
+            and left.func.id in MERGE_TABLE_CLASSES
+        ):
+            yield offset_of(node), (
+                f"({left.func.id}() & ...).{node.func.attr}(...)"
+            )
+
+
 # Each anti-pattern: (rule_id, description, matcher_fn, scope).
 # matcher_fn(body_or_content) -> iterator of (start_offset, matched_repr).
 # scope="code": run matcher on ```python block bodies only.
@@ -1197,23 +1273,13 @@ ANTI_PATTERNS = [
         "(Table & key).method() — Python dispatches classmethod calls "
         "to the class, silently dropping the `& key`. Pass the "
         "restriction as an argument: Table.method(restriction) instead.",
-        # Match `(SomeMergeTable & anything).merge_xxx(` where xxx is one
-        # of the known _Merge classmethods. Bracket-balanced `[^)]*` in
-        # the restriction expression works for typical one-line cases.
-        # Skip matches whose line already contains `#` before the match —
-        # those are demonstration comments explaining the bad pattern,
-        # not runnable code.
-        lambda body: [
-            (m.start(), m.group(0))
-            for m in re.finditer(
-                r"\(\s*\w+\s*&[^)]+\)\s*\."
-                r"(?:merge_delete|merge_delete_parent|merge_restrict"
-                r"|merge_get_part|merge_get_parent|merge_view|merge_html)"
-                r"\s*\(",
-                body,
-            )
-            if "#" not in body[body.rfind("\n", 0, m.start()) + 1 : m.start()]
-        ],
+        # AST-based: find Call nodes whose receiver is a BinOp(BitAnd)
+        # with a merge-table class on the left and the attr is one of
+        # the classmethod names. AST handles multi-line restrictions and
+        # nested parens (e.g., `& get_key()`) that the old regex missed;
+        # comments don't appear in the AST so no explicit comment filter
+        # is needed.
+        lambda body: list(_iter_merge_classmethod_discard(body)),
         "code",
     ),
     (

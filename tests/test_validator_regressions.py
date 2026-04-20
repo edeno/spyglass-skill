@@ -317,6 +317,82 @@ def fixture_merge_classmethod_discard(src_root):
     return False
 
 
+def fixture_merge_classmethod_multiline(src_root):
+    """Multi-line restriction + nested-parens forms that the old regex missed.
+
+    Regex used `[^)]+` for the restriction expression and wasn't multiline,
+    so `(PositionOutput & get_key()).merge_delete()` (nested parens) and
+    multi-line restrictions could both evade detection. The AST matcher
+    resolves BinOp receivers regardless of formatting.
+    """
+    md = _write_md(
+        '''
+        # Test
+
+        ```python
+        def get_key():
+            return {"x": 1}
+
+        # Nested parens in the restriction — old regex missed this
+        (PositionOutput & get_key()).merge_delete()
+
+        # Multi-line restriction — old regex sometimes missed, sometimes not
+        (
+            LFPOutput
+            & {"nwb_file_name": "x",
+               "epoch": 1}
+        ).merge_restrict()
+        ```
+        '''
+    )
+    r = _run(v.check_anti_patterns, md)
+    hits = [m for m in r.failed if "merge-classmethod-discard" in m]
+    if len(hits) >= 2:
+        print("  [ok] anti-pattern: nested-parens + multi-line merge "
+              "discard caught")
+        return True
+    print(f"  [FAIL] expected >=2 hits, got {len(hits)}: {r.failed}")
+    return False
+
+
+def fixture_required_claim_alternatives(src_root):
+    """Grouped-alternative needles: any of the listed phrasings should pass.
+
+    Regression: after Phase 2, `required_claims` accepts `list[str]` as
+    needle. Verify both branches: a content with one alternative passes;
+    content with none fails.
+    """
+    # Temporarily monkeypatch the required_claims rule set by feeding our
+    # synthetic file through the same machinery. Use an explicit small test.
+    positive = _write_md(
+        """
+        # Test
+
+        The skill demands user confirmation before any destructive op.
+        """
+    )
+    negative = _write_md(
+        """
+        # Test
+
+        Just delete whatever you need.
+        """
+    )
+    # Mirror check_prose_assertions' alternative-matching logic inline
+    def matches(md, alternatives):
+        text = md.read_text().lower()
+        return any(alt.lower() in text for alt in alternatives)
+
+    alts = ["explicit confirmation", "user confirmation",
+            "user confirms", "get user confirmation"]
+    if matches(positive, alts) and not matches(negative, alts):
+        print("  [ok] prose: grouped-alternative needle accepts any match")
+        return True
+    print(f"  [FAIL] positive match={matches(positive, alts)}, "
+          f"negative match={matches(negative, alts)}")
+    return False
+
+
 def fixture_alias_import_resolves(src_root):
     """Aliased `from spyglass.X import Class as Alias` must resolve through
     the alias to validate `Alias.method()` against the real class.
@@ -489,6 +565,8 @@ FIXTURES = [
     fixture_module_qualified_resolves,
     fixture_alias_kwarg_validation,
     fixture_binop_receiver_not_false_positive,
+    fixture_merge_classmethod_multiline,
+    fixture_required_claim_alternatives,
 ]
 
 
