@@ -186,7 +186,7 @@ All directories are created automatically on first config load if they do not ex
 | `FIGURL_CHANNEL` | `franklab2` | figurl visualization channel |
 | `DJ_SUPPORT_FILEPATH_MANAGEMENT` | `TRUE` | Enable DataJoint filepath management |
 | `KACHERY_CLOUD_EPHEMERAL` | `TRUE` | Kachery cloud mode |
-| `HD5_USE_FILE_LOCKING` | `FALSE` | HDF5 file locking |
+| `HDF5_USE_FILE_LOCKING` | `FALSE` | HDF5 file locking |
 | `KACHERY_ZONE` | `franklab.default` | Kachery zone for data sharing |
 
 ### Data Sharing Tables (Kachery)
