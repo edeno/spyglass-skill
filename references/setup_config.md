@@ -39,8 +39,22 @@ See `dj_local_conf_example.json` in the repo root for a complete template. The k
 - **`database.host`**: MySQL server hostname. Use `localhost` for Docker, or your lab's database server address for remote
 - **`database.port`**: Default 3306
 - **`database.use_tls`**: TLS encryption for the connection. Automatically enabled for remote hosts by the installer; typically `false` for localhost
-- **`database.password`**: Omit this line on shared machines (DataJoint will prompt interactively)
+- **`database.password`**: **Strongly prefer to omit this field.** Storing a plaintext password in a config file means every `cat`, `Read`, or screen-share exposes it — and since `dj_local_conf.json` is the first thing people inspect to debug connection errors, the exposure surface is large. Move the password to the `DJ_PASS` env var, a `~/.my.cnf` MySQL defaults file, or let DataJoint prompt interactively. If you must keep it in the file, restrict perms (`chmod 600 dj_local_conf.json`).
 - **`filepath_checksum_size_limit`**: Max file size (bytes) for checksum verification of externally stored files. Default is 1 GB
+
+### Reading the config file safely
+
+**Never `Read` or `cat` `dj_local_conf.json` or `~/.datajoint_config.json` directly** — they may contain a plaintext password. Once the password enters a tool result, it is in the model's context and can be echoed back inadvertently. Use a scrubbed read that strips `database.password` before it reaches you:
+
+```bash
+# jq (preferred — works on any key path, including nested)
+jq 'del(.["database.password"])' dj_local_conf.json
+
+# Python fallback if jq isn't installed
+python3 -c 'import json; d=json.load(open("dj_local_conf.json")); d.pop("database.password", None); print(json.dumps(d, indent=2))'
+```
+
+Use these forms from the `Bash` tool (not the `Read` tool). Apply the same pattern for `~/.datajoint_config.json`. If you need to inspect `dj.config` at runtime from Python, print `{k: v for k, v in dj.config.items() if k != "database.password"}` — never bare `dict(dj.config)`.
 
 ### Generating Config Programmatically
 

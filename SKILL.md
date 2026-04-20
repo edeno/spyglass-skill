@@ -14,7 +14,8 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 - **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
 - **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** — on any table, including well-known ones. Use `print(len(rel))`; if >1, inspect with `rel.fetch(as_dict=True)` or `merge_restrict` to see which PK fields still need narrowing. `Table.describe()`/`Table.heading` show schema, not row count. See Common Mistake #2.
 - **Environment**: detect the user's setup (local Docker, local data, remote lab) — don't assume Jupyter or remote NWB.
-- **Source of truth**: when the skill and the repo disagree, trust the repo. Source lives at `src/spyglass/` (under the installed package for pip/conda — find with `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`). User-facing tutorials are `notebooks/*.ipynb` per `notebooks/README.md`; `notebooks/py_scripts/*.py` is a jupytext mirror for PR-review diffs — cite the `.ipynb` form.
+- **Reading DataJoint config files**: `dj_local_conf.json` and `~/.datajoint_config.json` may contain `database.password` in plaintext. Never `Read`/`cat` raw — use the scrubbed-read pattern in [setup_config.md](references/setup_config.md).
+- **Source of truth**: when the skill and the repo disagree, trust the repo. This skill cites source paths using the GitHub-repo layout (`src/spyglass/...`). In a pip/conda install there is no `src/` prefix — locate the installed package with `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"` and read a cited path `src/spyglass/<rest>` as `<pkg_dir>/<rest>`. User-facing tutorials are `notebooks/*.ipynb` per `notebooks/README.md`; `notebooks/py_scripts/*.py` is a jupytext mirror for PR-review diffs — cite the `.ipynb` form.
 
 ## Common Mistakes
 

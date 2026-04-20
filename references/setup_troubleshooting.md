@@ -33,7 +33,15 @@ Or in `dj_local_conf.json`:
 ## Database Connection Fails
 
 1. If using Docker: ensure Docker Desktop is running
-2. Verify credentials: check `database.host`, `database.user`, `database.password` in your config
+2. Verify non-secret config fields: **never `Read`/`cat` `dj_local_conf.json` or `~/.datajoint_config.json` directly** — these files may contain a plaintext `database.password`, and any tool output enters the model context. Inspect with the password stripped:
+
+    ```bash
+    jq 'del(.["database.password"])' dj_local_conf.json
+    # fallback if jq unavailable:
+    python3 -c 'import json; d=json.load(open("dj_local_conf.json")); d.pop("database.password", None); print(json.dumps(d, indent=2))'
+    ```
+
+    Check `database.host`, `database.user`, `database.port`, and `database.use_tls` in the scrubbed output. If the password itself is the suspected problem, have the user verify it locally — don't read it through the tool surface. Full pattern: [setup_config.md](setup_config.md) "Reading the config file safely".
 3. For remote databases: confirm TLS settings (`database.use_tls`) match server requirements
 4. Test connection directly: `python -c "import datajoint as dj; dj.conn()"`
 
