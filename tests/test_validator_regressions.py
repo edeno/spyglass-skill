@@ -393,6 +393,59 @@ def fixture_required_claim_alternatives(src_root):
     return False
 
 
+def fixture_bogus_citation_line(src_root):
+    """Line number in `file.py:NNN` must actually exist in the file."""
+    md = _write_md(
+        """
+        # Test
+
+        The bug lives at `src/spyglass/common/common_nwbfile.py:9999999`.
+        """
+    )
+    r = _run(v.check_citation_lines, md, src_root)
+    return _assert_contains(
+        r, "out of range",
+        "citation: out-of-range line number caught",
+    )
+
+
+def fixture_valid_citation_passes(src_root):
+    """Real citation (existing file, in-range line) must not fail."""
+    md = _write_md(
+        """
+        # Test
+
+        See `src/spyglass/common/common_nwbfile.py:1` for context.
+        """
+    )
+    r = _run(v.check_citation_lines, md, src_root)
+    bad = [m for m in r.failed if "common_nwbfile.py" in m]
+    if not bad:
+        print("  [ok] citation: valid in-range citation passes")
+        return True
+    print(f"  [FAIL] valid citation rejected: {bad}")
+    return False
+
+
+def fixture_multi_line_citation(src_root):
+    """`file.py:N, M` must validate each cited line."""
+    md = _write_md(
+        """
+        # Test
+
+        See `src/spyglass/utils/dj_merge_tables.py:1, 9999999`.
+        """
+    )
+    r = _run(v.check_citation_lines, md, src_root)
+    # Expect a failure mentioning only the out-of-range line
+    hits = [m for m in r.failed if "out of range" in m and "9999999" in m]
+    if hits:
+        print("  [ok] citation: multi-line citation catches bogus line")
+        return True
+    print(f"  [FAIL] multi-line citation not checked correctly: {r.failed}")
+    return False
+
+
 def fixture_wrong_field_name_warns(src_root):
     """Typo in a dict restriction key should warn via field-name check.
 
@@ -650,6 +703,9 @@ FIXTURES = [
     fixture_wrong_field_name_warns,
     fixture_correct_field_name_no_warn,
     fixture_merge_restriction_not_false_positive,
+    fixture_bogus_citation_line,
+    fixture_valid_citation_passes,
+    fixture_multi_line_citation,
 ]
 
 

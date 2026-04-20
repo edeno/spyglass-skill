@@ -1243,6 +1243,51 @@ NOTEBOOK_NAME_PATTERN = re.compile(
 )
 
 
+# `src/spyglass/path.py:123`, `src/spyglass/path.py:123, 456`, etc.
+# Captures the path and the full line-number list so we can split later.
+PROSE_CITATION_PATTERN = re.compile(
+    r"(?P<path>src/spyglass/[A-Za-z0-9_./-]+\.py):"
+    r"(?P<lines>\d+(?:\s*,\s*\d+)*)"
+)
+
+
+def check_citation_lines(src_root, results: ValidationResult):
+    """Verify that `file.py:N[, M, ...]` citations in prose point at real lines.
+
+    Catches stale citations after refactors: if the skill says
+    `dj_merge_tables.py:499, 505` but the file has been truncated or
+    rewritten, the citations no longer land on relevant code. We can't
+    check *semantic* accuracy without parsing the surrounding prose, but
+    we can at least require N <= len(lines).
+    """
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        for m in PROSE_CITATION_PATTERN.finditer(content):
+            path = m.group("path")
+            lines_str = m.group("lines")
+            target = src_root.parent / path
+            if not target.exists():
+                continue  # check_prose_paths handles missing files
+            try:
+                line_count = len(target.read_text().splitlines())
+            except (OSError, UnicodeDecodeError):
+                continue
+            md_line_num = content[: m.start()].count("\n") + 1
+            location = f"{md_file.name}:{md_line_num}"
+            cited = [int(x.strip()) for x in lines_str.split(",")]
+            out_of_range = [n for n in cited if n < 1 or n > line_count]
+            if out_of_range:
+                results.fail(
+                    f"{location}: citation '{path}:{lines_str}' — "
+                    f"line(s) {out_of_range} out of range "
+                    f"(file has {line_count} lines)"
+                )
+            else:
+                results.ok(
+                    f"{location}: citation '{path}:{lines_str}' in range"
+                )
+
+
 def check_notebook_names(src_root, results: ValidationResult):
     """Verify notebook filenames mentioned in prose exist in the spyglass repo.
 
@@ -1739,44 +1784,47 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/12] Checking source files and class registry...")
+    print("\n[1/13] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/12] Checking import statements in skill files...")
+    print("[2/13] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/12] Checking method references...")
+    print("[3/13] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/12] Checking keyword arguments...")
+    print("[4/13] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/12] Checking skill structure...")
+    print("[5/13] Checking skill structure...")
     check_structure(results)
 
-    print("[6/12] Checking prose assertions...")
+    print("[6/13] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/12] Parsing Python code blocks (ast.parse)...")
+    print("[7/13] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/12] Verifying prose path references exist in repo...")
+    print("[8/13] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/12] Verifying notebook names exist in repo...")
+    print("[9/13] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/12] Verifying internal markdown links and anchors...")
+    print("[10/13] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/12] Scanning for documented anti-patterns...")
+    print("[11/13] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/12] Checking dict-restriction field names against schemas...")
+    print("[12/13] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
+
+    print("[13/13] Verifying citation line numbers are in range...")
+    check_citation_lines(src_root, results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.
