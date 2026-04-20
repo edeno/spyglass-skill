@@ -393,6 +393,86 @@ def fixture_required_claim_alternatives(src_root):
     return False
 
 
+def fixture_wrong_field_name_warns(src_root):
+    """Typo in a dict restriction key should warn via field-name check.
+
+    Paradigm case from the code-review audit: `moseq_model_params_name` is
+    not the real column — it's `model_params_name`. This check would have
+    flagged that typo at skill-write time.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.behavior.v1.moseq import MoseqModelParams
+
+        # Wrong: real field is `model_params_name` (no `moseq_` prefix)
+        (MoseqModelParams & {"moseq_model_params_name": "x"}).fetch1()
+        ```
+        """
+    )
+    v.collect_md_files = lambda: [md]
+    results = v.ValidationResult()
+    v.check_restriction_fields(src_root, results)
+    return _assert_warn_contains(
+        results, "moseq_model_params_name",
+        "schema: wrong field name in dict restriction warns",
+    )
+
+
+def fixture_correct_field_name_no_warn(src_root):
+    """Correct field name must NOT trigger the schema check."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.behavior.v1.moseq import MoseqModelParams
+
+        (MoseqModelParams & {"model_params_name": "x"}).fetch1()
+        ```
+        """
+    )
+    v.collect_md_files = lambda: [md]
+    results = v.ValidationResult()
+    v.check_restriction_fields(src_root, results)
+    bad = [w for w in results.warnings if "model_params_name" in w]
+    if not bad:
+        print("  [ok] schema: correct field name does not warn")
+        return True
+    print(f"  [FAIL] correct field name triggered warn: {bad}")
+    return False
+
+
+def fixture_merge_restriction_not_false_positive(src_root):
+    """`(PositionOutput & {"nwb_file_name": f})` is legitimate — the master
+    has only (merge_id, source), but users restrict merges with part-table
+    fields. The schema check skips merge-table classes to avoid flagging
+    this canonical pattern.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.position.position_merge import PositionOutput
+
+        (PositionOutput & {"nwb_file_name": "x.nwb"}).fetch(as_dict=True)
+        ```
+        """
+    )
+    v.collect_md_files = lambda: [md]
+    results = v.ValidationResult()
+    v.check_restriction_fields(src_root, results)
+    bad = [w for w in results.warnings if "nwb_file_name" in w]
+    if not bad:
+        print("  [ok] schema: merge-table restriction not flagged")
+        return True
+    print(f"  [FAIL] merge-table restriction triggered warn: {bad}")
+    return False
+
+
 def fixture_alias_import_resolves(src_root):
     """Aliased `from spyglass.X import Class as Alias` must resolve through
     the alias to validate `Alias.method()` against the real class.
@@ -567,6 +647,9 @@ FIXTURES = [
     fixture_binop_receiver_not_false_positive,
     fixture_merge_classmethod_multiline,
     fixture_required_claim_alternatives,
+    fixture_wrong_field_name_warns,
+    fixture_correct_field_name_no_warn,
+    fixture_merge_restriction_not_false_positive,
 ]
 
 

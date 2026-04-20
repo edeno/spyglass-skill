@@ -585,6 +585,155 @@ def discover_classes(src_root):
     return discovered, collisions
 
 
+_TABLE_SCHEMA_CACHE = {}
+
+
+def collect_table_schemas(src_root):
+    """Extract DataJoint table schemas from every top-level class under src_root.
+
+    Returns {class_name: {
+        "pk":          set[str],  # literal primary-key field names
+        "attrs":       set[str],  # literal non-PK attribute names
+        "parents":     list[str], # names of tables referenced via `->`
+        "projections": list[(new_name, source)],  # from `-> Parent.proj(new='src')`
+    }}.
+
+    The extraction is approximate — we look for `class Foo(...): ...
+    definition = \"\"\"...\"\"\"` and parse the string with a small grammar.
+    False positives (non-DJ classes with a `definition` string attribute)
+    are rare in practice. Cached per src_root to amortize the rglob.
+    """
+    key = str(src_root)
+    cached = _TABLE_SCHEMA_CACHE.get(key)
+    if cached is not None:
+        return cached
+    schemas = {}
+    for py_file in src_root.rglob("*.py"):
+        try:
+            tree = ast.parse(py_file.read_text())
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        # Top-level classes only — part tables (nested) are intentionally
+        # skipped because users reference them as Parent.Part and our
+        # dict-restriction check resolves through the Parent anyway.
+        for stmt in tree.body:
+            if not isinstance(stmt, ast.ClassDef):
+                continue
+            definition = _extract_definition_string(stmt)
+            if definition is None:
+                continue
+            parsed = _parse_dj_definition(definition)
+            # Name-collision disambiguation: Spyglass has v0 and v1 tables
+            # that share class names (SpikeSortingRecordingSelection etc).
+            # Prefer the file pinned in KNOWN_CLASSES; otherwise first-wins.
+            rel = str(py_file.relative_to(src_root))
+            pinned = KNOWN_CLASSES.get(stmt.name)
+            if pinned:
+                if rel == pinned:
+                    schemas[stmt.name] = parsed
+                # If this file isn't the pinned one, skip — pinned file's
+                # definition wins even if encountered later in the walk.
+            elif stmt.name not in schemas:
+                schemas[stmt.name] = parsed
+    _TABLE_SCHEMA_CACHE[key] = schemas
+    return schemas
+
+
+def _extract_definition_string(class_node):
+    """Return the `definition = \"\"\"...\"\"\"` string on a class, or None."""
+    for stmt in class_node.body:
+        if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
+            continue
+        target = stmt.targets[0]
+        if not isinstance(target, ast.Name) or target.id != "definition":
+            continue
+        if (
+            isinstance(stmt.value, ast.Constant)
+            and isinstance(stmt.value.value, str)
+        ):
+            return stmt.value.value
+    return None
+
+
+_DJ_PROJ_RE = re.compile(r"(\w+)\s*=\s*['\"](\w+)['\"]")
+
+
+def _parse_dj_definition(text):
+    """Parse a DataJoint definition string into pk/attrs/parents/projections.
+
+    Grammar (approximate):
+      <line>     ::= <comment> | <field> | <parent> | "---" | blank
+      <field>    ::= <name> [= <default>] ':' <type> [# <comment>]
+      <parent>   ::= '-> ' <TableName> [ '.proj(' <kv_list> ')' ]
+
+    `---` separates PK lines (above) from attribute lines (below).
+    """
+    pk, attrs = set(), set()
+    parents, projections = [], []
+    in_attrs = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Strip inline comment
+        if "#" in line:
+            line = line.split("#", 1)[0].strip()
+            if not line:
+                continue
+        if line == "---":
+            in_attrs = True
+            continue
+        dest = attrs if in_attrs else pk
+        if line.startswith("->"):
+            ref = line[2:].strip()
+            # Strip DataJoint modifier tokens like `[nullable]`, `[unique]`
+            # that appear between `->` and the target table name.
+            ref = re.sub(r"^\[[^\]]+\]\s*", "", ref)
+            # Strip trailing punctuation / comma (occasionally present)
+            ref = ref.rstrip(",")
+            if ".proj(" in ref:
+                table_part, proj_part = ref.split(".proj(", 1)
+                parents.append(table_part.strip())
+                for match in _DJ_PROJ_RE.finditer(proj_part):
+                    new_name, source = match.group(1), match.group(2)
+                    projections.append((new_name, source))
+                    dest.add(new_name)
+            else:
+                parents.append(ref)
+        elif ":" in line:
+            name_part = line.split(":", 1)[0].strip()
+            # Handle `name = default : type` form
+            if "=" in name_part:
+                name_part = name_part.split("=", 1)[0].strip()
+            if name_part and name_part.replace("_", "").isalnum():
+                dest.add(name_part)
+    return {"pk": pk, "attrs": attrs, "parents": parents,
+            "projections": projections}
+
+
+def resolve_table_fields(class_name, schemas, _seen=None):
+    """Return the transitive set of field names accepted by `class_name`.
+
+    Walks `->` parent references to union inherited PKs into the child's
+    accepted-field set. Returns None for unknown classes so the caller
+    can distinguish "no schema" from "empty schema".
+    """
+    if _seen is None:
+        _seen = set()
+    if class_name in _seen:
+        return set()  # cycle guard (rare, but possible with circular FKs)
+    _seen.add(class_name)
+    schema = schemas.get(class_name)
+    if schema is None:
+        return None
+    fields = set(schema["pk"]) | set(schema["attrs"])
+    for parent in schema["parents"]:
+        parent_fields = resolve_table_fields(parent, schemas, _seen)
+        if parent_fields is not None:
+            fields |= parent_fields
+    return fields
+
+
 class _ClassRegistry:
     """Resolve class names to their parsed method signatures.
 
@@ -792,6 +941,78 @@ def _extract_arg_list(line, open_paren_idx):
             if depth == 0:
                 return line[open_paren_idx + 1 : i]
     return None
+
+
+def check_restriction_fields(src_root, results):
+    """Warn when a dict restriction uses a key not defined on the table.
+
+    Scans `Class & {"key": ...}` and `Class() & {"key": ...}` expressions in
+    python code blocks; compares each literal dict key against the
+    transitively-resolved field set from `collect_table_schemas`. Emits a
+    warning (not a fail) because the extractor does not cover:
+
+    - part-table references via attribute access (`Parent.Part & {...}`)
+    - multi-hop FK inheritance that relies on tables the extractor missed
+      (e.g., mixin-provided virtual columns)
+
+    False positives are preferable to noise; every warning is a real
+    potential typo worth a human glance. The paradigm case caught: the
+    `moseq_model_params_name` typo from the code-review audit — the real
+    column is `model_params_name`, and this check would have flagged
+    that at skill-write time rather than waiting for a review pass.
+    """
+    schemas = collect_table_schemas(src_root)
+    for md_file in collect_md_files():
+        for block_start, tree in iter_python_blocks(md_file):
+            alias_map = build_alias_map(tree)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.BinOp):
+                    continue
+                if not isinstance(node.op, ast.BitAnd):
+                    continue
+                if not isinstance(node.right, ast.Dict):
+                    continue
+                # Resolve the left-hand class name. Accept `SomeClass` and
+                # `SomeClass()` forms; skip anything else (part-table
+                # attribute access, nested BinOps, etc.).
+                left = node.left
+                if isinstance(left, ast.Call):
+                    left = left.func
+                if not isinstance(left, ast.Name):
+                    continue
+                canonical = alias_map.get(left.id, left.id)
+                if canonical.startswith("<module:"):
+                    continue
+                # Merge-table masters have only (merge_id, source); real
+                # restrictions go through the underlying part tables,
+                # which we can't cheaply resolve statically. Skip to avoid
+                # false positives on the canonical
+                # `(PositionOutput & {"nwb_file_name": f})` pattern.
+                if canonical in MERGE_TABLE_CLASSES:
+                    continue
+                fields = resolve_table_fields(canonical, schemas)
+                if fields is None:
+                    continue  # not a known DJ table; skip silently
+                line_num = block_start + node.lineno - 1
+                location = f"{md_file.name}:{line_num}"
+                for key_node in node.right.keys:
+                    if not isinstance(key_node, ast.Constant):
+                        continue
+                    if not isinstance(key_node.value, str):
+                        continue
+                    key = key_node.value
+                    if key not in fields:
+                        # Show up to a dozen known fields for context
+                        sample = sorted(fields)[:12]
+                        hint = ", ".join(sample)
+                        if len(fields) > len(sample):
+                            hint += ", ..."
+                        results.warn(
+                            f"{location}: "
+                            f"({canonical} & {{\"{key}\": ...}}): "
+                            f"field '{key}' not found in schema "
+                            f"(known: {hint})"
+                        )
 
 
 def check_class_files_exist(src_root, results):
@@ -1518,41 +1739,44 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/11] Checking source files and class registry...")
+    print("\n[1/12] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/11] Checking import statements in skill files...")
+    print("[2/12] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/11] Checking method references...")
+    print("[3/12] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/11] Checking keyword arguments...")
+    print("[4/12] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/11] Checking skill structure...")
+    print("[5/12] Checking skill structure...")
     check_structure(results)
 
-    print("[6/11] Checking prose assertions...")
+    print("[6/12] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/11] Parsing Python code blocks (ast.parse)...")
+    print("[7/12] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/11] Verifying prose path references exist in repo...")
+    print("[8/12] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/11] Verifying notebook names exist in repo...")
+    print("[9/12] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/11] Verifying internal markdown links and anchors...")
+    print("[10/12] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/11] Scanning for documented anti-patterns...")
+    print("[11/12] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
+
+    print("[12/12] Checking dict-restriction field names against schemas...")
+    check_restriction_fields(src_root, results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.
