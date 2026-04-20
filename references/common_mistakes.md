@@ -11,6 +11,7 @@ Expanded prose for the top-5 Spyglass footguns summarized in SKILL.md. Each sect
 - [5. Destructive call without the paired inspect step](#5-destructive-call-without-the-paired-inspect-step)
 - [6. Interval / epoch mismatch between pipeline selections](#6-interval-epoch-mismatch-between-pipeline-selections)
 - [7. Fragmenting lab-wide search with inconsistent names](#7-fragmenting-lab-wide-search-with-inconsistent-names)
+- [8. Plausible-sounding identifier that doesn't exist](#8-plausible-sounding-identifier-that-doesnt-exist)
 
 ## 1. Classmethod restriction discard on merge tables
 
@@ -79,3 +80,31 @@ ParamsTable.fetch("params_name")
 Treat existing values in `BrainRegion`, `LabMember`, `LabTeam`, and the lab's established parameter tables as the de facto naming convention — they are what downstream analyses pin to. Diverge only with a specific reason, and when you do, pick an informatively-distinct name (not a typo-variant that collides under casing or whitespace normalization).
 
 This skill can route you to the tables to inspect, but it cannot tell you "the right spelling" — that is lab convention. Surface the existing options to the user and let them choose alignment vs. a justified new name. Related proactive pattern (before inserting a duplicate-content parameter set): [feedback_loops.md](feedback_loops.md) "Pre-insert check on parameter/selection tables".
+
+## 8. Plausible-sounding identifier that doesn't exist
+
+A method, kwarg, column, or table name that sounds right given surrounding conventions — but isn't actually in the Spyglass source. The mistake looks like correct code and passes a reader's eyeball test; at runtime it raises `AttributeError`, `TypeError: unexpected keyword argument`, or `DataJointError: unknown attribute`. Real examples that shipped past multiple review passes in this codebase:
+
+- `moseq_model_params_name` — plausible because other params tables use the `<pipeline>_params_name` pattern (`trodes_pos_params_name`, `ripple_param_name`). But `MoseqModelParams` breaks the pattern — the real PK is `model_params_name` (`src/spyglass/behavior/v1/moseq.py:37`).
+- `reference_electrodes` as a kwarg on `set_lfp_band_electrodes` — plausible because shorter names are common. Real kwarg is `reference_electrode_list` (`src/spyglass/lfp/analysis/v1/lfp_band.py:48`).
+- `welch_nperseg` as a params field — plausible because welch-method parameters commonly use `nperseg`. Nowhere in the Spyglass codebase; fabricated whole.
+- `delete_downstream_parts` as a SpyglassMixin method — plausible because it survived in a deprecated wrapper's docstring. Actually removed from the mixin in PR #1435; calling it raises `AttributeError`.
+- `sampling_frequency` as a top-level key of `ripple_param_dict` — plausible because sampling_frequency is everywhere else. Real schema is nested under `ripple_detection_params`, and `sampling_frequency` isn't even stored in the blob — it flows in from `LFPBandV1` at populate time (`src/spyglass/ripple/v1/ripple.py:286`).
+
+The failure mode is uniform: LLMs and humans alike pattern-match from similar contexts and guess a name that sounds consistent. The verification step takes seconds; the cost of shipping the wrong name can be weeks of downstream confusion.
+
+**Fix.** Before writing code or guidance that depends on a specific identifier, verify it against the source:
+
+```bash
+# Does this method / kwarg / field actually exist?
+grep -rn "def the_method_name" src/spyglass/
+grep -rn "the_field_name" src/spyglass/
+
+# What's the real signature?
+python -c "import inspect; from spyglass.X import Cls; print(inspect.signature(Cls.method))"
+
+# What fields does this table actually declare?
+python -c "from spyglass.X import Table; print(Table.heading.primary_key); print(list(Table.heading.attributes.keys()))"
+```
+
+If the symbol doesn't surface in at least one of those checks, assume it doesn't exist and rename. The skill validator enforces this for KNOWN_CLASSES, but field names in blob params, kwargs on lesser-known methods, and part-table attribute-access patterns all slip past it — those are exactly where the pattern-matching guesses hit hardest. Related active check: the validator's `check_evals_content` scans `evals/evals.json` for method references that don't resolve; the corresponding check for reference prose runs via `check_methods`.

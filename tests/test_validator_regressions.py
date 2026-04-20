@@ -493,6 +493,56 @@ def fixture_aliased_merge_classmethod_discard(src_root):
     return False
 
 
+def fixture_eval_hallucinated_method(src_root):
+    """Synthetic evals.json with a hallucinated method must be caught by
+    check_evals_content. Regression: before this check, eval 6 shipped
+    `LFPBandV1.compute_signal_power()` (instance method called on bare
+    class) and `set_lfp_band_electrodes(reference_electrodes=...)` (wrong
+    kwarg name); both survived two rounds of review because the validator
+    only scanned reference prose, not evals.
+    """
+    import json, tempfile
+    from pathlib import Path as P
+    tmp = P(tempfile.mkdtemp())
+    evals_dir = tmp / "evals"
+    evals_dir.mkdir()
+    evals_file = evals_dir / "evals.json"
+    evals_file.write_text(json.dumps({
+        "evals": [{
+            "id": 999,
+            "eval_name": "synthetic-hallucination",
+            "expected_output": (
+                "The answer is `LFPBandV1.totally_fake_method(foo=1)` "
+                "which does not exist."
+            ),
+            "assertions": {
+                "required_substrings": [],
+                "forbidden_substrings": ["LFPBandV1.yet_another_fake()"],
+                "behavioral_checks": [],
+            },
+        }],
+    }))
+    # Temporarily redirect SKILL_DIR so the check reads our synthetic
+    # evals file instead of the real one.
+    original = v.SKILL_DIR
+    v.SKILL_DIR = tmp
+    try:
+        results = v.ValidationResult()
+        v.check_evals_content(src_root, results)
+    finally:
+        v.SKILL_DIR = original
+    # Verify the hallucinated method was caught, AND the one in
+    # forbidden_substrings was NOT scanned (intentionally excluded).
+    hits = [m for m in results.failed if "totally_fake_method" in m]
+    bad_hits = [m for m in results.failed if "yet_another_fake" in m]
+    if hits and not bad_hits:
+        print("  [ok] evals: hallucinated method caught; forbidden_substrings skipped")
+        return True
+    print(f"  [FAIL] expected totally_fake_method flagged, yet_another_fake skipped")
+    print(f"         failed: {results.failed}")
+    return False
+
+
 def fixture_bogus_citation_line(src_root):
     """Line number in `file.py:NNN` must actually exist in the file."""
     md = _write_md(
@@ -803,6 +853,7 @@ FIXTURES = [
     fixture_wrong_field_name_warns,
     fixture_correct_field_name_no_warn,
     fixture_merge_restriction_not_false_positive,
+    fixture_eval_hallucinated_method,
     fixture_bogus_citation_line,
     fixture_valid_citation_passes,
     fixture_multi_line_citation,

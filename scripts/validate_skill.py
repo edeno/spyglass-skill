@@ -23,6 +23,7 @@ Exit codes:
 
 import argparse
 import ast
+import json
 import re
 import sys
 from pathlib import Path
@@ -1337,6 +1338,101 @@ def check_citation_lines(src_root, results: ValidationResult):
                 )
 
 
+# Pattern matches `ClassName.method(` or `ClassName().method(` appearing in
+# eval prose (expected_output, behavioral_checks, required_substrings).
+# The leading \b and uppercase requirement on class_name avoid matching
+# lowercase variable refs like `rel.fetch()` in a discovery-step example.
+_EVAL_METHOD_CALL_PATTERN = re.compile(
+    r"\b([A-Z]\w+)\s*(\(\))?\s*\.\s*(\w+)\s*\("
+)
+
+
+def check_evals_content(src_root, results: ValidationResult, registry=None):
+    """Scan evals.json for method/class references that don't resolve.
+
+    The same author-discipline failures that the validator catches in
+    reference prose and code blocks also happen when writing eval
+    expected_output: hallucinated kwargs, nonexistent methods, misspelled
+    class names. Previously the validator ignored the evals/ directory
+    entirely, so eval 6 shipped twice with bugs that code review caught
+    instead of CI (interval_list_name missing, reference_electrodes vs
+    reference_electrode_list, etc.).
+
+    This check applies the same method-existence logic to eval prose via
+    a regex scan — AST parsing isn't usable here because expected_output
+    is narrative English with inline code fragments, not a python source.
+    Scans expected_output + behavioral_checks + required_substrings.
+    Skips forbidden_substrings (those are intentionally-wrong patterns
+    the eval is designed to reject).
+    """
+    if registry is None:
+        registry = _ClassRegistry(src_root, results)
+    evals_path = SKILL_DIR / "evals" / "evals.json"
+    if not evals_path.exists():
+        return
+    try:
+        data = json.loads(evals_path.read_text())
+    except json.JSONDecodeError as e:
+        results.fail(f"evals.json: JSON parse error: {e}")
+        return
+
+    for eval_entry in data.get("evals", []):
+        eval_id = eval_entry.get("id", "?")
+        assertions = eval_entry.get("assertions", {}) or {}
+        # Join the scannable text fields into one blob. Forbidden_substrings
+        # is intentionally excluded — those strings are wrong by design.
+        parts = [eval_entry.get("expected_output", "")]
+        parts.extend(assertions.get("behavioral_checks", []) or [])
+        parts.extend(assertions.get("required_substrings", []) or [])
+        text = "\n".join(p for p in parts if isinstance(p, str))
+
+        for match in _EVAL_METHOD_CALL_PATTERN.finditer(text):
+            class_name = match.group(1)
+            instance_call = bool(match.group(2))
+            method_name = match.group(3)
+
+            if method_name in SKIP_METHODS or method_name.startswith("_"):
+                continue
+
+            methods = registry.methods(class_name)
+            location = f"evals.json[id={eval_id}]"
+
+            if methods is None:
+                if (
+                    class_name[:1].isupper()
+                    and class_name not in DOC_PLACEHOLDERS
+                ):
+                    results.warn(
+                        f"{location}: unresolved class '{class_name}' in "
+                        f"'{class_name}.{method_name}()' — typo, or add to "
+                        f"KNOWN_CLASSES/DOC_PLACEHOLDERS"
+                    )
+                continue
+
+            if method_name not in methods:
+                results.fail(
+                    f"{location}: {class_name}.{method_name}() "
+                    f"NOT FOUND on {class_name}"
+                )
+                continue
+
+            info = methods[method_name]
+            if (
+                not instance_call
+                and not info.get("is_classmethod")
+                and not info.get("is_staticmethod")
+            ):
+                results.fail(
+                    f"{location}: {class_name}.{method_name}() is an "
+                    f"instance method — use {class_name}()."
+                    f"{method_name}(...)"
+                )
+            else:
+                results.ok(
+                    f"{location}: {class_name}.{method_name}() valid"
+                )
+
+
 def check_notebook_names(src_root, results: ValidationResult):
     """Verify notebook filenames mentioned in prose exist in the spyglass repo.
 
@@ -1849,47 +1945,50 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/13] Checking source files and class registry...")
+    print("\n[1/14] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/13] Checking import statements in skill files...")
+    print("[2/14] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/13] Checking method references...")
+    print("[3/14] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/13] Checking keyword arguments...")
+    print("[4/14] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/13] Checking skill structure...")
+    print("[5/14] Checking skill structure...")
     check_structure(results)
 
-    print("[6/13] Checking prose assertions...")
+    print("[6/14] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/13] Parsing Python code blocks (ast.parse)...")
+    print("[7/14] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/13] Verifying prose path references exist in repo...")
+    print("[8/14] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/13] Verifying notebook names exist in repo...")
+    print("[9/14] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/13] Verifying internal markdown links and anchors...")
+    print("[10/14] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/13] Scanning for documented anti-patterns...")
+    print("[11/14] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/13] Checking dict-restriction field names against schemas...")
+    print("[12/14] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
 
-    print("[13/13] Verifying citation line numbers are in range...")
+    print("[13/14] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
+
+    print("[14/14] Scanning evals.json for hallucinated class/method refs...")
+    check_evals_content(src_root, results, registry=registry)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.
