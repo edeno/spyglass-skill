@@ -600,7 +600,7 @@
       "eval_name": "compound-full-session-pipeline",
       "stage": "pipeline-usage",
       "tier": "compound",
-      "prompt": "I'm new to Eric's lab and I need to: (1) ingest `j1620210710.nwb` which I just converted, (2) set up the Trodes position pipeline for the 02_r1 interval, (3) run LFP on the sleep epoch using default filter, (4) eventually export everything for a paper. Give me the end-to-end flow. Assume defaults where reasonable and flag anywhere I need to supply a choice.",
+      "prompt": "I'm new to the Frank lab and I need to: (1) ingest `j1620210710.nwb` which I just converted, (2) set up the Trodes position pipeline for the 02_r1 interval, (3) run LFP on the sleep epoch using default filter, (4) eventually export everything for a paper. Give me the end-to-end flow. Assume defaults where reasonable and flag anywhere I need to supply a choice.",
       "expected_output": "Multi-reference handoff routing through ingestion.md → position_pipeline.md → lfp_pipeline.md → export.md. (1) `insert_sessions('j1620210710.nwb')` (raw filename). (2) Insert `TrodesPosSelection` for 02_r1 with `trodes_pos_params_name='default'`, populate `TrodesPosV1`. (3) Insert `LFPSelection` for the sleep interval with `filter_name='default'` and target electrodes, populate `LFPV1`. (4) Flags that the Export pipeline wants the SKILL user to pick an Export name and will capture everything the population steps touched — route to `05_Export.ipynb`. Each step names the restriction the user needs to choose, e.g. which electrodes for LFP.",
       "assertions": {
         "required_substrings": [
@@ -638,6 +638,36 @@
           "Identifies the three possible causes (missing populate, interval mismatch, params mismatch)",
           "Shows a concrete inspection command (merge_restrict) to differentiate the causes",
           "Routes to Signature F (interval mismatch) from runtime_debugging.md"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 28,
+      "eval_name": "brain-region-for-sorted-unit",
+      "stage": "pipeline-usage",
+      "tier": "joins",
+      "prompt": "I have a curated sorting in `CurationV1` with `curation_id='d3b7f9a2-4c1e-11ee-b962-0242ac120002'` and I'm looking at `unit_id=5` from it. What brain region is this unit in?",
+      "expected_output": "Routes to spikesorting_pipeline.md + common_tables.md. Units don't carry brain region directly — region comes from the electrodes in the unit's sort group, and all units in a sort group share electrodes, so the region is the same for every unit in that group (unit_id doesn't affect the answer). Join chain: CurationV1 (curation_id) → SpikeSorting → SpikeSortingRecordingSelection (to get `sort_group_id` + `nwb_file_name`) → SortGroup.SortGroupElectrode (maps sort_group_id to electrode_ids) → Electrode (each row has `region_id`) → BrainRegion (has `region_name`). DataJoint form: resolve the recording context first (`rec_key = (CurationV1 * SpikeSorting * SpikeSortingRecordingSelection & {'curation_id': ...}).fetch1('nwb_file_name', 'sort_group_id')` as a dict), then `(SortGroup.SortGroupElectrode * Electrode * BrainRegion & rec_key).fetch('region_name')`. For tetrodes, all 4 electrodes are in the same region so the result is a single name (wrap with `set()` or `np.unique()` if expecting one); for polymer probes spanning regions, multiple names may come back.",
+      "assertions": {
+        "required_substrings": [
+          "SortGroup",
+          "Electrode",
+          "BrainRegion",
+          "region_name",
+          "sort_group_id",
+          "CurationV1"
+        ],
+        "forbidden_substrings": [
+          "unit_id=5 has region",
+          "CurationV1.region",
+          "CuratedSpikeSorting.fetch('region"
+        ],
+        "behavioral_checks": [
+          "Traces the full join chain: CurationV1 → SpikeSorting(Selection) → SortGroup.SortGroupElectrode → Electrode → BrainRegion",
+          "Notes that unit_id doesn't affect the region — all units in a sort group share the same electrodes",
+          "Handles the polymer-probe case where a sort group may span multiple regions (multiple region_name values)",
+          "Does not invent a direct `region` attribute on CurationV1 or on the unit itself"
         ]
       },
       "files": []
