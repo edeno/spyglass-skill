@@ -31,19 +31,25 @@ Note on field names: every Spyglass parameter table uses a table-specific PK fie
 ```python
 # Before inserting, look at what already exists in the lab.
 # Example uses RippleParameters / ripple_param_name; substitute your table's
-# actual name-field (see note above).
+# actual name-field (see note above). Note that param blobs are often
+# nested — `ripple_param_dict` wraps detection kwargs under
+# `ripple_detection_params`, and `sampling_frequency` is NOT stored in
+# the blob at all (it comes from the upstream LFPBandV1 at populate time).
+# Read the consumer's `make()` for the real shape before writing match logic.
 existing = RippleParameters.fetch(as_dict=True)
 for row in existing:
     # Compare content, not name — two rows can mean the same thing under different labels
     params = row["ripple_param_dict"]   # params blob field; inspect the table's heading
-    if (params.get("speed_threshold") == 4.0
-            and params.get("ripple_detection_params", {}).get("sampling_frequency") == 1000):
+    detection = params.get("ripple_detection_params", {})
+    if (params.get("ripple_detection_algorithm") == "Kay_ripple_detector"
+            and detection.get("speed_threshold") == 4.0
+            and detection.get("zscore_threshold") == 2.0):
         print(f"Equivalent set already exists as '{row['ripple_param_name']}' — reuse this")
         break
 else:
     # Genuinely new — insert with an informative, self-describing name
     RippleParameters.insert1({
-        "ripple_param_name": "kay_speed4_fs1000",
+        "ripple_param_name": "kay_speed4_zscore2",
         "ripple_param_dict": {...},
     })
 ```
@@ -52,8 +58,8 @@ This is not "never insert." Genuinely new parameter sets *should* exist — the 
 
 When the decision lands on insert, name quality matters:
 
-- Poor (ambiguous, collides easily, doesn't survive a grep): `default`, `my_params`, `v2`, `test`, `tmp`.
-- Informative (self-describing, searchable, collision-resistant): `kay_speed4_fs1000`, `dlc_smoothed_5px_conf_05`, `lfp_60hz_notch_1khz`.
+- Poor (ambiguous, collides easily, doesn't survive a grep): `default`, `my_params`, `v2`, `test`, `tmp`. Also watch for collision with Spyglass-shipped defaults — `RippleParameters` ships a row literally named `'default'` (see `ripple.py` `insert_default`), so naming yours `'default'` silently skips via `skip_duplicates=True` or overwrites the shipped row depending on call form.
+- Informative (self-describing, searchable, collision-resistant). Encode the salient choices: `kay_speed4_zscore2` (ripple: detector + thresholds), `dlc_smoothed_5px_conf_05` (position: smoothing window + confidence), `lfp_60hz_notch_30khz` (filter: band + source sampling rate).
 
 The same check-then-decide loop applies to any free-form string primary key where a user picks the value: electrode-group names, interval-list names, filter names, sort-group names. Whenever you're about to create a new string that downstream work will join on, first ask: *is there already a row in this table that means the same thing?*
 
@@ -61,9 +67,9 @@ The same check-then-decide loop applies to any free-form string primary key wher
 
 These are cheap to run and catch the two most common silent failures after a lab-wide search shows nothing equivalent exists.
 
-**Understand-each-field test.** Before inserting a params blob you copied from a colleague's notebook or an older analysis, can you explain what every value in it does? `kappa`, `target_variance`, `num_ar_iters`, `filter_sampling_rate`, `welch_nperseg` — each affects the output in a way the consumer's `make()` assumes. If you don't know what a field does, read the source for the computed table (`populate()` → `make()` reads the field at some point) or ask. Inserting values you don't understand is how a silent-wrong-analysis gets shipped: `populate()` succeeds, results look plausible, the downstream figure is incorrect in a way no error message will surface.
+**Understand-each-field test.** Before inserting a params blob you copied from a colleague's notebook or an older analysis, can you explain what every value in it does? Pipeline-specific examples: `speed_threshold` / `zscore_threshold` / `minimum_duration` (ripple detection — eligibility, cutoff, and minimum-length filter), `kappa` / `num_ar_iters` / `target_variance` (MoSeq model training — syllable-length prior, warm-up iterations, PC-selection threshold), `filter_sampling_rate` / `target_sampling_rate` (LFP filtering — input rate and downsampled output rate; see the Nyquist note in `lfp_pipeline.md`). Each affects downstream output in a way the consumer's `make()` assumes. If you don't know what a field does, read `make()` on the computed table (it consumes the blob fields in-scope), the default-insert method on the params table (`insert_default` / `insert_default_params` when present) that documents the sane baseline, or the algorithm's upstream package (e.g., `ripple_detection` for Kay's detector). Inserting values you don't understand is how a silent-wrong-analysis gets shipped: `populate()` succeeds, results look plausible, the downstream figure is incorrect in a way no error message will surface.
 
-**Name-describes-content test.** Can a reader who greps for your `params_name` (or `filter_name`, or `sort_group_name`) predict what the row contains without opening the blob? Good names survive this test; bad names fail it silently. `default_v2`, `my_params`, `theta` (without bandpass), `trodes_updated`, `fixed_version` — all fail. `kay_speed4_fs1000`, `theta_6_10_hz_welch_1024`, `lfp_60hz_notch_30khz` — all pass. Rename before inserting if the current name is self-misleading. The renaming step costs seconds; the cost of a lab member pinning their analysis to a name that turns out to mean something different is weeks of corrupted downstream work.
+**Name-describes-content test.** Can a reader who greps for your `params_name` (or `filter_name`, or `sort_group_name`) predict what the row contains without opening the blob? Good names survive this test; bad names fail it silently. `default_v2`, `my_params`, `theta` (without bandpass), `trodes_updated`, `fixed_version` — all fail. Self-describing names encode the salient knobs: `kay_speed4_zscore2` (detector + thresholds), `dlc_smoothed_5px_conf_05` (smoothing window + confidence cutoff), `lfp_60hz_notch_30khz` (band + source sampling rate). Rename before inserting if the current name is self-misleading. The renaming step costs seconds; the cost of a lab member pinning their analysis to a name that turns out to mean something different is weeks of corrupted downstream work.
 
 ## Pre-`populate()` upstream check
 
