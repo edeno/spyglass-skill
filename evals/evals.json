@@ -1074,6 +1074,163 @@
         ]
       },
       "files": []
+    },
+    {
+      "id": 44,
+      "eval_name": "runtime-fk-ancestor-missing",
+      "stage": "runtime-debugging",
+      "tier": "runtime-errors",
+      "prompt": "trying to insert a SpikeSortingRecordingSelection row and I get `IntegrityError (1452, 'Cannot add or update a child row: a foreign key constraint fails ...')`. Key is `{'nwb_file_name': 'j1620210710_.nwb', 'sort_group_id': 0, 'interval_list_name': 'sort_02_r1', 'preproc_param_name': 'default', 'team_name': 'my_team'}`. What's missing? I swore I populated everything upstream.",
+      "expected_output": "Routes to runtime_debugging.md 'IntegrityError on insert often means an ancestor row is missing'. The FK violation isn't in the table you're inserting into — it's in one of its parents. Use the SpyglassMixin diagnostic first: `SpikeSortingRecordingSelection().find_insert_fail(key)` prints the offending parent (e.g. `IntervalList: MISSING`). Fallback if that helper isn't available: walk parents manually with `for p in SpikeSortingRecordingSelection.parents(as_objects=True): ...` and check each sub-key against the FK parent. The concrete FK parents for this Selection table are `Raw`, `SortGroup`, `IntervalList`, `SpikeSortingPreprocessingParameters`, and `LabTeam` — most likely `'sort_02_r1'` doesn't exist as an IntervalList row for this session (a custom sort interval that wasn't added via `IntervalList.insert1`), or `SortGroup` wasn't populated for this session. Populate the missing ancestor, then retry.",
+      "assertions": {
+        "required_substrings": [
+          "find_insert_fail",
+          "parents(as_objects=True)",
+          "IntervalList"
+        ],
+        "forbidden_substrings": [
+          "must be a typo in the key",
+          "spyglass bug"
+        ],
+        "behavioral_checks": [
+          "Uses find_insert_fail(key) as the primary diagnostic, not guessing the missing parent",
+          "Names the concrete FK parents (Raw, SortGroup, IntervalList, SpikeSortingPreprocessingParameters, LabTeam)",
+          "Identifies 'sort_02_r1' as a likely missing IntervalList row, but frames it as a hypothesis to confirm via the diagnostic",
+          "Does not assume this is a spyglass bug"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 45,
+      "eval_name": "runtime-populate-all-common-silent",
+      "stage": "runtime-debugging",
+      "tier": "runtime-errors",
+      "prompt": "`insert_sessions('j1620210710.nwb')` finished without errors and Nwbfile + Session rows show up. But `Raw & {'nwb_file_name': 'j1620210710_.nwb'}` returns nothing, and downstream populates fail because Raw is empty. The ingest logs looked clean. Is there a known silent-failure pattern for this?",
+      "expected_output": "Routes to populate_all_common_debugging.md (linked from runtime_debugging.md 'Debugging populate_all_common'). Yes — `populate_all_common` (the common-ingest driver that `insert_sessions` dispatches through) defaults to `raise_err=False`, catching exceptions per-table and writing only a short message to `common_usage.InsertError`; the full traceback is dropped. That's why the ingest 'completed' silently while common tables are missing rows.\\n\\n**Primary fix — pass `raise_err=True`:**\\n\\n```python\\nfrom spyglass.common import populate_all_common\\npopulate_all_common('j1620210710_.nwb', raise_err=True)\\n```\\n\\nThis uses the function's built-in `raise_err` parameter (`src/spyglass/common/populate_all_common.py`) to propagate the traceback. Once you have it, route back to the matching failure signature in runtime_debugging.md — usually signature A (fetch1 cardinality) or H (IntegrityError from a missing ancestor row).\\n\\n**Alternative — skip the driver entirely** and call each table directly (useful to isolate the slow/failing table without re-running the ones that succeeded):\\n\\n```python\\nfrom spyglass.common import Session, Raw, DIOEvents, PositionSource\\nfor T in [Session, Raw, DIOEvents, PositionSource]:\\n    T().populate({'nwb_file_name': 'j1620210710_.nwb'})   # exception propagates\\n```\\n\\nAlso inspect `common_usage.InsertError & {'nwb_file_name': 'j1620210710_.nwb'}` for the short-message log.",
+      "assertions": {
+        "required_substrings": [
+          "populate_all_common",
+          "raise_err=True",
+          "InsertError"
+        ],
+        "forbidden_substrings": [
+          "just re-run insert_sessions",
+          "clear the Nwbfile row and retry",
+          "edit populate_all_common.py"
+        ],
+        "behavioral_checks": [
+          "Leads with `populate_all_common(nwb_file_name, raise_err=True)` as the primary fix — the function's built-in kwarg",
+          "Identifies the default `raise_err=False` behavior as the silent-failure root cause",
+          "Mentions `common_usage.InsertError` as the place to find the short-message log",
+          "Shows the per-table populate loop as an alternative, not the primary fix",
+          "Does not recommend editing populate_all_common.py source or re-running insert_sessions"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 46,
+      "eval_name": "config-permission-triage",
+      "stage": "setup",
+      "tier": "config-troubleshooting",
+      "prompt": "Something's failing with 'permission denied' when I try to populate `LFPV1` on a new session — the exact message is `AccessError: Command credentials rejected` deep in DataJoint internals. This is a shared lab install, and the admin added me yesterday. How do I figure out which permission is actually missing?",
+      "expected_output": "Routes to setup_troubleshooting.md '`AccessError` / `PermissionError` on a shared installation'. Three distinct layers present as 'permission denied' — diagnose them, don't guess:\\n\\n**1. MySQL grants.** `dj.conn().query('SHOW GRANTS FOR CURRENT_USER();').fetchall()` — grants are per-schema-prefix on shared installs. A new schema like `lfp_v1` or `spikesorting_recording` may not be covered. If no entry for that prefix, ask admin for a `GRANT`.\\n\\n**2. Filesystem permissions.** `ls -ld /path/to/failing/dir` and `python -c \\\"import os; print(os.access('/path', os.W_OK))\\\"`. Analysis/recording subdirs are created by the first writer and aren't group-writable unless a lab cron enforces it.\\n\\n**3. `cautious_delete` / LabMember wiring.** If the error text is `ValueError: Could not find exactly 1 datajoint user <name> in common.LabMember.LabMemberInfo`, the user exists in MySQL but not in Spyglass's LabMember table. Fix: `LabMember.insert1(...)` + `LabMember.LabMemberInfo.insert1(...)` with `datajoint_user_name=dj.config['database.user']`.\\n\\nRun `SHOW GRANTS` and the LabMember check before assuming it's a filesystem issue. Do NOT reach for `super_delete()` or `chmod -R 777` as a workaround.",
+      "assertions": {
+        "required_substrings": [
+          "SHOW GRANTS",
+          "LabMemberInfo"
+        ],
+        "forbidden_substrings": [
+          "chmod -R 777",
+          "super_delete()"
+        ],
+        "behavioral_checks": [
+          "Splits the diagnosis into three layers (MySQL grants, filesystem, LabMember) rather than guessing one",
+          "Gives concrete diagnostic commands for each layer (SHOW GRANTS, ls -ld / os.access, LabMember check)",
+          "Runs SHOW GRANTS and LabMember check before assuming filesystem",
+          "Does not recommend chmod -R 777 or super_delete() as the fix"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 47,
+      "eval_name": "env-editable-install-drift",
+      "stage": "setup",
+      "tier": "environment-triage",
+      "prompt": "Just did `git pull` on my spyglass checkout at `~/spyglass/` — new commit landed, I can see the changes in the source tree. But when I `import spyglass` in Jupyter, I hit `AttributeError: module 'spyglass.spikesorting.v1' has no attribute 'MetricCurationV2'` (that's the new class that got added). Tracebacks point at `/opt/miniforge/envs/spyglass/lib/python3.11/site-packages/spyglass/spikesorting/v1/...`. What's going on?",
+      "expected_output": "Routes to setup_troubleshooting.md '`ImportError` / symbol-moved errors after `git pull` — editable-install drift'. Python is loading the pip-installed spyglass from `site-packages`, not your source checkout — that's why the new class isn't visible. Confirm with `import spyglass; print(spyglass.__file__)` — it should point at `~/spyglass/src/spyglass/__init__.py`, not `.../site-packages/spyglass/...`. Fix:\\n\\n```bash\\nconda activate spyglass\\ncd ~/spyglass\\ngit pull\\npip install -e .\\n```\\n\\nThen RESTART the Jupyter kernel — the old import is cached. If you originally installed via `pip install spyglass-neuro`, that wheel is still in site-packages and shadows the source install: `pip uninstall spyglass-neuro` first, then `pip install -e .` on the source tree.",
+      "assertions": {
+        "required_substrings": [
+          "spyglass.__file__",
+          "pip install -e .",
+          "restart",
+          "kernel"
+        ],
+        "forbidden_substrings": [
+          "file a bug",
+          "wait for the next release"
+        ],
+        "behavioral_checks": [
+          "Identifies site-packages shadowing as the root cause (not a spyglass code bug)",
+          "Shows `print(spyglass.__file__)` as the concrete diagnostic",
+          "Includes the `pip install -e .` step AND the Jupyter kernel restart",
+          "Mentions uninstalling `spyglass-neuro` if both installs coexist"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 48,
+      "eval_name": "env-conda-pip-drift",
+      "stage": "setup",
+      "tier": "environment-triage",
+      "prompt": "`import spyglass.common` now fails with `AttributeError: module 'cv2' has no attribute 'gapi'`. Worked yesterday. I pip installed `opencv-python-headless` for another project into the same conda env last night — is that related? How do I get back to working?",
+      "expected_output": "Routes to setup_install.md 'Env drift and upstream breakages'. Yes — `pip install <onepkg>` into an existing Spyglass env silently upgrades transitive deps (numpy, setuptools, pydot, networkx, opencv) and breaks otherwise-working installs. The `cv2.gapi` AttributeError is one of several canonical drift symptoms; others include `\\\"ndx-franklab-novela is not a namespace\\\"`, `dj.Diagram(...)._repr_svg_ → \\\"Node names and attributes should not contain ':'\\\"`, `pkg_resources` errors after `setuptools>=82`, and `RuntimeError: Undefined plan with nthreads` from `pyfftw 0.13.0`.\\n\\nFix — recreate the env from the current `environment.yml`:\\n\\n```bash\\nmamba env update --file environment.yml --prune\\n# OR for a clean rebuild:\\nmamba env remove -n spyglass && mamba env create -f environment.yml\\n```\\n\\nGoing forward: don't `pip install <pkg>` piecemeal into a working Spyglass env — the next pip install will almost certainly overwrite a pinned version Spyglass relies on. If you must, `pip install --dry-run <pkg>` first and check which transitive deps pip wants to move.",
+      "assertions": {
+        "required_substrings": [
+          "environment.yml",
+          "mamba env",
+          "--dry-run"
+        ],
+        "forbidden_substrings": [
+          "pip install opencv-python",
+          "pin cv2 to"
+        ],
+        "behavioral_checks": [
+          "Identifies the pip-install-broke-conda-env pattern (not a spyglass code issue)",
+          "Recommends recreating the env from environment.yml (update --prune or clean rebuild)",
+          "Mentions `pip install --dry-run` as a future safeguard",
+          "Does not recommend pinning a specific cv2 version or installing another package on top"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 49,
+      "eval_name": "runtime-positiongroup-variable-mismatch",
+      "stage": "runtime-debugging",
+      "tier": "runtime-errors",
+      "prompt": "clusterless decoding populate failed with `ValueError: No objects to concatenate` inside `fetch_position_info`. My `PositionGroup` points at a DLC source (a `PositionOutput.DLCPosV1` merge entry). I used `PositionGroup().create_group(...)` with the default position_variables. Is my DLC output empty?",
+      "expected_output": "Routes to decoding_pipeline.md PositionGroup Gotcha. Almost certainly NOT that DLC output is empty — it's a variable-name mismatch. `PositionGroup.create_group` defaults `position_variables=['position_x', 'position_y']`. DLC-derived positions expose columns named after the tracked body part — `'head_position_x'`, `'head_position_y'`, `'tail_position_x'`, etc. With default variables on a DLC source, `fetch_position_info` returns empty frames and downstream decoding hits `ValueError: No objects to concatenate`.\\n\\nConfirm and fix:\\n\\n```python\\ncols = list((DLCPosV1 & key).fetch1_dataframe().columns)\\n# Pick matching names (usually the first two position_* columns):\\nPositionGroup().create_group(..., position_variables=cols[:2])\\n```\\n\\nThen re-insert the ClusterlessDecodingSelection row pointing at the corrected PositionGroup and re-populate.",
+      "assertions": {
+        "required_substrings": [
+          "position_variables",
+          "(DLCPosV1 & key).fetch1_dataframe"
+        ],
+        "forbidden_substrings": [
+          "DLC output is empty",
+          "re-run DLCPosV1.populate"
+        ],
+        "behavioral_checks": [
+          "Identifies the variable-name mismatch (not empty DLC output) as the root cause",
+          "Shows `(DLCPosV1 & key).fetch1_dataframe().columns` as the concrete diagnostic",
+          "Recreates PositionGroup with matching variable names (e.g. head_position_x/y)",
+          "Does not recommend re-running DLC populate as the fix"
+        ]
+      },
+      "files": []
     }
   ]
 }
