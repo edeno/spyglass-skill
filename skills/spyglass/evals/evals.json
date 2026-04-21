@@ -1697,6 +1697,125 @@
         "Recognizes that DLCPosV1 emits `position_x`/`position_y` and the default `PositionGroup` variables match — the custom override is the bug",
         "Does not recommend re-running DLC populate as the fix"
       ]
+    },
+    {
+      "id": 50,
+      "eval_name": "merge-silent-wrong-count",
+      "stage": "common-mistakes",
+      "tier": "merge-table-gotchas",
+      "prompt": "I need to count how many DecodingOutput rows I have across these 4 nwb files: `['j1620210710_.nwb', 'j1620210711_.nwb', 'j1620210712_.nwb', 'j1620210713_.nwb']`. I tried `len(DecodingOutput & [{'nwb_file_name': f} for f in files])` and got 2735 — way more than I expected for just 4 sessions. Is my DB really that full, or am I doing the count wrong?",
+      "expected_output": "Routes to merge_methods.md 'Silent wrong-count footgun'. The 2735 is the FULL table, not the sessions requested — DataJoint silently no-ops when restricting by a field that isn't on the table's heading. `DecodingOutput` is a merge master; its only PK is `merge_id`, and `nwb_file_name` lives on the part tables, so `& {'nwb_file_name': f}` drops the restriction and the `&` returns every row. No error, no warning. Confirm by comparing `len(DecodingOutput) == len(DecodingOutput & {'nwb_file_name': 'j1620210710_.nwb'})` — both should be 2735.\n\nFix: use `merge_restrict` per file and sum, since `merge_restrict` walks the part tables to resolve the attribute:\n\n```python\nfiles = ['j1620210710_.nwb', 'j1620210711_.nwb', 'j1620210712_.nwb', 'j1620210713_.nwb']\ntotal = sum(len(DecodingOutput.merge_restrict({'nwb_file_name': f})) for f in files)\n```\n\nThis is the canonical 'count rows across a set of sessions' shape for any of the 5 merge masters (SpikeSortingOutput, LFPOutput, PositionOutput, LinearizedPositionOutput, DecodingOutput). The same footgun applies to `.fetch()`, `.fetch1()`, and `.fetch_nwb()` if the merge master is restricted by an upstream attribute.",
+      "assertions": {
+        "required_substrings": [
+          "merge_restrict",
+          "silently",
+          "nwb_file_name"
+        ],
+        "forbidden_substrings": [
+          "DB really is that full",
+          "your DB has 2735",
+          "DecodingOutput & [{'nwb_file_name': f} for f in files]"
+        ],
+        "behavioral_checks": [
+          "Identifies that the 2735 is the full table — not the sessions, not a bug in the count",
+          "Explains the silent no-op: nwb_file_name is not on the merge master's heading, DataJoint drops it",
+          "Shows `merge_restrict` per-file as the correct shape (NOT `merge_get_part`, since the question is about counting not loading)",
+          "Mentions the five merge masters by name OR at least that this applies to any table with `merge_id` as its PK",
+          "Does not propose `merge_get_part` for a counting task (that would raise on multi-source)"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `merge_restrict`.",
+        "Response contains substring `silently`.",
+        "Response contains substring `nwb_file_name`.",
+        "Response does not contain substring `DB really is that full`.",
+        "Response does not contain substring `your DB has 2735`.",
+        "Response does not contain substring `DecodingOutput & [{'nwb_file_name': f} for f in files]`.",
+        "Identifies that the 2735 is the full table — not the sessions, not a bug in the count",
+        "Explains the silent no-op: nwb_file_name is not on the merge master's heading, DataJoint drops it",
+        "Shows `merge_restrict` per-file as the correct shape (NOT `merge_get_part`, since the question is about counting not loading)",
+        "Mentions the five merge masters by name OR at least that this applies to any table with `merge_id` as its PK",
+        "Does not propose `merge_get_part` for a counting task (that would raise on multi-source)"
+      ]
+    },
+    {
+      "id": 51,
+      "eval_name": "merge-method-misattribution",
+      "stage": "common-mistakes",
+      "tier": "merge-table-gotchas",
+      "prompt": "I'm trying to grab the PositionOutput merge_ids for a bunch of sessions at once. I saw the spikesorting docs use `SpikeSortingOutput().get_restricted_merge_ids(key, sources=['v1'])` — can I do the same thing on PositionOutput? Something like `PositionOutput().get_restricted_merge_ids({'nwb_file_name': 'j1620210710_.nwb'})`?",
+      "expected_output": "Routes to merge_methods.md 'Per-master method availability'. No — `get_restricted_merge_ids` is defined only on `SpikeSortingOutput` (`src/spyglass/spikesorting/spikesorting_merge.py:111`), not on `_Merge` itself. Calling it on `PositionOutput`, `LFPOutput`, `DecodingOutput`, or `LinearizedPositionOutput` raises `AttributeError`. The spikesorting helper wraps a sorting-specific 'resolve session + sort-group + artifact filter → merge_ids' flow that doesn't generalize to the other masters.\n\nFor `PositionOutput` use the base `_Merge` methods that every master has:\n\n```python\n# Resolve merge_ids for a session (all sources):\nmerge_ids = (\n    PositionOutput.merge_restrict({'nwb_file_name': 'j1620210710_.nwb'})\n    .fetch('merge_id')\n)\n\n# Or resolve the full KEY dict for each matching row (one source at a time):\nkey = PositionOutput.merge_get_part({'nwb_file_name': ..., 'interval_list_name': ..., 'trodes_pos_params_name': ...}).fetch1('KEY')\n```\n\n`merge_restrict` is the general-purpose filter across part-table attributes; `merge_get_part` resolves to the specific part table when the restriction is narrow enough to pick one source. Neither requires a `sources=` kwarg.",
+      "assertions": {
+        "required_substrings": [
+          "SpikeSortingOutput",
+          "AttributeError",
+          "merge_restrict"
+        ],
+        "forbidden_substrings": [
+          "PositionOutput().get_restricted_merge_ids",
+          "PositionOutput.get_restricted_merge_ids"
+        ],
+        "behavioral_checks": [
+          "States that get_restricted_merge_ids is SpikeSortingOutput-only (not on the _Merge base)",
+          "Names the correct replacement methods for PositionOutput: merge_restrict and/or merge_get_part",
+          "Explains that calling it on the wrong master raises AttributeError (not silent wrong data)",
+          "Does not recommend subclassing or monkeypatching PositionOutput"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `SpikeSortingOutput`.",
+        "Response contains substring `AttributeError`.",
+        "Response contains substring `merge_restrict`.",
+        "Response does not contain substring `PositionOutput().get_restricted_merge_ids`.",
+        "Response does not contain substring `PositionOutput.get_restricted_merge_ids`.",
+        "States that get_restricted_merge_ids is SpikeSortingOutput-only (not on the _Merge base)",
+        "Names the correct replacement methods for PositionOutput: merge_restrict and/or merge_get_part",
+        "Explains that calling it on the wrong master raises AttributeError (not silent wrong data)",
+        "Does not recommend subclassing or monkeypatching PositionOutput"
+      ]
+    },
+    {
+      "id": 52,
+      "eval_name": "is-this-a-merge-lookalike",
+      "stage": "common-mistakes",
+      "tier": "merge-table-gotchas",
+      "prompt": "`MuaEventsV1.merge_get_part({'nwb_file_name': 'j1620210710_.nwb'})` is raising `AttributeError: type object 'MuaEventsV1' has no attribute 'merge_get_part'`. I thought all the `*Output` and `*V1` tables in spyglass were merge tables — is this a spyglass bug?",
+      "expected_output": "Routes to merge_methods.md 'Is this a merge table?' registry. Not a spyglass bug — `MuaEventsV1` is a `dj.Computed` table (`src/spyglass/mua/v1/mua.py:63`), not a merge master. Only 5 tables in Spyglass inherit from `_Merge`: `SpikeSortingOutput`, `LFPOutput`, `PositionOutput`, `LinearizedPositionOutput`, `DecodingOutput`. `MuaEventsV1` is named like a pipeline V1 table but is just a computed table with its own multi-field PK (`nwb_file_name`, `mua_param_name`, `sorted_spikes_group_name`, `pos_merge_id`, `detection_interval`).\n\nThe `*V1` suffix and the `*Output` suffix are NOT a reliable merge-table signal. Lookalikes that are NOT merges include `MuaEventsV1`, `CurationV1` (`dj.Manual`), `SpikeSortingV1`, `LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`, and every `*Selection` table.\n\nFor `MuaEventsV1`, restrict directly by its actual PK fields — no `merge_*` methods needed:\n\n```python\n(MuaEventsV1 & {'nwb_file_name': 'j1620210710_.nwb'}).fetch(as_dict=True)\n```\n\nQuick check in Python whether something is a merge table: `from spyglass.utils.dj_merge_tables import Merge; isinstance(MuaEventsV1(), Merge)` — False for everything except the five masters above.",
+      "assertions": {
+        "required_substrings": [
+          "MuaEventsV1",
+          "dj.Computed",
+          "SpikeSortingOutput"
+        ],
+        "forbidden_substrings": [
+          "spyglass bug",
+          "MuaEventsV1.merge_get_part",
+          "MuaEventsV1().merge_get_part"
+        ],
+        "behavioral_checks": [
+          "Identifies MuaEventsV1 as `dj.Computed`, not a merge master (rejects the 'spyglass bug' framing)",
+          "Names the five actual merge masters (SpikeSortingOutput, LFPOutput, PositionOutput, LinearizedPositionOutput, DecodingOutput)",
+          "Shows the correct direct-restriction form for MuaEventsV1 (`& {...}` with actual PK fields) — NOT a `merge_*` method",
+          "Mentions that the `*V1` / `*Output` suffixes are not a reliable merge signal",
+          "Offers the isinstance(table(), Merge) check OR equivalent as a programmatic check"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `MuaEventsV1`.",
+        "Response contains substring `dj.Computed`.",
+        "Response contains substring `SpikeSortingOutput`.",
+        "Response does not contain substring `spyglass bug`.",
+        "Response does not contain substring `MuaEventsV1.merge_get_part`.",
+        "Response does not contain substring `MuaEventsV1().merge_get_part`.",
+        "Identifies MuaEventsV1 as `dj.Computed`, not a merge master (rejects the 'spyglass bug' framing)",
+        "Names the five actual merge masters (SpikeSortingOutput, LFPOutput, PositionOutput, LinearizedPositionOutput, DecodingOutput)",
+        "Shows the correct direct-restriction form for MuaEventsV1 (`& {...}` with actual PK fields) — NOT a `merge_*` method",
+        "Mentions that the `*V1` / `*Output` suffixes are not a reliable merge signal",
+        "Offers the isinstance(table(), Merge) check OR equivalent as a programmatic check"
+      ]
     }
   ]
 }
