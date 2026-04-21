@@ -1243,6 +1243,105 @@ def check_no_pr_citations(results: ValidationResult):
             )
 
 
+# Duplication detector: 5-line rolling window over stripped, non-import,
+# non-blank lines. Catches the "bloat via accumulation" failure mode where
+# similar examples leak into multiple references during per-PR review.
+DUPLICATION_WINDOW_SIZE = 5
+
+
+def _normalize_block_lines(body):
+    """Return (norm_lines, phys_offsets) for a code block body.
+
+    Drops blank lines and pure `from`/`import` statements (too commonly
+    shared to meaningfully flag as duplication). `phys_offsets[i]` is the
+    0-indexed offset of `norm_lines[i]` within the original block body so
+    callers can map a window back to a physical line in the md file.
+    """
+    norm, offsets = [], []
+    for idx, line in enumerate(body.split("\n")):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith(("import ", "from ")):
+            continue
+        norm.append(stripped)
+        offsets.append(idx)
+    return norm, offsets
+
+
+def check_duplicated_blocks(results: ValidationResult):
+    """Warn when a ≥5-line normalized code window appears in 2+ skill files.
+
+    Uses the tuple of normalized lines as the dict key (not Python's
+    randomized `hash()`) so false positives cannot arise from hash
+    collisions. Within-file repetition is intentionally ignored — the
+    failure mode is cross-file drift, not in-file redundancy.
+
+    Overlapping windows that describe the same duplicated block emit a
+    single warning: once we report a hit, the 5 normalized-line positions
+    it covers in each file are marked visited, and later windows that
+    overlap a visited position are skipped.
+    """
+    # {window_tuple: [(md_file_name, block_start, phys_offset, norm_idx), ...]}
+    index = {}
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        for block_start, lang, body in extract_fenced_blocks(content):
+            if lang != "python":
+                continue
+            norm_lines, phys_offsets = _normalize_block_lines(body)
+            if len(norm_lines) < DUPLICATION_WINDOW_SIZE:
+                continue
+            for i in range(len(norm_lines) - DUPLICATION_WINDOW_SIZE + 1):
+                window = tuple(norm_lines[i : i + DUPLICATION_WINDOW_SIZE])
+                phys_line = block_start + phys_offsets[i]
+                index.setdefault(window, []).append(
+                    (md_file.name, phys_line, i, norm_lines[i : i + 3])
+                )
+
+    reported_positions = set()  # (filename, norm_idx) — blocks overlap dedup
+    any_dup = False
+    for hits in index.values():
+        # One entry per distinct file (first-seen wins; preserves ordering
+        # from sorted collect_md_files()).
+        seen_files = {}
+        for name, phys_line, norm_idx, first3 in hits:
+            if name not in seen_files:
+                seen_files[name] = (phys_line, norm_idx, first3)
+        if len(seen_files) < 2:
+            continue
+
+        # Skip if any file's hit overlaps an already-reported block.
+        already = False
+        for name, (_, norm_idx, _) in seen_files.items():
+            for j in range(norm_idx, norm_idx + DUPLICATION_WINDOW_SIZE):
+                if (name, j) in reported_positions:
+                    already = True
+                    break
+            if already:
+                break
+        if already:
+            continue
+
+        for name, (_, norm_idx, _) in seen_files.items():
+            for j in range(norm_idx, norm_idx + DUPLICATION_WINDOW_SIZE):
+                reported_positions.add((name, j))
+
+        items = sorted(seen_files.items())
+        locations = " — ".join(
+            f"{name}:{phys_line}" for name, (phys_line, _, _) in items
+        )
+        preview = " | ".join(items[0][1][2])
+        results.warn(
+            f"duplication: {locations}: 5+ line code block appears in "
+            f"{len(items)} files; first lines: {preview!r}"
+        )
+        any_dup = True
+
+    if not any_dup:
+        results.ok("duplication: no cross-file code block duplication detected")
+
+
 # Reference-file size budgets. These are soft caps — a reference that
 # grows past them is usually carrying bloat or has earned a split.
 #   >500 lines: warn (consider splitting; see runtime_debugging.md → the
@@ -2371,62 +2470,65 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/18] Checking source files and class registry...")
+    print("\n[1/19] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/18] Checking import statements in skill files...")
+    print("[2/19] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/18] Checking method references...")
+    print("[3/19] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/18] Checking keyword arguments...")
+    print("[4/19] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/18] Checking skill structure...")
+    print("[5/19] Checking skill structure...")
     check_structure(results)
 
-    print("[6/18] Checking prose assertions...")
+    print("[6/19] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/18] Parsing Python code blocks (ast.parse)...")
+    print("[7/19] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/18] Verifying prose path references exist in repo...")
+    print("[8/19] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/18] Verifying notebook names exist in repo...")
+    print("[9/19] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/18] Verifying internal markdown links and anchors...")
+    print("[10/19] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/18] Scanning for documented anti-patterns...")
+    print("[11/19] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/18] Checking dict-restriction field names against schemas...")
+    print("[12/19] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
 
-    print("[13/18] Verifying citation line numbers are in range...")
+    print("[13/19] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
 
-    print("[14/18] Scanning evals.json for hallucinated class/method refs...")
+    print("[14/19] Scanning evals.json for hallucinated class/method refs...")
     check_evals_content(src_root, results, registry=registry)
 
-    print("[15/18] Scanning prose for banned PR-number citations...")
+    print("[15/19] Scanning prose for banned PR-number citations...")
     check_no_pr_citations(results)
 
-    print("[16/18] Enforcing reference-file and section size budgets...")
+    print("[16/19] Enforcing reference-file and section size budgets...")
     check_section_budgets(results)
 
-    print("[17/18] Checking markdown link-landing content overlap...")
+    print("[17/19] Checking markdown link-landing content overlap...")
     check_link_landing(results)
 
-    print("[18/18] Verifying citation lines contain cited identifiers...")
+    print("[18/19] Verifying citation lines contain cited identifiers...")
     check_citation_content(src_root, results)
+
+    print("[19/19] Detecting duplicated code blocks across references...")
+    check_duplicated_blocks(results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.

@@ -47,6 +47,33 @@ def _with_md_files(md_path):
         v.collect_md_files = saved
 
 
+@contextmanager
+def _with_md_file_list(md_paths):
+    """Variant of `_with_md_files` accepting multiple synthetic files.
+
+    Used by cross-file checks (like the duplication detector) that must
+    see >1 file to produce a finding. Same restoration semantics.
+    """
+    saved = v.collect_md_files
+    v.collect_md_files = lambda: list(md_paths)
+    try:
+        yield
+    finally:
+        v.collect_md_files = saved
+
+
+def _write_named_md(dir_path, name, body):
+    """Write a synthetic md file with a chosen name into an existing dir.
+
+    Useful when a check reports by filename and the test asserts on those
+    filenames; `_write_md` uses a fixed `fixture.md` which collides when a
+    fixture needs >1 synthetic file.
+    """
+    md = dir_path / name
+    md.write_text(textwrap.dedent(body))
+    return md
+
+
 def _run(check_fn, md_path, *args):
     """Run a single validator check against one synthetic md file."""
     with _with_md_files(md_path):
@@ -843,6 +870,101 @@ def fixture_merge_classmethod_correct_form_ok(src_root):
     return False
 
 
+def fixture_duplicated_block_across_files(src_root):
+    """A ≥5-line normalized block in 2+ files must warn.
+
+    Guards the "bloat via accumulation" failure mode where similar examples
+    leak into multiple references during per-PR review.
+    """
+    block = """
+        # Test
+
+        ```python
+        key = {"nwb_file_name": "session.nwb"}
+        rows = (SomeTable & key).fetch()
+        for row in rows:
+            processed = transform(row)
+            results.append(processed)
+        ```
+        """
+    tmp = Path(tempfile.mkdtemp())
+    md_a = _write_named_md(tmp, "a.md", block)
+    md_b = _write_named_md(tmp, "b.md", block)
+    with _with_md_file_list([md_a, md_b]):
+        results = v.ValidationResult()
+        v.check_duplicated_blocks(results)
+    return _assert_warn_contains(
+        results, "duplication:",
+        "duplication: 5+ line cross-file duplication caught",
+    )
+
+
+def fixture_duplicated_within_file_ok(src_root):
+    """Same block repeated within one file must NOT warn — only cross-file
+    duplication is flagged (the skill's bloat failure mode is accumulation
+    across references, not redundancy inside one reference).
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        key = {"nwb_file_name": "session.nwb"}
+        rows = (SomeTable & key).fetch()
+        for row in rows:
+            processed = transform(row)
+            results.append(processed)
+        ```
+
+        ```python
+        key = {"nwb_file_name": "session.nwb"}
+        rows = (SomeTable & key).fetch()
+        for row in rows:
+            processed = transform(row)
+            results.append(processed)
+        ```
+        """
+    )
+    r = _run(v.check_duplicated_blocks, md)
+    hits = [w for w in r.warnings if "duplication:" in w]
+    if not hits:
+        print("  [ok] duplication: within-file repetition not flagged")
+        return True
+    print(f"  [FAIL] within-file repetition wrongly flagged: {hits}")
+    return False
+
+
+def fixture_shared_imports_not_dup(src_root):
+    """Two files sharing only import lines (no executable code) must not
+    warn. Import lines are excluded from the normalization — they're too
+    commonly shared to be meaningful duplication signal.
+    """
+    imports_only = """
+        # Test
+
+        ```python
+        from spyglass.common import Session
+        from spyglass.common import IntervalList
+        from spyglass.common import Nwbfile
+        from spyglass.common import Electrode
+        from spyglass.common import BrainRegion
+        from spyglass.common import Subject
+        ```
+        """
+    tmp = Path(tempfile.mkdtemp())
+    md_a = _write_named_md(tmp, "a.md", imports_only)
+    md_b = _write_named_md(tmp, "b.md", imports_only)
+    with _with_md_file_list([md_a, md_b]):
+        results = v.ValidationResult()
+        v.check_duplicated_blocks(results)
+    hits = [w for w in results.warnings if "duplication:" in w]
+    if not hits:
+        print("  [ok] duplication: import-only shared blocks not flagged")
+        return True
+    print(f"  [FAIL] import-only blocks wrongly flagged: {hits}")
+    return False
+
+
 FIXTURES = [
     fixture_syntax_ellipsis_after_kwargs,
     fixture_trailing_underscore_nwb,
@@ -873,6 +995,9 @@ FIXTURES = [
     fixture_harness_restores_collect_md_files,
     fixture_dash_range_citation,
     fixture_aliased_merge_classmethod_discard,
+    fixture_duplicated_block_across_files,
+    fixture_duplicated_within_file_ok,
+    fixture_shared_imports_not_dup,
 ]
 
 
