@@ -100,4 +100,4 @@ A `runtime-errors` eval in stage `ingestion` tests a different failure mode than
 
 ## Running
 
-This suite is consumed by the skill-creator eval harness. The structure is compatible with `skill-creator:skill-creator` conventions — each eval becomes one `with_skill` run and one baseline run, outputs are graded against `assertions`, results aggregate into a benchmark with pass rates per tier/stage.
+This suite follows skill-creator's eval lifecycle (one `with_skill` run + one baseline per eval; outputs aggregate into a tier/stage benchmark) but uses a **three-bucket `assertions` object** (required/forbidden/behavioral) instead of skill-creator's stock flat `expectations: [str]` field. It is **not** drop-in compatible with skill-creator's shipped `agents/grader.md` — use a custom grader that understands the three buckets, or flatten `assertions` into `expectations` before passing the eval file to stock skill-creator tooling. The extra structure is deliberate: grep-scorable required/forbidden substrings are deterministic and cheap to re-check across iterations, while behavioral checks stay reserved for reasoning steps a grep can't verify.

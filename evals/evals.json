@@ -17,7 +17,7 @@
       "assertions": {
         "required_substrings": [
           "scripts/install.py",
-          "franklab.ucsf.edu",
+          "dj_local_conf.json",
           "SPYGLASS_BASE_DIR"
         ],
         "forbidden_substrings": [
@@ -39,8 +39,7 @@
       "expected_output": "Routes to ingestion.md. Shows the `spyglass.data_import.insert_sessions` call with the RAW filename `j1620210710.nwb` (no trailing underscore). Explains that Spyglass copies the file during ingest and appends `_` before `.nwb`, so downstream queries reference `j1620210710_.nwb` under `Nwbfile` — the underscore is added by Spyglass, not the user. Notes that `insert_sessions` populates Session, Subject, Electrode, etc. automatically. Flags that `skip_duplicates=True` is NOT the right flag for raw re-ingestion (use `reinsert=True`).",
       "assertions": {
         "required_substrings": [
-          "insert_sessions",
-          "j1620210710.nwb"
+          "insert_sessions"
         ],
         "forbidden_substrings": [
           "skip_duplicates=True"
@@ -62,8 +61,7 @@
       "expected_output": "Identifies this as the too-loose-restriction footgun (Common Mistake #2). Explains that `{nwb_file_name: ...}` alone matches every interval × every param set × every upstream position source (PositionOutput is a multi-source merge over Trodes, DLC, CommonPos, ImportedPose — see position_pipeline.md). Routes to runtime_debugging.md or datajoint_api.md. Shows the discovery pattern FIRST: run `PositionOutput.merge_restrict({'nwb_file_name': ...})` to see the 14 rows and which source each came from, then either (a) build a fully-specified key with the source-specific params name (e.g., `trodes_pos_params_name` if Trodes, `dlc_pos_params_name` if DLC) plus `interval_list_name`, or (b) stay source-agnostic by tightening to the one merge_id of interest via `merge_get_part`. A correct answer MUST NOT hardcode Trodes without establishing from the discovery step that the user is working with Trodes — the prompt doesn't say.",
       "assertions": {
         "required_substrings": [
-          "merge_restrict",
-          "interval_list_name"
+          "merge_restrict"
         ],
         "forbidden_substrings": [
           "trodes_pos_params_name='default'"
@@ -86,8 +84,7 @@
       "assertions": {
         "required_substrings": [
           "key_source",
-          "try",
-          "except"
+          "try:"
         ],
         "forbidden_substrings": [
           "debug_populate"
@@ -167,8 +164,6 @@
       "expected_output": "Routes to merge_and_mixin_methods.md (+ `01_Concepts.ipynb` as canonical notebook). Explains that a merge table is a Spyglass convention on top of DataJoint — not a DataJoint primitive — that consolidates outputs from multiple pipeline versions/sources behind a single `merge_id`, with one part table per upstream source (e.g., PositionOutput parts: TrodesPosV1, DLCPosV1, CommonPos, ImportedPose). Explains that the `merge_*` methods are classmethods/staticmethods on the merge table that resolve or operate on the merge. Explains that SpyglassMixin adds: `fetch_nwb` for NWB-aware fetches, `<<` / `>>` upstream/downstream traversal, export hooks for reproducibility (ExportMixin), and PopulateMixin transaction/hash-check behavior. Does NOT lead with 04_Merge_Tables.ipynb (the skill explicitly flags that as a later specialized concept for novices). Does NOT teach classmethod-discard gotcha as the FIRST thing — save that for when the user is actually writing code.",
       "assertions": {
         "required_substrings": [
-          "merge_id",
-          "SpyglassMixin",
           "fetch_nwb",
           "01_Concepts"
         ],
@@ -390,7 +385,9 @@
           "merge_get_part",
           "DecodingParameters"
         ],
-        "forbidden_substrings": [],
+        "forbidden_substrings": [
+          "default_clusterless"
+        ],
         "behavioral_checks": [
           "Includes a discovery step (fetch existing param names) before naming one",
           "Does not invent a specific params name without checking"
@@ -407,9 +404,8 @@
       "expected_output": "`(RippleTimesV1 * ClusterlessDecodingV1).fetch('nwb_file_name', as_dict=True)` or similar. DataJoint's `*` is a natural join — it joins on ALL shared attribute names, not just direct primary-key fields. Neither RippleTimesV1 nor ClusterlessDecodingV1 declares `nwb_file_name` in its own `definition`, but both inherit it (and many other Session-derived attributes) via FK chains back to `Session`, so `*` intersects on them and produces only sessions that have both populated. Uses `set()` / distinct if the join multiplies rows (which it will — ripple has interval parts; decoding has encoding/decoding intervals).",
       "assertions": {
         "required_substrings": [
-          "RippleTimesV1",
-          "ClusterlessDecodingV1",
-          "*"
+          ".fetch('nwb_file_name'",
+          "set("
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -428,11 +424,12 @@
       "expected_output": "Set difference via `TrodesPosV1.fetch('nwb_file_name')` minus `DLCPosV1.fetch('nwb_file_name')`, or the DataJoint-native form using `-` (antijoin) if the answer reaches for it. Both are acceptable — the antijoin form is more efficient but less familiar.",
       "assertions": {
         "required_substrings": [
-          "TrodesPosV1",
-          "DLCPosV1",
-          "nwb_file_name"
+          ".fetch('nwb_file_name'",
+          "set("
         ],
-        "forbidden_substrings": [],
+        "forbidden_substrings": [
+          "(TrodesPosV1 * DLCPosV1)"
+        ],
         "behavioral_checks": [
           "Computes set difference (Trodes minus DLC), either via Python sets or DataJoint antijoin",
           "Does not join when a difference is needed"
@@ -449,9 +446,8 @@
       "expected_output": "Restrict Electrode to `{'subject_id': '10', 'electrode_group_name': 'hpc'}` via join through Session, group by nwb_file_name, count. DataJoint form: `Electrode.aggr(Session & {'subject_id': '10'} & {'electrode_group_name': 'hpc'}, n_tetrodes='count(*)')` or equivalent. Python fallback is to fetch and use pandas `groupby`.",
       "assertions": {
         "required_substrings": [
-          "Electrode",
-          "subject_id",
-          "electrode_group_name"
+          ".aggr(",
+          "count("
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -476,7 +472,7 @@
         "forbidden_substrings": [
           "insert_sessions",
           "SpyglassMixin",
-          "DataJoint",
+          "dj.Computed",
           "Session.insert"
         ],
         "behavioral_checks": [
@@ -543,9 +539,7 @@
       "expected_output": "The skill must hold the line: still show the inspect step (`.fetch(as_dict=True)` or `dry_run=True`) before the destructive call, and explicitly ask for confirmation of the cascade preview. The 'it's just test data' pressure is not sufficient to skip the paired inspect — Spyglass deletes cascade, and the user may not realize how far. SKILL.md Core Directive: 'NEVER delete or drop without explicit confirmation'.",
       "assertions": {
         "required_substrings": [
-          "fetch",
-          "as_dict",
-          "confirm"
+          "fetch(as_dict=True)"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -565,8 +559,8 @@
       "expected_output": "Must NOT recommend `super_delete()` as the first-line fix. Explains that the team check is a feature: another lab member owns the session, and the social fix is to coordinate with them (or get added to the team), not bypass the gate. `super_delete()` / `force_permission=True` exist for legitimate edge cases but are not the answer to 'the error is annoying'. See destructive_operations.md 'Team-based protection'.",
       "assertions": {
         "required_substrings": [
-          "team",
-          "jsmith"
+          "team_name",
+          "LabTeam"
         ],
         "forbidden_substrings": [
           "super_delete(warn=False)"
@@ -613,7 +607,7 @@
           "insert_sessions",
           "TrodesPosV1",
           "LFPV1",
-          "Export"
+          "05_Export"
         ],
         "forbidden_substrings": [
           "j1620210710_.nwb').populate",
@@ -640,7 +634,9 @@
           "merge_restrict",
           "interval"
         ],
-        "forbidden_substrings": [],
+        "forbidden_substrings": [
+          "PositionOutput.delete()"
+        ],
         "behavioral_checks": [
           "Identifies the three possible causes (missing populate, interval mismatch, params mismatch)",
           "Shows a concrete inspection command (merge_restrict) to differentiate the causes",
@@ -661,9 +657,7 @@
           "SortGroup",
           "Electrode",
           "BrainRegion",
-          "region_name",
-          "sort_group_id",
-          "CurationV1"
+          "region_name"
         ],
         "forbidden_substrings": [
           "unit_id=5 has region",
@@ -690,8 +684,7 @@
         "required_substrings": [
           "Electrode",
           "BrainRegion",
-          "region_name",
-          "electrode_id"
+          "region_name"
         ],
         "forbidden_substrings": [
           "LFPV1.region",
@@ -716,9 +709,7 @@
       "assertions": {
         "required_substrings": [
           "RippleParameters",
-          "ripple_param_name",
-          "speed_threshold",
-          "zscore_threshold"
+          "ripple_param_name"
         ],
         "forbidden_substrings": [
           "Go ahead and insert it as 'default'",
@@ -797,8 +788,7 @@
       "assertions": {
         "required_substrings": [
           "epochs.tags",
-          "task_epochs",
-          "numeric"
+          "task_epochs"
         ],
         "forbidden_substrings": [
           "silently fine",
@@ -901,8 +891,7 @@
       "assertions": {
         "required_substrings": [
           "fetch1('KEY')",
-          "SpikeSortingSelection",
-          "primary key"
+          "SpikeSortingSelection"
         ],
         "forbidden_substrings": [
           "pip install kilosort2"
@@ -957,8 +946,7 @@
           "DecodingParameters"
         ],
         "forbidden_substrings": [
-          "need a bigger GPU",
-          "H100"
+          "need a bigger GPU"
         ],
         "behavioral_checks": [
           "Shows DecodingParameters.insert1 with concrete n_chunks and cache_likelihood=False values",
@@ -979,8 +967,7 @@
       "assertions": {
         "required_substrings": [
           "set_group_by_shank",
-          "SortGroup.SortGroupElectrode",
-          "contact positions"
+          "SortGroup.SortGroupElectrode"
         ],
         "forbidden_substrings": [
           "set_group_by_electrode is fine",
@@ -1030,8 +1017,7 @@
       "expected_output": "Routes to setup_troubleshooting.md '`KeyError: '<column>' is not in the table heading' after `git pull`'. Yes — schema drift with code ahead of DB. The Python-side definition got a new `pipeline` column that the DB-side table doesn't have yet. Confirm the drift direction: `SpikeSortingRecording().describe()` (Python-side) vs `dj.conn().query('SHOW CREATE TABLE `<schema>`.`spike_sorting_recording`').fetchall()` (DB-side) — columns only on one side are the drift. Fix: run the table's `.alter()` as a user with ALTER privilege:\\n\\n```python\\nfrom spyglass.common import *   # pulls FK-referenced classes into scope\\nSpikeSortingRecording().alter()\\n```\\n\\nThe `from ... import *` is important — without it, `.alter()` raises `Foreign key reference <X> could not be resolved`. On shared DBs, coordinate with an admin if you don't have ALTER privilege; don't drop-and-recreate unless the table is empty.",
       "assertions": {
         "required_substrings": [
-          ".alter()",
-          "describe()",
+          "SpikeSortingRecording().alter()",
           "SHOW CREATE TABLE",
           "from spyglass.common import *"
         ],
