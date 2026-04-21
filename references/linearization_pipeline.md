@@ -34,14 +34,17 @@ from spyglass.linearization.v1 import (
 #    LinearizationParameters row, and a PositionOutput entry for the
 #    session/interval you want linearized. Discover the PositionOutput
 #    merge_id the same way as the position pipeline.
-pos_merge_key = {"merge_id": position_merge_id}
+#    Note the FK rename: LinearizationSelection is defined as
+#    `-> PositionOutput.proj(pos_merge_id='merge_id')`, so the selection
+#    key uses `pos_merge_id`, not `merge_id` — projected FK rename pattern,
+#    see merge_and_mixin_methods.md.
 
-# 2. Selection — ties together PositionOutput, TrackGraph, params, interval
+# 2. Selection — ties PositionOutput + TrackGraph + params. No interval
+#    field: the interval is implicit in the PositionOutput entry selected.
 selection_key = {
-    **pos_merge_key,
+    "pos_merge_id": position_merge_id,
     "track_graph_name": "6-arm-radial",
     "linearization_param_name": "default",
-    "interval_list_name": interval_name,
 }
 LinearizationSelection.insert1(selection_key, skip_duplicates=True)
 

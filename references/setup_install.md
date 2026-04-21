@@ -126,13 +126,14 @@ check which transitive deps pip wants to move.
   silently ignored. A production lab DB that has been running Spyglass
   for a while is usually pre-tuned by its admin; you will generally
   only hit this on a fresh self-host.
-- **`ndx-optogenetics` pin** — Spyglass's `pyproject.toml` pins
-  `ndx-optogenetics==0.3.0` (PR #1458 bumped from 0.2.0). If you see
-  `ImportError: cannot import name 'OpticalFiberLocationsTable' from
-  'ndx_optogenetics'` on `from spyglass.common import ...`, your
-  install has a pre-#1458 Spyglass with a newer ndx-optogenetics, or
-  the reverse. `pip install -e .` on current Spyglass gets the
-  matching pin.
+- **`ndx-optogenetics` pin** — Spyglass's `pyproject.toml` currently
+  pins `ndx-optogenetics==0.3.0`. Earlier Spyglass releases pinned
+  0.2.0, so mixed-version installs (old Spyglass + new extension, or
+  the reverse) can raise `ImportError: cannot import name
+  'OpticalFiberLocationsTable' from 'ndx_optogenetics'` on
+  `from spyglass.common import ...`. Check both versions with
+  `pip show ndx-optogenetics spyglass-neuro`; `pip install -e .` on a
+  current Spyglass checkout pulls the matching pin.
 
 ## Environment Setup Scenarios
 

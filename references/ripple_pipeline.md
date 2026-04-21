@@ -80,7 +80,7 @@ Source: [`src/spyglass/ripple/v1/ripple.py`](https://github.com/LorenFrankLab/sp
 
 ## Canonical Example
 
-Assumes `LFPV1` is already populated. Mirrors `32_Ripple_Detection.ipynb`.
+**Prerequisite steps not repeated below** — before running this example you must have: (a) populated `LFPV1` for the session/interval, and (b) registered a ripple-band filter via `FirFilterParameters().add_filter(filter_name="Ripple 150-250 Hz", band_edges=[140, 150, 250, 260], fs=1000.0, filter_type="bandpass")` and populated `LFPBandV1` against it. See the Canonical Band Filtering example in [lfp_pipeline.md](lfp_pipeline.md) — the same steps, swap the filter name. Mirrors `32_Ripple_Detection.ipynb`.
 
 ```python
 import numpy as np

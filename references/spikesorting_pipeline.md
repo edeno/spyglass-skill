@@ -130,11 +130,9 @@ SpikeSortingSelection → SpikeSorting (run sorter)
 CurationV1 (labels + merge groups)
     ↓                          ↓
     ↓               MetricCurationSelection → MetricCuration (quality metrics)
-    ↓                          ↓            ↓
-    ↓               FigURLCurationSelection → FigURLCuration (manual curation UI)
-    ↓                                        ↓
-    ↓                          BurstPairSelection → BurstPair (optional burst-pair analysis)
-    ↓
+    ↓                          │        ├─→ FigURLCurationSelection → FigURLCuration (manual curation UI)
+    ↓                          │        └─→ BurstPairSelection → BurstPair (optional burst-pair analysis)
+    ↓                          ↓
 SpikeSortingOutput.CurationV1 (merge table)
     ↓
 SortedSpikesGroup (analysis grouping)

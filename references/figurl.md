@@ -75,7 +75,7 @@ CurationV1.insert_curation(sorting_id=sorting_id, labels={})  # other args omitt
 ### Key Methods
 
 - `FigURLCurationSelection.insert_selection(key)` — Class method, auto-generates `figurl_curation_id` UUID and `curation_uri` if missing
-- `FigURLCurationSelection.generate_curation_uri(key)` — Static helper, uploads CurationV1 state to kachery and returns a URI string
+- `FigURLCurationSelection.generate_curation_uri(key)` — `@staticmethod`; uploads CurationV1 state to kachery and returns a URI string. Call on the class (`FigURLCurationSelection.generate_curation_uri(key)`), not on an instance.
 - `FigURLCuration.get_labels(curation_json)` — Class method, returns `{unit_id: [label_list]}` from a kachery URI
 - `FigURLCuration.get_merge_groups(curation_json)` — Class method, returns merge group structure from a kachery URI
 

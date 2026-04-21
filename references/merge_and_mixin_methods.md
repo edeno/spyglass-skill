@@ -23,7 +23,7 @@ Most `_Merge` methods you reach for are **classmethods** whose restriction param
 | `merge_view(restriction=True)` (line 400) | `@classmethod`, read-only | Prints the whole table |
 | `merge_html(restriction=True)` (line 418) | `@classmethod`, read-only | HTML of whole table |
 
-Plus the staticmethod `Nwbfile.cleanup(delete_files=False)` at `src/spyglass/common/common_nwbfile.py:139` — same shape, same footgun.
+Plus the staticmethod `Nwbfile.cleanup(delete_files=False)` at `src/spyglass/common/common_nwbfile.py:140` — same shape, same footgun.
 
 **`restriction` parameter type.** The annotations in source read `restriction: str = True` (e.g. `dj_merge_tables.py:469` for `merge_delete_parent`). The `str` annotation is misleading — you can pass:
 

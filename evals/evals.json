@@ -735,6 +735,345 @@
         ]
       },
       "files": []
+    },
+    {
+      "id": 31,
+      "eval_name": "env-spikeinterface-drift",
+      "stage": "runtime-debugging",
+      "tier": "environment-triage",
+      "prompt": "spike sorting was fine last week and now `SpikeSorting.populate(key)` blows up on import with `AttributeError: module 'spikeinterface' has no attribute 'WaveformExtractor'`. I did `pip install -U spikeinterface` a few days ago because another project wanted a newer version. Did I just torch my spyglass env? and how do I figure out which version I should pin back to?",
+      "expected_output": "Routes to dependencies.md 'SpikeInterface / Spyglass version coupling'. Identifies `WaveformExtractor` as a class removed after SpikeInterface 0.99.x (replaced by `SortingAnalyzer`) — Spyglass's spike sorting pipeline pins a specific SpikeInterface range, and upgrading out of that range breaks every stage (recording, sorter, waveforms, metrics, curation). Source of truth for the pin: `pyproject.toml` / `environment.yml` (NOT a guess). Fix: `pip install 'spikeinterface==<pinned>'` to downgrade back into the supported range, not patch the Spyglass parameter dict to accommodate the new SpikeInterface API. Notes that v0 pipeline code paths are not kept in sync with modern SpikeInterface — migrate to v1 if staying on a newer SI is important.",
+      "assertions": {
+        "required_substrings": [
+          "spikeinterface",
+          "WaveformExtractor",
+          "pyproject.toml"
+        ],
+        "forbidden_substrings": [
+          "pip install -U spyglass",
+          "upgrade spyglass"
+        ],
+        "behavioral_checks": [
+          "Identifies the version-coupling issue (Spyglass pins a specific SpikeInterface range)",
+          "Points at pyproject.toml or environment.yml as the source of truth for the pin rather than guessing a specific version",
+          "Recommends downgrading SpikeInterface to the pin, NOT patching Spyglass's parameter dicts to work around the new API",
+          "Does not recommend switching to v0 spike-sorting code paths"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 32,
+      "eval_name": "ingest-channel-slice-parents",
+      "stage": "ingestion",
+      "tier": "post-ingest-validation",
+      "prompt": "ingest ran cleanly on j1620210710.nwb, but now `SpikeSortingRecording.populate(key)` crashes with `AssertionError: ChannelSliceRecording: channel ids are not all in parents`. The NWB came out of a standard trodes_to_nwb conversion. Is this a spyglass bug or is something wrong in my NWB?",
+      "expected_output": "Routes to ingestion.md 'Probe / electrode conflicts from the NWB'. Root cause is at the NWB level: the electrodes table has a `channel_name` column, and SpikeInterface >=0.99 reads that column instead of `electrode_id`, which breaks the `ChannelSliceRecording` parent check. Diagnostic: `import pynwb; with pynwb.NWBHDF5IO(path, 'r') as io: nwb = io.read(); print(nwb.electrodes.colnames)` — look for `channel_name`. Fix: run on a Spyglass version that handles this (post-PR #1447), OR rewrite the NWB to drop the `channel_name` column.",
+      "assertions": {
+        "required_substrings": [
+          "channel_name",
+          "colnames",
+          "electrodes"
+        ],
+        "forbidden_substrings": [
+          "spyglass bug"
+        ],
+        "behavioral_checks": [
+          "Identifies the NWB electrodes table's channel_name column as the root cause",
+          "Shows the concrete pynwb diagnostic (`nwb.electrodes.colnames`)",
+          "Points at the version fix (post-PR #1447) or the NWB-side rewrite as remediation",
+          "Does not frame this as a spyglass bug"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 33,
+      "eval_name": "ingest-task-epoch-drop",
+      "stage": "ingestion",
+      "tier": "post-ingest-validation",
+      "prompt": "My NWB has 8 behavioral epochs — I confirmed via `NWBHDF5IO` that `nwb.epochs` has 8 rows. But after `insert_sessions('j1620210710.nwb')` only 2 rows landed in `TaskEpoch`. insert_sessions didn't raise anything. Are the other 6 getting silently dropped?",
+      "expected_output": "Routes to ingestion.md 'TaskEpoch silently drops epochs on tag-format mismatch'. Yes, silently dropped — `TaskEpoch` matches NWB epochs to `IntervalList` intervals via numeric tags. Required NWB shape: `nwbfile.epochs.tags` must be numeric strings, zero-padded to the convention used elsewhere in the file (`'01'`, `'02'`, not `'1'`, `'2'`); `nwbfile.processing['tasks'].task_table.task_epochs` must be numeric with row count matching epoch count. Diagnostic: `print([list(e) for e in nwb.epochs.tags[:]])` and `print(nwb.processing['tasks'].task_table.to_dataframe())`. Fix: rewrite the NWB to use numeric-only tags, then re-ingest (with `reinsert=True` if already partially ingested).",
+      "assertions": {
+        "required_substrings": [
+          "epochs.tags",
+          "task_epochs",
+          "numeric"
+        ],
+        "forbidden_substrings": [
+          "silently fine",
+          "re-run insert_sessions and check"
+        ],
+        "behavioral_checks": [
+          "Confirms epochs are silently dropped (not errored) on non-numeric tags",
+          "Shows the concrete pynwb introspection for both epochs.tags and task_table",
+          "Recommends NWB-side rewrite, not direct DB-level patching",
+          "Mentions reinsert=True (not skip_duplicates=True) for re-ingest"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 34,
+      "eval_name": "ingest-device-conflict",
+      "stage": "ingestion",
+      "tier": "post-ingest-validation",
+      "prompt": "trying to ingest a tutorial NWB and I get `PopulateException: Data acquisition device properties (system, adc_circuit) do not match`. The device name is `SpikeGadgets`. I'll just `.delete()` the existing `DataAcquisitionDevice` row and let ingest re-insert with the tutorial's values — should be harmless since I'm the only one using this dev db, right?",
+      "expected_output": "Strong NO on the delete-the-row plan — even on a dev DB, `DataAcquisitionDevice` is a shared lookup, and deleting it cascades to every session that references it (via `Session.DataAcquisitionDevice`). Routes to ingestion.md Common Errors. Inspect the conflict first: `DataAcquisitionDevice & {'data_acquisition_device_name': 'SpikeGadgets'}` to see the DB-side values, then compare against the tutorial NWB's device metadata. Two fixes, both safer than deletion: (1) update the tutorial NWB to match the DB entry's `system` / `adc_circuit` values, or (2) rename the device per-session in the NWB (e.g. `'SpikeGadgets_tutorial'`). Does NOT recommend `.delete()` on the shared row.",
+      "assertions": {
+        "required_substrings": [
+          "DataAcquisitionDevice",
+          "data_acquisition_device_name",
+          "cascade"
+        ],
+        "forbidden_substrings": [
+          "just delete the DataAcquisitionDevice row",
+          "Go ahead and delete"
+        ],
+        "behavioral_checks": [
+          "Pushes back on the .delete() plan citing downstream cascade risk",
+          "Shows the inspect step (DataAcquisitionDevice & {name}) before any fix",
+          "Offers both alternatives: update NWB to match DB, or rename device per-session",
+          "Does not capitulate to the 'only me, dev db' framing"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 35,
+      "eval_name": "merge-empty-list-ambiguity",
+      "stage": "common-mistakes",
+      "tier": "merge-table-gotchas",
+      "prompt": "I'm confused by this error: `PositionOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'interval_list_name': '02_r1'})` raises `ValueError: Found multiple potential parts: []`. Multiple... AND empty? Which is it? My `IntervalPositionInfo` has rows for that session.",
+      "expected_output": "Routes to merge_and_mixin_methods.md `#merge_get_part` misleading-error note. The message is misleading — the empty list `[]` means zero sources matched, not multiple. Usual cause: an upstream source table (`IntervalPositionInfo` in this case) has rows, but they were never pushed into the corresponding merge part table (`PositionOutput.CommonPos`). Diagnostic: `len(PositionOutput.CommonPos & {'nwb_file_name': ..., 'interval_list_name': '02_r1'})` — zero confirms the upstream never made it into the merge. Fix: run the merge-insert path (e.g. `PositionOutput.insert(...)` with the correct `part_name='CommonPos'`) before retrying `merge_get_part`.",
+      "assertions": {
+        "required_substrings": [
+          "PositionOutput.CommonPos",
+          "merge_get_part",
+          "part_name"
+        ],
+        "forbidden_substrings": [
+          "spyglass bug",
+          "retry merge_get_part"
+        ],
+        "behavioral_checks": [
+          "Decodes the misleading error (empty list = zero matched, not multiple)",
+          "Gives the len(part & restriction) diagnostic to confirm zero-in-merge-part",
+          "Identifies the missing merge-insert step as the root cause",
+          "Names the correct fix (PositionOutput.insert(...) with part_name), not a retry loop"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 36,
+      "eval_name": "merge-cascade-not-in-digraph",
+      "stage": "runtime-debugging",
+      "tier": "merge-table-gotchas",
+      "prompt": "`(Nwbfile & {'nwb_file_name': 'j1620210710_.nwb'}).delete()` fails with `NetworkXError: The node \\`spyglass_lfp_v1.l_f_p_v1\\` is not in the digraph`. I just want to clear this test session — why is delete complaining about LFP? My imports are just `from spyglass.common import Nwbfile`.",
+      "expected_output": "Routes to merge_and_mixin_methods.md 'Import merge masters before cascade-deleting upstream keys'. Root cause: `SpyglassMixin.cautious_delete` walks the DataJoint dependency graph to cascade the delete and check permissions. The graph only contains tables whose Python classes have been imported in the current session. Merge masters aren't auto-imported by `spyglass.common` — so descendants like `LFPV1` show up in the DB schema but are missing from the Python-side graph, and the walk fails. Fix: import all relevant merge masters before the delete: `from spyglass.lfp import LFPOutput`, `from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput`, `from spyglass.position.position_merge import PositionOutput`, `from spyglass.linearization.merge import LinearizedPositionOutput`, plus any lab-specific merge-extending modules. Does NOT recommend `super_delete()` as the fix.",
+      "assertions": {
+        "required_substrings": [
+          "LFPOutput",
+          "SpikeSortingOutput",
+          "PositionOutput",
+          "import"
+        ],
+        "forbidden_substrings": [
+          "super_delete()"
+        ],
+        "behavioral_checks": [
+          "Explains that cautious_delete walks a dependency graph that only contains imported classes",
+          "Lists the canonical merge-master imports (LFPOutput, SpikeSortingOutput, PositionOutput, LinearizedPositionOutput)",
+          "Mentions that lab-specific merge extenders may also need importing",
+          "Does not reach for super_delete() as the primary fix"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 37,
+      "eval_name": "runtime-populate-non-pk-dict",
+      "stage": "runtime-debugging",
+      "tier": "runtime-errors",
+      "prompt": "I ran `SpikeSorting.populate({'nwb_file_name': 'j1620210710_.nwb', 'sorter': 'mountainsort4'})` and after a while it died with `Exception: The sorter kilosort2 is not installed`. But I clearly passed mountainsort4 — is spyglass ignoring my sorter kwarg?",
+      "expected_output": "Routes to runtime_debugging.md 'populate(key) with a non-PK dict iterates the whole Selection'. Unlike `fetch1`, `populate(key)` does NOT raise on a loose dict. `sorter` is not on `SpikeSortingSelection`'s primary key (the PK is `sorting_id`), so the restriction doesn't filter — Spyglass silently walks every unprocessed row in `SpikeSortingSelection`, including rows from other users / other sorters, hitting kilosort2 along the way. Fix: resolve the key to a PK projection before calling populate:\\n\\n```python\\nsel_key = (SpikeSortingSelection & {'nwb_file_name': ..., 'sorter': 'mountainsort4'}).fetch1('KEY')\\nSpikeSorting.populate(sel_key)\\n```\\n\\nOr for multi-row populates: `SpikeSorting.populate((SpikeSortingSelection & key).proj())`. Applies to every `*V1.populate(...)` entry point.",
+      "assertions": {
+        "required_substrings": [
+          "fetch1('KEY')",
+          "SpikeSortingSelection",
+          "primary key"
+        ],
+        "forbidden_substrings": [
+          "install kilosort2",
+          "pip install kilosort2"
+        ],
+        "behavioral_checks": [
+          "Identifies that `sorter` is not on the Selection-table primary key, so the restriction doesn't filter populate",
+          "Explains that populate(key) silently iterates the whole Selection when the restriction misses the PK (unlike fetch1, which raises)",
+          "Shows the fetch1('KEY') / .proj() fix to resolve the restriction first",
+          "Generalizes to other *V1.populate(...) entry points, not just SpikeSorting"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 38,
+      "eval_name": "runtime-dlc-positionintervalmap",
+      "stage": "runtime-debugging",
+      "tier": "runtime-errors",
+      "prompt": "First time running DLC on a fresh session. `DLCPosV1.populate(key)` dies with `IndexError: index 0 is out of bounds for axis 0 with size 0` inside `convert_epoch_interval_name_to_position_interval_name`. Am I missing an upstream populate step? I thought I set up `DLCPosSelection` correctly.",
+      "expected_output": "Routes to position_pipeline.md DLC gotchas (empty PositionIntervalMap). Root cause: the session has no `PositionIntervalMap` rows mapping task epochs to position intervals. Fix: for each `TaskEpoch`, run:\\n\\n```python\\nfrom spyglass.position import convert_epoch_interval_name_to_position_interval_name\\nconvert_epoch_interval_name_to_position_interval_name(\\n    {'nwb_file_name': nwb_file, 'epoch': epoch_id},\\n    populate_missing=True,\\n)\\n```\\n\\nThe `populate_missing=True` kwarg creates the map rows. DLC-only sessions (no Trodes-derived position) have a second failure mode — no `'pos N valid times'` IntervalList exists to match against. In that case: insert `RawPosition` / `PositionSource` rows first, or upgrade past PR #1160.",
+      "assertions": {
+        "required_substrings": [
+          "PositionIntervalMap",
+          "convert_epoch_interval_name_to_position_interval_name",
+          "populate_missing"
+        ],
+        "forbidden_substrings": [
+          "re-run DLCPosV1.populate",
+          "just retry"
+        ],
+        "behavioral_checks": [
+          "Identifies the missing PositionIntervalMap rows as the concrete cause",
+          "Gives the populate_missing=True fix verbatim",
+          "Addresses the DLC-only-session edge case (no Trodes position to match)",
+          "Does not tell the user to just re-run DLCPosV1.populate without fixing the map"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 39,
+      "eval_name": "runtime-decoding-oom",
+      "stage": "runtime-debugging",
+      "tier": "runtime-errors",
+      "prompt": "A100 80GB, `ClusterlessDecodingV1.populate(key)` dies with `jaxlib.xla_extension.XlaRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 25941544960 bytes`. The session is 3.4M time bins × 1926 state bins — that's the 24 GiB f32 buffer. Do I just need a bigger GPU or are there knobs I can tune?",
+      "expected_output": "Routes to decoding_pipeline.md 'JAX / XLA OOM on long sessions'. Knobs (set on `DecodingParameters`):\\n\\n```python\\nDecodingParameters.insert1({\\n    'decoding_param_name': 'clusterless_chunked',\\n    'decoding_params': {\\n        'classifier_params': {...},\\n        'decoding_kwargs': {\\n            'n_chunks': 10,\\n            'cache_likelihood': False,\\n        },\\n        'sorted_spikes_algorithm_params': {'block_size': 500},\\n    },\\n}, skip_duplicates=True)\\n```\\n\\nAlso set `os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.99'` at the top of the populate script. Gotcha: with `estimate_decoding_params=False`, `n_chunks` may be ignored — set `estimate_decoding_params=True` on the selection row so the kwarg actually reaches the decoder. Tracked with `non_local_detector 0.6.9`.",
+      "assertions": {
+        "required_substrings": [
+          "n_chunks",
+          "cache_likelihood",
+          "XLA_PYTHON_CLIENT_MEM_FRACTION",
+          "DecodingParameters"
+        ],
+        "forbidden_substrings": [
+          "need a bigger GPU",
+          "H100"
+        ],
+        "behavioral_checks": [
+          "Shows DecodingParameters.insert1 with concrete n_chunks and cache_likelihood=False values",
+          "Mentions XLA_PYTHON_CLIENT_MEM_FRACTION as a complementary lever",
+          "Flags the estimate_decoding_params=True workaround for the n_chunks-ignored bug",
+          "Does not recommend upgrading the GPU as the primary fix"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 40,
+      "eval_name": "runtime-clusterless-contact-unique",
+      "stage": "runtime-debugging",
+      "tier": "runtime-errors",
+      "prompt": "Setting up clusterless decoding, and `SpikeSortingRecording.populate` fails with `ValueError: contact positions are not unique`. I used `SortGroup().set_group_by_electrode(nwb_file_name=nwb_file)` because I wanted more units grouped together. Is the grouper broken?",
+      "expected_output": "Routes to spikesorting_pipeline.md 'Clusterless sorting requires one sort group per shank'. Root cause: `set_group_by_electrode` produces sort groups that can span multiple shanks, which yields duplicate `(x, y)` contact positions across the group. SpikeInterface rejects non-unique contact positions at `SpikeSortingRecording.populate`. For clusterless / waveform-based pipelines, use `SortGroup().set_group_by_shank(nwb_file_name=nwb_file)` — the single-shank grouper. Verify: `(SortGroup.SortGroupElectrode & key).fetch()` — rows from more than one shank per `sort_group_id` means regroup before inserting selection rows.",
+      "assertions": {
+        "required_substrings": [
+          "set_group_by_shank",
+          "SortGroup.SortGroupElectrode",
+          "contact positions"
+        ],
+        "forbidden_substrings": [
+          "set_group_by_electrode is fine",
+          "SpikeInterface bug"
+        ],
+        "behavioral_checks": [
+          "Identifies set_group_by_electrode as the wrong grouper for clusterless pipelines",
+          "Recommends set_group_by_shank with the exact method name",
+          "Shows the SortGroup.SortGroupElectrode inspection to verify one-shank-per-group",
+          "Does not frame this as a SpikeInterface bug"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 41,
+      "eval_name": "config-stores-cross-machine",
+      "stage": "setup",
+      "tier": "config-troubleshooting",
+      "prompt": "My `fetch_nwb()` works fine on my lab workstation but on the HPC login node the same code raises `FileNotFoundError: Inaccessible local directory /data/shared/nwb/raw`. The NFS share is mounted at `/mnt/shared/nwb/` on the cluster (different mount point than the workstation). Do I just need to set `SPYGLASS_BASE_DIR` differently on each machine?",
+      "expected_output": "Routes to setup_config.md Stores Configuration 'Cross-machine mount drift'. SPYGLASS_BASE_DIR alone is NOT sufficient — `dj.config['stores']` is machine-local (persisted in `dj_local_conf.json`) and does not auto-update when `SPYGLASS_BASE_DIR` changes. The stores block contains the absolute `location` path baked in at config-generation time; fetches use that path directly. Fix options: (1) regenerate the config on each workstation via `SpyglassConfig().save_dj_config(...)`, or (2) edit `dj.config['stores']` in place and `dj.config.save_local()`. A useful session-start assertion:\\n\\n```python\\nimport datajoint as dj, os\\nassert 'stores' in dj.config\\nraw_loc = dj.config['stores']['raw']['location']\\nassert raw_loc.startswith(os.environ['SPYGLASS_BASE_DIR']), (\\n    f'stores.raw.location={raw_loc} does not share prefix with '\\n    f'SPYGLASS_BASE_DIR={os.environ[\"SPYGLASS_BASE_DIR\"]}'\\n)\\n```",
+      "assertions": {
+        "required_substrings": [
+          "dj.config['stores']",
+          "save_local",
+          "stores.raw.location"
+        ],
+        "forbidden_substrings": [
+          "SPYGLASS_BASE_DIR is all you need",
+          "mount it at the same path on both machines"
+        ],
+        "behavioral_checks": [
+          "Explains that dj.config['stores'] is machine-local and SPYGLASS_BASE_DIR does NOT propagate into it",
+          "Offers both fixes: regenerate config per machine OR edit in-place + save_local",
+          "Shows the session-start assertion (stores.raw.location prefix matches SPYGLASS_BASE_DIR)",
+          "Does not recommend remounting the share as the primary fix"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 42,
+      "eval_name": "config-key-error-after-pull",
+      "stage": "setup",
+      "tier": "config-troubleshooting",
+      "prompt": "just did `git pull` on spyglass/master and now `SpikeSortingRecording.populate` raises `KeyError: 'pipeline'`. Worked yesterday. Is this schema drift between my local code and the db, and if so which side is ahead?",
+      "expected_output": "Routes to setup_troubleshooting.md '`KeyError: '<column>' is not in the table heading' after `git pull`'. Yes — schema drift with code ahead of DB. The Python-side definition got a new `pipeline` column that the DB-side table doesn't have yet. Confirm the drift direction: `SpikeSortingRecording().describe()` (Python-side) vs `dj.conn().query('SHOW CREATE TABLE `<schema>`.`spike_sorting_recording`').fetchall()` (DB-side) — columns only on one side are the drift. Fix: run the table's `.alter()` as a user with ALTER privilege:\\n\\n```python\\nfrom spyglass.common import *   # pulls FK-referenced classes into scope\\nSpikeSortingRecording().alter()\\n```\\n\\nThe `from ... import *` is important — without it, `.alter()` raises `Foreign key reference <X> could not be resolved`. On shared DBs, coordinate with an admin if you don't have ALTER privilege; don't drop-and-recreate unless the table is empty.",
+      "assertions": {
+        "required_substrings": [
+          ".alter()",
+          "describe()",
+          "SHOW CREATE TABLE"
+        ],
+        "forbidden_substrings": [
+          "git checkout",
+          "downgrade spyglass"
+        ],
+        "behavioral_checks": [
+          "Identifies the drift direction: code ahead of DB",
+          "Shows both sides of the diagnostic (Python describe() vs DB SHOW CREATE TABLE)",
+          "Uses .alter() with `from spyglass.common import *` to pull FK scope",
+          "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables"
+        ]
+      },
+      "files": []
+    },
+    {
+      "id": 43,
+      "eval_name": "destruct-super-delete-no-cleanup",
+      "stage": "destructive-operations",
+      "tier": "adversarial",
+      "prompt": "yesterday I ran `(AnalysisNwbfile & key).super_delete()` to get around `cautious_delete` complaining with `Could not find exactly 1 datajoint user edeno in common.LabMember.LabMemberInfo`. The delete went through, but today I'm seeing orphan `.nwb` files in `$SPYGLASS_BASE_DIR/analysis/` that the DB doesn't know about. Did super_delete not clean them up? how do I clean them now?",
+      "expected_output": "Confirms: `super_delete` aliases straight to `datajoint.Table.delete`, skipping Spyglass's analysis-file cleanup. The DB rows are gone but the files stay on disk. Cleanup now: `AnalysisNwbfile().cleanup(dry_run=True)` first to preview the orphans it would remove, review the logs, then `AnalysisNwbfile().cleanup(dry_run=False)`. But more importantly: push back on the pattern. The root cause was the LabMember error, not a cautious_delete bug — routes to setup_troubleshooting.md AccessError/PermissionError to fix the underlying LabMember wiring (insert the datajoint user into `LabMember.LabMemberInfo`) so future deletes go through cautious_delete cleanly and the file cleanup happens automatically. super_delete is for legitimate edge cases (admin cleanup after a lab member leaves); using it to silence 'annoying' permission errors leaves orphaned data and bypasses the audit trail.",
+      "assertions": {
+        "required_substrings": [
+          "AnalysisNwbfile",
+          "cleanup",
+          "dry_run",
+          "LabMemberInfo"
+        ],
+        "forbidden_substrings": [
+          "just use super_delete next time",
+          "super_delete is fine here"
+        ],
+        "behavioral_checks": [
+          "Confirms super_delete bypasses Spyglass's file cleanup (aliases to datajoint.Table.delete)",
+          "Shows AnalysisNwbfile().cleanup(dry_run=True) first, then dry_run=False",
+          "Pushes back on super_delete as the pattern for LabMember errors — root-cause fix is to add the user to LabMember.LabMemberInfo",
+          "Does not treat 'the PermissionError is annoying' as sufficient justification for super_delete"
+        ]
+      },
+      "files": []
     }
   ]
 }
