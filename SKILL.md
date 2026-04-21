@@ -16,7 +16,11 @@ description: Use when the task involves Spyglass — the LorenFrankLab
   `ClusterlessDecodingV1`, `SortedSpikesDecodingV1`), and on
   DLC/DANDI/Kachery workflows within a Spyglass context. Activate
   whenever the task clearly involves a Spyglass table or pipeline —
-  even if the user doesn't name "Spyglass" explicitly.
+  even if the user doesn't name "Spyglass" explicitly. Do NOT activate
+  for plain DataJoint code without Spyglass imports, unrelated NWB
+  tooling (pynwb, ndx-*) outside Spyglass, or generic
+  Python/NumPy/pandas debugging when no Spyglass table is in the call
+  chain.
 ---
 
 # Spyglass Data Analysis Skill
@@ -26,16 +30,15 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 ## Core Directives
 
 - **NEVER delete or drop without explicit confirmation.** The database holds irreplaceable neuroscience data. Any destructive helper (`delete`, `drop`, `cleanup`, `merge_delete`, etc.) must be paired with an inspect step and user confirmation first. `.delete()` on SpyglassMixin tables aliases to `cautious_delete` — it enforces team-based permissions so you can't accidentally delete another lab member's sessions. Paired shapes + protection model: [destructive_operations.md](references/destructive_operations.md).
-- **Do NOT activate** for plain DataJoint code without Spyglass imports, unrelated NWB tooling (pynwb, ndx-*) outside Spyglass, or generic Python/NumPy/pandas debugging when no Spyglass table is in the call chain.
 - **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
 - **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** — on any table, including well-known ones. Use `print(len(rel))`; if >1, inspect with `rel.fetch(as_dict=True)` or `merge_restrict` to see which PK fields still need narrowing. `Table.describe()`/`Table.heading` show schema, not row count. See Common Mistake #2.
 - **Environment**: detect the user's setup (local Docker, local data, remote lab) — don't assume Jupyter or remote NWB.
 - **Reading DataJoint config files**: `dj_local_conf.json` and `~/.datajoint_config.json` may contain `database.password` in plaintext. Never `Read`/`cat` raw — use the scrubbed-read pattern in [setup_config.md](references/setup_config.md).
-- **Source of truth**: when the skill and the repo disagree, trust the repo. This skill cites source paths using the GitHub-repo layout (`src/spyglass/...`). In a pip/conda install there is no `src/` prefix — locate the installed package with `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"` and read a cited path `src/spyglass/<rest>` as `<pkg_dir>/<rest>`. User-facing tutorials are `notebooks/*.ipynb` per `notebooks/README.md`; `notebooks/py_scripts/*.py` is a jupytext mirror for PR-review diffs — cite the `.ipynb` form. Tutorial notebooks drift out of sync with the schema faster than the skill can be updated (e.g. stale `cluster_metrics_list_name` names, references to removed tables like `HeadDir` / `curation_feed_uri`). When a notebook cell fails with a missing parameter, table, or column, treat the notebook as stale and check the current source tree — don't attempt to "restore" the old parameter.
+- **Source of truth**: when the skill and the repo disagree, trust the repo. Cited paths use the GitHub layout (`src/spyglass/...`); in a pip install, drop the `src/` prefix — locate the package via `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`. Tutorials live at `notebooks/*.ipynb` (`notebooks/py_scripts/*.py` is a jupytext mirror — cite the `.ipynb`). Tutorial notebooks drift out of sync with the schema; when a cell fails on a missing parameter, table, or column, treat the notebook as stale and check the current source tree.
 
 ## Common Mistakes
 
-Top-frequency bugs. Flag any of these shapes before answering the rest of the question. Expanded prose + fixes: [common_mistakes.md](references/common_mistakes.md).
+Top 5 highest-frequency bugs. Flag any of these shapes before answering the rest of the question. Three additional footguns (interval/epoch mismatches, fragmented lab-wide search, plausible-but-nonexistent identifiers) plus expanded prose + fixes: [common_mistakes.md](references/common_mistakes.md) (8 entries total).
 
 1. **Classmethod restriction discard on merge tables** — `(PositionOutput & merge_key).merge_delete()` drops the `& merge_key`; use `PositionOutput.merge_delete(merge_key)`. Affected methods: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
 2. **Too-loose restriction + `fetch1()`** — `{"nwb_file_name": f}` matches many rows; add PK fields until `len(rel) == 1`. [datajoint_api.md](references/datajoint_api.md).

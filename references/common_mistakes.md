@@ -1,15 +1,15 @@
 # Common Mistakes — Expanded
 
-Expanded prose for the top-5 Spyglass footguns summarized in SKILL.md. Each section gives the full mechanism, fix, and cross-reference. Load this reference when the user's code shows one of these shapes, or when the SKILL.md one-liner needs a longer explanation.
+Expanded prose for the 8 most common Spyglass footguns — top 5 are summarized in SKILL.md; entries 6–8 are additional shapes that surface less often but reliably trip up new users. Each section gives the full mechanism, fix, and cross-reference. Load this reference when the user's code shows one of these shapes, or when the SKILL.md one-liner needs a longer explanation.
 
 ## Contents
 
 - [1. Classmethod restriction discard on merge tables](#1-classmethod-restriction-discard-on-merge-tables)
-- [2. Too-loose restriction + `fetch1()`](#2-too-loose-restriction-fetch1)
+- [2. Too-loose restriction + `fetch1()`](#2-too-loose-restriction--fetch1)
 - [3. Passing `skip_duplicates=True` to `insert_sessions`](#3-passing-skip_duplicatestrue-to-insert_sessions)
 - [4. `fetch_nwb()` silently returns a list](#4-fetch_nwb-silently-returns-a-list)
 - [5. Destructive call without the paired inspect step](#5-destructive-call-without-the-paired-inspect-step)
-- [6. Interval / epoch mismatch between pipeline selections](#6-interval-epoch-mismatch-between-pipeline-selections)
+- [6. Interval / epoch mismatch between pipeline selections](#6-interval--epoch-mismatch-between-pipeline-selections)
 - [7. Fragmenting lab-wide search with inconsistent names](#7-fragmenting-lab-wide-search-with-inconsistent-names)
 - [8. Plausible-sounding identifier that doesn't exist](#8-plausible-sounding-identifier-that-doesnt-exist)
 
@@ -26,7 +26,7 @@ returns no usable rows, for the same reason: the master's PK is
 `merge_id`, and `nwb_file_name` lives on the part tables. For the full
 fix list (`merge_get_part`, `merge_restrict`, `merge_view`,
 `merge_fetch`), see
-[`merge_and_mixin_methods.md` §`merge_restrict`](merge_and_mixin_methods.md#merge_restrict).
+[`merge_and_mixin_methods.md` § Data Discovery](merge_and_mixin_methods.md#data-discovery).
 
 ## 2. Too-loose restriction + `fetch1()`
 

@@ -15,8 +15,8 @@ Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin`
   - [B. Ambiguous truth value of an array](#b-ambiguous-truth-value-of-an-array)
   - [C. Silent row multiplication from joins](#c-silent-row-multiplication-from-joins)
   - [D. Special-case key failures](#d-special-case-key-failures)
-  - [E. Transaction / reservation confusion](#e-transaction-reservation-confusion)
-  - [F. Interval / epoch mismatch across pipelines](#f-interval-epoch-mismatch-across-pipelines)
+  - [E. Transaction / reservation confusion](#e-transaction--reservation-confusion)
+  - [F. Interval / epoch mismatch across pipelines](#f-interval--epoch-mismatch-across-pipelines)
   - [G. `populate(key)` with a non-PK dict iterates the whole Selection](#g-populatekey-with-a-non-pk-dict-iterates-the-whole-selection)
   - [H. IntegrityError on insert often means an ancestor row is missing](#h-integrityerror-on-insert-often-means-an-ancestor-row-is-missing)
 - [Debugging `populate_all_common`](#debugging-populate_all_common)
@@ -225,7 +225,7 @@ key = {"nwb_file_name": nwb_file,
 
 **Robust fix.** Wrap `fetch1()` patterns in a small helper that validates `len(rel) == 1` with a message naming the fields the caller passed, so the next too-loose restriction fails with a pinpoint error.
 
-**Watch-outs.** `fetch_nwb()` does **not** raise on multiple rows — it silently returns a list across every match. If your code does `(Table & key).fetch_nwb()[0]` on an under-specified restriction, you get a plausibly-shaped result from an arbitrary row. See [datajoint_api.md](datajoint_api.md#fetch-fetch-fetch1) for the detailed footgun.
+**Watch-outs.** `fetch_nwb()` does **not** raise on multiple rows — it silently returns a list across every match. If your code does `(Table & key).fetch_nwb()[0]` on an under-specified restriction, you get a plausibly-shaped result from an arbitrary row. See [datajoint_api.md](datajoint_api.md#fetch-fetch--fetch1) for the detailed footgun.
 
 ### B. Ambiguous truth value of an array
 

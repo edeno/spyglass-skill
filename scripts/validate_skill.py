@@ -26,6 +26,7 @@ import ast
 import json
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).parent.parent
@@ -243,7 +244,11 @@ def extract_fenced_blocks(content):
         stripped = line.strip()
         if stripped.startswith("```"):
             if in_code:
-                blocks.append((block_start, lang, "\n".join(body)))
+                # `textwrap.dedent` is conservative: strips the common leading
+                # whitespace of all lines, so list-nested fences (3-space indent)
+                # parse under ast.parse. Blocks with mixed indentation get a
+                # zero-char common prefix and pass through unchanged.
+                blocks.append((block_start, lang, textwrap.dedent("\n".join(body))))
                 body = []
                 lang = ""
             else:
@@ -1505,15 +1510,17 @@ MD_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 def _slugify_heading(heading):
     """Approximate GitHub's anchor-slug algorithm.
 
-    Rules we cover: lowercase, strip markdown symbols, replace spaces with
-    hyphens, drop characters that aren't [a-z0-9_-]. Backticks and periods
-    are dropped too. Good enough for the skill's actual headings — we
-    don't try to handle every edge case GitHub handles.
+    Rules: lowercase; strip backticks/asterisks; drop non-word non-space
+    non-hyphen chars; replace each space with one hyphen. Underscores are
+    intentionally preserved — GFM keeps them in slugs (e.g. `SPYGLASS_BASE_DIR`
+    → `spyglass_base_dir`). Per-space replacement (not `\\s+` collapse) is
+    also intentional: punctuation like `/` removed between words leaves two
+    visible spaces → two hyphens, matching GitHub's rendered anchor.
     """
     s = heading.strip().lower()
-    s = re.sub(r"[`*_]", "", s)
+    s = re.sub(r"[`*]", "", s)
     s = re.sub(r"[^\w\s-]", "", s)
-    s = re.sub(r"\s+", "-", s)
+    s = s.replace(" ", "-")
     return s.strip("-")
 
 

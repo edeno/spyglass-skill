@@ -237,8 +237,12 @@ raised from `Merge.source_class_dict` / `.fetch_nwb()` on the master.
 Find the orphan:
 
 ```python
+# Substitute the real merge module for your pipeline on the import line,
+# e.g. `import spyglass.lfp.lfp_merge as merge_module`.
+import spyglass.lfp.lfp_merge as merge_module  # noqa: F401
+
 db_parts = set(MergeMaster.parts(camel_case=True))
-py_parts = set(n for n in dir(spyglass.<pipeline>.<merge_module>))
+py_parts = set(n for n in dir(merge_module))
 orphans = db_parts - py_parts
 ```
 

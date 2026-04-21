@@ -5,7 +5,18 @@ Configuring an already-installed Spyglass — database connection, directory lay
 ## Contents
 
 - [Database Configuration](#database-configuration)
+  - [Config File Location](#config-file-location)
+  - [Config File Structure](#config-file-structure)
+  - [Reading the config file safely](#reading-the-config-file-safely)
+  - [Generating Config Programmatically](#generating-config-programmatically)
+  - [Stores Configuration](#stores-configuration)
 - [Directory Configuration](#directory-configuration)
+  - [Setting the Base Directory](#setting-the-base-directory)
+  - [Directory Tree](#directory-tree)
+  - [Per-Directory Overrides](#per-directory-overrides)
+  - [Accessing Directories at Runtime](#accessing-directories-at-runtime)
+  - [Additional Environment Variables](#additional-environment-variables)
+  - [Data Sharing Tables (Kachery)](#data-sharing-tables-kachery)
 
 ## Database Configuration
 

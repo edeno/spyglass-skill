@@ -58,7 +58,7 @@ ProbeType.insert1(
 
    When in doubt, verify against the current source tree:
 
-   ```python
+   ```bash
    python -c 'from spyglass.data_import import insert_sessions'
    python -c 'from spyglass.spikesorting.v1 import SortGroup'
    ```
