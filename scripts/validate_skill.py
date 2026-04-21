@@ -139,7 +139,7 @@ SKIP_METHODS = {
     "fetch", "fetch1", "fetch_nwb", "fetch_pynapple",
     "proj", "aggr", "describe", "heading",
     "parents", "children", "insert", "insert1",
-    "populate", "delete", "drop",
+    "populate", "delete", "drop", "alter",
     # Note: insert_selection is a Spyglass convention (not DataJoint) and IS
     # validated when called on known classes — it's deliberately absent here.
     "restrict", "restrict_by",
