@@ -1242,7 +1242,10 @@ def fixture_merge_registry_md_misclassification_caught(src_root):
     bogus_claimed_non_merges = set()  # empty to isolate the failure
     with _with_patched_attr(
         v, "_parse_merge_registry_from_markdown",
-        lambda: (bogus_claimed_merges, bogus_claimed_non_merges),
+        # 3-tuple: (claimed_merges, claimed_non_merges, marker_found).
+        # marker_found=True so we don't cross-fire the marker-missing
+        # check (3) path and confuse the assertion on check (2).
+        lambda: (bogus_claimed_merges, bogus_claimed_non_merges, True),
     ):
         v.check_merge_registry(src_root, results)
     hit = any(
@@ -1271,7 +1274,7 @@ def fixture_merge_registry_inverse_misclassification_caught(src_root):
     results = v.ValidationResult()
     with _with_patched_attr(
         v, "_parse_merge_registry_from_markdown",
-        lambda: (set(v.MERGE_MASTERS), {"PositionOutput"}),
+        lambda: (set(v.MERGE_MASTERS), {"PositionOutput"}, True),
     ):
         v.check_merge_registry(src_root, results)
     hit = any(
@@ -1284,6 +1287,41 @@ def fixture_merge_registry_inverse_misclassification_caught(src_root):
         return True
     print(f"  [FAIL] expected a 'skill contradicts source' failure for "
           f"PositionOutput in the NOT-a-merge list. failed={results.failed}")
+    return False
+
+
+def fixture_merge_registry_marker_missing_caught(src_root):
+    """Dropping the `**Common lookalikes that are NOT merge tables`
+    marker must produce a loud failure, not a silent skip.
+
+    Before the fix this failed silently — the parser returned
+    `claimed_non_merges=set()` and the NOT-a-merge subcheck did nothing.
+    That would let an unrelated edit (reorganizing merge_methods.md to
+    remove the bolded subsection header) quietly disable a third of the
+    merge-registry check. The fix threads a `marker_found` flag through
+    the parser return so check_merge_registry can emit an explicit fail
+    when the marker isn't there.
+    """
+    results = v.ValidationResult()
+    with _with_patched_attr(
+        v, "_parse_merge_registry_from_markdown",
+        # 3-tuple with marker_found=False — simulates the marker being
+        # removed from merge_methods.md. The first two elements stay
+        # consistent with the real tree so checks (1) and (2) pass
+        # cleanly and only check (3) gates on the marker absence.
+        lambda: (set(v.MERGE_MASTERS), set(), False),
+    ):
+        v.check_merge_registry(src_root, results)
+    hit = any(
+        "marker missing from merge_methods.md" in msg
+        and "check (3) cannot run" in msg
+        for msg in results.failed
+    )
+    if hit:
+        print("  [ok] merge-registry: missing NOT-a-merge marker caught")
+        return True
+    print(f"  [FAIL] expected a 'marker missing' failure. "
+          f"failed={results.failed}")
     return False
 
 
@@ -1606,6 +1644,7 @@ FIXTURES = [
     fixture_merge_registry_source_addition_caught,
     fixture_merge_registry_md_misclassification_caught,
     fixture_merge_registry_inverse_misclassification_caught,
+    fixture_merge_registry_marker_missing_caught,
 ]
 
 

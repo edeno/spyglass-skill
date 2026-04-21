@@ -1253,6 +1253,12 @@ def check_class_files_exist(src_root, results):
 # match `class Foo(Merge, ...)` because merge_masters uniformly use the
 # `_Merge` alias; if upstream changes that convention we'll see both
 # directions fail in check_merge_registry and can update intentionally.
+# Assumes `_Merge` is the FIRST base class — the invariant holds across
+# all current Spyglass merge files. A future `class Foo(SpyglassMixin,
+# _Merge, ...)` would silently evade this regex; if that style lands
+# upstream the check_merge_registry failure mode is a spurious "merge
+# master in MERGE_MASTERS but not in source" and the fix is to broaden
+# the pattern.
 _MERGE_SUBCLASS_RE = re.compile(r"^class\s+(\w+)\s*\(\s*_Merge\s*[,)]", re.M)
 
 # Pattern for `_Merge` imports so we can confirm the alias resolves before
@@ -1284,18 +1290,23 @@ def _discover_merge_masters_in_source(src_root):
 
 def _parse_merge_registry_from_markdown():
     """Extract the claimed merge-master set and the NOT-a-merge set from
-    merge_methods.md. Returns (claimed_merges, claimed_non_merges) as
-    sets of class names.
+    merge_methods.md. Returns (claimed_merges, claimed_non_merges,
+    notmerge_marker_found) — the third element lets the caller
+    distinguish "marker present, no entries found" (returns `set()`)
+    from "marker missing entirely" (the NOT-a-merge subcheck can't run).
 
     The registry table is recognized by the `## Is this a merge table?`
     heading and is parsed row-by-row; each row's first backticked token
     is the class name. The NOT-a-merge list is parsed from the bullet
     list that follows (`- `... `ClassName` ...`); every backticked
-    CamelCase identifier in those bullets counts.
+    CamelCase identifier in those bullets counts. The bolded marker
+    `**Common lookalikes that are NOT merge tables` is load-bearing —
+    if it moves or is renamed the parser signals `marker_found=False`
+    so check_merge_registry can fail loudly rather than silently skip.
     """
     merge_md = REFERENCES_DIR / "merge_methods.md"
     if not merge_md.exists():
-        return set(), set()
+        return set(), set(), False
     text = merge_md.read_text()
 
     # Slice to the registry section (through the next H2).
@@ -1305,16 +1316,16 @@ def _parse_merge_registry_from_markdown():
         flags=re.DOTALL,
     )
     if not match:
-        return set(), set()
+        return set(), set(), False
     section = match.group(1)
 
-    # Split at the NOT-a-merge marker so we can parse the two halves
-    # separately. The bolded phrase is deliberately stable — if it
-    # changes we want the parse to fall through and the cross-check
-    # to fail loudly.
+    # Split at the NOT-a-merge marker. If the marker isn't in `section`,
+    # `split` has length 1 — we preserve that signal via `marker_found`
+    # so the caller can fail loudly rather than silently skip check (3).
     split = re.split(r"\*\*Common lookalikes that are NOT merge tables", section)
+    marker_found = len(split) > 1
     registry_half = split[0]
-    notmerge_half = split[1] if len(split) > 1 else ""
+    notmerge_half = split[1] if marker_found else ""
 
     # Registry table rows: `| \`ClassName\` (...) | ...`. Capture the first
     # backticked token per row; skip the header + divider rows by requiring
@@ -1332,7 +1343,7 @@ def _parse_merge_registry_from_markdown():
     for tok in re.findall(r"`([A-Z]\w+)`", notmerge_half):
         claimed_non_merges.add(tok)
 
-    return claimed_merges, claimed_non_merges
+    return claimed_merges, claimed_non_merges, marker_found
 
 
 def check_merge_registry(src_root, results):
@@ -1397,7 +1408,11 @@ def check_merge_registry(src_root, results):
         )
 
     # (2) tuple ↔ merge_methods.md registry table
-    claimed_merges, claimed_non_merges = _parse_merge_registry_from_markdown()
+    (
+        claimed_merges,
+        claimed_non_merges,
+        notmerge_marker_found,
+    ) = _parse_merge_registry_from_markdown()
     if not claimed_merges:
         results.fail(
             "merge-registry: could not parse `## Is this a merge table?` "
@@ -1424,18 +1439,26 @@ def check_merge_registry(src_root, results):
             )
 
     # (3) NOT-a-merge list ↔ source
-    for name in sorted(claimed_non_merges):
-        if name in source_merges:
-            results.fail(
-                f"merge-registry: merge_methods.md lists `{name}` as NOT "
-                f"a merge, but upstream `class {name}(_Merge, ...)` "
-                f"exists — skill contradicts source"
-            )
-    if claimed_non_merges and not (claimed_non_merges & source_merges):
-        results.ok(
-            f"merge-registry: {len(claimed_non_merges)} NOT-a-merge "
-            f"entries confirmed as non-_Merge in source"
+    if not notmerge_marker_found:
+        results.fail(
+            "merge-registry: `**Common lookalikes that are NOT merge "
+            "tables` marker missing from merge_methods.md — "
+            "check (3) cannot run. Restore the bold marker or update "
+            "_parse_merge_registry_from_markdown to use the new shape."
         )
+    else:
+        for name in sorted(claimed_non_merges):
+            if name in source_merges:
+                results.fail(
+                    f"merge-registry: merge_methods.md lists `{name}` as "
+                    f"NOT a merge, but upstream `class {name}(_Merge, "
+                    f"...)` exists — skill contradicts source"
+                )
+        if claimed_non_merges and not (claimed_non_merges & source_merges):
+            results.ok(
+                f"merge-registry: {len(claimed_non_merges)} NOT-a-merge "
+                f"entries confirmed as non-_Merge in source"
+            )
 
 
 def check_prose_assertions(results: ValidationResult):
