@@ -19,14 +19,14 @@ Expanded prose for the 8 most common Spyglass footguns — top 5 are summarized 
 
 **Fix.** Always pass the restriction as an argument: `PositionOutput.merge_delete(merge_key)`.
 
-The same classmethod-dispatch rule applies to `merge_delete_parent`, `merge_restrict`, `merge_get_part`, `merge_get_parent`, `merge_view`, and `merge_html`. Full affected-method list with correct call forms: [merge_and_mixin_methods.md](merge_and_mixin_methods.md).
+The same classmethod-dispatch rule applies to `merge_delete_parent`, `merge_restrict`, `merge_get_part`, `merge_get_parent`, `merge_view`, and `merge_html`. Full affected-method list with correct call forms: [merge_methods.md](merge_methods.md).
 
 **Related footgun (same family).** `(LFPOutput & {'nwb_file_name': f}).fetch()`
 returns no usable rows, for the same reason: the master's PK is
 `merge_id`, and `nwb_file_name` lives on the part tables. For the full
 fix list (`merge_get_part`, `merge_restrict`, `merge_view`,
 `merge_fetch`), see
-[`merge_and_mixin_methods.md` § Data Discovery](merge_and_mixin_methods.md#data-discovery).
+[`merge_methods.md` § Data Discovery](merge_methods.md#data-discovery).
 
 ## 2. Too-loose restriction + `fetch1()`
 

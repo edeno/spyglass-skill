@@ -35,7 +35,7 @@ IntervalList.proj(                │        ↑
     'interval_list_name') ────────┘
 ```
 
-Source: [`src/spyglass/mua/v1/mua.py`](https://github.com/LorenFrankLab/spyglass/blob/master/src/spyglass/mua/v1/mua.py). The two upstream FKs are renamed to `pos_merge_id` and `detection_interval` via `.proj()` (mua.py:67–68) — projected FK rename pattern, see [merge_and_mixin_methods.md](merge_and_mixin_methods.md).
+Source: [`src/spyglass/mua/v1/mua.py`](https://github.com/LorenFrankLab/spyglass/blob/master/src/spyglass/mua/v1/mua.py). The two upstream FKs are renamed to `pos_merge_id` and `detection_interval` via `.proj()` (mua.py:67–68) — projected FK rename pattern, see [merge_methods.md](merge_methods.md).
 
 ## Key Tables
 

@@ -37,7 +37,7 @@ from spyglass.linearization.v1 import (
 #    Note the FK rename: LinearizationSelection is defined as
 #    `-> PositionOutput.proj(pos_merge_id='merge_id')`, so the selection
 #    key uses `pos_merge_id`, not `merge_id` — projected FK rename pattern,
-#    see merge_and_mixin_methods.md.
+#    see merge_methods.md.
 
 # 2. Selection — ties PositionOutput + TrackGraph + params. No interval
 #    field: the interval is implicit in the PositionOutput entry selected.

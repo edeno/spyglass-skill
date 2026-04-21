@@ -35,7 +35,7 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 
 Top 5 highest-frequency bugs. Flag any of these shapes before answering. Three more footguns plus expanded prose + fixes: [common_mistakes.md](references/common_mistakes.md) (8 entries total).
 
-1. **Classmethod restriction discard on merge tables** — `(PositionOutput & merge_key).merge_delete()` drops the `& merge_key`; use `PositionOutput.merge_delete(merge_key)`. Affected methods: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
+1. **Classmethod restriction discard on merge tables** — `(PositionOutput & merge_key).merge_delete()` drops the `& merge_key`; use `PositionOutput.merge_delete(merge_key)`. Affected methods: [merge_methods.md](references/merge_methods.md).
 2. **Too-loose restriction + `fetch1()`** — `{"nwb_file_name": f}` matches many rows; add PK fields until `len(rel) == 1`. [datajoint_api.md](references/datajoint_api.md).
 3. **`skip_duplicates=True` on `insert_sessions`** — raises `TypeError`; use `reinsert=True` for re-ingestion. [ingestion.md](references/ingestion.md).
 4. **`fetch_nwb()` silently returns a list** on multiple matches (unlike `fetch1()`) — restrict to one row before `[0]`-indexing.
@@ -51,7 +51,7 @@ Stages orient you to *what the user is doing*; the Reference Routing table below
 
 1. **Setup/install** → `scripts/install.py` is the canonical fast path per `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md), [setup_config.md](references/setup_config.md), or [setup_troubleshooting.md](references/setup_troubleshooting.md). `00_Setup.ipynb` is a manual fallback.
 2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.ipynb`.
-3. **Framework concepts** (first time using Spyglass) → [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) + `01_Concepts.ipynb`. `04_Merge_Tables.ipynb` is a later, specialized concept — don't lead with it for novice questions.
+3. **Framework concepts** (first time using Spyglass) → [merge_methods.md](references/merge_methods.md), [spyglassmixin_methods.md](references/spyglassmixin_methods.md), `01_Concepts.ipynb`.
 4. **Pipeline usage** (running or querying existing analyses) → pipeline reference files in the table below.
 5. **Pipeline authoring** (extending a pipeline, writing schema modules) → [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md). Different from usage.
 6. **Runtime debugging / traceback triage** (populate/make/fetch1 failures, join multiplicity, one-key-fails, NumPy/pandas bugs inside `make()`) → [runtime_debugging.md](references/runtime_debugging.md). Install/config/connection errors go to [setup_troubleshooting.md](references/setup_troubleshooting.md) instead.
@@ -60,7 +60,7 @@ Users may span stages. Infer from the question and any imports/table names in co
 
 ## Merge Tables
 
-Two phases: **inspect** with `MergeTable & key` or `merge_restrict` (SQL only), then **load** with `merge_get_part` → `fetch1_dataframe` (disk read; cardinality-check first). Full pattern, including the `fetch_results` decoding-only footgun: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
+Two phases: **inspect** with `MergeTable & key` or `merge_restrict` (SQL only), then **load** with `merge_get_part` → `fetch1_dataframe` (disk read; cardinality-check first). Full pattern, including the `fetch_results` decoding-only footgun: [merge_methods.md](references/merge_methods.md).
 
 ## Querying an Already-Configured DB
 
@@ -91,7 +91,7 @@ Repo paths (source, docs) are listed in each reference file — this table route
 | Destructive operations — deletes, cleanup, inspect-before-destroy patterns | [destructive_operations.md](references/destructive_operations.md) | — |
 | Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) | — |
 | Expanded prose on the most common Spyglass footguns (8 entries) | [common_mistakes.md](references/common_mistakes.md) | — |
-| Framework concepts / merge tables | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `01_Concepts.ipynb`, `04_Merge_Tables.ipynb` |
+| Merge tables (`_Merge` methods) or SpyglassMixin helpers (`fetch_nwb`, `cautious_delete`, `<<`/`>>`) | [merge_methods.md](references/merge_methods.md), [spyglassmixin_methods.md](references/spyglassmixin_methods.md) | `01_Concepts.ipynb`, `04_Merge_Tables.ipynb` |
 | NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.ipynb` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — |
 | Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | — |

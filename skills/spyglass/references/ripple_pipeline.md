@@ -75,7 +75,7 @@ Source: [`src/spyglass/ripple/v1/ripple.py`](https://github.com/LorenFrankLab/sp
 
 **RippleTimesV1** (Computed) — outputs ripple start/end times.
 
-- FK: `RippleLFPSelection`, `RippleParameters`, `PositionOutput.proj(pos_merge_id='merge_id')` (ripple.py:184–186). The position merge key arrives as `pos_merge_id` — projected FK rename pattern, see [merge_and_mixin_methods.md](merge_and_mixin_methods.md).
+- FK: `RippleLFPSelection`, `RippleParameters`, `PositionOutput.proj(pos_merge_id='merge_id')` (ripple.py:184–186). The position merge key arrives as `pos_merge_id` — projected FK rename pattern, see [merge_methods.md](merge_methods.md).
 - Stored via `AnalysisNwbfile`, fetch with `fetch1_dataframe()`.
 
 ## Canonical Example

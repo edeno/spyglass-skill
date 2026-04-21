@@ -82,7 +82,7 @@ Decide which of these four layers is actually failing:
 - **Layer A — DataJoint orchestration**: `populate()` reservation, `use_transaction`, parallel workers. Symptoms: worker died silently, job reserved but not running, transaction rolled back.
 - **Layer B — Relational logic**: keys, restrictions, joins, merge-table resolution, cardinality. Symptoms: `fetch1()` raises on 0 or >1 rows, joins duplicate results, `merge_get_part()` returns the wrong partition.
 - **Layer C — User code in make()**: the Python/NumPy/pandas work inside the table's `make()`. Symptoms: `ValueError`, `KeyError`, shape mismatches, `ambiguous truth value`.
-- **Layer D — Spyglass wrapper behavior**: merge-table classmethod dispatch, interval helpers, `_Merge` mechanics. Symptoms: classmethod calls silently dropping restrictions, merge resolution returning unexpected part tables. See [merge_and_mixin_methods.md](merge_and_mixin_methods.md).
+- **Layer D — Spyglass wrapper behavior**: merge-table classmethod dispatch, interval helpers, `_Merge` mechanics. Symptoms: classmethod calls silently dropping restrictions, merge resolution returning unexpected part tables. See [merge_methods.md](merge_methods.md).
 
 State which layer is most likely before proposing anything.
 
@@ -283,7 +283,7 @@ Or aggregate before joining with `.aggr()` if you truly want a many-to-one rollu
 
 **Robust fix.** In `make()`, assert cardinality before fetching: `assert len(rel) == 1, f"{rel.primary_key} matched {len(rel)} rows for key={key}"`. This catches multiplicity at the earliest possible point rather than at a confusing `fetch1()` further down.
 
-**Watch-outs.** Restricting a merge table with a friendly key (e.g., `{"nwb_file_name": ...}`) almost always multiplies — use `merge_get_part()` or `merge_restrict()` instead. See [merge_and_mixin_methods.md](merge_and_mixin_methods.md).
+**Watch-outs.** Restricting a merge table with a friendly key (e.g., `{"nwb_file_name": ...}`) almost always multiplies — use `merge_get_part()` or `merge_restrict()` instead. See [merge_methods.md](merge_methods.md).
 
 ### D. Special-case key failures
 
@@ -493,7 +493,8 @@ Keep steps 4–7 terse. The confirmation checks are the part that matters; the f
 ## Cross-references
 
 - [datajoint_api.md](datajoint_api.md) — restriction/join semantics, `fetch1()` cardinality footgun, too-loose-restriction pattern
-- [merge_and_mixin_methods.md](merge_and_mixin_methods.md) — merge-table classmethod dispatch gotcha, `<<`/`>>` upstream/downstream restriction
+- [merge_methods.md](merge_methods.md) — merge-table classmethod dispatch gotcha, `_Merge` methods, projected FK rename
+- [spyglassmixin_methods.md](spyglassmixin_methods.md) — `<<`/`>>` upstream/downstream restriction, `fetch_nwb`, `cautious_delete`, helpers
 - [custom_pipeline_authoring.md](custom_pipeline_authoring.md) — `make()` conventions, `AnalysisNwbfile.build()` state errors
 - [setup_troubleshooting.md](setup_troubleshooting.md) — install, config, Docker/MySQL, imports, base directory (this file does not duplicate those)
 - [workflows.md](workflows.md) — cross-table exploration patterns useful for comparing succeeding vs. failing keys

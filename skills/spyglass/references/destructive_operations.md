@@ -165,7 +165,7 @@ print((PositionOutput & merge_key).fetch(as_dict=True))
 # PositionOutput.merge_delete(merge_key)
 ```
 
-The same classmethod-dispatch shape applies to `merge_delete_parent`, `merge_restrict`, `merge_get_part`, `merge_get_parent`, `merge_view`, and `merge_html`. The complete list of affected methods with correct call forms is in [merge_and_mixin_methods.md](merge_and_mixin_methods.md). Canonical worked example: `notebooks/04_Merge_Tables.ipynb` (jupytext mirror at `py_scripts/04_Merge_Tables.py:198`).
+The same classmethod-dispatch shape applies to `merge_delete_parent`, `merge_restrict`, `merge_get_part`, `merge_get_parent`, `merge_view`, and `merge_html`. The complete list of affected methods with correct call forms is in [merge_methods.md](merge_methods.md). Canonical worked example: `notebooks/04_Merge_Tables.ipynb` (jupytext mirror at `py_scripts/04_Merge_Tables.py:198`).
 
 ### File cleanup
 
@@ -198,6 +198,6 @@ Do not look for a current method that wraps both steps. If you see `delete_downs
 
 ## Cross-references
 
-- [merge_and_mixin_methods.md](merge_and_mixin_methods.md) — full classmethod-discard gotcha list and corrected call forms
+- [merge_methods.md](merge_methods.md) — full classmethod-discard gotcha list and corrected call forms
 - [runtime_debugging.md](runtime_debugging.md) — diagnosing whether a destructive call removed unexpected rows
 - [datajoint_api.md](datajoint_api.md) — restriction semantics the inspect step depends on
