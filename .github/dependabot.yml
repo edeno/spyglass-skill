@@ -1,0 +1,14 @@
+# Dependabot config for spyglass-skill.
+#
+# The repo has no Python dependencies (stdlib-only validator), so we only
+# monitor GitHub Actions pins. Monthly cadence — Actions updates are rare
+# and usually trivial; weekly would mostly be noise.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    commit-message:
+      prefix: "ci"
