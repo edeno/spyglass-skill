@@ -1243,6 +1243,85 @@ def check_no_pr_citations(results: ValidationResult):
             )
 
 
+# Reference-file size budgets. These are soft caps — a reference that
+# grows past them is usually carrying bloat or has earned a split.
+#   >500 lines: warn (consider splitting; see runtime_debugging.md → the
+#               populate_all_common_debugging.md precedent).
+#   >700 lines: fail (hard cap — at this point the reference has stopped
+#               being skim-able and the progressive-disclosure property
+#               of the skill is degraded).
+#   H2 subsection >150 lines: warn (a single subsection that large usually
+#               duplicates content or should be its own reference).
+# SKILL.md is word-capped separately by check_structure(); excluded here.
+# Supplementary files under 80 lines are excluded — short intentionally.
+REFERENCE_FILE_WARN_LINES = 500
+REFERENCE_FILE_FAIL_LINES = 700
+H2_SECTION_WARN_LINES = 150
+FILE_EXEMPT_BELOW_LINES = 80
+
+
+def check_section_budgets(results: ValidationResult):
+    """Flag reference files or H2 subsections that exceed size budgets.
+
+    Runs over every reference .md (not SKILL.md). Counts whole-file lines
+    and per-H2-subsection lines. Emits warnings for soft-cap violations,
+    failures for the hard cap.
+    """
+    for md_file in collect_md_files():
+        if md_file.name == "SKILL.md":
+            continue
+        content = md_file.read_text()
+        lines = content.splitlines()
+        total = len(lines)
+        if total < FILE_EXEMPT_BELOW_LINES:
+            continue
+
+        if total > REFERENCE_FILE_FAIL_LINES:
+            results.fail(
+                f"{md_file.name}: {total} lines exceeds hard cap of "
+                f"{REFERENCE_FILE_FAIL_LINES} — split into focused references"
+            )
+        elif total > REFERENCE_FILE_WARN_LINES:
+            results.warn(
+                f"{md_file.name}: {total} lines exceeds soft cap of "
+                f"{REFERENCE_FILE_WARN_LINES} — consider splitting"
+            )
+        else:
+            results.ok(f"budget: {md_file.name} is {total} lines")
+
+        # Per-H2-subsection line counts. A subsection spans from one `## `
+        # heading to the next (or EOF).
+        current_heading = None
+        current_start = 0
+        in_fence = False
+        for i, line in enumerate(lines, start=1):
+            stripped = line.lstrip()
+            if stripped.startswith("```"):
+                in_fence = not in_fence
+                continue
+            if in_fence:
+                continue
+            if line.startswith("## "):
+                if current_heading is not None:
+                    span = i - current_start
+                    if span > H2_SECTION_WARN_LINES:
+                        results.warn(
+                            f"{md_file.name}:{current_start}: section "
+                            f"'{current_heading}' is {span} lines "
+                            f"(warn > {H2_SECTION_WARN_LINES})"
+                        )
+                current_heading = line[3:].strip()
+                current_start = i
+        if current_heading is not None:
+            span = total - current_start + 1
+            if span > H2_SECTION_WARN_LINES:
+                results.warn(
+                    f"{md_file.name}:{current_start}: section "
+                    f"'{current_heading}' is {span} lines "
+                    f"(warn > {H2_SECTION_WARN_LINES})"
+                )
+
+
 def check_python_syntax(results: ValidationResult):
     """Parse every ```python fenced block with ast.parse().
 
@@ -2027,53 +2106,56 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/15] Checking source files and class registry...")
+    print("\n[1/16] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/15] Checking import statements in skill files...")
+    print("[2/16] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/15] Checking method references...")
+    print("[3/16] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/15] Checking keyword arguments...")
+    print("[4/16] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/15] Checking skill structure...")
+    print("[5/16] Checking skill structure...")
     check_structure(results)
 
-    print("[6/15] Checking prose assertions...")
+    print("[6/16] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/15] Parsing Python code blocks (ast.parse)...")
+    print("[7/16] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/15] Verifying prose path references exist in repo...")
+    print("[8/16] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/15] Verifying notebook names exist in repo...")
+    print("[9/16] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/15] Verifying internal markdown links and anchors...")
+    print("[10/16] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/15] Scanning for documented anti-patterns...")
+    print("[11/16] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/15] Checking dict-restriction field names against schemas...")
+    print("[12/16] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
 
-    print("[13/15] Verifying citation line numbers are in range...")
+    print("[13/16] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
 
-    print("[14/15] Scanning evals.json for hallucinated class/method refs...")
+    print("[14/16] Scanning evals.json for hallucinated class/method refs...")
     check_evals_content(src_root, results, registry=registry)
 
-    print("[15/15] Scanning prose for banned PR-number citations...")
+    print("[15/16] Scanning prose for banned PR-number citations...")
     check_no_pr_citations(results)
+
+    print("[16/16] Enforcing reference-file and section size budgets...")
+    check_section_budgets(results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.
