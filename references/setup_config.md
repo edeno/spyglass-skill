@@ -269,7 +269,7 @@ assert 'raw' in dj.config['stores'] and 'analysis' in dj.config['stores']
 > last-resort workaround; the correct fix is ensuring Spyglass's
 > settings module runs first.
 
-### Data Sharing Tables (Kachery)
+## Data Sharing Tables (Kachery)
 
 Two tables configure kachery-cloud sharing alongside the env vars above:
 
