@@ -175,12 +175,15 @@ Two non-obvious behaviors:
   check. Always delete via
   `(Nwbfile & key).delete(); Nwbfile().cleanup(delete_files=True)`
   and never edit an ingested NWB in place — work on a copy.
-- **`ValueError: Names should be stored as 'last, first'. Skipping <name>`**:
-  `LabMember.insert_from_nwbfile` expects the NWB `experimenter` field
-  in `'Last, First'` (comma-separated) format. Multi-token first names
-  without a comma (`'Kyu Hyun Lee'`) trip this. Either rewrite
-  `experimenter` to `'Lee, Kyu Hyun'` before ingest, or pre-insert the
-  LabMember row manually.
+- **`ValueError: Name has unsupported format for <name>. Must use exactly
+  one comma+space (i.e., ', ') or space.`**: `LabMember.insert_from_nwbfile`
+  routes through `decompose_name`
+  (`src/spyglass/common/common_lab.py:366`), which accepts only
+  exactly-two-token names — either `'First Last'` (single space, no
+  comma) or `'Last, First'` (one comma+space). Multi-token entries
+  like `'Kyu Hyun Lee'` (three tokens, no comma) fail. Fix: rewrite
+  to `'Lee, Kyu Hyun'` before ingest, or pre-insert the `LabMember`
+  row manually with `lab_member_name` set explicitly.
 - **`PopulateException: Data acquisition device properties ... do not
   match`**: a `DataAcquisitionDevice` with the same
   `data_acquisition_device_name` already exists in the DB with
