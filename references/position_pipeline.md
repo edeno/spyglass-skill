@@ -170,7 +170,7 @@ of bounds for axis 0 with size 0` from
 has no `PositionIntervalMap` rows. For each `TaskEpoch`, run:
 
 ```python
-from spyglass.position import convert_epoch_interval_name_to_position_interval_name
+from spyglass.common import convert_epoch_interval_name_to_position_interval_name
 
 convert_epoch_interval_name_to_position_interval_name(
     {'nwb_file_name': nwb_file, 'epoch': epoch_id},
@@ -250,8 +250,12 @@ print(test_mode, type(test_mode))   # must be <class 'bool'>
 
 If the type is `str`, remove the entry from your DataJoint config file
 (or overwrite with an actual Python `False`) and restart the kernel.
-Spyglass should ideally cast via `str_to_bool` on load; tracked
-upstream.
+
+**Fixed in current Spyglass (PR #1572).** `SpyglassConfig` now applies
+`str_to_bool` on load (`src/spyglass/settings.py:171`), so the type
+check will always show `bool` on a current install. If you see
+`type(test_mode) == str` on post-#1572 code, something is overwriting
+`test_mode` after load — investigate the import path.
 
 Sanity check if the training keeps stopping early even with a proper
 bool: look at the DLC project `config.yaml`'s `num_iterations` — DLC

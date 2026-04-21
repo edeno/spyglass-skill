@@ -128,11 +128,15 @@ for path in ExportSelection().list_file_paths(paper_key):
     pynwb.validate(path)
 ```
 
-**Admin-permission gate note.** `update_analysis_for_dandi_standard`
-currently calls `LabMember.check_admin_privilege()`. If you are a
-non-admin preparing your own export, work with a lab admin rather
-than modifying the analysis files manually; do NOT edit the original
-files in place — re-checksum will fail on every subsequent
+**Admin-permission gate note.** The DANDI-prep flow through
+`Export.prepare_files_for_export` runs `make_file_obj_id_unique` in
+`spyglass.utils.dj_helper_fn`, which calls
+`LabMember.check_admin_privilege()`. `update_analysis_for_dandi_standard`
+itself does not gate on admin, but callers that go through
+`prepare_files_for_export` do. If you are a non-admin preparing your
+own export, work with a lab admin rather than modifying the analysis
+files manually; do NOT edit the original files in place —
+re-checksum will fail on every subsequent
 `fetch_nwb()`. The DANDI-prep tracking issue lists the individual
 h5py patch scripts that implement each sub-fix if you need a
 fine-grained workaround.

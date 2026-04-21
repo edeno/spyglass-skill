@@ -311,13 +311,20 @@ from spyglass.spikesorting.v1 import (
 
 **Gotcha — "sorting has spikes exceeding the recording duration"**
 
-`MetricCuration.populate` raises `ValueError: The sorting object has
-spikes exceeding the recording duration. You have to remove those
+`MetricCuration.populate` can raise `ValueError: The sorting object
+has spikes exceeding the recording duration. You have to remove those
 spikes with spikeinterface.curation.remove_excess_spikes()` when the
 sorter placed a spike at or past the last recording timestamp.
 Typically ~30% of units can be affected on a bad sort.
 
-**Pre-populate check.**
+**Fixed in current Spyglass (PR #1564).** `CurationV1.get_sorting` now
+calls `spike_times_to_valid_samples` internally to trim excess spikes
+at fetch time (see `src/spyglass/spikesorting/v1/curation.py:182-230`),
+so `MetricCuration.populate` succeeds without any user action. If you
+hit the error on current Spyglass, file a bug — the automatic
+trimming should have caught it.
+
+**Pre-populate check for older installs** (pre-#1564):
 
 ```python
 from spikeinterface.curation import has_exceeding_spikes
@@ -325,14 +332,12 @@ from spikeinterface.curation import has_exceeding_spikes
 rec = CurationV1.get_recording(curation_key)
 sort = CurationV1.get_sorting(curation_key)
 if has_exceeding_spikes(rec, sort):
-    print('This sort will fail MetricCuration.populate; see tracked bug.')
+    print('This sort will fail MetricCuration.populate on pre-#1564 Spyglass.')
 ```
 
-There is no user-side workaround — `MetricCuration.make()` fetches
-the sorting from the DB via `CurationV1`, it doesn't accept an
-external sorting object, and re-inserting a patched sorting requires
-maintainer-side changes. Track against the relevant bug; upgrade
-Spyglass when a fix lands.
+On a pre-#1564 install, there was no user-side workaround in the
+published API — upgrade Spyglass (`git pull && pip install -e .`) and
+the trimming happens automatically.
 
 ## Analysis: SortedSpikesGroup
 
@@ -380,17 +385,22 @@ firing_rate = SortedSpikesGroup().get_firing_rate(
 )
 ```
 
-**`time_slice` must be a `slice` object.** The docstring says
-`time_slice: list of float, optional`, but the implementation accesses
-`time_slice.start` / `time_slice.stop`, so a list raises
-`AttributeError: 'list' object has no attribute 'start'`. Pass
-`slice(t0, t1)`:
+**`time_slice` accepts a `slice`, list, or tuple.** The docstring says
+`time_slice: list of float, optional`; the implementation at
+`src/spyglass/spikesorting/analysis/v1/group.py:231-232` converts a
+list/tuple to a slice via `time_slice = slice(*time_slice)`. Both of
+these work:
 
 ```python
-spike_times, unit_ids = SortedSpikesGroup().fetch_spike_data(
-    key, time_slice=slice(t_start, t_stop), return_unit_ids=True,
-)
+# list or tuple — converted internally
+SortedSpikesGroup().fetch_spike_data(key, time_slice=[t0, t1])
+
+# slice — used directly
+SortedSpikesGroup().fetch_spike_data(key, time_slice=slice(t0, t1))
 ```
+
+Prefer `slice(t0, t1)` for clarity; the internal conversion is an
+implementation detail that could change.
 
 ## Analysis: Unit Annotations
 

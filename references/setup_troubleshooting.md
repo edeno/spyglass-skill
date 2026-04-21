@@ -354,8 +354,9 @@ on an NFS or other shared filesystem, even though Spyglass's
 The `env_defaults` block in `src/spyglass/settings.py` historically
 had a typo (`HD5_USE_FILE_LOCKING` instead of `HDF5_USE_FILE_LOCKING`),
 so Spyglass did not actually export the variable that HDF5 reads.
-PR #1576 renames it; until that release reaches you, set the variable
-explicitly in the shell that launches Python:
+PR #1576 (merged 2026-04-20) renames it. If you installed Spyglass
+before that PR reached you, set the variable explicitly in the shell
+that launches Python:
 
 ```bash
 export HDF5_USE_FILE_LOCKING=FALSE

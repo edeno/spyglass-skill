@@ -116,17 +116,21 @@ check which transitive deps pip wants to move.
 - macOS or Linux (Windows is experimental)
 - **Self-hosted MySQL 8 only** — vanilla MySQL 8 caps InnoDB composite-PK
   index size at 3072 bytes, and some Spyglass tables exceed this with
-  default `utf8mb4` widths. Set `innodb_large_prefix=ON` and
-  `ROW_FORMAT=DYNAMIC` in `my.cnf` before declaring Spyglass schemas,
-  or use `datajoint/mysql:8.0` Docker image which has compatible
-  defaults. A production lab DB that has been running Spyglass for a
-  while is usually pre-tuned by its admin; you will generally only
-  hit this on a fresh self-host.
-- Pin `ndx-optogenetics==0.2.0` until `ndx-franklab-novela` / Spyglass
-  catch up with the 0.3.0 breaking change (PR #1458 tracks the bump).
-  Symptom of the mismatch:
-  `ImportError: cannot import name 'OpticalFiberLocationsTable' from 'ndx_optogenetics'`
-  on `from spyglass.common import ...`.
+  default `utf8mb4` widths. Use the `datajoint/mysql:8.0` Docker image
+  (or ensure your MySQL 8 server uses `ROW_FORMAT=DYNAMIC`, which is
+  the MySQL 8 default). Note: `innodb_large_prefix` was deprecated in
+  MySQL 5.7 and removed in 8.0 (it's effectively always-on), so don't
+  set it in `my.cnf` — depending on minor version it'll error or be
+  silently ignored. A production lab DB that has been running Spyglass
+  for a while is usually pre-tuned by its admin; you will generally
+  only hit this on a fresh self-host.
+- **`ndx-optogenetics` pin** — Spyglass's `pyproject.toml` pins
+  `ndx-optogenetics==0.3.0` (PR #1458 bumped from 0.2.0). If you see
+  `ImportError: cannot import name 'OpticalFiberLocationsTable' from
+  'ndx_optogenetics'` on `from spyglass.common import ...`, your
+  install has a pre-#1458 Spyglass with a newer ndx-optogenetics, or
+  the reverse. `pip install -e .` on current Spyglass gets the
+  matching pin.
 
 ## Environment Setup Scenarios
 
