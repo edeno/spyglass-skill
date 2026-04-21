@@ -29,9 +29,31 @@ cp -r /tmp/spyglass-skill/skills/spyglass ~/.claude/skills/spyglass
 Restart Claude Code (or start a new session). The skill activates on
 Spyglass-related prompts.
 
+### Using with other AI coding agents
+
+For OpenAI Codex CLI, Cursor, Aider, Gemini CLI, and similar tools
+that load a single always-on rules file, use the portable
+[`AGENTS.md`](AGENTS.md) (or [`GEMINI.md`](GEMINI.md) — same content).
+Copy either into the root of your analysis project:
+
+```bash
+curl -o AGENTS.md \
+    https://raw.githubusercontent.com/edeno/spyglass-skill/master/AGENTS.md
+# Or, for Gemini CLI:
+curl -o GEMINI.md \
+    https://raw.githubusercontent.com/edeno/spyglass-skill/master/GEMINI.md
+```
+
+The flat file contains the core directives, common mistakes, and a
+routing table linking back to the deep-dive references on GitHub. It
+does not have Claude Code's auto-activation or progressive disclosure
+— those are Claude-specific — but the guidance is otherwise the same.
+
 ## What's in here
 
 ```text
+AGENTS.md                         # portable rules for non-Claude agents
+GEMINI.md                         # symlink to AGENTS.md
 .claude-plugin/plugin.json        # plugin manifest
 skills/spyglass/                  # the skill itself
   SKILL.md                        # entry point loaded into context
