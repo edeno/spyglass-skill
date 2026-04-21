@@ -23,7 +23,7 @@ manual.
 ## NWB Data Access
 
 ### `fetch_nwb(*attrs, **kwargs) -> list[dict]`
-Fetch NWB file objects for table entries. Automatically handles both raw `Nwbfile` and analysis `AnalysisNwbfile` sources. Downloads missing files from Dandi/Kachery if needed.
+Fetch NWB file objects for table entries. Automatically handles both raw `Nwbfile` and analysis `AnalysisNwbfile` sources. Downloads missing files from Dandi/Kachery if needed. Defined at `src/spyglass/utils/mixins/fetch.py:284`. Merge masters (`PositionOutput`, `LFPOutput`, etc.) override this with an extended signature that takes `restriction`, `multi_source`, and `return_merge_ids` kwargs — see [merge_methods.md § Data Fetching](merge_methods.md#data-fetching).
 
 ```python
 nwb_data = (LFPV1 & key).fetch_nwb()

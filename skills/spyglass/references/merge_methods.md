@@ -208,7 +208,7 @@ df = (PositionOutput & {'merge_id': merge_id}).fetch1_dataframe()
 ```
 
 #### `fetch_nwb(restriction=None, multi_source=False, return_merge_ids=False, *attrs, **kwargs)`
-Fetch NWB file objects from the source tables.
+Fetch NWB file objects from the source tables. This is the merge-table override of the base-mixin `fetch_nwb` at `src/spyglass/utils/dj_merge_tables.py:507` — merge tables need the extra `restriction`, `multi_source`, and `return_merge_ids` kwargs to resolve through the part tables. For the base-mixin signature and behavior on non-merge tables, see [spyglassmixin_methods.md § NWB Data Access](spyglassmixin_methods.md#nwb-data-access).
 
 ```python
 nwb_objs = (PositionOutput & merge_key).fetch_nwb()
