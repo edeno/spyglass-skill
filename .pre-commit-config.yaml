@@ -1,0 +1,34 @@
+# Pre-commit hooks for the spyglass-skill repo.
+#
+# Setup (one-time per clone):
+#   pip install pre-commit   # or `uvx pre-commit`, or `brew install pre-commit`
+#   pre-commit install       # installs .git/hooks/pre-commit
+#
+# Then every `git commit` triggers these hooks on staged files.
+# Bypass with `git commit --no-verify` in emergencies — CI still gates.
+#
+# Update pinned versions with:
+#   pre-commit autoupdate
+
+repos:
+  # Ruff — lint (with --fix) on every committed .py file. The ruff version
+  # here is pinned; `pre-commit autoupdate` bumps it. CI pins the same
+  # version in .github/workflows/validate.yml.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.6
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+
+  # Full skill validator — AST checks against Spyglass source. Wrapped
+  # so contributors without a Spyglass checkout are not blocked; see
+  # scripts/pre-commit-validate.sh for the skip logic. Scoped to files
+  # whose changes could actually affect validator output.
+  - repo: local
+    hooks:
+      - id: validate-skill
+        name: Validate skill against Spyglass source
+        language: system
+        entry: scripts/pre-commit-validate.sh
+        pass_filenames: false
+        files: '^skills/spyglass/(SKILL\.md|references/.*\.md|scripts/validate_skill\.py|tests/test_validator_regressions\.py|evals/evals\.json)$'

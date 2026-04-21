@@ -1,0 +1,20 @@
+# Ruff config for the skill repo's Python surface (validator + tests + eval
+# scripts, all stdlib-only, ~600 LOC total). Standalone ruff.toml — no
+# pyproject.toml because there's nothing else that would live there.
+
+target-version = "py39"
+line-length = 100
+
+[lint]
+# Conservative ruleset for a small script-style codebase. Each family earns
+# its place by catching a distinct class of bug the validator can't:
+#   E/W — pycodestyle style + correctness (indentation, whitespace, etc.)
+#   F   — pyflakes: undefined names, unused imports, f-string misuse
+#   I   — import sorting (isort-compatible)
+#   UP  — pyupgrade: syntax modernization warnings
+#   B   — flake8-bugbear: common anti-patterns (unused loop vars, mutable
+#         default args, etc.)
+# Intentionally omitted: SIM/ANN/D/PL families are noisy on script code
+# and the existing codebase doesn't follow their conventions. Revisit if
+# the Python surface grows.
+select = ["E", "F", "W", "I", "UP", "B"]

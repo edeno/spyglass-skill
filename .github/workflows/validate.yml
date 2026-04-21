@@ -38,6 +38,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install ruff
+        # Version pinned to match .pre-commit-config.yaml so local and CI
+        # report identically. Bump both when running `pre-commit autoupdate`.
+        run: pip install ruff==0.14.6
+
+      - name: Ruff lint
+        working-directory: spyglass-skill
+        run: ruff check .
+
       - name: Record spyglass revision under test
         run: |
           cd spyglass

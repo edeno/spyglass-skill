@@ -30,6 +30,26 @@ When tightening a check, add a regression fixture first
 permanently pinned. The README in `skills/spyglass/` has the full
 procedure.
 
+### Python linting
+
+The repo's Python surface (validator + tests + eval scripts) is
+gated by ruff. Config: [ruff.toml](ruff.toml). Run before committing:
+
+```bash
+ruff check .
+```
+
+CI runs the same command. If you add or edit `.py` files, also
+install the pre-commit hook so ruff runs automatically:
+
+```bash
+pip install pre-commit && pre-commit install
+```
+
+The pre-commit config also wires in the full skill validator,
+scoped to content files and graceful about missing Spyglass
+checkouts — see [.pre-commit-config.yaml](.pre-commit-config.yaml).
+
 ## Size budgets (enforced by the validator)
 
 - Reference files: **500-line soft cap**, **700-line hard cap**.
