@@ -866,17 +866,78 @@ class _ClassRegistry:
             )
 
 
+def _classify_method_call(
+    class_name, method_name, instance_call, registry, results, location,
+    warn_on_unresolved_class=True, ok_detail=True,
+):
+    """Shared policy for "Class.method(...)" / "Class().method(...)" validation.
+
+    Used by both check_methods (AST over code blocks) and
+    check_evals_content (regex over evals.json prose) so skip-list
+    handling, instance-vs-classmethod dispatch, and the unresolved-class
+    warning stay in one place. Emits directly into `results` — returns
+    None. Returns early (no emission) on any skip reason.
+
+    `warn_on_unresolved_class` is False for the evals prose path outside
+    inline-backtick spans (camelcase prose words like "Uses" would
+    otherwise trigger false positives on `Uses .fetch()` constructs).
+    `ok_detail` toggles the trailing "(instance call)" / "(class/static
+    call)" suffix that check_methods wants but check_evals_content does
+    not — the two call sites print slightly different success messages
+    and preserving that was simpler than changing the message everywhere.
+    """
+    if method_name in SKIP_METHODS or method_name.startswith("_"):
+        return
+    methods = registry.methods(class_name)
+    if methods is None:
+        if (
+            warn_on_unresolved_class
+            and class_name[:1].isupper()
+            and class_name not in DOC_PLACEHOLDERS
+        ):
+            results.warn(
+                f"{location}: unresolved class '{class_name}' in "
+                f"'{class_name}.{method_name}()' — typo, or add to "
+                f"KNOWN_CLASSES/DOC_PLACEHOLDERS"
+            )
+        return
+    if method_name not in methods:
+        results.fail(
+            f"{location}: {class_name}.{method_name}() "
+            f"NOT FOUND on {class_name}"
+        )
+        return
+    info = methods[method_name]
+    if (
+        not instance_call
+        and not info.get("is_classmethod")
+        and not info.get("is_staticmethod")
+    ):
+        results.fail(
+            f"{location}: {class_name}.{method_name}() is an "
+            f"instance method — use {class_name}()."
+            f"{method_name}(...)"
+        )
+        return
+    if ok_detail:
+        kind = "instance" if instance_call else "class/static"
+        results.ok(
+            f"{location}: {class_name}.{method_name}() valid ({kind} call)"
+        )
+    else:
+        results.ok(f"{location}: {class_name}.{method_name}() valid")
+
+
 def check_methods(src_root, results, registry=None):
     """Check that documented method calls reference real methods.
 
     AST-based. Handles aliased imports, module-qualified receivers, and
-    multi-line calls — see iter_python_blocks / resolve_receiver.
+    multi-line calls — see iter_python_blocks / resolve_receiver. The
+    actual method-resolution policy lives in _classify_method_call so
+    check_evals_content can share it.
     """
     if registry is None:
         registry = _ClassRegistry(src_root, results)
-
-    def get_class_methods(class_name):
-        return registry.methods(class_name)
 
     for md_file in collect_md_files():
         for block_start, tree in iter_python_blocks(md_file):
@@ -887,9 +948,7 @@ def check_methods(src_root, results, registry=None):
                 if not isinstance(node.func, ast.Attribute):
                     continue
                 method_name = node.func.attr
-                if method_name in SKIP_METHODS:
-                    continue
-                if method_name.startswith("_"):
+                if method_name in SKIP_METHODS or method_name.startswith("_"):
                     continue
 
                 resolved = resolve_receiver(node, alias_map)
@@ -900,50 +959,10 @@ def check_methods(src_root, results, registry=None):
                 class_name, instance_call, call_line = resolved
                 line_num = block_start + call_line - 1
                 location = f"{md_file.name}:{line_num}"
-
-                methods = get_class_methods(class_name)
-                if methods is None:
-                    # Uppercase-first identifier that isn't registered —
-                    # probably a typo or a missing entry. Lowercase names
-                    # (instance vars) never reach this branch because
-                    # resolve_receiver returns a bare Name's id unchanged
-                    # and the registry has no lowercase keys.
-                    if (
-                        class_name[:1].isupper()
-                        and class_name not in DOC_PLACEHOLDERS
-                    ):
-                        results.warn(
-                            f"{location}: unresolved class "
-                            f"'{class_name}' in '{class_name}."
-                            f"{method_name}()' — typo, or add to "
-                            f"KNOWN_CLASSES/DOC_PLACEHOLDERS"
-                        )
-                    continue
-
-                if method_name not in methods:
-                    results.fail(
-                        f"{location}: {class_name}.{method_name}() "
-                        f"NOT FOUND on {class_name}"
-                    )
-                    continue
-
-                info = methods[method_name]
-                # Instance-only method called on bare class?
-                if (
-                    not instance_call
-                    and not info.get("is_classmethod")
-                    and not info.get("is_staticmethod")
-                ):
-                    results.fail(
-                        f"{location}: {class_name}.{method_name}() is an "
-                        f"instance method — use {class_name}()."
-                        f"{method_name}(...)"
-                    )
-                else:
-                    results.ok(
-                        f"{location}: {class_name}.{method_name}() valid "
-                        f"({'instance' if instance_call else 'class/static'} call)"
-                    )
+                _classify_method_call(
+                    class_name, method_name, instance_call,
+                    registry, results, location,
+                )
 
 
 def check_kwargs(src_root, results, registry=None):
@@ -2056,51 +2075,17 @@ def check_evals_content(src_root, results: ValidationResult, registry=None):
             method_name = match.group(3)
             # Matches inside inline-backtick spans are high-confidence code;
             # prose matches are lower-confidence and we suppress the weakest
-            # signal (unresolved-class warnings) for them below.
+            # signal (unresolved-class warnings) for them via the
+            # `warn_on_unresolved_class` flag below.
             start = match.start()
             in_backticks = start > 0 and text[start - 1] == "`"
-
-            if method_name in SKIP_METHODS or method_name.startswith("_"):
-                continue
-
-            methods = registry.methods(class_name)
             location = f"evals.json[id={eval_id}]"
-
-            if methods is None:
-                if (
-                    in_backticks
-                    and class_name[:1].isupper()
-                    and class_name not in DOC_PLACEHOLDERS
-                ):
-                    results.warn(
-                        f"{location}: unresolved class '{class_name}' in "
-                        f"'{class_name}.{method_name}()' — typo, or add to "
-                        f"KNOWN_CLASSES/DOC_PLACEHOLDERS"
-                    )
-                continue
-
-            if method_name not in methods:
-                results.fail(
-                    f"{location}: {class_name}.{method_name}() "
-                    f"NOT FOUND on {class_name}"
-                )
-                continue
-
-            info = methods[method_name]
-            if (
-                not instance_call
-                and not info.get("is_classmethod")
-                and not info.get("is_staticmethod")
-            ):
-                results.fail(
-                    f"{location}: {class_name}.{method_name}() is an "
-                    f"instance method — use {class_name}()."
-                    f"{method_name}(...)"
-                )
-            else:
-                results.ok(
-                    f"{location}: {class_name}.{method_name}() valid"
-                )
+            _classify_method_call(
+                class_name, method_name, instance_call,
+                registry, results, location,
+                warn_on_unresolved_class=in_backticks,
+                ok_detail=False,
+            )
 
 
 def check_notebook_names(src_root, results: ValidationResult):
