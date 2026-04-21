@@ -72,13 +72,13 @@ Control which tables are excluded from restrict_by graph traversal.
 ## Deletion (Mixin)
 
 ### `cautious_delete(force_permission=False, dry_run=False, *args, **kwargs)`
-Permission-checked deletion. Checks that the user is an admin or on a team with the session's experimenter(s).
+Permission-checked deletion. Checks that the user is an admin or on a team with the session's experimenter(s). Walks the DataJoint dependency graph to cascade the delete — if any descendant class (especially a merge master) is not imported in the current session, the walk fails with `NetworkXError: ... not in the digraph`. See [merge_methods.md § Import merge masters before cascade-deleting](merge_methods.md#import-merge-masters-before-cascade-deleting-upstream-keys).
 
 ### `delete(*args, **kwargs)`
 Alias for `cautious_delete`.
 
 ### `super_delete(warn=True, *args, **kwargs)`
-Bypass permission checks. Use with caution.
+Bypass permission checks **and** Spyglass's analysis-file cleanup — aliases straight to `datajoint.Table.delete`. DB rows are removed but `.nwb` files stay on disk; follow up with `AnalysisNwbfile().cleanup(dry_run=True)` → review → `dry_run=False`. Use only for legitimate admin cleanup, not to silence permission errors (the right fix there is wiring the user into `LabMember.LabMemberInfo`).
 
 ## Helper Methods
 

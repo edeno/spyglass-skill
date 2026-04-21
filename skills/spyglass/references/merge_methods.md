@@ -10,9 +10,95 @@ methods that apply to every Spyglass table (`fetch_nwb`, `fetch_pynapple`,
 
 ## Contents
 
+- [Is this a merge table?](#is-this-a-merge-table)
+- [Silent wrong-count footgun](#silent-wrong-count-footgun)
 - [Classmethod Restriction Discard (Read First)](#classmethod-restriction-discard-read-first)
-- [_Merge Class Methods](#_merge-class-methods)
+- [Import merge masters before cascade-deleting](#import-merge-masters-before-cascade-deleting-upstream-keys)
+- [Merge-table methods — discovery, finding, fetching](#merge-table-methods--discovery-finding-fetching)
+- [Merge-table methods — lifecycle (parts, deletion, population)](#merge-table-methods--lifecycle-parts-deletion-population)
+- [Per-master method availability](#per-master-method-availability)
 - [Projected FK rename pattern](#projected-fk-rename-pattern)
+
+## Is this a merge table?
+
+Before reaching for any of the methods below, confirm the table actually
+inherits from `_Merge`. The skill's most common merge-related mistake is
+treating a lookalike class as a merge table — e.g., calling
+`MuaEventsV1.merge_get_part(...)` (no such method; `MuaEventsV1` is
+`dj.Computed`).
+
+**The five merge masters in Spyglass** — these are the tables that
+inherit `class Foo(_Merge, SpyglassMixin)` and carry `merge_id` as their
+only primary-key column:
+
+| Merge master (source) | Import path | Purpose |
+|-----------------------|-------------|---------|
+| `SpikeSortingOutput` (`src/spyglass/spikesorting/spikesorting_merge.py:34`) | `spyglass.spikesorting.spikesorting_merge` | Unifies v0 + v1 sorting outputs |
+| `LFPOutput` (`src/spyglass/lfp/lfp_merge.py:16`) | `spyglass.lfp.lfp_merge` | Unifies `LFPV1`, `ImportedLFP`, etc. |
+| `PositionOutput` (`src/spyglass/position/position_merge.py:24`) | `spyglass.position.position_merge` | Unifies `TrodesPosV1`, `DLCPosV1`, `CommonPos`, `ImportedPose` |
+| `LinearizedPositionOutput` (`src/spyglass/linearization/merge.py:13`) | `spyglass.linearization.merge` | Unifies linearization pipeline outputs |
+| `DecodingOutput` (`src/spyglass/decoding/decoding_merge.py:19`) | `spyglass.decoding.decoding_merge` | Unifies `ClusterlessDecodingV1` + `SortedSpikesDecodingV1` |
+
+**Common lookalikes that are NOT merge tables.** All of these are
+`dj.Computed` or `dj.Manual` — they have their own PKs and respond to
+normal `& {"nwb_file_name": f}` restrictions; do not call `merge_*`
+methods on them:
+
+- `MuaEventsV1` (`dj.Computed` at `src/spyglass/mua/v1/mua.py:63`)
+- `CurationV1` (`dj.Manual` at `src/spyglass/spikesorting/v1/curation.py:30`)
+- `SpikeSortingV1`, `LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`, `ClusterlessDecodingV1`, `SortedSpikesDecodingV1` — all `dj.Computed`
+- `SpikeSortingSelection`, `SpikeSortingRecordingSelection`, `LFPSelection` and other `*Selection` tables — all `dj.Manual`
+
+**Quick check in Python:**
+
+```python
+from spyglass.utils.dj_merge_tables import Merge
+isinstance(SomeTable(), Merge)   # True only for the five masters above
+```
+
+## Silent wrong-count footgun
+
+Restricting a merge master by a field that lives on its **part tables**
+produces a silent no-op — not an error, not zero rows. The merge
+master's only PK is `merge_id`, so a restriction like
+`{"nwb_file_name": "j1620210710_.nwb"}` references a field the master
+doesn't have. DataJoint silently drops the restriction and the `&`
+returns the full table.
+
+```python
+# ❌ Silently wrong — returns every row in DecodingOutput, not the
+#    rows for this session.
+len(DecodingOutput & {"nwb_file_name": "j1620210710_.nwb"})
+# 2735   (the entire table)
+
+# ❌ Also silently wrong for the same reason, even though it looks
+#    like a "multi-session" restriction:
+files = ["a_.nwb", "b_.nwb", "c_.nwb", "d_.nwb"]
+len(DecodingOutput & [{"nwb_file_name": f} for f in files])
+# 2735   (still the entire table)
+
+# ✅ Correct — merge_restrict walks the part tables to resolve
+#    attributes that aren't on the master.
+len(DecodingOutput.merge_restrict({"nwb_file_name": "j1620210710_.nwb"}))
+# 7   (actual rows for this session)
+
+# ✅ Canonical "count rows across a set of sessions" pattern:
+total = sum(
+    len(DecodingOutput.merge_restrict({"nwb_file_name": f}))
+    for f in files
+)
+```
+
+The same silent no-op happens with `.fetch()`, `.fetch1()`, `len()`,
+and any operation that consumes the `&`-restricted relation. The
+failure shape is uniform: a *plausibly sized* number or set of rows,
+no exception, no warning. Pairing the bad pattern with the correct one
+in the same diff is the only reliable way to catch it in review.
+
+**When the field really is on the master.** `source` is an attribute
+of the master (it names the part table). `DecodingOutput & {"source":
+"SortedSpikesDecodingV1"}` is fine. The footgun is specifically
+upstream-session / upstream-interval attributes.
 
 ## Classmethod Restriction Discard (Read First)
 
@@ -58,15 +144,15 @@ PositionOutput.merge_view(merge_key)
 
 If you are uncertain whether a method is a classmethod, read the source or err on the side of passing the restriction as an argument.
 
-#### Import merge masters before cascade-deleting upstream keys
+## Import merge masters before cascade-deleting upstream keys
 
 `SpyglassMixin.cautious_delete` walks the DataJoint dependency graph to
 cascade deletes and check permissions. The graph only contains tables
 whose Python classes have been **imported in the current session**.
-Merge masters (`LFPOutput`, `SpikeSortingOutput`, `PositionOutput`,
-`LinearizedPositionOutput`) are not auto-imported by `spyglass.common`
-— deleting from `Nwbfile`, `Session`, or `IntervalList` without first
-importing them raises:
+None of the five merge masters (`LFPOutput`, `SpikeSortingOutput`,
+`PositionOutput`, `LinearizedPositionOutput`, `DecodingOutput`) are
+auto-imported by `spyglass.common` — deleting from `Nwbfile`,
+`Session`, or `IntervalList` without first importing them raises:
 
 - `NetworkXError: The node \`<schema>.<table>\` is not in the digraph`
 - `ValueError: Table <schema>.<name> not found in graph. Please import this table and rerun`
@@ -76,9 +162,10 @@ merge-extending modules in your lab) before the delete:
 
 ```python
 from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput
-from spyglass.lfp import LFPOutput
+from spyglass.lfp.lfp_merge import LFPOutput
 from spyglass.position.position_merge import PositionOutput
 from spyglass.linearization.merge import LinearizedPositionOutput
+from spyglass.decoding.decoding_merge import DecodingOutput
 # plus any lab-specific merge-extending modules
 ```
 
@@ -88,9 +175,9 @@ deleting from its master first`) means you're deleting from a part-
 table row directly. Always restrict via the master using
 `merge_get_part(key)` and delete through `merge_delete(key)`.
 
-## _Merge Class Methods
+## Merge-table methods — discovery, finding, fetching
 
-All merge tables (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, `LinearizedPositionOutput`) inherit from `_Merge` and have these methods.
+Read-only methods inherited from `_Merge` for exploring merge contents, resolving a merge entry to its part table, and fetching data through the merge. All five merge masters (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, `LinearizedPositionOutput`) share these.
 
 ### Data Discovery
 
@@ -214,6 +301,10 @@ Fetch NWB file objects from the source tables. This is the merge-table override 
 nwb_objs = (PositionOutput & merge_key).fetch_nwb()
 ```
 
+## Merge-table methods — lifecycle (parts, deletion, population)
+
+Methods that introspect part-table structure, delete rows, or populate from sources. Same `_Merge` inheritance — available on all five merge masters.
+
 ### Part Table Management
 
 #### `parts(camel_case=False) -> list`
@@ -299,6 +390,21 @@ Extracts merge_id from various restriction formats.
 Returns the source name for a given key.
 
 ---
+
+## Per-master method availability
+
+The methods above all live on the `_Merge` base — they exist on every merge master. A few helpers look similar but are defined on a **single master** and don't exist on the others. Calling them on the wrong master raises `AttributeError`.
+
+| Method | Defined on | NOT available on | Replacement for the other masters |
+|--------|-----------|------------------|-----------------------------------|
+| `get_restricted_merge_ids(key, sources=..., restrict_by_artifact=..., as_dict=...)` | `SpikeSortingOutput` only (`src/spyglass/spikesorting/spikesorting_merge.py:111`) | `PositionOutput`, `LFPOutput`, `DecodingOutput`, `LinearizedPositionOutput` | Use `merge_restrict({"nwb_file_name": f, ...}).fetch("merge_id")` or `merge_get_part(key).fetch("merge_id")` |
+| `fetch_results(key)` | `DecodingOutput` only (`src/spyglass/decoding/decoding_merge.py:74`) | `PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `LinearizedPositionOutput` | Use `merge_get_part(key).fetch1_dataframe()` or `(Master & merge_key).fetch1_dataframe()` |
+
+The base-`_Merge` methods (`merge_view`, `merge_restrict`, `merge_get_part`, `merge_get_parent`, `merge_fetch`, `merge_populate`, `merge_delete`, `merge_delete_parent`, `extract_merge_id`, `get_source_from_key`) are the portable way to work across all five masters — reach for a per-master helper only when you are on that specific master and want its convenience shape.
+
+**Why the convenience helpers exist.** `SpikeSortingOutput.get_restricted_merge_ids` wraps the common "resolve session + sort-group + artifact filter → merge_ids" flow that is specific to sorted data. `DecodingOutput.fetch_results` wraps the decoding-specific "load the xarray result set for one decode" flow (the V1 tables `ClusterlessDecodingV1` and `SortedSpikesDecodingV1` also define their own `fetch_results` — those are downstream computed tables, not merge masters). Neither pattern generalizes to the other four masters, which is why the helper isn't on the base.
+
+**`fetch_results` shares the too-loose-restriction footgun.** `DecodingOutput.fetch_results(key)` calls `fetch1()` internally, so a key matching more than one decode row raises the same "expected one tuple" error as bare `fetch1()`. Confirm `len(DecodingOutput & key) == 1` before calling `fetch_results`. See [common_mistakes.md](common_mistakes.md) Common Mistake #2.
 
 ## Projected FK rename pattern
 
