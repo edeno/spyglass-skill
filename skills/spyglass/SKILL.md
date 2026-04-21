@@ -33,13 +33,14 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 
 ## Common Mistakes
 
-Top 5 highest-frequency bugs. Flag any of these shapes before answering. Three more footguns plus expanded prose + fixes: [common_mistakes.md](references/common_mistakes.md) (8 entries total).
+Top 6 highest-frequency bugs. Flag any of these shapes before answering. Expanded prose + three additional footguns: [common_mistakes.md](references/common_mistakes.md).
 
 1. **Classmethod restriction discard on merge tables** — `(PositionOutput & merge_key).merge_delete()` drops the `& merge_key`; use `PositionOutput.merge_delete(merge_key)`. Affected methods: [merge_methods.md](references/merge_methods.md).
 2. **Too-loose restriction + `fetch1()`** — `{"nwb_file_name": f}` matches many rows; add PK fields until `len(rel) == 1`. [datajoint_api.md](references/datajoint_api.md).
 3. **`skip_duplicates=True` on `insert_sessions`** — raises `TypeError`; use `reinsert=True` for re-ingestion. [ingestion.md](references/ingestion.md).
 4. **`fetch_nwb()` silently returns a list** on multiple matches (unlike `fetch1()`) — restrict to one row before `[0]`-indexing.
 5. **Bypassing `cautious_delete` to silence a `PermissionError`** — `.delete()` is team-gated; the error means another lab member owns the session. Coordinate with them, don't reach for `super_delete()` or `force_permission=True`. Protection model + inspect-before-destroy: [destructive_operations.md](references/destructive_operations.md).
+6. **Silent no-op on merge masters** — `len(MergeMaster & {'nwb_file_name': f})` returns the *whole* table; the master's heading has only `merge_id`, so DataJoint drops the unknown attr. Use `merge_restrict({...})` or `merge_get_part({...})` instead. [merge_methods.md § Silent wrong-count footgun](references/merge_methods.md#silent-wrong-count-footgun).
 
 ## Feedback Loops
 
