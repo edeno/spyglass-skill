@@ -121,7 +121,13 @@ failures point at:
 ```python
 from spyglass.common.common_usage import Export
 
-Export.update_analysis_for_dandi_standard(paper_key)
+# `prepare_files_for_export` is the orchestrator — it iterates files
+# in the export selection and calls `update_analysis_for_dandi_standard`
+# on each. (`update_analysis_for_dandi_standard` is a standalone
+# function in `spyglass.utils.dandi_file_updates`, not a method on
+# Export.) Note the admin-gate caveat below.
+Export().prepare_files_for_export(paper_key)
+
 # Then re-validate:
 import pynwb
 for path in ExportSelection().list_file_paths(paper_key):
