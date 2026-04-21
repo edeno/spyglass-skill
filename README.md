@@ -10,6 +10,42 @@ This README is for people maintaining the skill, not for readers of the
 skill's guidance — that audience is served by SKILL.md being loaded into
 Claude's context directly.
 
+## Install
+
+The skill is a self-contained directory. Drop it into Claude's skills path
+and Claude will pick it up on next session start.
+
+```bash
+# One-time install (or re-install to update)
+git clone https://github.com/edeno/claude-skills.git /tmp/edeno-claude-skills
+cp -r /tmp/edeno-claude-skills/spyglass ~/.claude/skills/spyglass
+```
+
+To update later, repeat the last two lines or run
+`git -C ~/.claude/skills/spyglass pull` if you cloned the whole repo in
+place instead of copying.
+
+**Uninstall:** `rm -rf ~/.claude/skills/spyglass`.
+
+**Verify it loaded:** start a new Claude Code session and ask something
+Spyglass-specific (e.g. "how do I populate `LFPV1`?"). The skill activates
+on Spyglass API mentions — you should see references in Claude's reply
+that cite the skill's guidance.
+
+### Optional: run the validator locally
+
+Only needed if you're editing the skill itself. Requires a local
+Spyglass checkout to validate API references against.
+
+```bash
+cd ~/.claude/skills/spyglass
+./scripts/validate_all.sh --spyglass-src /path/to/spyglass/src \
+    --baseline-warnings 3
+```
+
+See [Checking the skill](#checking-the-skill) below for the full test
+menu.
+
 ## Layout
 
 ```
