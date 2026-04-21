@@ -2572,6 +2572,15 @@ def main():
         "--strict", action="store_true",
         help="Treat warnings as failures (exit non-zero on any warning)"
     )
+    parser.add_argument(
+        "--baseline-warnings", type=int, default=None, metavar="N",
+        help=(
+            "CI-friendly: exit non-zero only if warnings > N. Lets a tree "
+            "with N known-accepted warnings catch *new* warnings without "
+            "requiring the old ones to be resolved first. Ignored under "
+            "--strict (which fails on any warning)."
+        ),
+    )
     args = parser.parse_args()
 
     # Find spyglass source
@@ -2695,19 +2704,35 @@ def main():
 
     # Exit status:
     #   failures → exit 1
-    #   warnings + --strict → exit 1
+    #   warnings + --strict → exit 1 (any warning)
+    #   warnings + --baseline-warnings N → exit 1 only if count > N
     #   warnings alone → exit 0, but message distinguishes from clean
+    #
+    # --strict wins over --baseline-warnings when both are passed; the
+    # baseline is a CI-friendly middle ground for trees with known-accepted
+    # warnings, and --strict's zero-tolerance is a stronger statement.
     has_failures = bool(results.failed)
-    has_warnings = bool(results.warnings)
+    warn_count = len(results.warnings)
 
     if has_failures:
         print("\nSome checks failed — review and fix the skill files.")
         return 1
-    if has_warnings:
-        suffix = " (--strict: treated as failure)" if args.strict else ""
-        print(f"\nPassed with {len(results.warnings)} warning(s){suffix} — "
-              "review above.")
-        return 1 if args.strict else 0
+    if warn_count:
+        if args.strict:
+            print(f"\nPassed with {warn_count} warning(s) "
+                  "(--strict: treated as failure) — review above.")
+            return 1
+        if args.baseline_warnings is not None:
+            if warn_count > args.baseline_warnings:
+                print(f"\n{warn_count} warning(s) exceeds baseline of "
+                      f"{args.baseline_warnings} — new warnings detected. "
+                      "Fix them or raise --baseline-warnings.")
+                return 1
+            print(f"\nPassed with {warn_count} warning(s) "
+                  f"(≤ baseline of {args.baseline_warnings}) — review above.")
+            return 0
+        print(f"\nPassed with {warn_count} warning(s) — review above.")
+        return 0
     print("\nAll checks passed.")
     return 0
 
