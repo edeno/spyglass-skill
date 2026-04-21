@@ -1,5 +1,7 @@
 # spyglass-skill
 
+[![Validate](https://github.com/edeno/spyglass-skill/actions/workflows/validate.yml/badge.svg)](https://github.com/edeno/spyglass-skill/actions/workflows/validate.yml)
+
 A Claude Code plugin providing the `spyglass` skill — guidance for the
 [LorenFrankLab Spyglass](https://github.com/LorenFrankLab/spyglass)
 neurophysiology framework (DataJoint + NWB).
@@ -139,6 +141,49 @@ Never commit a personal path. `.gitignore` already excludes
 `.env.local` and `scripts/config.local.sh` for this reason.
 
 Issues and PRs welcome at [github.com/edeno/spyglass-skill](https://github.com/edeno/spyglass-skill).
+
+## Developing
+
+Setup for contributors changing the skill itself (not just consumers of
+the installed plugin):
+
+```bash
+git clone https://github.com/edeno/spyglass-skill.git
+cd spyglass-skill
+
+# Clone LorenFrankLab/spyglass as a sibling so the validator picks it up
+# with zero config. (Alternative: set $SPYGLASS_SRC in your shell rc.)
+git clone https://github.com/LorenFrankLab/spyglass.git ../spyglass
+
+# Wire up the pre-commit hooks (one-time per clone)
+uvx pre-commit install   # or: pip install pre-commit && pre-commit install
+
+# Run the full local check
+./skills/spyglass/scripts/validate_all.sh --baseline-warnings 3
+ruff check .
+```
+
+### Tooling
+
+- **ruff 0.14.6** — Python linter for the validator + tests + eval scripts.
+  Config: [ruff.toml](ruff.toml). Runs on commit (via pre-commit) and in CI.
+- **pre-commit** — runs `ruff check --fix` plus the skill validator (scoped
+  to content files, skipped gracefully when no Spyglass checkout is available).
+  Config: [.pre-commit-config.yaml](.pre-commit-config.yaml). Bypass with
+  `git commit --no-verify` in emergencies; CI still gates.
+- **GitHub Actions** — validates the skill against live LorenFrankLab/spyglass
+  master on push, PR, and weekly on Mondays. Workflow:
+  [.github/workflows/validate.yml](.github/workflows/validate.yml).
+  Scheduled-run failures auto-open a drift issue (template at
+  [.github/drift-issue-template.md](.github/drift-issue-template.md)).
+- **Dependabot** — monthly PRs to update GitHub Actions pins. Config:
+  [.github/dependabot.yml](.github/dependabot.yml). `ruff` itself is pinned
+  in `.pre-commit-config.yaml` and bumped via `pre-commit autoupdate`
+  (remember to bump the matching pin in the CI workflow at the same time).
+
+See [CLAUDE.md](CLAUDE.md) for the full maintainer workflow — size budgets,
+the regression-fixture-first pattern, commit style, and anti-patterns to
+avoid when editing SKILL.md or references.
 
 ## License
 
