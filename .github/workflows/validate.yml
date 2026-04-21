@@ -20,6 +20,12 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # GITHUB_TOKEN needs issues:write so the drift-detection step can
+    # open/update an issue on scheduled-run failures. Everything else
+    # only needs the default read scope.
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Checkout spyglass-skill
         uses: actions/checkout@v4
@@ -48,10 +54,16 @@ jobs:
         run: ruff check .
 
       - name: Record spyglass revision under test
+        id: spyglass_rev
         run: |
           cd spyglass
-          echo "Validating against spyglass @ $(git rev-parse --short HEAD)"
-          echo "  $(git log -1 --format='%s (%an, %ai)')"
+          SHA=$(git rev-parse --short HEAD)
+          SUBJECT=$(git log -1 --format='%s (%an, %ai)')
+          echo "Validating against spyglass @ $SHA"
+          echo "  $SUBJECT"
+          # Expose to later steps (e.g. drift-issue template).
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "subject=$SUBJECT" >> "$GITHUB_OUTPUT"
 
       - name: Run validator (main + regression fixtures)
         # Working dir is spyglass-skill so the sibling-clone fallback
@@ -64,3 +76,19 @@ jobs:
         run: |
           python -m json.tool .claude-plugin/plugin.json > /dev/null
           python -m json.tool skills/spyglass/evals/evals.json > /dev/null
+
+      - name: Open drift issue on scheduled failure
+        # Only on the weekly cron: push/PR failures already have a human
+        # looking at them, but scheduled runs go to email and can rot.
+        # update_existing reuses the same issue across weeks so we don't
+        # spam a new issue every Monday that drift persists.
+        if: failure() && github.event_name == 'schedule'
+        uses: JasonEtco/create-an-issue@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SPYGLASS_SHA: ${{ steps.spyglass_rev.outputs.sha }}
+          SPYGLASS_SUBJECT: ${{ steps.spyglass_rev.outputs.subject }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          filename: spyglass-skill/.github/drift-issue-template.md
+          update_existing: true
