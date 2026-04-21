@@ -688,9 +688,15 @@ def _parse_dj_definition(text):
       <parent>   ::= '-> ' <TableName> [ '.proj(' <kv_list> ')' ]
 
     `---` separates PK lines (above) from attribute lines (below).
+
+    `parent_projections` maps `parent_name → {src_name: new_name}` so the
+    insert-key resolver can exclude renamed-away source fields when walking
+    up. Each parent key appears at most once per class (DataJoint schemas
+    don't reference the same parent twice).
     """
     pk, attrs = set(), set()
     parents, projections = [], []
+    parent_projections = {}
     in_attrs = False
     for raw in text.splitlines():
         line = raw.strip()
@@ -714,11 +720,16 @@ def _parse_dj_definition(text):
             ref = ref.rstrip(",")
             if ".proj(" in ref:
                 table_part, proj_part = ref.split(".proj(", 1)
-                parents.append(table_part.strip())
+                parent_name = table_part.strip()
+                parents.append(parent_name)
+                renames = {}
                 for match in _DJ_PROJ_RE.finditer(proj_part):
                     new_name, source = match.group(1), match.group(2)
                     projections.append((new_name, source))
                     dest.add(new_name)
+                    renames[source] = new_name
+                if renames:
+                    parent_projections[parent_name] = renames
             else:
                 parents.append(ref)
         elif ":" in line:
@@ -729,7 +740,8 @@ def _parse_dj_definition(text):
             if name_part and name_part.replace("_", "").isalnum():
                 dest.add(name_part)
     return {"pk": pk, "attrs": attrs, "parents": parents,
-            "projections": projections}
+            "projections": projections,
+            "parent_projections": parent_projections}
 
 
 def resolve_table_fields(class_name, schemas, _seen=None):
@@ -752,6 +764,44 @@ def resolve_table_fields(class_name, schemas, _seen=None):
         parent_fields = resolve_table_fields(parent, schemas, _seen)
         if parent_fields is not None:
             fields |= parent_fields
+    return fields
+
+
+def resolve_insert_fields(class_name, schemas, _seen=None):
+    """Return the set of field names valid for inserting into `class_name`,
+    or None if any transitive parent can't be resolved (fail-open signal).
+
+    Unlike resolve_table_fields, this applies per-parent projection
+    renames: a field renamed by `-> Parent.proj(new='src')` has `src`
+    excluded from the valid set and `new` included. Critical for
+    catching the Apr 21 linearization bug where
+    `LinearizationSelection.insert1({"merge_id": ...})` used the
+    un-projected parent field instead of `pos_merge_id`.
+
+    Returning None on *any* unresolvable parent (as opposed to a partial
+    union) guarantees callers don't emit false positives when only part
+    of the parent chain is known — the whole class is skipped instead.
+    """
+    if _seen is None:
+        _seen = set()
+    if class_name in _seen:
+        return set()  # cycle guard
+    _seen.add(class_name)
+    schema = schemas.get(class_name)
+    if schema is None:
+        return None
+    fields = set(schema["pk"]) | set(schema["attrs"])
+    parent_projections = schema.get("parent_projections", {})
+    for parent in schema["parents"]:
+        parent_fields = resolve_insert_fields(parent, schemas, _seen)
+        if parent_fields is None:
+            return None  # parent unresolvable — bail conservatively
+        parent_fields = set(parent_fields)
+        renames = parent_projections.get(parent, {})
+        for src in renames:
+            parent_fields.discard(src)
+        fields |= parent_fields
+        fields |= set(renames.values())
     return fields
 
 
@@ -1032,6 +1082,89 @@ def check_restriction_fields(src_root, results):
                             f"{location}: "
                             f"({canonical} & {{\"{key}\": ...}}): "
                             f"field '{key}' not found in schema "
+                            f"(known: {hint})"
+                        )
+
+
+# Methods whose first positional arg is an insert-shaped dict (or list of
+# dicts). For `populate`, the dict is a restriction — same key-shape check.
+# `insert_selection` is a Spyglass convention that mirrors insert1 semantics.
+_INSERT_SHAPED_METHODS = frozenset({
+    "insert1", "insert", "populate", "insert_selection",
+})
+
+
+def check_insert_key_shape(src_root, results):
+    """Warn when `Class.insert1/insert/populate/insert_selection({...})`
+    uses dict keys that don't exist in the table's schema (after projections).
+
+    Would have caught the Apr 21 `linearization_pipeline.md` bug:
+    `LinearizationSelection.insert1({"merge_id": ..., "interval_list_name": ...})`
+    used the un-projected parent field `merge_id` (real name: `pos_merge_id`)
+    and an extraneous `interval_list_name` field that isn't in the schema.
+
+    Fail-open: if the class isn't discoverable, any transitive parent can't
+    be resolved, or the dict uses `**spread`, the whole call is skipped
+    rather than emit a false positive. Warning (not failure) because the
+    parser is approximate — see resolve_insert_fields for the projection
+    semantics we apply.
+    """
+    schemas = collect_table_schemas(src_root)
+    for md_file in collect_md_files():
+        for block_start, tree in iter_python_blocks(md_file):
+            alias_map = build_alias_map(tree)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                if not isinstance(node.func, ast.Attribute):
+                    continue
+                method_name = node.func.attr
+                if method_name not in _INSERT_SHAPED_METHODS:
+                    continue
+                if not node.args:
+                    continue
+                resolved = resolve_receiver(node, alias_map)
+                if resolved is None:
+                    continue
+                class_name, _instance_call, call_line = resolved
+                valid_fields = resolve_insert_fields(class_name, schemas)
+                if valid_fields is None:
+                    continue  # unknown class or unresolvable parent → fail-open
+
+                first_arg = node.args[0]
+                if isinstance(first_arg, ast.Dict):
+                    dicts = [first_arg]
+                elif isinstance(first_arg, ast.List):
+                    dicts = [
+                        elt for elt in first_arg.elts
+                        if isinstance(elt, ast.Dict)
+                    ]
+                else:
+                    continue  # variable / query / tuple — can't verify
+
+                for d in dicts:
+                    # `**spread` — ast records None as the key. Skip the
+                    # whole dict: we can't enumerate what those keys are.
+                    if any(k is None for k in d.keys):
+                        continue
+                    line_num = block_start + call_line - 1
+                    location = f"{md_file.name}:{line_num}"
+                    for key_node in d.keys:
+                        if not isinstance(key_node, ast.Constant):
+                            continue
+                        if not isinstance(key_node.value, str):
+                            continue
+                        key = key_node.value
+                        if key in valid_fields:
+                            continue
+                        sample = sorted(valid_fields)[:12]
+                        hint = ", ".join(sample)
+                        if len(valid_fields) > len(sample):
+                            hint += ", ..."
+                        results.warn(
+                            f"{location}: "
+                            f"{class_name}.{method_name}({{\"{key}\": ...}}): "
+                            f"key '{key}' not in schema "
                             f"(known: {hint})"
                         )
 
@@ -2470,65 +2603,68 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/19] Checking source files and class registry...")
+    print("\n[1/20] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/19] Checking import statements in skill files...")
+    print("[2/20] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/19] Checking method references...")
+    print("[3/20] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/19] Checking keyword arguments...")
+    print("[4/20] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/19] Checking skill structure...")
+    print("[5/20] Checking skill structure...")
     check_structure(results)
 
-    print("[6/19] Checking prose assertions...")
+    print("[6/20] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/19] Parsing Python code blocks (ast.parse)...")
+    print("[7/20] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/19] Verifying prose path references exist in repo...")
+    print("[8/20] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/19] Verifying notebook names exist in repo...")
+    print("[9/20] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/19] Verifying internal markdown links and anchors...")
+    print("[10/20] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/19] Scanning for documented anti-patterns...")
+    print("[11/20] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/19] Checking dict-restriction field names against schemas...")
+    print("[12/20] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
 
-    print("[13/19] Verifying citation line numbers are in range...")
+    print("[13/20] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
 
-    print("[14/19] Scanning evals.json for hallucinated class/method refs...")
+    print("[14/20] Scanning evals.json for hallucinated class/method refs...")
     check_evals_content(src_root, results, registry=registry)
 
-    print("[15/19] Scanning prose for banned PR-number citations...")
+    print("[15/20] Scanning prose for banned PR-number citations...")
     check_no_pr_citations(results)
 
-    print("[16/19] Enforcing reference-file and section size budgets...")
+    print("[16/20] Enforcing reference-file and section size budgets...")
     check_section_budgets(results)
 
-    print("[17/19] Checking markdown link-landing content overlap...")
+    print("[17/20] Checking markdown link-landing content overlap...")
     check_link_landing(results)
 
-    print("[18/19] Verifying citation lines contain cited identifiers...")
+    print("[18/20] Verifying citation lines contain cited identifiers...")
     check_citation_content(src_root, results)
 
-    print("[19/19] Detecting duplicated code blocks across references...")
+    print("[19/20] Detecting duplicated code blocks across references...")
     check_duplicated_blocks(results)
+
+    print("[20/20] Checking DataJoint insert/populate key shape...")
+    check_insert_key_shape(src_root, results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.

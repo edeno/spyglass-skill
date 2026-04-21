@@ -870,6 +870,143 @@ def fixture_merge_classmethod_correct_form_ok(src_root):
     return False
 
 
+def fixture_insert1_wrong_pk_field(src_root):
+    """LinearizationSelection.insert1({"merge_id": ...}) must warn.
+
+    Apr 21 bug: the example used the un-projected parent field `merge_id`.
+    LinearizationSelection is defined with `-> PositionOutput.proj(
+    pos_merge_id='merge_id')`, so the valid FK name is `pos_merge_id`.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.linearization.v1.main import LinearizationSelection
+
+        LinearizationSelection.insert1({
+            "merge_id": "bad",
+            "track_graph_name": "x",
+            "linearization_param_name": "y",
+        })
+        ```
+        """
+    )
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        v.check_insert_key_shape(src_root, results)
+    return _assert_warn_contains(
+        results, "key 'merge_id' not in schema",
+        "key-shape: un-projected parent PK caught",
+    )
+
+
+def fixture_insert1_extraneous_field(src_root):
+    """`interval_list_name` isn't in LinearizationSelection's schema. Must warn."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.linearization.v1.main import LinearizationSelection
+
+        LinearizationSelection.insert1({
+            "pos_merge_id": "ok",
+            "track_graph_name": "x",
+            "linearization_param_name": "y",
+            "interval_list_name": "nope",
+        })
+        ```
+        """
+    )
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        v.check_insert_key_shape(src_root, results)
+    return _assert_warn_contains(
+        results, "key 'interval_list_name' not in schema",
+        "key-shape: extraneous non-schema field caught",
+    )
+
+
+def fixture_insert1_proj_renamed_ok(src_root):
+    """Correct projected name `pos_merge_id` must NOT warn."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.linearization.v1.main import LinearizationSelection
+
+        LinearizationSelection.insert1({
+            "pos_merge_id": "ok",
+            "track_graph_name": "x",
+            "linearization_param_name": "y",
+        })
+        ```
+        """
+    )
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        v.check_insert_key_shape(src_root, results)
+    bad = [w for w in results.warnings if "pos_merge_id" in w
+           and "LinearizationSelection" in w]
+    if not bad:
+        print("  [ok] key-shape: correct projected name accepted")
+        return True
+    print(f"  [FAIL] projected name wrongly warned: {bad}")
+    return False
+
+
+def fixture_insert1_spread_kwargs(src_root):
+    """`.insert1({**something, ...})` must be skipped (can't verify spread)."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        from spyglass.linearization.v1.main import LinearizationSelection
+
+        base = {"track_graph_name": "x"}
+        LinearizationSelection.insert1({
+            **base,
+            "merge_id": "would_normally_be_flagged",
+        })
+        ```
+        """
+    )
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        v.check_insert_key_shape(src_root, results)
+    bad = [w for w in results.warnings if "LinearizationSelection" in w]
+    if not bad:
+        print("  [ok] key-shape: **spread dict skipped (fail-open)")
+        return True
+    print(f"  [FAIL] spread dict wrongly warned: {bad}")
+    return False
+
+
+def fixture_insert1_unknown_class(src_root):
+    """`.insert1()` on a class not in KNOWN_CLASSES / auto-discovery skipped."""
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        TotallyNotAClass.insert1({"anything": 1, "goes": 2})
+        ```
+        """
+    )
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        v.check_insert_key_shape(src_root, results)
+    bad = [w for w in results.warnings if "TotallyNotAClass" in w]
+    if not bad:
+        print("  [ok] key-shape: unknown class skipped (fail-open)")
+        return True
+    print(f"  [FAIL] unknown class wrongly warned: {bad}")
+    return False
+
+
 def fixture_duplicated_block_across_files(src_root):
     """A ≥5-line normalized block in 2+ files must warn.
 
@@ -998,6 +1135,11 @@ FIXTURES = [
     fixture_duplicated_block_across_files,
     fixture_duplicated_within_file_ok,
     fixture_shared_imports_not_dup,
+    fixture_insert1_wrong_pk_field,
+    fixture_insert1_extraneous_field,
+    fixture_insert1_proj_renamed_ok,
+    fixture_insert1_spread_kwargs,
+    fixture_insert1_unknown_class,
 ]
 
 
