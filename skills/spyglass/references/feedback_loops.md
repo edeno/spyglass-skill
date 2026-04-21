@@ -119,7 +119,7 @@ sample = (MyPipelineV1 & key).fetch(limit=1, as_dict=True)[0]
 
 ## Inspect-before-destroy
 
-Canonical feedback-loop shape — inspect is the validator, user confirmation is the pass gate, the destructive call is the proceed step. Paired shapes for every destructive helper: [destructive_operations.md](destructive_operations.md).
+Canonical feedback-loop shape — inspect is the validator, user confirmation is the pass gate, the destructive call is the proceed step. The authoritative phase-by-phase workflow (what to output, what counts as valid confirmation, when to verify) lives in [destructive_operations.md — Required workflow](destructive_operations.md#required-workflow). The minimal in-code pattern:
 
 ```python
 target = (SomeTable & restriction)

@@ -4,6 +4,7 @@ This reference owns the canonical paired shapes for every destructive helper in 
 
 ## Contents
 
+- [Required workflow](#required-workflow)
 - [Helpers this file covers](#helpers-this-file-covers)
 - [Paired shapes](#paired-shapes)
   - [Row deletion](#row-deletion)
@@ -11,6 +12,44 @@ This reference owns the canonical paired shapes for every destructive helper in 
   - [File cleanup](#file-cleanup)
   - [Session-wide cleanup](#session-wide-cleanup)
 - [Cross-references](#cross-references)
+
+## Required workflow
+
+Every call to `delete()`, `drop()`, `cleanup()`, `merge_delete()`, `merge_delete_parent()`, `super_delete()`, or `delete_quick()` proceeds through these phases. Do not skip any, and do not collapse Phase 2 and Phase 3 into a single message — give the user time to actually read the inspect output before expecting confirmation.
+
+### Phase 1 — Inspect
+
+Build the restricted relation; do not call the destructive helper yet.
+
+- `print(len(rel_to_delete))` — row count.
+- If the count is `0`, stop. The restriction didn't match what the user thinks it did; almost always a bug in the PK fields.
+- If the count is *unexpectedly large*, stop and ask whether the restriction is right before proceeding.
+- For merge tables, also preview the affected part tables (`(MergeTable & key).parts()`, then inspect each part via `merge_get_part`).
+
+### Phase 2 — Report
+
+Output to the user in one message, before asking for confirmation:
+
+- Target table and the restriction used
+- Row count
+- Sample rows (`.fetch(as_dict=True, limit=5)` or similar)
+- What will cascade: child tables that will also lose rows
+- For file-cleanup helpers, list filenames that will be deleted
+
+### Phase 3 — Wait for explicit confirmation
+
+Do not proceed on silence, hedging, or implicit approval. Clear go-signals: "yes, delete", "go ahead", "ok delete it". Weak signals that need to be paired with evidence the user saw Phase 2's output: "sure", "ok", "looks fine". Anything ambiguous means ask again, naming the specific destructive call you're about to make.
+
+### Phase 4 — Execute
+
+Make the call. For bypass variants (`super_delete()`, `.delete(force_permission=True)`, `merge_delete_parent()`) use `dry_run=True` first when the helper supports it.
+
+### Phase 5 — Verify (partial deletes)
+
+When the user intended to delete a subset, confirm the remainder matches expectations:
+
+- `print(len(Table & unaffected_restriction))` — count after
+- Spot-check that what should still be there still is
 
 ## Helpers this file covers
 
