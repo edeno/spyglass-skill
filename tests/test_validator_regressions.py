@@ -1153,6 +1153,69 @@ def fixture_shared_imports_not_dup(src_root):
     return False
 
 
+def fixture_skip_methods_spyglass_subset_still_exists(src_root):
+    """Canonical DataJoint/Spyglass methods in SKIP_METHODS must still exist
+    somewhere in the Spyglass source. Guards against silent erosion:
+    adding a method to SKIP_METHODS suppresses real regressions for it,
+    so renames upstream could silently un-police parts of the API.
+
+    Only the DJ/Spyglass-facing subset is spot-checked — the set also
+    contains Python builtins (keys/values/append), matplotlib methods
+    (plot/set_xlabel/imshow), and pandas methods (where/idxmax) whose
+    existence inside the Spyglass tree is not meaningful to verify.
+    """
+    # Curated list: methods the skill documents as DataJoint/Spyglass API
+    # surface, not Python/matplotlib/pandas. If SKIP_METHODS drifts to no
+    # longer contain one of these, the fixture fails loudly — prompting a
+    # choice between updating the list here or reviving the suppression.
+    canonical_spyglass_methods = [
+        "fetch1", "fetch_nwb", "populate", "cautious_delete",
+        "merge_delete", "merge_populate", "merge_get_part",
+        "merge_restrict", "restrict_by", "insert_selection",
+    ]
+    missing_from_skip = [
+        m for m in canonical_spyglass_methods if m != "insert_selection"
+        and m not in v.SKIP_METHODS
+    ]
+    if missing_from_skip:
+        print(f"  [FAIL] expected in SKIP_METHODS but absent: "
+              f"{missing_from_skip}")
+        return False
+    # insert_selection is explicitly NOT in SKIP_METHODS — it's a Spyglass
+    # convention the validator actively checks. Verify that intent holds.
+    if "insert_selection" in v.SKIP_METHODS:
+        print("  [FAIL] insert_selection wrongly added to SKIP_METHODS — "
+              "it's a Spyglass convention the validator should check, "
+              "not skip")
+        return False
+    # Grep-scope existence: each method name should appear as `def NAME`
+    # somewhere under src/spyglass. Using plain text search (not AST walk)
+    # keeps this cheap and matches inherited/overridden definitions on
+    # mixin classes whose exact class name we don't want to hardcode.
+    pkg_root = src_root / "spyglass"
+    import re as _re
+    missing_in_source = []
+    for method in canonical_spyglass_methods:
+        pattern = _re.compile(rf"\bdef\s+{_re.escape(method)}\b")
+        found = False
+        for py_file in pkg_root.rglob("*.py"):
+            try:
+                if pattern.search(py_file.read_text()):
+                    found = True
+                    break
+            except (OSError, UnicodeDecodeError):
+                continue
+        if not found:
+            missing_in_source.append(method)
+    if missing_in_source:
+        print(f"  [FAIL] SKIP_METHODS entries no longer defined in "
+              f"Spyglass source: {missing_in_source} — rename/removal "
+              f"upstream would silently un-police these")
+        return False
+    print("  [ok] SKIP_METHODS: canonical DJ/Spyglass entries still exist")
+    return True
+
+
 def fixture_link_landing_negative(src_root):
     """Link whose text content words don't appear in the target must warn.
 
@@ -1404,6 +1467,7 @@ FIXTURES = [
     fixture_citation_content_stale,
     fixture_pr_citation_in_prose_warns,
     fixture_pr_citation_in_code_block_ok,
+    fixture_skip_methods_spyglass_subset_still_exists,
 ]
 
 
