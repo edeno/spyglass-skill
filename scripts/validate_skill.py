@@ -1403,6 +1403,190 @@ def check_link_landing(results: ValidationResult):
             )
 
 
+# Broader citation pattern than PROSE_CITATION_PATTERN — matches both
+# fully-qualified (`src/spyglass/foo.py:N`) and bare-filename (`foo.py:N`)
+# cases, single lines or `:N-M` ranges. We explicitly skip comma-lists here;
+# the existing check_citation_lines covers their bounds, and extending this
+# content check to multi-span citations is pure overhead for the handful
+# of cases in current prose that use them.
+_CITATION_CONTENT_PATTERN = re.compile(
+    r"(?P<path>(?:src/spyglass/[A-Za-z0-9_./-]+|[a-z_][a-z_0-9]*))\.py:"
+    r"(?P<lines>\d+(?:\s*[-–]\s*\d+)?)"
+)
+
+# Backtick-quoted identifier: `Foo`, `foo_bar`, `Foo.bar`, `foo()`, `Foo.bar()`.
+# Parens and dots tolerated; leading digit rejected to avoid matching numbers.
+_BACKTICK_IDENT_PATTERN = re.compile(
+    r"`([A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*)*(?:\(\))?)`"
+)
+
+# Identifiers we treat as too generic to meaningfully verify against a source
+# line — matching `self` anywhere on a cited line proves nothing.
+_GENERIC_IDENTIFIERS = frozenset({
+    "self", "cls", "key", "data", "name", "params", "kwargs", "args",
+    "result", "value", "table", "def", "class", "import", "from", "as",
+    "True", "False", "None",
+})
+
+
+def _find_preceding_identifier(content, end_pos, window=120):
+    """Return the most recent backtick-quoted identifier in the `window`
+    characters before `end_pos`, or None if no usable identifier is present.
+
+    Filters out .py filenames (which the citation itself contains) and the
+    _GENERIC_IDENTIFIERS set. Returns the identifier with any trailing `()`
+    stripped, since we match against source symbol names.
+    """
+    snippet = content[max(0, end_pos - window):end_pos]
+    matches = list(_BACKTICK_IDENT_PATTERN.finditer(snippet))
+    for m in reversed(matches):  # closest-to-citation wins
+        ident = m.group(1).rstrip("()")
+        if ident.endswith(".py") or ident in _GENERIC_IDENTIFIERS:
+            continue
+        if len(ident) < 4:  # 3-letter acronyms would match too broadly
+            continue
+        return ident
+    return None
+
+
+def _identifier_candidates(ident):
+    """Yield identifier variants to search for. `Foo.bar` -> ['Foo.bar', 'bar']."""
+    yield ident
+    if "." in ident:
+        yield ident.rsplit(".", 1)[-1]
+
+
+def check_citation_content(src_root, results: ValidationResult):
+    """Warn when a `file.py:N` prose citation's cited line range doesn't
+    contain the identifier mentioned in the preceding backticks.
+
+    Complement to check_citation_lines, which only verifies N is in range.
+    This check verifies that line N (±8, to tolerate decorators, blank lines,
+    and docstrings) *contains* the symbol the prose says is there.
+
+    Heuristic. Skips citations without a backtick identifier in the 120
+    preceding characters, bare-filename citations that resolve to multiple
+    files (ambiguous), and generic identifiers like `self`/`cls`/`key`.
+    """
+    # Build a bare-filename -> absolute-path map once. Ambiguous names
+    # (same filename in multiple dirs) are dropped from the map.
+    bare_to_path = {}
+    for p in src_root.rglob("*.py"):
+        bare_to_path.setdefault(p.name, []).append(p)
+
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        for m in _CITATION_CONTENT_PATTERN.finditer(content):
+            path_s = m.group("path")
+            lines_s = m.group("lines")
+
+            if path_s.startswith("src/spyglass/"):
+                target = src_root.parent / (path_s + ".py")
+            else:
+                candidates = bare_to_path.get(path_s + ".py", [])
+                if len(candidates) != 1:
+                    continue  # ambiguous or missing
+                target = candidates[0]
+
+            if not target.exists():
+                continue
+
+            ident = _find_preceding_identifier(content, m.start())
+            if not ident:
+                continue  # no verifiable identifier in context
+
+            # Parse endpoints (single int or `lo-hi`)
+            endpoints = re.split(r"\s*[-–]\s*", lines_s, maxsplit=1)
+            try:
+                lo = int(endpoints[0])
+                hi = int(endpoints[-1]) if len(endpoints) > 1 else lo
+            except ValueError:
+                continue
+
+            try:
+                all_lines = target.read_text().splitlines()
+            except (OSError, UnicodeDecodeError):
+                continue
+
+            md_line_num = content[:m.start()].count("\n") + 1
+            if _citation_matches_identifier(all_lines, lo, hi, ident):
+                results.ok(
+                    f"cite-content: {md_file.name}:{md_line_num} "
+                    f"{path_s}.py:{lines_s} matches `{ident}`"
+                )
+            else:
+                results.warn(
+                    f"{md_file.name}:{md_line_num}: citation "
+                    f"'{path_s}.py:{lines_s}' does not contain `{ident}` "
+                    f"within ±8 lines or inside the enclosing def/class — "
+                    f"citation may be stale"
+                )
+
+
+def _citation_matches_identifier(all_lines, lo, hi, ident):
+    """Return True if `ident` is plausibly represented at cited line range.
+
+    Two acceptance rules (either suffices):
+      (a) Literal substring match within ±8 lines of the cited range.
+          Covers direct citations like `merge_delete_parent at :468`.
+      (b) The cited line sits INSIDE a `def <ident>(...)` or
+          `class <ident>:` block that starts within 60 lines above `lo`.
+          Covers citations that point into a function body — e.g. a cite
+          of :499 where the enclosing `def merge_delete_parent` is at :468.
+
+    Rule (b) uses indentation to detect the block boundary: we scan upward
+    for a `def`/`class` line at indent <= the cited line's indent, and
+    accept if that definition's name matches any identifier candidate.
+    """
+    # Rule (a): direct ±8 substring match.
+    start_idx = max(0, lo - 1 - 8)
+    end_idx = min(len(all_lines), hi + 8)
+    window_text = "\n".join(all_lines[start_idx:end_idx])
+    for candidate in _identifier_candidates(ident):
+        if candidate in window_text:
+            return True
+
+    # Rule (b): walk up the nesting stack. Cited line sits inside zero or
+    # more enclosing def/class scopes. We accept if ANY enclosing scope's
+    # declared name matches. Scan upward tracking a falling indent cap:
+    # a def/class at indent < cap is an outer enclosing scope; its indent
+    # becomes the new cap (nested inner defs are skipped as `>= cap`).
+    # `lo` is 1-indexed; all_lines is 0-indexed.
+    if lo <= 0 or lo > len(all_lines):
+        return False
+    cited_line = all_lines[lo - 1]
+    indent_cap = len(cited_line) - len(cited_line.lstrip()) + 1
+    # Bound upward scan to ~120 lines — enough to cover a class wrapping
+    # a long method, but small enough to avoid false matches from
+    # unrelated defs earlier in the file.
+    scan_start = max(0, lo - 1 - 120)
+    for idx in range(lo - 2, scan_start - 1, -1):
+        line = all_lines[idx]
+        stripped = line.lstrip()
+        if not stripped.startswith(("def ", "class ", "async def ")):
+            continue
+        indent = len(line) - len(stripped)
+        if indent >= indent_cap:
+            continue  # nested inner scope we've already exited
+        rest = stripped
+        if rest.startswith("async def "):
+            rest = rest[len("async def "):]
+        elif rest.startswith("def "):
+            rest = rest[len("def "):]
+        elif rest.startswith("class "):
+            rest = rest[len("class "):]
+        decl_match = re.match(r"[A-Za-z_][A-Za-z_0-9]*", rest)
+        if decl_match:
+            decl_name = decl_match.group(0)
+            for candidate in _identifier_candidates(ident):
+                if decl_name == candidate:
+                    return True
+        indent_cap = indent
+        if indent == 0:
+            break  # hit top level; no further enclosing scope exists
+    return False
+
+
 def check_python_syntax(results: ValidationResult):
     """Parse every ```python fenced block with ast.parse().
 
@@ -2187,59 +2371,62 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/17] Checking source files and class registry...")
+    print("\n[1/18] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/17] Checking import statements in skill files...")
+    print("[2/18] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/17] Checking method references...")
+    print("[3/18] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/17] Checking keyword arguments...")
+    print("[4/18] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/17] Checking skill structure...")
+    print("[5/18] Checking skill structure...")
     check_structure(results)
 
-    print("[6/17] Checking prose assertions...")
+    print("[6/18] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/17] Parsing Python code blocks (ast.parse)...")
+    print("[7/18] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/17] Verifying prose path references exist in repo...")
+    print("[8/18] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/17] Verifying notebook names exist in repo...")
+    print("[9/18] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/17] Verifying internal markdown links and anchors...")
+    print("[10/18] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/17] Scanning for documented anti-patterns...")
+    print("[11/18] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/17] Checking dict-restriction field names against schemas...")
+    print("[12/18] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
 
-    print("[13/17] Verifying citation line numbers are in range...")
+    print("[13/18] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
 
-    print("[14/17] Scanning evals.json for hallucinated class/method refs...")
+    print("[14/18] Scanning evals.json for hallucinated class/method refs...")
     check_evals_content(src_root, results, registry=registry)
 
-    print("[15/17] Scanning prose for banned PR-number citations...")
+    print("[15/18] Scanning prose for banned PR-number citations...")
     check_no_pr_citations(results)
 
-    print("[16/17] Enforcing reference-file and section size budgets...")
+    print("[16/18] Enforcing reference-file and section size budgets...")
     check_section_budgets(results)
 
-    print("[17/17] Checking markdown link-landing content overlap...")
+    print("[17/18] Checking markdown link-landing content overlap...")
     check_link_landing(results)
+
+    print("[18/18] Verifying citation lines contain cited identifiers...")
+    check_citation_content(src_root, results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.
