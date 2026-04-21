@@ -1322,6 +1322,87 @@ def check_section_budgets(results: ValidationResult):
                 )
 
 
+# Small stopword set tuned for Spyglass skill link text. Deliberately
+# conservative — better to skip a questionable link than emit noise.
+_LINK_TEXT_STOPWORDS = frozenset({
+    "a", "an", "the", "and", "or", "but", "in", "on", "at", "to",
+    "for", "of", "with", "by", "from", "via", "as",
+    "is", "are", "was", "were", "be", "been", "being",
+    "see", "this", "that", "these", "those", "here", "there",
+    "above", "below", "also", "just", "only", "not", "any", "all",
+    "its", "their", "it", "using", "file", "page", "section",
+    "md", "py", "ipynb",
+})
+
+
+def _extract_content_words(text):
+    """Tokenize link text and drop stopwords, emphasis, and very short tokens.
+
+    Splits on punctuation INCLUDING `.` so `workflows.md` yields two tokens
+    (`workflows`, `md`) rather than one unmatchable whole-filename token.
+    """
+    cleaned = re.sub(r"[`*_]", " ", text.lower())
+    cleaned = re.sub(r"[^a-z0-9]+", " ", cleaned)
+    return [
+        w for w in cleaned.split()
+        if w and w not in _LINK_TEXT_STOPWORDS and len(w) > 2
+    ]
+
+
+def check_link_landing(results: ValidationResult):
+    """Warn when a `[text](target.md)` link's substantive words don't appear
+    in target.md.
+
+    Catches pedagogical mismatches: a link that says 'see the cardinality
+    discovery step' but points at a file that doesn't discuss cardinality
+    anywhere. Independent of (and runs after) check_markdown_links, which
+    only verifies the target exists and the anchor resolves.
+
+    Heuristic, not strict: we only warn when *none* of the content words
+    from link text appear in the target. External links, anchor-only
+    links, and links whose text reduces to stopwords are skipped.
+    """
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        for m in MD_LINK_PATTERN.finditer(content):
+            raw_text = m.group(1).strip()
+            target = m.group(2).strip()
+            if target.startswith(("http://", "https://", "mailto:")):
+                continue
+
+            path_part = target.split("#", 1)[0] if "#" in target else target
+            if not path_part:  # pure anchor link — skip
+                continue
+
+            # Resolve target path (same logic as check_markdown_links)
+            if path_part.startswith("references/"):
+                target_file = SKILL_DIR / path_part
+            elif md_file.parent.name == "references":
+                target_file = REFERENCES_DIR / path_part
+            else:
+                target_file = md_file.parent / path_part
+
+            if not target_file.exists() or target_file.suffix != ".md":
+                continue  # broken link or non-markdown target; not our job
+
+            text_words = _extract_content_words(raw_text)
+            if not text_words:
+                continue  # text was all stopwords / too short — can't verify
+
+            target_content = target_file.read_text().lower()
+            if any(w in target_content for w in text_words):
+                results.ok(f"link-landing: {md_file.name} -> {target}")
+                continue
+
+            line_num = content[: m.start()].count("\n") + 1
+            shown = ", ".join(text_words[:5])
+            results.warn(
+                f"{md_file.name}:{line_num}: link '{raw_text}' → {target}: "
+                f"none of [{shown}] appear in target; target may not cover "
+                f"what the link text promises"
+            )
+
+
 def check_python_syntax(results: ValidationResult):
     """Parse every ```python fenced block with ast.parse().
 
@@ -2106,56 +2187,59 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/16] Checking source files and class registry...")
+    print("\n[1/17] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/16] Checking import statements in skill files...")
+    print("[2/17] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/16] Checking method references...")
+    print("[3/17] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/16] Checking keyword arguments...")
+    print("[4/17] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/16] Checking skill structure...")
+    print("[5/17] Checking skill structure...")
     check_structure(results)
 
-    print("[6/16] Checking prose assertions...")
+    print("[6/17] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/16] Parsing Python code blocks (ast.parse)...")
+    print("[7/17] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/16] Verifying prose path references exist in repo...")
+    print("[8/17] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/16] Verifying notebook names exist in repo...")
+    print("[9/17] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/16] Verifying internal markdown links and anchors...")
+    print("[10/17] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/16] Scanning for documented anti-patterns...")
+    print("[11/17] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/16] Checking dict-restriction field names against schemas...")
+    print("[12/17] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
 
-    print("[13/16] Verifying citation line numbers are in range...")
+    print("[13/17] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
 
-    print("[14/16] Scanning evals.json for hallucinated class/method refs...")
+    print("[14/17] Scanning evals.json for hallucinated class/method refs...")
     check_evals_content(src_root, results, registry=registry)
 
-    print("[15/16] Scanning prose for banned PR-number citations...")
+    print("[15/17] Scanning prose for banned PR-number citations...")
     check_no_pr_citations(results)
 
-    print("[16/16] Enforcing reference-file and section size budgets...")
+    print("[16/17] Enforcing reference-file and section size budgets...")
     check_section_budgets(results)
+
+    print("[17/17] Checking markdown link-landing content overlap...")
+    check_link_landing(results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.
