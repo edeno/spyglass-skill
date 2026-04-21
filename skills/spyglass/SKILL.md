@@ -14,6 +14,7 @@ description: Use when the task involves Spyglass — the LorenFrankLab
   for plain DataJoint without Spyglass imports, unrelated NWB tooling
   (pynwb, ndx-*) outside Spyglass, or generic Python/NumPy/pandas debugging
   when no Spyglass table is in the call chain.
+allowed-tools: Read, Grep, Glob
 ---
 
 # Spyglass Data Analysis Skill
