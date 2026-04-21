@@ -4,12 +4,40 @@ A Claude Code plugin providing the `spyglass` skill — guidance for the
 [LorenFrankLab Spyglass](https://github.com/LorenFrankLab/spyglass)
 neurophysiology framework (DataJoint + NWB).
 
-The skill activates automatically when Claude is working on code that
-imports `spyglass.*`, touches `SpyglassMixin` / V1 pipeline classes, or
-otherwise mentions Spyglass. See [`skills/spyglass/SKILL.md`](skills/spyglass/SKILL.md)
-for the skill content itself and [`skills/spyglass/README.md`](skills/spyglass/README.md)
-for detailed notes on the validator, regression fixtures, and skill
-layout.
+## What it does
+
+Activates automatically when you're working on Spyglass code:
+imports from `spyglass.*`, `SpyglassMixin` subclasses, V1 pipeline
+classes (`LFPV1`, `SpikeSortingV1`, `RippleTimesV1`, etc.), or
+DLC / DANDI / Kachery within a Spyglass context. The skill provides:
+
+- **Core directives** that prevent the most common failure modes
+  (accidental deletes, hallucinated method/kwarg names, unsafe
+  `fetch1()` calls, cautious_delete bypasses).
+- **A routing table** across 26 topic references — setup, ingestion,
+  pipelines, debugging — so the agent pulls the relevant deep-dive
+  on demand rather than pre-loading everything.
+- **Validator-gated quality** (see `skills/spyglass/scripts/`): 20
+  automated checks against a live Spyglass checkout, 46 regression
+  fixtures, and an import-time harness. Runs on every edit; prose
+  that drifts from the codebase fails CI before it reaches users.
+
+## Usage
+
+Once installed, the skill engages on questions like:
+
+```text
+"How do I populate LFPV1 for nwb_file X?"
+"My populate() is failing with fetch1 cardinality errors in SpikeSortingV1."
+"Write a make() that reads ripple bands from LFPBandV1."
+"What's the right way to delete a subject's decoding results?"
+"Set up Spyglass against my lab's MySQL server."
+```
+
+For vague questions it classifies your stage (setup / ingestion /
+pipeline usage / pipeline authoring / debugging) and loads the
+matching reference. For specific topics it routes directly via the
+table in [`SKILL.md`](skills/spyglass/SKILL.md).
 
 ## Install
 
