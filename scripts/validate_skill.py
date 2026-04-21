@@ -1191,6 +1191,58 @@ def _evaluate_required_claim(
         )
 
 
+def _strip_fenced_blocks(content):
+    """Return `content` with all fenced blocks replaced by blank lines.
+
+    Preserves line numbers so regex match offsets still correspond to the
+    original file, but removes code examples from prose scans — otherwise
+    a `# fixed in PR #1234` comment in an example would trigger prose
+    checks that should only apply to narrative text.
+    """
+    out_lines = []
+    in_fence = False
+    for line in content.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            out_lines.append("\n")  # blank placeholder
+            continue
+        if in_fence:
+            out_lines.append("\n")
+        else:
+            out_lines.append(line)
+    return "".join(out_lines)
+
+
+# Citations like "PR #1234" in prose. Banned because:
+#   1. PR numbers are frozen in time; git history reorganizes across branches.
+#   2. Prior audits in this skill twice got the direction of a PR wrong
+#      (narrative said "bumped from X" when the PR actually pinned to X).
+#   3. Current-state citations ("Spyglass currently pins X") stay accurate
+#      without depending on the maintainer's memory of PR ordering.
+PR_CITATION_PATTERN = re.compile(r"\bPR\s+#\d+\b")
+
+
+def check_no_pr_citations(results: ValidationResult):
+    """Warn on `PR #nnn` citations in reference prose.
+
+    Code blocks are stripped before scanning so example comments don't
+    trigger. SKILL.md and every reference .md are scanned.
+    """
+    for md_file in collect_md_files():
+        content = md_file.read_text()
+        prose = _strip_fenced_blocks(content)
+        for m in PR_CITATION_PATTERN.finditer(prose):
+            line_num = prose[: m.start()].count("\n") + 1
+            results.warn(
+                f"{md_file.name}:{line_num}: avoid `{m.group(0)}` in prose — "
+                f"cite current source state (e.g. 'current pyproject.toml pins "
+                f"X, earlier releases pinned Y') rather than PR history; PR "
+                f"numbers are frozen in time and prior audits twice reversed "
+                f"the direction of a PR narrative"
+            )
+
+
 def check_python_syntax(results: ValidationResult):
     """Parse every ```python fenced block with ast.parse().
 
@@ -1975,50 +2027,53 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/14] Checking source files and class registry...")
+    print("\n[1/15] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/14] Checking import statements in skill files...")
+    print("[2/15] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/14] Checking method references...")
+    print("[3/15] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/14] Checking keyword arguments...")
+    print("[4/15] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/14] Checking skill structure...")
+    print("[5/15] Checking skill structure...")
     check_structure(results)
 
-    print("[6/14] Checking prose assertions...")
+    print("[6/15] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/14] Parsing Python code blocks (ast.parse)...")
+    print("[7/15] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/14] Verifying prose path references exist in repo...")
+    print("[8/15] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/14] Verifying notebook names exist in repo...")
+    print("[9/15] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/14] Verifying internal markdown links and anchors...")
+    print("[10/15] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/14] Scanning for documented anti-patterns...")
+    print("[11/15] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/14] Checking dict-restriction field names against schemas...")
+    print("[12/15] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
 
-    print("[13/14] Verifying citation line numbers are in range...")
+    print("[13/15] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
 
-    print("[14/14] Scanning evals.json for hallucinated class/method refs...")
+    print("[14/15] Scanning evals.json for hallucinated class/method refs...")
     check_evals_content(src_root, results, registry=registry)
+
+    print("[15/15] Scanning prose for banned PR-number citations...")
+    check_no_pr_citations(results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.
