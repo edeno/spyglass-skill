@@ -17,6 +17,9 @@ Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin`
   - [D. Special-case key failures](#d-special-case-key-failures)
   - [E. Transaction / reservation confusion](#e-transaction-reservation-confusion)
   - [F. Interval / epoch mismatch across pipelines](#f-interval-epoch-mismatch-across-pipelines)
+  - [G. `populate(key)` with a non-PK dict iterates the whole Selection](#g-populatekey-with-a-non-pk-dict-iterates-the-whole-selection)
+  - [H. IntegrityError on insert often means an ancestor row is missing](#h-integrityerror-on-insert-often-means-an-ancestor-row-is-missing)
+- [Debugging `populate_all_common`](#debugging-populate_all_common)
 - [Automatic heuristics](#automatic-heuristics)
 - [Sub-modes](#sub-modes)
 - [Output shape](#output-shape)
@@ -399,7 +402,7 @@ print(len(DownstreamTable.key_source & key))  # 0 = no upstream rows match
 - **Name equality ≠ time equality.** `"02_r1"` in one table and `"02_r1"` in another probably refer to the same IntervalList row (same PK), but `"02_r1_valid"` is a different row even if its `valid_times` overlap. Check by joining on the `IntervalList` PK when in doubt.
 - **Decoding specifically.** `encoding_interval` and `decoding_interval` are intentional separate inputs. They CAN be the same; they often SHOULDN'T be (train on encoding, evaluate on decoding). Verify by design intent, not by assuming they're equal.
 
-### `populate(key)` with a non-PK dict iterates the whole Selection
+### G. `populate(key)` with a non-PK dict iterates the whole Selection
 
 Unlike `fetch1()`, `populate(key)` does NOT raise on a loose dict.
 Passing `{'nwb_file_name': ..., 'sorter': 'mountainsort4'}` to
@@ -429,7 +432,7 @@ Applies to every `*V1.populate(...)` entry point
 `FigURLCuration`, etc.) and to any custom pipeline whose Selection
 table primary key doesn't include the fields you naturally restrict by.
 
-### IntegrityError on insert often means an ancestor row is missing
+### H. IntegrityError on insert often means an ancestor row is missing
 
 `IntegrityError: Cannot add or update a child row: a foreign key
 constraint fails` on a `*Selection` or analysis-table insert usually
@@ -454,13 +457,23 @@ Populate/insert the missing ancestor first, then retry.
 ## Debugging `populate_all_common`
 
 `populate_all_common` is the common-ingest driver that calls each
-common-module table in sequence. It catches exceptions per-table and
-writes only a short message to `common_usage.InsertError` — the full
-traceback is lost, so you can't debug from the `InsertError` rows
-alone.
+common-module table in sequence. By default (`raise_err=False`) it
+catches exceptions per-table and writes only a short message to
+`common_usage.InsertError` — the full traceback is lost.
 
-To get a real traceback, skip `populate_all_common` and call each
-table directly so the exception propagates:
+**Primary fix — pass `raise_err=True`.** The function accepts this
+parameter (see
+`src/spyglass/common/populate_all_common.py:159-161`); it's the
+built-in way to propagate tracebacks:
+
+```python
+from spyglass.common import populate_all_common
+populate_all_common(nwb_file_name, raise_err=True)
+```
+
+**Alternative — skip the driver and populate tables directly.** Useful
+when you want to isolate which table is failing without re-running the
+ones that succeeded:
 
 ```python
 from spyglass.common import Session, Raw, DIOEvents, PositionSource
@@ -469,13 +482,9 @@ for T in [Session, Raw, DIOEvents, PositionSource]:
     T().populate({'nwb_file_name': nwb_file_name})   # exception propagates
 ```
 
-Or, as a one-off local patch, add `raise` after the `except` in
-`src/spyglass/common/populate_all_common.py`. Tracked upstream in
-#612 (request for a non-permissive insert mode).
-
 Applies whenever a fresh ingest "completes" but some common tables
 silently miss rows — that's almost always `populate_all_common`
-swallowing an upstream failure.
+swallowing an upstream failure with `raise_err=False`.
 
 ## Automatic heuristics
 

@@ -89,7 +89,7 @@ Repo paths (source, docs) are listed in each reference file — this table route
 | Runtime debugging — populate/make failures, fetch1 cardinality, ambiguous-truth, join multiplicity, one-key-fails | [runtime_debugging.md](references/runtime_debugging.md) | — |
 | Destructive operations — deletes, cleanup, inspect-before-destroy patterns | [destructive_operations.md](references/destructive_operations.md) | — |
 | Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) | — |
-| Expanded prose on the top-5 Spyglass footguns | [common_mistakes.md](references/common_mistakes.md) | — |
+| Expanded prose on the most common Spyglass footguns (8 entries) | [common_mistakes.md](references/common_mistakes.md) | — |
 | Framework concepts / merge tables | [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) | `01_Concepts.ipynb`, `04_Merge_Tables.ipynb` |
 | NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.ipynb` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — |
