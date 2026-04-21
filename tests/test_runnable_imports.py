@@ -26,6 +26,7 @@ import ast
 import importlib
 import importlib.util
 import sys
+from collections import Counter
 from pathlib import Path
 
 SKILL_DIR = Path(__file__).resolve().parent.parent
@@ -86,29 +87,68 @@ def _top_level_installed(module_path):
 
 
 def _classify_import_error(module_path, err):
-    """Return "fail" if `err` means the submodule genuinely doesn't exist,
-    "skip" if it looks like environment noise (config error, missing
-    extra, etc.).
+    """Return "fail" if `err` means the requested module (or an ancestor
+    of it) genuinely doesn't exist, "skip" if it looks like environment
+    noise.
 
-    Heuristic: ModuleNotFoundError whose message names a spyglass.*
-    submodule suggests a typo/rename in the skill example. Any other
-    exception (or ModuleNotFoundError about an unrelated third-party
-    package like `sklearn_crfsuite`) indicates the target package's
-    own deps aren't installed — the skill wouldn't fail in a properly
-    configured env, so don't block on it here.
+    Heuristic: ModuleNotFoundError whose `.name` equals `module_path` or
+    is a prefix-ancestor (`spyglass.foo` when we asked for
+    `spyglass.foo.bar`) suggests a typo/rename in the skill example.
+    Any other exception — unrelated missing package (sklearn_crfsuite),
+    runtime config error, DataJoint connection failure — indicates the
+    target package's own deps or runtime aren't available; the skill
+    isn't at fault, so don't block.
+
+    `err.name` is the canonical attribute on ModuleNotFoundError; the
+    `or ""` guard handles the rare case where it's None (e.g. raised
+    manually with the single-arg constructor).
     """
     if not isinstance(err, ModuleNotFoundError):
         return "skip"
-    # ModuleNotFoundError.name is the missing module's dotted path
     missing = getattr(err, "name", None) or ""
-    # If the error is about the module we asked for (or a parent of it),
-    # the skill's example references something that genuinely doesn't
-    # exist. If the error is about a different package, it's a missing
-    # extra / optional dep, and the skill isn't at fault.
     if missing and (missing == module_path
                     or module_path.startswith(missing + ".")):
         return "fail"
     return "skip"
+
+
+def _try_import(module_path):
+    """Run importlib.import_module, but discard a partial sys.modules
+    entry on failure so the next attempt at the same path gets a clean
+    retry rather than a cached half-imported module object.
+
+    Without this cleanup, sequential blocks that reference the same
+    broken submodule could silently flip from FAIL to OK because the
+    second import_module hits the partial cache and hasattr checks then
+    run against a half-initialized module.
+    """
+    try:
+        return importlib.import_module(module_path), None
+    except Exception as err:
+        sys.modules.pop(module_path, None)
+        return None, err
+
+
+def _record_skip(results, location, module_path, reason):
+    """Append a skip message and increment the structured reason counter.
+
+    Reason counter is the source of truth for the collapsed summary —
+    re-parsing formatted messages would break the instant the message
+    template changes.
+    """
+    top = module_path.split(".")[0]
+    if reason == "not-installed":
+        results["skipped"].append(
+            f"{location}: skipped — top-level package '{top}' not installed"
+        )
+        results["skip_reasons"][top] += 1
+    else:
+        err = reason  # (type_name, message) tuple
+        results["skipped"].append(
+            f"{location}: skipped — import of '{module_path}' "
+            f"raised {err[0]}: {err[1]}"
+        )
+        results["skip_reasons"]["<other import-time error>"] += 1
 
 
 def _check_import_from(node, block_start, md_name, results):
@@ -119,14 +159,10 @@ def _check_import_from(node, block_start, md_name, results):
     if not module_path:
         return  # relative import; not meaningful here
     if not _top_level_installed(module_path):
-        results["skipped"].append(
-            f"{location}: skipped — top-level package "
-            f"'{module_path.split('.')[0]}' not installed"
-        )
+        _record_skip(results, location, module_path, "not-installed")
         return
-    try:
-        module = importlib.import_module(module_path)
-    except Exception as err:
+    module, err = _try_import(module_path)
+    if module is None:
         verdict = _classify_import_error(module_path, err)
         if verdict == "fail":
             results["failed"].append(
@@ -134,10 +170,8 @@ def _check_import_from(node, block_start, md_name, results):
                 f"(top-level installed): {type(err).__name__}: {err}"
             )
         else:
-            results["skipped"].append(
-                f"{location}: skipped — import of '{module_path}' "
-                f"raised {type(err).__name__}: {err}"
-            )
+            _record_skip(results, location, module_path,
+                         (type(err).__name__, str(err)))
         return
     for alias in node.names:
         name = alias.name
@@ -147,10 +181,26 @@ def _check_import_from(node, block_start, md_name, results):
             results["ok"].append(
                 f"{location}: from {module_path} import {name}"
             )
-        else:
-            results["failed"].append(
-                f"{location}: '{name}' NOT exported from '{module_path}'"
+            continue
+        # Submodule fallback: `from pkg import sub` where `sub` is a
+        # submodule the package doesn't eagerly re-export. `hasattr`
+        # returns False even though import_module(f"{pkg}.{sub}") would
+        # succeed. Try that before reporting failure.
+        sub_path = f"{module_path}.{name}"
+        sub_module, sub_err = _try_import(sub_path)
+        if sub_module is not None:
+            results["ok"].append(
+                f"{location}: from {module_path} import {name} (submodule)"
             )
+        elif _classify_import_error(sub_path, sub_err) == "fail":
+            results["failed"].append(
+                f"{location}: '{name}' NOT exported from '{module_path}' "
+                f"(tried submodule '{sub_path}': "
+                f"{type(sub_err).__name__}: {sub_err})"
+            )
+        else:
+            _record_skip(results, location, sub_path,
+                         (type(sub_err).__name__, str(sub_err)))
 
 
 def _check_import(node, block_start, md_name, results):
@@ -160,14 +210,10 @@ def _check_import(node, block_start, md_name, results):
     for alias in node.names:
         module_path = alias.name
         if not _top_level_installed(module_path):
-            results["skipped"].append(
-                f"{location}: skipped — top-level package "
-                f"'{module_path.split('.')[0]}' not installed"
-            )
+            _record_skip(results, location, module_path, "not-installed")
             continue
-        try:
-            importlib.import_module(module_path)
-        except Exception as err:
+        module, err = _try_import(module_path)
+        if module is None:
             verdict = _classify_import_error(module_path, err)
             if verdict == "fail":
                 results["failed"].append(
@@ -175,10 +221,8 @@ def _check_import(node, block_start, md_name, results):
                     f"(top-level installed): {type(err).__name__}: {err}"
                 )
             else:
-                results["skipped"].append(
-                    f"{location}: skipped — import of '{module_path}' "
-                    f"raised {type(err).__name__}: {err}"
-                )
+                _record_skip(results, location, module_path,
+                             (type(err).__name__, str(err)))
             continue
         results["ok"].append(f"{location}: import {module_path}")
 
@@ -219,7 +263,10 @@ def main():
             return 1
         sys.path.insert(0, str(args.spyglass_src))
 
-    results = {"ok": [], "failed": [], "skipped": []}
+    results = {
+        "ok": [], "failed": [], "skipped": [],
+        "skip_reasons": Counter(),
+    }
     for md_file in collect_md_files():
         for block_start, body in extract_python_blocks(md_file):
             check_imports_in_block(body, block_start, md_file.name, results)
@@ -241,20 +288,8 @@ def main():
             for msg in results["skipped"]:
                 print(f"  [skip] {msg}")
         else:
-            # Collapsed summary: one line per distinct top-level package
-            from collections import Counter
-            packages = Counter()
-            for msg in results["skipped"]:
-                # "... 'pkg' not installed" or "... raised X: ..."
-                if "not installed" in msg:
-                    # extract the 'pkg' after "'"
-                    start = msg.rfind("package '") + len("package '")
-                    end = msg.index("'", start)
-                    packages[msg[start:end]] += 1
-                else:
-                    packages["<other import-time error>"] += 1
             print("\nSKIPPED (summary; rerun with --show-skipped for detail):")
-            for pkg, count in packages.most_common():
+            for pkg, count in results["skip_reasons"].most_common():
                 print(f"  [skip] {pkg}: {count} import(s)")
 
     return 1 if results["failed"] else 0
