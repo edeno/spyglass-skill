@@ -3,3 +3,14 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+
+# skill-creator eval/iteration output (kept out of VCS; evals/ itself is tracked)
+*-workspace/
+/skill-snapshot/
+
+# Packaged skill artifacts
+*.skill
+
+# Local developer config (e.g. path to a Spyglass checkout for the validator)
+.env.local
+scripts/config.local.sh

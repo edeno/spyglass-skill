@@ -17,13 +17,18 @@ and Claude will pick it up on next session start.
 
 ```bash
 # One-time install (or re-install to update)
-git clone https://github.com/edeno/claude-skills.git /tmp/edeno-claude-skills
-cp -r /tmp/edeno-claude-skills/spyglass ~/.claude/skills/spyglass
+git clone https://github.com/edeno/spyglass-skill.git /tmp/spyglass-skill
+cp -r /tmp/spyglass-skill/skills/spyglass ~/.claude/skills/spyglass
 ```
 
-To update later, repeat the last two lines or run
-`git -C ~/.claude/skills/spyglass pull` if you cloned the whole repo in
-place instead of copying.
+For active development, symlink instead of copying so edits show up live:
+
+```bash
+ln -s "$(pwd)/skills/spyglass" ~/.claude/skills/spyglass
+```
+
+To update a copy later, repeat the clone+copy, or if you cloned the whole
+repo in place, `git -C <repo>/skills/spyglass pull` from its parent.
 
 **Uninstall:** `rm -rf ~/.claude/skills/spyglass`.
 
@@ -48,7 +53,7 @@ menu.
 
 ## Layout
 
-```
+```text
 SKILL.md                       # entry point (always loaded into context)
 references/                    # progressive-disclosure topic files
 scripts/validate_skill.py      # static validator (AST over .md files)
@@ -102,7 +107,7 @@ python3 spyglass/tests/test_validator_regressions.py --spyglass-src PATH
 Checks are numbered in `validate_skill.py`'s `main()` output. Broadly:
 
 | Dimension | Checks |
-|---|---|
+| --- | --- |
 | Instruction correctness | import resolution, method existence, kwarg validity, DataJoint anti-patterns, dict-restriction fields, insert/populate key shape |
 | Freshness / drift | file path existence, notebook names, markdown links, citation line numbers, citation identifier match, link-landing content overlap |
 | Size / shape | SKILL.md word caps, reference file line budgets, per-H2 subsection budgets |

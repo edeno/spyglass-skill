@@ -107,6 +107,37 @@ for the detailed topic references. The validator in
 gates skill quality against a live Spyglass checkout — see the skill's
 own README for how to run it.
 
+### Pointing the validator at a Spyglass checkout
+
+The validator parses the Spyglass source tree via AST — no database or
+Spyglass install needed, but it does need the source files on disk.
+Path resolution, in order:
+
+1. **`--spyglass-src PATH`** CLI flag — wins over everything.
+2. **`$SPYGLASS_SRC` env var** — the recommended way for personal setups.
+   Add to your shell rc:
+
+   ```bash
+   export SPYGLASS_SRC="$HOME/Documents/GitHub/spyglass/src"
+   ```
+
+3. **Sibling-clone fallback** — if a `spyglass/` checkout sits next to
+   this repo (e.g. `~/Documents/GitHub/spyglass/` alongside
+   `~/Documents/GitHub/spyglass-skill/`), the script finds it at
+   `../spyglass/src` with zero config. Useful for both local dev and CI.
+4. **`scripts/config.local.sh`** — gitignored, source before running if you
+   need per-invocation overrides. Example:
+
+   ```bash
+   # scripts/config.local.sh
+   export SPYGLASS_SRC="/some/other/path/to/spyglass/src"
+   ```
+
+   Then: `source skills/spyglass/scripts/config.local.sh && ./skills/spyglass/scripts/validate_all.sh`
+
+Never commit a personal path. `.gitignore` already excludes
+`.env.local` and `scripts/config.local.sh` for this reason.
+
 Issues and PRs welcome at [github.com/edeno/spyglass-skill](https://github.com/edeno/spyglass-skill).
 
 ## License
