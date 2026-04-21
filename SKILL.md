@@ -30,15 +30,16 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 ## Core Directives
 
 - **NEVER delete or drop without explicit confirmation.** The database holds irreplaceable neuroscience data. Any destructive helper (`delete`, `drop`, `cleanup`, `merge_delete`, etc.) must be paired with an inspect step and user confirmation first. `.delete()` on SpyglassMixin tables aliases to `cautious_delete` — it enforces team-based permissions so you can't accidentally delete another lab member's sessions. Paired shapes + protection model: [destructive_operations.md](references/destructive_operations.md).
+- **Do not invent identifiers.** Plausible method, kwarg, field, and table names are this skill's most common hallucination shape — they fail with `AttributeError`, `TypeError`, or `DataJointError: unknown attribute`. Verify before asserting: grep the source, `inspect.signature`, or `Table.heading`. If unverifiable, flag as unconfirmed. Real examples: Common Mistake #8 in [common_mistakes.md](references/common_mistakes.md).
 - **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
 - **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** — on any table, including well-known ones. Use `print(len(rel))`; if >1, inspect with `rel.fetch(as_dict=True)` or `merge_restrict` to see which PK fields still need narrowing. `Table.describe()`/`Table.heading` show schema, not row count. See Common Mistake #2.
 - **Environment**: detect the user's setup (local Docker, local data, remote lab) — don't assume Jupyter or remote NWB.
-- **Reading DataJoint config files**: `dj_local_conf.json` and `~/.datajoint_config.json` may contain `database.password` in plaintext. Never `Read`/`cat` raw — use the scrubbed-read pattern in [setup_config.md](references/setup_config.md).
-- **Source of truth**: when the skill and the repo disagree, trust the repo. Cited paths use the GitHub layout (`src/spyglass/...`); in a pip install, drop the `src/` prefix — locate the package via `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`. Tutorials live at `notebooks/*.ipynb` (`notebooks/py_scripts/*.py` is a jupytext mirror — cite the `.ipynb`). Tutorial notebooks drift out of sync with the schema; when a cell fails on a missing parameter, table, or column, treat the notebook as stale and check the current source tree.
+- **Reading DataJoint config files**: `dj_local_conf.json` / `~/.datajoint_config.json` may hold `database.password` in plaintext. Never `Read`/`cat` raw — use the scrubbed-read pattern in [setup_config.md](references/setup_config.md).
+- **Source of truth**: when the skill and repo disagree, trust the repo. Cited paths use the GitHub layout (`src/spyglass/...`); in pip installs, drop `src/` — locate via `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`. Tutorials at `notebooks/*.ipynb` (cite the `.ipynb`, not the `py_scripts/` jupytext mirror). Tutorials drift; when a cell fails on a missing parameter, table, or column, treat it as stale and check the source tree.
 
 ## Common Mistakes
 
-Top 5 highest-frequency bugs. Flag any of these shapes before answering the rest of the question. Three additional footguns (interval/epoch mismatches, fragmented lab-wide search, plausible-but-nonexistent identifiers) plus expanded prose + fixes: [common_mistakes.md](references/common_mistakes.md) (8 entries total).
+Top 5 highest-frequency bugs. Flag any of these shapes before answering. Three more footguns plus expanded prose + fixes: [common_mistakes.md](references/common_mistakes.md) (8 entries total).
 
 1. **Classmethod restriction discard on merge tables** — `(PositionOutput & merge_key).merge_delete()` drops the `& merge_key`; use `PositionOutput.merge_delete(merge_key)`. Affected methods: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
 2. **Too-loose restriction + `fetch1()`** — `{"nwb_file_name": f}` matches many rows; add PK fields until `len(rel) == 1`. [datajoint_api.md](references/datajoint_api.md).
@@ -113,4 +114,3 @@ Repo paths (source, docs) are listed in each reference file — this table route
 | External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — |
 | Authoring a new pipeline / extending an existing one | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) | — |
 
-When a reference and the repo disagree, trust the repo.
