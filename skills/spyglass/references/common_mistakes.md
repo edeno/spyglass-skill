@@ -22,11 +22,12 @@ Expanded prose for the 8 most common Spyglass footguns — top 5 are summarized 
 The same classmethod-dispatch rule applies to `merge_delete_parent`, `merge_restrict`, `merge_get_part`, `merge_get_parent`, `merge_view`, and `merge_html`. Full affected-method list with correct call forms: [merge_methods.md](merge_methods.md).
 
 **Related footgun (same family).** `(LFPOutput & {'nwb_file_name': f}).fetch()`
-returns no usable rows, for the same reason: the master's PK is
-`merge_id`, and `nwb_file_name` lives on the part tables. For the full
-fix list (`merge_get_part`, `merge_restrict`, `merge_view`,
-`merge_fetch`), see
-[`merge_methods.md` § Data Discovery](merge_methods.md#data-discovery).
+doesn't error — it silently returns the whole table (not zero rows,
+not one). The master's PK is `merge_id`, and `nwb_file_name` lives on
+the part tables, so DataJoint treats the restriction as a no-op. The
+worked example with `len(...)` demonstration, plus the canonical
+"count across sessions" pattern, lives at
+[`merge_methods.md` § Silent wrong-count footgun](merge_methods.md#silent-wrong-count-footgun).
 
 ## 2. Too-loose restriction + `fetch1()`
 

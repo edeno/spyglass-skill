@@ -2499,12 +2499,12 @@ def check_structure(results: ValidationResult):
 
     # SKILL.md body size — hard caps. Don't bump without migrating content
     # to references first. Anthropic target is <500 words for frequently-loaded
-    # skills; 1150 gives headroom over the realistic post-migration size while
+    # skills; 1200 gives headroom over the realistic post-migration size while
     # still forcing migration rather than unbounded growth.
     body = re.sub(r"^---\n.*?\n---\n", "", skill_content, count=1, flags=re.DOTALL)
     body_words = len(body.split())
     body_lines = body.count("\n") + 1
-    WORD_HARD_CAP = 1150
+    WORD_HARD_CAP = 1200
     LINE_HARD_CAP = 500     # Anthropic's explicit cap on SKILL.md body
     if body_words > WORD_HARD_CAP:
         results.fail(

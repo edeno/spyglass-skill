@@ -60,7 +60,7 @@ Users may span stages. Infer from the question and any imports/table names in co
 
 ## Merge Tables
 
-Two phases: **inspect** with `MergeTable & key` or `merge_restrict` (SQL only), then **load** with `merge_get_part` → `fetch1_dataframe` (disk read; cardinality-check first). Full pattern, including the `fetch_results` decoding-only footgun: [merge_methods.md](references/merge_methods.md).
+**Decision rule for the 5 merge masters** (`SpikeSortingOutput`, `LFPOutput`, `PositionOutput`, `LinearizedPositionOutput`, `DecodingOutput` — tables with `merge_id` as their only PK field): (1) `& {"nwb_file_name": f}` silently returns the whole table — use `merge_restrict` or `merge_get_part` instead. (2) Load via `merge_get_part(key).fetch1('KEY')` → `(Master & merge_key).fetch1_dataframe()`. (3) `get_restricted_merge_ids` is `SpikeSortingOutput`-only; `fetch_results` is `DecodingOutput`-only. Registry + worked-example: [merge_methods.md](references/merge_methods.md).
 
 ## Querying an Already-Configured DB
 
