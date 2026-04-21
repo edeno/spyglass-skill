@@ -168,14 +168,21 @@ FirFilterParameters & 'filter_name LIKE "Theta%"'
 
 ## Position Tracking
 
+### `PositionSource`
+
+- **Primary Key**: `nwb_file_name`, `interval_list_name` (FKs to `Session` and `IntervalList`; `common_behav.py:34`).
+- Non-PK: `source` (e.g. `"trodes"`, `"dlc"`, `"imported"`), `import_file_name`.
+- Part table: `PositionSource.SpatialSeries` — one row per spatial series in the NWB file.
+- **Populated by the ingest path, not `populate_all_common`.** `PositionSource.populate()` is a thin wrapper that warns and delegates to `PositionSource.make()`, which calls `insert_from_nwbfile(nwb_file_name)` per unique session. DLC-only sessions that lack a Trodes `'pos N valid times'` interval may skip insertion — see the DLC gotchas in [position_pipeline.md](position_pipeline.md).
+
 ### `RawPosition`
 
 - Raw position data from hardware (LEDs, sensors). Upstream of position pipelines.
 
-### `IntervalPositionInfo`
+### `IntervalPositionInfoSelection` / `IntervalPositionInfo`
 
-- Computed table. Depends on `IntervalPositionInfoSelection` (which combines `PositionInfoParameters` + `IntervalList`).
-- Computes smoothed head position, orientation, velocity for specific intervals.
+- `IntervalPositionInfoSelection` (Lookup, `common_position.py:87`) — FK to `PositionInfoParameters` + `IntervalList`. Insert here before `IntervalPositionInfo.populate()`; this is the selection-table step — `IntervalPositionInfo` will not populate without it.
+- `IntervalPositionInfo` (Computed, `common_position.py:99`) — FK to `IntervalPositionInfoSelection`. Stores smoothed head position, orientation, and velocity (`head_position_object_id`, `head_orientation_object_id`, `head_velocity_object_id`).
 
 ## Behavior and Task
 

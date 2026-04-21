@@ -46,7 +46,7 @@ Quality-critical operations use a validator → fix → proceed shape. Four loop
 
 ## Classify the User's Stage
 
-Stages orient you to *what the user is doing*; the Reference Routing table below resolves *what they're asking about*. Use stages when the topic is ambiguous (a vague "it broke"); use the routing table when the topic is clear.
+Stages orient you to *what the user is doing*; the Reference Routing table below resolves *what they're asking about*. Use stages for vague questions; use the routing table when the topic is clear.
 
 1. **Setup/install** → `scripts/install.py` is the canonical fast path per `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md), [setup_config.md](references/setup_config.md), or [setup_troubleshooting.md](references/setup_troubleshooting.md). `00_Setup.ipynb` is a manual fallback.
 2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.ipynb`.
@@ -86,6 +86,7 @@ Repo paths (source, docs) are listed in each reference file — this table route
 | Configuring the database / directories / env vars | [setup_config.md](references/setup_config.md) | `00_Setup.ipynb` |
 | Setup errors and troubleshooting | [setup_troubleshooting.md](references/setup_troubleshooting.md) | — |
 | Runtime debugging — populate/make failures, fetch1 cardinality, ambiguous-truth, join multiplicity, one-key-fails | [runtime_debugging.md](references/runtime_debugging.md) | — |
+| `populate_all_common` silently skipped tables | [populate_all_common_debugging.md](references/populate_all_common_debugging.md) | — |
 | Destructive operations — deletes, cleanup, inspect-before-destroy patterns | [destructive_operations.md](references/destructive_operations.md) | — |
 | Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) | — |
 | Expanded prose on the most common Spyglass footguns (8 entries) | [common_mistakes.md](references/common_mistakes.md) | — |

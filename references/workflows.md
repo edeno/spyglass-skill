@@ -93,37 +93,23 @@ Session() >> 'trodes_pos_params_name="default"'
 
 ## Common Patterns
 
-### Safe Merge Key Fetching
+### Batch Processing (One Merge, Many Sessions)
 
 ```python
-def safe_fetch_merge_key(merge_table, key):
-    """Safely get merge_key from a merge table. Returns None on failure."""
-    try:
-        part = merge_table.merge_get_part(key)
-        return part.fetch1("KEY")
-    except ValueError as e:
-        print(f"No unique match for {key}: {e}")
-        return None
+from spyglass.common import Session
+from spyglass.position import PositionOutput
 
-# Usage (step 4 depends on the pipeline):
-merge_key = safe_fetch_merge_key(PositionOutput, key)
-if merge_key:
-    data = (PositionOutput & merge_key).fetch1_dataframe()  # position/LFP
-    # For decoding: DecodingOutput.fetch_results(merge_key)
-    # For spikes: SpikeSortingOutput().get_spike_times(merge_key)
-```
-
-### Batch Processing
-
-```python
-sessions = (Session & {'subject_id': 'J16'}).fetch('KEY')
+sessions = (Session & {"subject_id": "J16"}).fetch("KEY")
 
 results = []
 for sk in sessions:
-    merge_key = safe_fetch_merge_key(PositionOutput, {**sk, 'interval_list_name': 'task'})
-    if merge_key:
-        results.append((PositionOutput & merge_key).fetch1_dataframe())
+    key = {**sk, "interval_list_name": "task"}
+    part = PositionOutput.merge_get_part(key)
+    if len(part) == 1:          # skip ambiguous/missing sessions
+        results.append((PositionOutput & part.fetch1("KEY")).fetch1_dataframe())
 ```
+
+The `len(part) == 1` guard replaces a try/except around `fetch1("KEY")` — cheaper, more readable, and it's the cardinality check [feedback_loops.md](feedback_loops.md) recommends before any `fetch1()`.
 
 ### Incremental Exploration
 

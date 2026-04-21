@@ -4,6 +4,7 @@
 
 - [Classmethod Restriction Discard (Read First)](#classmethod-restriction-discard-read-first)
 - [_Merge Class Methods](#_merge-class-methods)
+- [Projected FK rename pattern](#projected-fk-rename-pattern)
 - [SpyglassMixin Methods](#spyglassmixin-methods)
 
 ## Classmethod Restriction Discard (Read First)
@@ -23,6 +24,13 @@ Most `_Merge` methods you reach for are **classmethods** whose restriction param
 | `merge_html(restriction=True)` (line 418) | `@classmethod`, read-only | HTML of whole table |
 
 Plus the staticmethod `Nwbfile.cleanup(delete_files=False)` at `src/spyglass/common/common_nwbfile.py:139` — same shape, same footgun.
+
+**`restriction` parameter type.** The annotations in source read `restriction: str = True` (e.g. `dj_merge_tables.py:469` for `merge_delete_parent`). The `str` annotation is misleading — you can pass:
+
+- a DataJoint restriction **dict** (e.g. `{"nwb_file_name": f}`) — most common;
+- a **SQL WHERE string** (e.g. `"nwb_file_name = 'j1620210710_.nwb'"`);
+- a **table/query expression** (e.g. `PositionOutput & session_key`);
+- or the literal default `True` — which restricts to the whole table and is what makes the classmethod-discard shape so dangerous.
 
 **Always pass the restriction as an argument:**
 
@@ -282,6 +290,19 @@ Extracts merge_id from various restriction formats.
 
 #### `get_source_from_key(key: dict) -> str`
 Returns the source name for a given key.
+
+---
+
+## Projected FK rename pattern
+
+When a Computed table needs two foreign keys that would collide on a shared primary-key slot, Spyglass uses `.proj(new_name='old_name')` in the table definition to rename one of them. At insert/populate time, pass the *renamed* field — not the original.
+
+Examples in the wild:
+
+- `RippleTimesV1` (ripple.py:186): `-> PositionOutput.proj(pos_merge_id='merge_id')`. Build populate key with `pos_merge_id`, not `merge_id`, because `RippleTimesV1`'s own primary FK into `RippleLFPSelection` already uses a `merge_id` slot via `LFPBandV1`.
+- `MuaEventsV1` (mua.py:67–68): *two* renames at once — `PositionOutput.proj(pos_merge_id='merge_id')` and `IntervalList.proj(detection_interval='interval_list_name')`. Populate keys must use both renamed fields.
+
+**How to detect it.** Read the target table's `definition`. If you see `.proj(foo='bar')` inside an FK line, `foo` is what your populate key needs, not `bar`. `Table.heading.primary_key` also lists the renamed names, not the originals.
 
 ---
 

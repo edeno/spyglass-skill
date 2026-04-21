@@ -51,8 +51,11 @@ selection_key = {
 ClusterlessDecodingSelection.insert1(selection_key, skip_duplicates=True)
 ClusterlessDecodingV1.populate(selection_key)
 
-# 2. Fetch via DecodingOutput (friendly key resolves internally — no
-#    merge_get_part needed for this merge table)
+# 2. Fetch via DecodingOutput. These classmethods dispatch through
+#    merge_restrict_class(key) internally (decoding_merge.py:74-111) — the
+#    key must resolve to exactly one parent-table row, or you get
+#    ValueError: "Ambiguous entry". A full selection_key (as built above)
+#    usually does; a partial {"nwb_file_name": f} typically does not.
 results = DecodingOutput.fetch_results(selection_key)
 model = DecodingOutput.fetch_model(selection_key)
 ```
@@ -234,7 +237,8 @@ selection_key = {
 ClusterlessDecodingSelection.insert1(selection_key, skip_duplicates=True)
 ClusterlessDecodingV1.populate(selection_key)
 
-# Fetch via DecodingOutput (friendly key → results)
+# Fetch via DecodingOutput — selection_key must resolve to exactly one
+# parent-table row; see the Canonical Example above for why.
 results = DecodingOutput.fetch_results(selection_key)
 ```
 

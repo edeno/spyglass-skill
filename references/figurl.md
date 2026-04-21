@@ -110,4 +110,4 @@ Under the hood, this routes to `non_local_detector.visualization.figurl_1D.creat
 - **Upload size**: large sortings or recordings can take minutes to upload. Consider windowing with `segment_duration_sec` (see `_generate_figurl` kwargs in `figurl_curation.py`)
 - **Re-fetching labels**: `get_labels()` / `get_merge_groups()` hit kachery every call. If the curator updates the URL, re-run these to pull the latest state — no local cache
 - **`insert_curation()` bug #1530**: Sortings without a `curation_label` column raise `ValueError`. Always insert parent curations with at least an empty labels dict
-- **V0 vs V1**: The v0 pipeline has its own `curation_figurl.py` with a similar but not identical API. The v1 path above is the current recommendation
+- **V0 vs V1**: v0 has its own `curation_figurl.py` with a similar but not identical API. V1 is the only path to use for new work — do not fall back to v0 if the v1 path fails. Existing v0 curation rows remain readable via `SpikeSortingOutput` (the merge table is source-agnostic); the FigURL generation path is what differs. Legacy v0 references are in [spikesorting_v0_legacy.md](spikesorting_v0_legacy.md).

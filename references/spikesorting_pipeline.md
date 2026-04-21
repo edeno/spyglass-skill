@@ -12,6 +12,7 @@
 - [Step 3: Spike Sorting](#step-3-spike-sorting)
 - [Step 4: Curation](#step-4-curation)
 - [Step 5: Quality Metrics (Optional)](#step-5-quality-metrics-optional)
+- [Step 6: Burst-Pair Curation (Optional)](#step-6-burst-pair-curation-optional)
 - [Analysis: SortedSpikesGroup](#analysis-sortedspikesgroup)
 - [Analysis: Unit Annotations](#analysis-unit-annotations)
 - [Common Patterns](#common-patterns)
@@ -60,9 +61,9 @@ SpikeSortingRecording.populate(rec_key)
 #    NOT interchange with kilosort / ironclust. Use the paired defaults
 #    in SpikeSorterParameters.
 sort_key = SpikeSortingSelection.insert_selection({
-    **rec_key, "sorter": "mountainsort4",
+    **rec_key,                # carries interval_list_name already
+    "sorter": "mountainsort4",
     "sorter_param_name": "franklab_tetrode_hippocampus_30KHz",
-    "interval_list_name": interval_name,
 })
 SpikeSorting.populate(sort_key)
 
@@ -129,8 +130,10 @@ SpikeSortingSelection → SpikeSorting (run sorter)
 CurationV1 (labels + merge groups)
     ↓                          ↓
     ↓               MetricCurationSelection → MetricCuration (quality metrics)
-    ↓                          ↓
+    ↓                          ↓            ↓
     ↓               FigURLCurationSelection → FigURLCuration (manual curation UI)
+    ↓                                        ↓
+    ↓                          BurstPairSelection → BurstPair (optional burst-pair analysis)
     ↓
 SpikeSortingOutput.CurationV1 (merge table)
     ↓
@@ -338,6 +341,32 @@ if has_exceeding_spikes(rec, sort):
 On a pre-#1564 install, there was no user-side workaround in the
 published API — upgrade Spyglass (`git pull && pip install -e .`) and
 the trimming happens automatically.
+
+## Step 6: Burst-Pair Curation (Optional)
+
+Identifies likely over-split unit pairs from the same neuron using waveform similarity, ISI violations, and cross-correlogram asymmetry. Downstream of `MetricCuration`; produces suggestions, not edits — you still decide whether to merge in a subsequent `CurationV1` entry. See `12_Burst_Merge_Curation.ipynb`.
+
+```python
+from spyglass.spikesorting.v1.burst_curation import (
+    BurstPairParams,
+    BurstPairSelection,
+    BurstPair,
+)
+```
+
+**BurstPairParams** (Lookup) — ships a `"default"` preset (`burst_curation.py:53`): `sorter="mountainsort4"`, `correl_window_ms=100`, `correl_bin_ms=5`, `correl_method="numba"`. For other sorters, insert a new params row with the matching `sorter` string.
+
+**BurstPairSelection** (Manual) — FK to `MetricCuration` and `BurstPairParams`. Use the bulk-insert helper:
+
+```python
+BurstPairSelection().insert_by_curation_id(
+    metric_curation_id=metric_curation_id,   # uuid of the MetricCuration row
+    burst_params_name="default",
+)
+BurstPair.populate({"metric_curation_id": metric_curation_id})
+```
+
+**BurstPair** (Computed) — per-pair similarity/ISI/xcorrel scores in `BurstPair.BurstPairUnit`. Exposes plotting helpers (`plot_by_sort_group_ids`, `investigate_pair_xcorrel`, `investigate_pair_peaks`, `plot_peak_over_time`) for manual inspection before deciding to merge via a follow-up `CurationV1.insert_curation(..., merge_groups=...)`.
 
 ## Analysis: SortedSpikesGroup
 

@@ -456,35 +456,7 @@ Populate/insert the missing ancestor first, then retry.
 
 ## Debugging `populate_all_common`
 
-`populate_all_common` is the common-ingest driver that calls each
-common-module table in sequence. By default (`raise_err=False`) it
-catches exceptions per-table and writes only a short message to
-`common_usage.InsertError` — the full traceback is lost.
-
-**Primary fix — pass `raise_err=True`.** The function accepts this
-parameter (see
-`src/spyglass/common/populate_all_common.py:159-161`); it's the
-built-in way to propagate tracebacks:
-
-```python
-from spyglass.common import populate_all_common
-populate_all_common(nwb_file_name, raise_err=True)
-```
-
-**Alternative — skip the driver and populate tables directly.** Useful
-when you want to isolate which table is failing without re-running the
-ones that succeeded:
-
-```python
-from spyglass.common import Session, Raw, DIOEvents, PositionSource
-
-for T in [Session, Raw, DIOEvents, PositionSource]:
-    T().populate({'nwb_file_name': nwb_file_name})   # exception propagates
-```
-
-Applies whenever a fresh ingest "completes" but some common tables
-silently miss rows — that's almost always `populate_all_common`
-swallowing an upstream failure with `raise_err=False`.
+`populate_all_common` swallows per-table exceptions by default (`raise_err=False`), logging only a short message to `common_usage.InsertError`. When a fresh ingest "completes" but common tables silently miss rows, that's the usual cause. The fix is small (`raise_err=True` or populate tables directly) but the diagnostic context is enough that it lives in its own reference: see [populate_all_common_debugging.md](populate_all_common_debugging.md).
 
 ## Automatic heuristics
 

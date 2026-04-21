@@ -74,7 +74,7 @@ Common symptom → upstream version that changed it:
 | `compute_snrs() got an unexpected keyword argument 'num_chunks_per_segment'` | moved under `random_chunk_kwargs_dict` |
 | `extract_waveforms() got multiple values for keyword argument 'sparse'` | 0.99+ signature |
 | `check_params() got an unexpected keyword argument 'outputs'` | dropped from `detect_peaks` |
-| `BinaryRecordingExtractor' object has no attribute 'recording_list'` | pre-0.96 only |
+| `AttributeError: module 'spikeinterface.core' has no attribute 'BinaryRecordingExtractor'` | renamed to `BinaryFolderRecording` in 0.96; v0 spike-sorting code paths only — v1 does not hit this |
 
 **Fix.** Reinstall SpikeInterface at the pinned version (e.g.
 `pip install 'spikeinterface==0.99.1'`) rather than patching the Spyglass

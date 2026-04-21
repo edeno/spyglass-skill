@@ -50,14 +50,16 @@ conda env create -f environments/environment_min.yml
 # Full environment (includes optional deps — larger install)
 conda env create -f environments/environment.yml
 
-# With DeepLabCut support
+# With DeepLabCut support — creates a different env name (spyglass-dlc),
+# and the MoSeq files use spyglass-moseq-cpu / spyglass-moseq-gpu.
+# Check `name:` at the top of the file before activating.
 conda env create -f environments/environment_dlc.yml
 ```
 
-After creating the environment, install Spyglass itself:
+After creating the environment, install Spyglass itself. The env name is `spyglass` for `environment.yml` / `environment_min.yml`, but `spyglass-dlc` / `spyglass-moseq-cpu` / `spyglass-moseq-gpu` for the specialty variants:
 
 ```bash
-conda activate spyglass
+conda activate spyglass          # or: spyglass-dlc, spyglass-moseq-cpu, etc.
 pip install -e .
 ```
 

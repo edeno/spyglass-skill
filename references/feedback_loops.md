@@ -28,6 +28,8 @@ Before inserting a new row into a parameter or selection table, look for an exis
 
 Note on field names: every Spyglass parameter table uses a table-specific PK field, not a universal `params_name`. Examples: `trodes_pos_params_name` (`TrodesPosParams`), `ripple_param_name` (`RippleParameters`), `artifact_params_name` (`ArtifactDetectionParameters`), `unit_filter_params_name` (`UnitSelectionParams`), `dlc_si_params_name` (`DLCSmoothInterpParams`). Inspect `Table.heading.primary_key` to get the exact field for the table you're about to write — do not assume the pattern.
 
+The param-blob **shape** also varies per pipeline: `RippleParameters.ripple_param_dict` nests detection kwargs under `ripple_detection_params`; `MuaEventsParameters.mua_param_dict` is flat; `TrodesPosParams.params` uses `params` as the blob field name; DLC params tables use `params` too but with per-stage schemas. Read the consumer's `make()` — or at minimum the table's docstring and an existing row via `(T & {...}).fetch1()` — for the real shape before writing match logic. The template below is ripple-shaped; it is a *template*, not a recipe.
+
 ```python
 # Before inserting, look at what already exists in the lab.
 # Example uses RippleParameters / ripple_param_name; substitute your table's
@@ -86,6 +88,7 @@ print(len(UpstreamSelection & key))             # the selection table feeding th
 ```
 
 Common causes when this fails:
+
 - Selection-table insert used a different value for a key field (typical: interval name mismatch — see runtime_debugging.md Signature F).
 - Selection row exists but references an interval/params/group that was never populated upstream.
 - The key you built includes a field that doesn't exist on `key_source` — for standard computed tables, DataJoint typically ignores unknown fields in a dictionary restriction, producing an empty match with no error. Tables with custom `key_source` properties may behave differently; if the restriction seems valid but `len(key_source & key) == 0`, print the `key_source.heading.primary_key` to confirm which fields it actually accepts.

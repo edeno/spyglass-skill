@@ -161,6 +161,13 @@ from spyglass.position.v1 import (
 )
 ```
 
+### Key DLC invariants
+
+For the full 7-step DLC inference workflow (`insert_estimation_task` → `DLCPoseEstimation` → `DLCSmoothInterp` per-bodypart → `DLCSmoothInterpCohort` → `DLCCentroid` + `DLCOrientation` → `DLCPosV1` → `PositionOutput`), see `21_DLC.ipynb`. Two things the notebook does not flag that will bite you:
+
+- Each selection stage shares the `DLCPoseEstimation` foreign key but adds its own parameter name; build the key by extending `pose_estimation_key` one field at a time, not by reusing the previous stage's full key.
+- **`DLCPosSelection` is the exception to that pattern.** It projects `dlc_si_cohort_selection_name` into two separate aliases (`dlc_si_cohort_centroid` and `dlc_si_cohort_orientation`), so those must be set explicitly — spreading `cohort_key` leaves the wrong field names and `populate()` silently produces no rows.
+
 **Gotcha — pose estimation hangs silently if the target video file already exists.** `DLCPoseEstimationSelection.insert_estimation_task(...)` never completes (no error, no progress) when an `.mp4` with the same name already sits in the DLC target video directory. The path is whatever the install sets for `dlc_video_dir` (check `spyglass.settings` or `dj.config['custom']['dlc_dirs']`; this is a site/lab-specific path, not a Spyglass-shipped default). Manually delete the stale `.mp4` before re-running. If the call appears to hang, this is the first thing to check.
 
 **Gotcha — empty `PositionIntervalMap` on old ingestions or DLC-only

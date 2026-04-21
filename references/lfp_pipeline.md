@@ -186,37 +186,82 @@ clean_times = (LFPArtifactDetection & key).fetch1('artifact_removed_valid_times'
 
 ## Step 4: Band Analysis (Phase/Power)
 
+Required prerequisite for ripple detection (`RippleLFPSelection` FKs to `LFPBandV1`, not `LFPOutput` — see [ripple_pipeline.md](ripple_pipeline.md)) and for theta phase/power.
+
 ```python
-from spyglass.lfp.analysis.v1 import LFPBandSelection, LFPBandV1
+from spyglass.lfp.analysis.v1.lfp_band import LFPBandSelection, LFPBandV1
 ```
 
 **LFPBandSelection** (Manual)
 
-- Key: includes `nwb_file_name`, `lfp_merge_id`, `filter_name`, `filter_sampling_rate`, `target_interval_list_name`, `lfp_band_sampling_rate`
-- Part table: `LFPBandSelection.LFPBandElectrode` — per-electrode reference configuration
-- Method: `set_lfp_band_electrodes(nwb_file_name, lfp_merge_id, electrode_list, filter_name, interval_list_name, reference_electrode_list, lfp_band_sampling_rate)`
+- Key: includes `nwb_file_name`, `lfp_merge_id`, `filter_name`, `filter_sampling_rate`, `target_interval_list_name`, `lfp_band_sampling_rate`.
+- Part table: `LFPBandSelection.LFPBandElectrode` — per-electrode reference configuration.
+- Entry method (preferred over manual `insert1`): `set_lfp_band_electrodes(nwb_file_name, lfp_merge_id, electrode_list, filter_name, interval_list_name, reference_electrode_list, lfp_band_sampling_rate)`. Populates both the main table and the part table.
 
 **LFPBandV1** (Computed)
 
-- Applies band filter to already-filtered LFP
+- Applies band filter to already-filtered `LFPV1` output.
 - Key methods:
-  - `fetch1_dataframe()` — Returns band-filtered LFP
+  - `fetch1_dataframe()` — band-filtered LFP
   - `compute_analytic_signal(electrode_list)` — Hilbert transform → complex amplitude
-  - `compute_signal_phase(electrode_list)` — Extract phase (0 to 2π)
-  - `compute_signal_power(electrode_list)` — Extract power (|analytic_signal|²)
+  - `compute_signal_phase(electrode_list)` — phase (0 to 2π)
+  - `compute_signal_power(electrode_list)` — power (|analytic_signal|²)
 
-### Example: Compute Theta Phase
+### Canonical Example: Band Filtering (Theta / Ripple)
+
+Assumes `LFPV1` is already populated for this session and interval (see the broadband canonical example at the top of this file).
 
 ```python
-# Assuming LFPBandV1 is populated with theta filter
-band_entry = LFPBandV1 & theta_key
+from spyglass.common import FirFilterParameters
+from spyglass.lfp import LFPOutput
+from spyglass.lfp.analysis.v1.lfp_band import LFPBandSelection, LFPBandV1
 
-# Get phase for specific electrodes
-phase = band_entry.compute_signal_phase(electrode_list=[10, 20, 30])
+# 1. Register the band filter (once per filter_name, site-wide).
+FirFilterParameters().add_filter(
+    filter_name="Theta 5-11 Hz",
+    fs=1000.0,                       # must match the LFPV1 target_sampling_rate
+    filter_type="bandpass",
+    band_edges=[4, 5, 11, 12],
+    comments="theta band for 1 kHz LFP",
+)
 
-# Get power
-power = band_entry.compute_signal_power(electrode_list=[10, 20, 30])
+# 2. Resolve the upstream LFPV1 entry's merge_id.
+lfp_selection_key = {
+    "nwb_file_name": nwb_file,
+    "lfp_electrode_group_name": "my_lfp_group",
+    "target_interval_list_name": "02_r1",
+    "filter_name": "LFP 0-400 Hz",
+    "filter_sampling_rate": 30000,
+    "target_sampling_rate": 1000,
+}
+lfp_merge_id = LFPOutput.merge_get_part(lfp_selection_key).fetch1("merge_id")
+
+# 3. Register band-filter electrodes. electrode_list is a subset of the LFPV1
+#    electrodes. reference_electrode_list=[-1] = no reference per channel.
+LFPBandSelection().set_lfp_band_electrodes(
+    nwb_file_name=nwb_file,
+    lfp_merge_id=lfp_merge_id,
+    electrode_list=[0, 1, 2, 3],
+    filter_name="Theta 5-11 Hz",
+    interval_list_name="02_r1",
+    reference_electrode_list=[-1],
+    lfp_band_sampling_rate=1000,
+)
+
+# 4. Populate.
+LFPBandV1.populate(
+    {"lfp_merge_id": lfp_merge_id, "filter_name": "Theta 5-11 Hz"},
+    display_progress=True,
+)
+
+# 5. Fetch + derived quantities.
+band_key = {"lfp_merge_id": lfp_merge_id, "filter_name": "Theta 5-11 Hz"}
+theta_df = (LFPBandV1 & band_key).fetch1_dataframe()
+phase = (LFPBandV1 & band_key).compute_signal_phase(electrode_list=[0, 1, 2, 3])
+power = (LFPBandV1 & band_key).compute_signal_power(electrode_list=[0, 1, 2, 3])
 ```
+
+For ripple band, swap `"Theta 5-11 Hz"` for `"Ripple 150-250 Hz"` (band_edges `[140, 150, 250, 260]`). `RippleLFPSelection.validate_key` rejects `LFPBandV1` rows whose `filter_name` does not contain `"ripple"` — name the filter accordingly if you want to use it downstream.
 
 ## Common Filters
 
