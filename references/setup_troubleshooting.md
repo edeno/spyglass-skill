@@ -14,6 +14,8 @@ Common errors during installation and first-run. For installation steps, see [se
 - [Import-time failures (`from spyglass.settings ...`)](#import-time-failures-from-spyglasssettings-)
 - [`ImportError` / symbol-moved errors after `git pull` — editable-install drift](#importerror--symbol-moved-errors-after-git-pull--editable-install-drift)
 - [`KeyError: '<column>' is not in the table heading` after `git pull`](#keyerror-column-is-not-in-the-table-heading-after-git-pull)
+- [Setting a DataJoint password on first connect](#setting-a-datajoint-password-on-first-connect)
+- [`Access denied for CREATE command` on shared-prefix schemas](#access-denied-for-create-command-on-shared-prefix-schemas)
 
 ## "Could not find SPYGLASS_BASE_DIR"
 
@@ -311,5 +313,35 @@ imports fail referencing a missing DataJoint symbol:
 ```bash
 pip install -U datajoint       # target >= 0.14.6 as of late 2025
 ```
+
+## Setting a DataJoint password on first connect
+
+DataJoint removed `dj.admin.set_password` from its public docs; the
+function still works. Recipe:
+
+```python
+import datajoint as dj
+dj.conn()
+dj.admin.set_password()      # prompts for old/new
+```
+
+If the MySQL server is >= 8.0 and the call raises
+`QuerySyntaxError ... near 'PASSWORD('...')'`, you're on a DataJoint
+version from before <https://github.com/datajoint/datajoint-python/pull/1106>.
+Upgrade datajoint: `pip install -U datajoint`. One-off workaround:
+
+```python
+dj.conn().query("ALTER USER user() IDENTIFIED BY 'your_new_password'")
+```
+
+## `Access denied for CREATE command` on shared-prefix schemas
+
+Labs that revoked CREATE on shared prefixes after site incidents will
+refuse users declaring new tables under e.g. `common_*` or
+`spikesorting_v1_*`. Declare your tables under a user- or
+project-specific prefix instead: set
+`dj.config['custom']['database.prefix'] = '<yourname>_'` before
+importing your custom schema modules, and ask an admin to GRANT
+CREATE on that prefix.
 
 For more troubleshooting guidance, see `docs/src/GettingStarted/TROUBLESHOOTING.md` and `docs/src/GettingStarted/DATABASE.md` in the repository.

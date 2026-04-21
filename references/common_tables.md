@@ -254,3 +254,42 @@ ElectrodeGroup & {'nwb_file_name': nwb_file}
 # Get valid time intervals matching a pattern
 IntervalList & {'nwb_file_name': nwb_file} & 'interval_list_name LIKE "%r1%"'
 ```
+
+## Writing a custom analysis table backed by an analysis NWB
+
+Any user-defined `dj.Computed` that stores data in `AnalysisNwbfile`
+must:
+
+1. **Inherit `SpyglassMixin` first, then `dj.Computed`:**
+
+   ```python
+   from spyglass.utils.dj_mixin import SpyglassMixin
+   import datajoint as dj
+
+   @schema
+   class MyAnalysis(SpyglassMixin, dj.Computed):
+       definition = '''
+       -> UpstreamTable
+       -> AnalysisNwbfile          # literal FK string; do not alias
+       ---
+       my_object_id: varchar(40)   # or _object_id
+       '''
+   ```
+
+2. **Use the literal `-> AnalysisNwbfile` FK string** — `FetchMixin`
+   recognizes that exact string to wire up `fetch_nwb`. Aliased
+   imports work only if you also set
+   `_nwb_table = AnalysisNwbfile()` as a class attribute.
+
+3. **Store an `object_id` column** per referenced NWB object; `_object_id`
+   is the convention Spyglass's helpers look for.
+
+Without these, `fetch_nwb` raises:
+
+- `NotImplementedError: <Table> does not have a (Analysis)Nwbfile foreign key or _nwb_table attribute`
+- `TypeError: proj() missing 1 required positional argument: 'self'` (passing the class instead of an instance)
+- `TypeError: join() got an unexpected keyword argument 'log_export'` (missing SpyglassMixin)
+
+Also required for export logging — custom tables without `SpyglassMixin`
+are **silently excluded** from `ExportSelection` (see `export.md`
+Pitfall #2).

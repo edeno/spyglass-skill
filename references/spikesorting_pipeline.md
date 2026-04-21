@@ -165,6 +165,21 @@ on one file handle on some NWB layouts.
 `recording.save(n_jobs=1, total_memory='10G')`). Upgrading
 `h5py` / `pynwb` / `hdmf` also helps — older stacks are more exposed.
 
+**Clusterless sorting requires one sort group per shank.** Sort groups
+spanning multiple shanks produce duplicate `(x, y)` contact positions,
+which SpikeInterface rejects at `SpikeSortingRecording.populate` with
+`ValueError: contact positions are not unique`.
+
+```python
+SortGroup().set_group_by_shank(nwb_file_name=nwb_file)
+# ^ the single-shank grouper. Do not set_group_by_electrode for
+#   clusterless / waveform-based pipelines.
+```
+
+Inspect `(SortGroup.SortGroupElectrode & key)` — if rows from more than
+one shank appear per `sort_group_id`, regroup before inserting
+selection rows.
+
 **SpikeSortingPreprocessingParameters** (Lookup)
 
 - Key: `preproc_param_name`
@@ -286,6 +301,31 @@ from spyglass.spikesorting.v1 import (
 
 - Extracts waveforms, computes quality metrics, generates labels/merge groups
 - Methods: `get_waveforms(key)`, internal metric computation
+
+**Gotcha — "sorting has spikes exceeding the recording duration"**
+
+`MetricCuration.populate` raises `ValueError: The sorting object has
+spikes exceeding the recording duration. You have to remove those
+spikes with spikeinterface.curation.remove_excess_spikes()` when the
+sorter placed a spike at or past the last recording timestamp.
+Typically ~30% of units can be affected on a bad sort.
+
+**Pre-populate check.**
+
+```python
+from spikeinterface.curation import has_exceeding_spikes
+
+rec = CurationV1.get_recording(curation_key)
+sort = CurationV1.get_sorting(curation_key)
+if has_exceeding_spikes(rec, sort):
+    print('This sort will fail MetricCuration.populate; see tracked bug.')
+```
+
+There is no user-side workaround — `MetricCuration.make()` fetches
+the sorting from the DB via `CurationV1`, it doesn't accept an
+external sorting object, and re-inserting a patched sorting requires
+maintainer-side changes. Track against the relevant bug; upgrade
+Spyglass when a fix lands.
 
 ## Analysis: SortedSpikesGroup
 

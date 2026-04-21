@@ -301,6 +301,44 @@ merge_key = DecodingOutput.merge_get_part({
 }).fetch1("KEY")
 ```
 
+## JAX / XLA OOM on long sessions
+
+Symptom: `RESOURCE_EXHAUSTED: Out of memory while trying to allocate N
+bytes` from JAX during `ClusterlessDecodingV1.populate` /
+`SortedSpikesDecodingV1.populate`, with f32 buffers of shape
+`(n_time, n_state_bins)` (e.g. `(3384862, 1926)` = 24 GiB) on an 80 GB
+A100.
+
+**Tuning knobs** (set on `DecodingParameters`):
+
+```python
+DecodingParameters.insert1({
+    'decoding_param_name': 'clusterless_chunked',
+    'decoding_params': {
+        'classifier_params': {...},
+        'decoding_kwargs': {
+            'n_chunks': 10,              # split the decoding dimension
+            'cache_likelihood': False,   # don't hold the likelihood buffer
+        },
+        'sorted_spikes_algorithm_params': {
+            'block_size': 500,           # coarser block = less memory
+        },
+    },
+}, skip_duplicates=True)
+```
+
+Also set the JAX memory fraction at the top of the populate script:
+
+```python
+import os
+os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.99'
+```
+
+**Workaround for `n_chunks` being ignored when
+`estimate_decoding_params=False`:** set `estimate_decoding_params=True`
+on the selection row; the kwarg reaches the decoder that way.
+Tracked with `non_local_detector 0.6.9`.
+
 ## Storage
 
 Results are saved as files in `{SPYGLASS_ANALYSIS_DIR}/{nwb_file_name}/`:

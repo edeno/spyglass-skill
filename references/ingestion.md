@@ -44,6 +44,25 @@ ProbeType.insert1(
 )
 ```
 
+4. **Tutorials and older READMEs may show stale import paths.** Spyglass
+   has reorganized its package layout multiple times. If an external
+   snippet shows `from spyglass import insert_sessions` or
+   `from spyglass.common import SortGroup`, prefer the current paths:
+
+   | Tutorial / stale import | Current path |
+   |---|---|
+   | `from spyglass import insert_sessions` | `from spyglass.data_import import insert_sessions` |
+   | `from spyglass.common import SortGroup` | `from spyglass.spikesorting.v1 import SortGroup` |
+   | `from spyglass.common import HeadDir` / `Speed` | (removed; use `common_position` tables) |
+   | `from spyglass.common import SpikeSortingBackUp` | (removed) |
+
+   When in doubt, verify against the current source tree:
+
+   ```python
+   python -c 'from spyglass.data_import import insert_sessions'
+   python -c 'from spyglass.spikesorting.v1 import SortGroup'
+   ```
+
 ## The Standard Flow
 
 ```python
@@ -156,6 +175,26 @@ Two non-obvious behaviors:
   check. Always delete via
   `(Nwbfile & key).delete(); Nwbfile().cleanup(delete_files=True)`
   and never edit an ingested NWB in place — work on a copy.
+- **`ValueError: Names should be stored as 'last, first'. Skipping <name>`**:
+  `LabMember.insert_from_nwbfile` expects the NWB `experimenter` field
+  in `'Last, First'` (comma-separated) format. Multi-token first names
+  without a comma (`'Kyu Hyun Lee'`) trip this. Either rewrite
+  `experimenter` to `'Lee, Kyu Hyun'` before ingest, or pre-insert the
+  LabMember row manually.
+- **`PopulateException: Data acquisition device properties ... do not
+  match`**: a `DataAcquisitionDevice` with the same
+  `data_acquisition_device_name` already exists in the DB with
+  different secondary values. This is common when tutorial NWBs ship
+  with different canonical metadata than the lab DB. Compare the
+  conflicting fields:
+
+  ```python
+  DataAcquisitionDevice & {'data_acquisition_device_name': name}
+  ```
+
+  Either update the NWB to match the DB entry, or rename the device
+  per-session. Do not `.delete()` the DB row to "force" the match —
+  other sessions depend on it.
 
 ## Probe / electrode conflicts from the NWB
 
@@ -189,3 +228,34 @@ electrode `name` + `id` are unique across probes (generate globally
 unique integer IDs at NWB creation), replace NaN geometry with `-1`
 or require real coordinates, and if the NWB uses `channel_name` make
 sure Spyglass is on a version that handles it (post-PR #1447).
+
+## TaskEpoch silently drops epochs on tag-format mismatch
+
+`TaskEpoch` relies on numeric tags to match NWB epochs against
+`IntervalList` intervals. Failures look like:
+
+- Rows silently missing for some epochs
+- `KeyError: 0` on a multi-row task table
+- `ValueError: could not convert string to float` for tags like `'custom_name'`
+- Tag `'2'` double-matching `'02_r1'` AND `'03_s2'` after PR #1459
+
+**Required NWB shape.**
+
+- `nwbfile.epochs.tags` — numeric strings, zero-padded to the
+  convention used elsewhere in the file (e.g. `'01'`, `'02'`, not
+  `'1'`, `'2'`).
+- `nwbfile.processing['tasks'].task_table.task_epochs` — numeric
+  values, with row count matching the epoch count.
+
+**Check before ingest.**
+
+```python
+import pynwb
+with pynwb.NWBHDF5IO(path, 'r') as io:
+    nwb = io.read()
+    print('epoch tags:', [list(e) for e in nwb.epochs.tags[:]])
+    print('task table:', nwb.processing['tasks'].task_table.to_dataframe())
+```
+
+If any tag isn't numeric, rewrite the NWB before re-ingesting;
+Spyglass does not coerce. Tracked upstream in #1432 / #1443 / #1485.

@@ -182,6 +182,29 @@ For DLC-only sessions (no Trodes-derived position), there's no
 `'pos N valid times'` IntervalList to match against; insert the
 `RawPosition` / `PositionSource` rows first, or upgrade past PR #1160.
 
+**Gotcha — DLC env vars must be set in the kernel, not just
+`~/.bashrc`.** IDEs / SSH sessions frequently don't source the login
+profile, so `os.environ['DLC_OUTPUT_PATH']` returns `None` in the
+Python kernel and paths like `None/<video>.mp4` or `Path(None)` cause
+`TypeError` / `ffprobe` errors deep in the populate.
+
+**Check.**
+
+```python
+import os
+need = ['DLC_PROJECT_PATH', 'DLC_VIDEO_PATH', 'DLC_OUTPUT_PATH',
+        'HDF5_USE_FILE_LOCKING']
+missing = [k for k in need if not os.environ.get(k)]
+if missing:
+    raise RuntimeError(f'DLC env vars not set: {missing}')
+```
+
+**Fix.** Prefer routing DLC paths through `dj.config['custom']['dlc_dirs']`
+(see `setup_config.md` "Per-Directory Overrides") and
+`dj.config.save_global()` — `dj.config` is honored from any kernel,
+unlike `~/.bashrc`. `HDF5_USE_FILE_LOCKING='FALSE'` is required on
+shared filesystems.
+
 ### DLC Parameter Tables
 
 | Table | Key |

@@ -114,6 +114,11 @@ check which transitive deps pip wants to move.
   defaults. A production lab DB that has been running Spyglass for a
   while is usually pre-tuned by its admin; you will generally only
   hit this on a fresh self-host.
+- Pin `ndx-optogenetics==0.2.0` until `ndx-franklab-novela` / Spyglass
+  catch up with the 0.3.0 breaking change (PR #1458 tracks the bump).
+  Symptom of the mismatch:
+  `ImportError: cannot import name 'OpticalFiberLocationsTable' from 'ndx_optogenetics'`
+  on `from spyglass.common import ...`.
 
 ## Environment Setup Scenarios
 
