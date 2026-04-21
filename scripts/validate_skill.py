@@ -752,6 +752,11 @@ def resolve_table_fields(class_name, schemas, _seen=None):
     Walks `->` parent references to union inherited PKs into the child's
     accepted-field set. Returns None for unknown classes so the caller
     can distinguish "no schema" from "empty schema".
+
+    `_seen` is copied before each sibling recursion so diamond
+    inheritance walks correctly: two parents reaching the same ancestor
+    must both fully resolve it, not have the second leg truncated by a
+    cycle-guard hit from the first leg's walk.
     """
     if _seen is None:
         _seen = set()
@@ -763,7 +768,7 @@ def resolve_table_fields(class_name, schemas, _seen=None):
         return None
     fields = set(schema["pk"]) | set(schema["attrs"])
     for parent in schema["parents"]:
-        parent_fields = resolve_table_fields(parent, schemas, _seen)
+        parent_fields = resolve_table_fields(parent, schemas, set(_seen))
         if parent_fields is not None:
             fields |= parent_fields
     return fields
@@ -783,6 +788,13 @@ def resolve_insert_fields(class_name, schemas, _seen=None):
     Returning None on *any* unresolvable parent (as opposed to a partial
     union) guarantees callers don't emit false positives when only part
     of the parent chain is known — the whole class is skipped instead.
+
+    `_seen` is copied before each sibling recursion (see
+    resolve_table_fields for the diamond-inheritance reasoning). The
+    correctness cost of *not* copying is higher here than in
+    resolve_table_fields: a truncated second-sibling walk would fail
+    to apply that sibling's projection renames, leaving both the
+    un-renamed source and the renamed new name in the accepted set.
     """
     if _seen is None:
         _seen = set()
@@ -795,7 +807,7 @@ def resolve_insert_fields(class_name, schemas, _seen=None):
     fields = set(schema["pk"]) | set(schema["attrs"])
     parent_projections = schema.get("parent_projections", {})
     for parent in schema["parents"]:
-        parent_fields = resolve_insert_fields(parent, schemas, _seen)
+        parent_fields = resolve_insert_fields(parent, schemas, set(_seen))
         if parent_fields is None:
             return None  # parent unresolvable — bail conservatively
         parent_fields = set(parent_fields)

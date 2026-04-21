@@ -987,6 +987,55 @@ def fixture_insert1_spread_kwargs(src_root):
     return False
 
 
+def fixture_insert1_diamond_projection(src_root):
+    """Diamond inheritance where sibling parents project the same ancestor
+    must correctly apply BOTH renames.
+
+    Synthetic schema:
+        D  has pk {x}
+        B  `-> D.proj(x_from_b='x')`   own PK {x_from_b}
+        C  `-> D.proj(x_from_c='x')`   own PK {x_from_c}
+        A  `-> B`, `-> C`              own PK {x_from_b, x_from_c}
+
+    Valid insert keys for A = {x_from_b, x_from_c}. `x` (D's raw name)
+    must NOT appear. The old shared-_seen implementation would union
+    D's un-renamed fields in through B's walk, then cycle-guard out
+    of C's walk of D, leaving `x` spuriously in the accepted set.
+
+    Uses a synthetic `schemas` dict so the test doesn't depend on real
+    Spyglass having this exact shape — today it doesn't, which is why
+    the bug stayed latent.
+    """
+    schemas = {
+        "D": {
+            "pk": {"x"}, "attrs": set(),
+            "parents": [], "projections": [], "parent_projections": {},
+        },
+        "B": {
+            "pk": {"x_from_b"}, "attrs": set(),
+            "parents": ["D"], "projections": [("x_from_b", "x")],
+            "parent_projections": {"D": {"x": "x_from_b"}},
+        },
+        "C": {
+            "pk": {"x_from_c"}, "attrs": set(),
+            "parents": ["D"], "projections": [("x_from_c", "x")],
+            "parent_projections": {"D": {"x": "x_from_c"}},
+        },
+        "A": {
+            "pk": {"x_from_b", "x_from_c"}, "attrs": set(),
+            "parents": ["B", "C"], "projections": [],
+            "parent_projections": {},
+        },
+    }
+    fields = v.resolve_insert_fields("A", schemas)
+    expected = {"x_from_b", "x_from_c"}
+    if fields == expected:
+        print("  [ok] key-shape: diamond projection resolves both renames")
+        return True
+    print(f"  [FAIL] diamond projection returned {fields!r}, expected {expected!r}")
+    return False
+
+
 def fixture_insert1_unknown_class(src_root):
     """`.insert1()` on a class not in KNOWN_CLASSES / auto-discovery skipped."""
     md = _write_md(
@@ -1142,6 +1191,7 @@ FIXTURES = [
     fixture_insert1_proj_renamed_ok,
     fixture_insert1_spread_kwargs,
     fixture_insert1_unknown_class,
+    fixture_insert1_diamond_projection,
 ]
 
 
