@@ -142,6 +142,23 @@ from spyglass.decoding import PositionGroup
   - `create_group(nwb_file_name, group_name, keys, position_variables, upsample_rate)`
   - `fetch_position_info(key, min_time, max_time)` — Returns (DataFrame, variable_names)
 
+**Gotcha — `position_variables` must match the upstream DataFrame's
+column names.** `PositionGroup.create_group` defaults
+`position_variables=['position_x','position_y']`. DLC-derived positions
+expose columns named after the tracked body part
+(`'head_position_x'`, `'head_position_y'`, etc.). With default
+variables on a DLC source, `fetch_position_info` returns empty frames
+and downstream decoding raises
+`ValueError: No objects to concatenate`.
+
+Check:
+
+```python
+cols = list((DLCPosV1 & key).fetch1_dataframe().columns)
+# Pass matching names:
+PositionGroup().create_group(..., position_variables=cols[:2])
+```
+
 ## Clusterless Decoding Flow
 
 Decodes from spike waveform features (amplitude, location) without explicit unit clustering.

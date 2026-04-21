@@ -16,6 +16,7 @@ Common errors during installation and first-run. For installation steps, see [se
 - [`KeyError: '<column>' is not in the table heading` after `git pull`](#keyerror-column-is-not-in-the-table-heading-after-git-pull)
 - [Setting a DataJoint password on first connect](#setting-a-datajoint-password-on-first-connect)
 - [`Access denied for CREATE command` on shared-prefix schemas](#access-denied-for-create-command-on-shared-prefix-schemas)
+- [`HDF5_USE_FILE_LOCKING` on shared / NFS filesystems](#hdf5_use_file_locking-on-shared--nfs-filesystems)
 
 ## "Could not find SPYGLASS_BASE_DIR"
 
@@ -343,5 +344,34 @@ project-specific prefix instead: set
 `dj.config['custom']['database.prefix'] = '<yourname>_'` before
 importing your custom schema modules, and ask an admin to GRANT
 CREATE on that prefix.
+
+## `HDF5_USE_FILE_LOCKING` on shared / NFS filesystems
+
+Symptom: HDF5 file-locking errors during `fetch_nwb()` / `populate()`
+on an NFS or other shared filesystem, even though Spyglass's
+`settings.py` appears to set the relevant env var.
+
+The `env_defaults` block in `src/spyglass/settings.py` historically
+had a typo (`HD5_USE_FILE_LOCKING` instead of `HDF5_USE_FILE_LOCKING`),
+so Spyglass did not actually export the variable that HDF5 reads.
+PR #1576 renames it; until that release reaches you, set the variable
+explicitly in the shell that launches Python:
+
+```bash
+export HDF5_USE_FILE_LOCKING=FALSE
+```
+
+Or from Python BEFORE importing `pynwb` / `h5py`:
+
+```python
+import os
+os.environ['HDF5_USE_FILE_LOCKING'] = 'FALSE'
+import pynwb   # and whatever else uses HDF5
+```
+
+The separate "`pynwb` version too old" failure in the same area —
+`AttributeError` on `TimeSeries.get_timestamps` — was fixed by
+bumping the pin to `pynwb>=2.5.0` in #1384. Upgrade your env
+(`pip install -U pynwb`) if you're on 2.2.x.
 
 For more troubleshooting guidance, see `docs/src/GettingStarted/TROUBLESHOOTING.md` and `docs/src/GettingStarted/DATABASE.md` in the repository.

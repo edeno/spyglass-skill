@@ -429,6 +429,54 @@ Applies to every `*V1.populate(...)` entry point
 `FigURLCuration`, etc.) and to any custom pipeline whose Selection
 table primary key doesn't include the fields you naturally restrict by.
 
+### IntegrityError on insert often means an ancestor row is missing
+
+`IntegrityError: Cannot add or update a child row: a foreign key
+constraint fails` on a `*Selection` or analysis-table insert usually
+means one of the primary-key fields in the insert dict has no matching
+row in an ancestor table, *not* in the table you're inserting into.
+
+**Find the missing upstream:**
+
+```python
+# SpyglassMixin ships a diagnostic helper:
+Table().find_insert_fail(key)    # prints 'Raw: MISSING', etc.
+
+# or walk parents manually:
+for p in Table.parents(as_objects=True):
+    sub = {k: key[k] for k in p.primary_key if k in key}
+    if sub and not (p & sub):
+        print('MISSING:', p.table_name, 'for', sub)
+```
+
+Populate/insert the missing ancestor first, then retry.
+
+## Debugging `populate_all_common`
+
+`populate_all_common` is the common-ingest driver that calls each
+common-module table in sequence. It catches exceptions per-table and
+writes only a short message to `common_usage.InsertError` — the full
+traceback is lost, so you can't debug from the `InsertError` rows
+alone.
+
+To get a real traceback, skip `populate_all_common` and call each
+table directly so the exception propagates:
+
+```python
+from spyglass.common import Session, Raw, DIOEvents, PositionSource
+
+for T in [Session, Raw, DIOEvents, PositionSource]:
+    T().populate({'nwb_file_name': nwb_file_name})   # exception propagates
+```
+
+Or, as a one-off local patch, add `raise` after the `except` in
+`src/spyglass/common/populate_all_common.py`. Tracked upstream in
+#612 (request for a non-permissive insert mode).
+
+Applies whenever a fresh ingest "completes" but some common tables
+silently miss rows — that's almost always `populate_all_common`
+swallowing an upstream failure.
+
 ## Automatic heuristics
 
 Apply these before asking the user:

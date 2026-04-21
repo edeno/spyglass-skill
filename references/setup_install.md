@@ -31,6 +31,14 @@ pip install spyglass-neuro
 
 This installs Spyglass and its core Python dependencies but does not create a conda environment or configure the database. You must set up `dj_local_conf.json` or environment variables manually.
 
+Pure pip is not a substitute for `environment.yml`. Several Spyglass
+deps (`mountainsort4`, `ghostipy`, `pyfftw`) require binary components
+supplied by conda-forge, and `pip install spyglass-neuro` outside a
+conda env will typically fail when building `isosplit5` wheels or at
+runtime when `pyfftw` can't find its FFTW library. Use the
+automated installer or `mamba env create -f environments/environment.yml`
++ `pip install -e .` unless you have a specific reason to avoid conda.
+
 ### conda (from environment file)
 
 Spyglass provides environment files in the `environments/` directory. Per the repo's `notebooks/py_scripts/00_Setup.py:229-239`, the minimal file is the recommended starting point — `environment.yml` is the full, heavier install.
@@ -132,6 +140,13 @@ python scripts/install.py --docker
 
 This starts a MySQL container on localhost:3306. The default credentials are `root` with a tutorial password. Config is saved to `~/.datajoint_config.json`.
 
+**Pin the Docker image tag.** `datajoint/mysql:latest` currently points
+at a MySQL 5 image whose SSL ciphers don't handshake with modern
+`pymysql` / OpenSSL defaults; `dj.conn()` raises
+`SSLError: SSLV3_ALERT_HANDSHAKE_FAILURE`. Use
+`datajoint/mysql:8.0` explicitly, or for local dev disable TLS:
+`dj.config['database.use_tls'] = False`.
+
 ### Joining an Existing Lab (Remote Database)
 
 For connecting to a lab's shared database:
@@ -170,6 +185,28 @@ Lab admins can pre-configure shared settings so new members only need to provide
    ```
 
 2. **Lab-specific setup script** -- see `scripts/setup_franklab.sh` for an example wrapper.
+
+### Obtaining tutorial NWB files
+
+The example files referenced in `01_Insert_Data.ipynb` /
+`0_intro.ipynb` are periodically re-homed. The current canonical
+locations are linked from the tutorial notebooks themselves — if a
+Dropbox link 404s, open the notebook on master to get the current
+UCSF Box URL, or use the `minirec` / `mediumnwb` files hosted by the
+Frank Lab.
+
+### Common first-install pitfalls
+
+- After editing env vars in `~/.bashrc`, run `source ~/.bashrc` OR
+  open a new shell — the existing kernel sees the old environment.
+- Renaming the conda env: edit the `name:` field at the top of
+  `environments/environment.yml` before running `mamba env create`;
+  the default name is `spyglass`.
+- If you use `numba`-backed code (e.g. ripple detection, some
+  decoding paths) on numpy >= 1.24, pin `numpy<1.24` until the
+  relevant numba version catches up. `environment.yml` handles this;
+  piecemeal pip installs don't.
+- Validate after install: `python scripts/validate.py`.
 
 ## Installer and Validator Scripts
 

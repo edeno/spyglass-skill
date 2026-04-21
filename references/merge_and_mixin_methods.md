@@ -202,6 +202,40 @@ PositionOutput().source_class_dict
 # {'TrodesPosV1': TrodesPosV1, 'DLCPosV1': DLCPosV1, ...}
 ```
 
+#### Stale / orphan merge-part tables
+
+`Merge.parts(camel_case=True)` introspects DB part names and calls
+`getattr(module, part_name)`. If a previous Spyglass version declared
+a part class (e.g. `ImportedLFPV1`, `ImportedPose`) that has since
+been removed from the code, the DB still has the part table but the
+Python class is gone. Symptom:
+
+```
+AttributeError: module 'spyglass.<pipeline>.<merge>' has no attribute '<PartClass>'
+```
+
+raised from `Merge.source_class_dict` / `.fetch_nwb()` on the master.
+
+Find the orphan:
+
+```python
+db_parts = set(MergeMaster.parts(camel_case=True))
+py_parts = set(n for n in dir(spyglass.<pipeline>.<merge_module>))
+orphans = db_parts - py_parts
+```
+
+Drop the orphan only after confirming no one depends on it:
+
+```python
+dj.FreeTable(
+    MergeMaster.connection,
+    f'`{schema}`.`{master_table}__{orphan_part_name}`',
+).drop_quick()
+```
+
+Have anyone still on the old Spyglass version upgrade before the
+drop — otherwise their client will re-declare the part table.
+
 ### Deletion
 
 #### `merge_delete(restriction=True, **kwargs)`

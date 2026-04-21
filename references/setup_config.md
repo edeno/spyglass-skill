@@ -230,6 +230,34 @@ All directories are created automatically on first config load if they do not ex
 > or via `dj.config['custom']` before importing `spyglass.settings` —
 > the defaults will not match your zone.
 
+**Fresh-workstation setup — the one piece of state that doesn't travel
+with the source.** `dj.config['stores']` is machine-local (filesystem
+paths), so `git pull` or a fresh `pip install` leaves it unset on a
+new machine. Populate it by running the `config/dj_config.py` helper
+in the Spyglass repo (or the equivalent
+`SpyglassConfig.save_dj_config(...)` call), then
+`dj.config.save_global()`.
+
+Sanity check at session start:
+
+```python
+import datajoint as dj
+from spyglass.settings import SpyglassConfig  # ensures env_defaults applied
+assert 'stores' in dj.config
+assert 'raw' in dj.config['stores'] and 'analysis' in dj.config['stores']
+```
+
+> **On `DataJointError: The filepath data type is disabled…`.**
+> `DJ_SUPPORT_FILEPATH_MANAGEMENT=TRUE` IS set automatically by
+> `SpyglassConfig` on import (see the env-var defaults table above).
+> If you still hit the error, it's almost always an import-order
+> problem: DataJoint was imported / called before anything under
+> `spyglass.*` pulled `SpyglassConfig` in. Fix by importing
+> `spyglass.settings` (or any `spyglass.*` module) BEFORE your first
+> `fetch1_dataframe()`. Exporting the env var in your shell rc is a
+> last-resort workaround; the correct fix is ensuring Spyglass's
+> settings module runs first.
+
 ### Data Sharing Tables (Kachery)
 
 Two tables configure kachery-cloud sharing alongside the env vars above:
