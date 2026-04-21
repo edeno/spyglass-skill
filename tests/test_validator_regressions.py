@@ -1153,6 +1153,211 @@ def fixture_shared_imports_not_dup(src_root):
     return False
 
 
+def fixture_link_landing_negative(src_root):
+    """Link whose text content words don't appear in the target must warn.
+
+    The heuristic is: if NONE of the link text's content words (stopwords
+    stripped, ≥4 chars) appear anywhere in the target .md, emit a warning
+    that the link may not cover what the text promises.
+    """
+    tmp = Path(tempfile.mkdtemp())
+    source_md = _write_named_md(
+        tmp, "source.md",
+        """
+        # Source
+
+        See [cardinality discovery step](target.md) for details.
+        """,
+    )
+    target_md = _write_named_md(
+        tmp, "target.md",
+        """
+        # Target
+
+        This file talks about shoes and boats. Completely unrelated words.
+        """,
+    )
+    with _with_md_file_list([source_md, target_md]):
+        # check_link_landing resolves relative paths against md_file.parent,
+        # so both files living in the same tmp dir resolves correctly.
+        results = v.ValidationResult()
+        v.check_link_landing(results)
+    return _assert_warn_contains(
+        results, "none of [cardinality, discovery, step]",
+        "link-landing: mismatched text/target caught",
+    )
+
+
+def fixture_link_landing_positive(src_root):
+    """Link whose text words DO appear in the target must NOT warn."""
+    tmp = Path(tempfile.mkdtemp())
+    source_md = _write_named_md(
+        tmp, "source.md",
+        """
+        # Source
+
+        See [cardinality discovery step](target.md) for details.
+        """,
+    )
+    target_md = _write_named_md(
+        tmp, "target.md",
+        """
+        # Target
+
+        The cardinality discovery step is described here.
+        """,
+    )
+    with _with_md_file_list([source_md, target_md]):
+        results = v.ValidationResult()
+        v.check_link_landing(results)
+    hits = [w for w in results.warnings if "link" in w]
+    if not hits:
+        print("  [ok] link-landing: matching text/target not flagged")
+        return True
+    print(f"  [FAIL] matching text wrongly warned: {hits}")
+    return False
+
+
+def fixture_citation_content_direct_match(src_root):
+    """Citation where cited line range contains the identifier must pass.
+
+    Rule (a) of _citation_matches_identifier: direct ±8 substring match.
+    Finds the actual line in dj_mixin.py where `class SpyglassMixin`
+    lives, so this survives upstream refactors that shift line numbers
+    — the test's intent is the rule, not the specific number.
+    """
+    target = src_root / "spyglass/utils/dj_mixin.py"
+    if not target.exists():
+        print("  [skip] cite-content: dj_mixin.py not in src tree")
+        return True
+    decl_line = None
+    for i, line in enumerate(target.read_text().splitlines(), 1):
+        if line.startswith("class SpyglassMixin"):
+            decl_line = i
+            break
+    if decl_line is None:
+        print("  [skip] cite-content: SpyglassMixin class not found")
+        return True
+    md = _write_md(
+        f"""
+        # Test
+
+        `SpyglassMixin` is the common base — see
+        `src/spyglass/utils/dj_mixin.py:{decl_line}`.
+        """
+    )
+    r = _run(v.check_citation_content, md, src_root)
+    bad = [w for w in r.warnings if "dj_mixin.py" in w]
+    if not bad:
+        print("  [ok] cite-content: direct match at cited line passes")
+        return True
+    print(f"  [FAIL] direct match wrongly warned: {bad}")
+    return False
+
+
+def fixture_citation_content_enclosing_def(src_root):
+    """Citation pointing INSIDE a function body must pass when the
+    enclosing def's name matches (rule b: enclosing-scope walk).
+
+    Regression guard for the indent-cap walk that climbs through nested
+    scopes — breaking that loop silently turns this fixture into a warn.
+    """
+    # Find a real enclosing scope we can cite. cautious_delete is known
+    # to be in cautious_delete.py; pick a line inside its body and cite it.
+    target = src_root / "spyglass/utils/mixins/cautious_delete.py"
+    if not target.exists():
+        print("  [skip] cite-content: cautious_delete.py not in src tree")
+        return True
+    source = target.read_text().splitlines()
+    def_line = None
+    for i, line in enumerate(source, 1):
+        if line.lstrip().startswith("def cautious_delete"):
+            def_line = i
+            break
+    if def_line is None:
+        print("  [skip] cite-content: cautious_delete not found in file")
+        return True
+    body_line = def_line + 5  # a line a few steps inside the def body
+    md = _write_md(
+        f"""
+        # Test
+
+        The `cautious_delete` method is at
+        `src/spyglass/utils/mixins/cautious_delete.py:{body_line}`.
+        """
+    )
+    r = _run(v.check_citation_content, md, src_root)
+    bad = [w for w in r.warnings if "cautious_delete" in w
+           and "does not contain" in w]
+    if not bad:
+        print("  [ok] cite-content: enclosing-def walk accepts body citation")
+        return True
+    print(f"  [FAIL] enclosing-def rule wrongly warned: {bad}")
+    return False
+
+
+def fixture_citation_content_stale(src_root):
+    """Citation where neither direct match nor enclosing def matches must warn."""
+    # Cite line 1 of a real file under a completely unrelated identifier.
+    # Line 1 is usually a docstring / import; no identifier match expected.
+    md = _write_md(
+        """
+        # Test
+
+        `NonexistentSymbolThatWontBeFound` is at
+        `src/spyglass/common/common_nwbfile.py:1`.
+        """
+    )
+    r = _run(v.check_citation_content, md, src_root)
+    return _assert_warn_contains(
+        r, "NonexistentSymbolThatWontBeFound",
+        "cite-content: stale citation (no match anywhere) caught",
+    )
+
+
+def fixture_pr_citation_in_prose_warns(src_root):
+    """`PR #1234` in prose must warn."""
+    md = _write_md(
+        """
+        # Test
+
+        This behavior was fixed in PR #1234 when we did the thing.
+        """
+    )
+    r = _run(v.check_no_pr_citations, md)
+    return _assert_warn_contains(
+        r, "PR #1234",
+        "pr-citation: prose mention caught",
+    )
+
+
+def fixture_pr_citation_in_code_block_ok(src_root):
+    """`PR #1234` inside a fenced code block must NOT warn.
+
+    Regression guard for _strip_fenced_blocks: the helper replaces fenced
+    bodies with blank lines before regex-scanning prose, so comments inside
+    python blocks can legitimately mention PR numbers without tripping the
+    prose-only check.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        # See PR #1234 for the rationale behind this flag
+        x = True
+        ```
+        """
+    )
+    r = _run(v.check_no_pr_citations, md)
+    hits = [w for w in r.warnings if "PR #1234" in w]
+    if not hits:
+        print("  [ok] pr-citation: mentions inside code blocks not flagged")
+        return True
+    print(f"  [FAIL] code-block PR mention wrongly warned: {hits}")
+    return False
+
+
 FIXTURES = [
     fixture_syntax_ellipsis_after_kwargs,
     fixture_trailing_underscore_nwb,
@@ -1192,6 +1397,13 @@ FIXTURES = [
     fixture_insert1_spread_kwargs,
     fixture_insert1_unknown_class,
     fixture_insert1_diamond_projection,
+    fixture_link_landing_positive,
+    fixture_link_landing_negative,
+    fixture_citation_content_direct_match,
+    fixture_citation_content_enclosing_def,
+    fixture_citation_content_stale,
+    fixture_pr_citation_in_prose_warns,
+    fixture_pr_citation_in_code_block_ok,
 ]
 
 
