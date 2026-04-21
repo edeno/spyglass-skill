@@ -302,6 +302,8 @@ Examples in the wild:
 - `RippleTimesV1` (ripple.py:186): `-> PositionOutput.proj(pos_merge_id='merge_id')`. Build populate key with `pos_merge_id`, not `merge_id`, because `RippleTimesV1`'s own primary FK into `RippleLFPSelection` already uses a `merge_id` slot via `LFPBandV1`.
 - `MuaEventsV1` (mua.py:67–68): *two* renames at once — `PositionOutput.proj(pos_merge_id='merge_id')` and `IntervalList.proj(detection_interval='interval_list_name')`. Populate keys must use both renamed fields.
 
+The pattern is widespread — at least a dozen tables use it, including `LFPBandV1`, `DecodingClusters`, `PoseGroup.Pose`, `SortedSpikesUnit`, and selection tables in `position/v1/` and `spikesorting/`. Grep `.proj(` inside `definition = """` blocks to find them in your own pipeline.
+
 **How to detect it.** Read the target table's `definition`. If you see `.proj(foo='bar')` inside an FK line, `foo` is what your populate key needs, not `bar`. `Table.heading.primary_key` also lists the renamed names, not the originals.
 
 ---

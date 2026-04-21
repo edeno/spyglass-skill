@@ -265,7 +265,7 @@ For ripple band, swap `"Theta 5-11 Hz"` for `"Ripple 150-250 Hz"` (band_edges `[
 
 ## Common Filters
 
-Filter rows in `FirFilterParameters` are **user/lab-created, not shipped with Spyglass**. Register each one once (site-wide) via `add_filter(...)` before any downstream `LFPSelection` or `LFPBandSelection` references it — see Step 2 and Step 4 above.
+`FirFilterParameters` has one built-in helper — `create_standard_filters()` — that inserts the broadband `'LFP 0-400 Hz'` preset (`common_filter.py:577`). Everything else is user/lab-created via `add_filter(...)`; register once (site-wide) before any downstream `LFPSelection` or `LFPBandSelection` references the name.
 
 ```python
 from spyglass.common import FirFilterParameters
@@ -273,11 +273,13 @@ from spyglass.common import FirFilterParameters
 # See what your site already has
 FirFilterParameters.fetch('filter_name')
 
-# Conventional names used across Frank Lab scripts
-# (create with add_filter if missing):
-# 'LFP 0-400 Hz'     — broadband LFP (30 kHz → 1 kHz)
-# 'Theta 5-11 Hz'    — theta band    (1 kHz LFP → 1 kHz band)
-# 'Ripple 150-250 Hz'— ripple band   (1 kHz LFP → 1 kHz band)
+# 'LFP 0-400 Hz' — broadband LFP; insert the shipped default once per site:
+FirFilterParameters().create_standard_filters()
+
+# Band filters are NOT shipped; register via add_filter (see Step 4 above).
+# Conventional names used across Frank Lab scripts:
+#   'Theta 5-11 Hz'    — theta band    (1 kHz LFP → 1 kHz band)
+#   'Ripple 150-250 Hz'— ripple band   (1 kHz LFP → 1 kHz band)
 ```
 
 ## Plotting LFP
