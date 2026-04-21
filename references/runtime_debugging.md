@@ -362,7 +362,7 @@ Field names vary across the codebase. A non-exhaustive map:
 | `LFPSelection` / `LFPV1` | `target_interval_list_name` (`lfp/v1/lfp.py`) |
 | `LFPArtifactRemovedIntervalList` | `artifact_removed_interval_list_name` (`lfp/v1/lfp_artifact.py:162`) |
 | `LFPBandSelection` | `target_interval_list_name` (`lfp/analysis/v1/lfp_band.py:28`) |
-| `SpikeSortingRecordingSelection` (v0) | `sort_interval_name` — inherited via `-> SortInterval` (`spikesorting_recording.py:324-332`; field defined in `SortInterval` at `:241`) |
+| `SpikeSortingRecordingSelection` (v0) | `sort_interval_name` — inherited via `-> SortInterval` (field defined in `SortInterval` at `:241`; declared on `SpikeSortingRecordingSelection` at `spikesorting_recording.py:324-332`) |
 | `SpikeSortingArtifactDetectionSelection` | `artifact_removed_interval_list_name` (`spikesorting/v0/spikesorting_artifact.py:88`) |
 | `RippleLFPSelection` (feeds `RippleTimesV1`) | `target_interval_list_name` — **inherited two hops** via `-> LFPBandV1 -> LFPBandSelection`. `RippleLFPSelection` (`ripple/v1/ripple.py:33-37`) has no interval field of its own; the inherited name only shows up in the transitive primary key, so check `RippleLFPSelection.heading.primary_key` to see it. |
 | `MuaEventsV1` | `detection_interval` (projected from `IntervalList.interval_list_name` at `mua/v1/mua.py:68`) |

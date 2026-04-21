@@ -108,4 +108,4 @@ mua_times = (MuaEventsV1 & mua_key).fetch1_dataframe()   # start_time, end_time 
 
 ## Dependency: ripple_detection
 
-`multiunit_HSE_detector` from the `ripple_detection` package (imported at mua.py:5). The four `mua_param_dict` keys (`minimum_duration`, `zscore_threshold`, `close_event_threshold`, `speed_threshold`) are passed through as `**mua_params` (mua.py:111). To change detector behavior, either update the params dict (still using `multiunit_HSE_detector`) or swap in a different detector by subclassing and overriding `make()`.
+`multiunit_HSE_detector` from the `ripple_detection` package (imported at mua.py:5). The four `mua_param_dict` keys (`minimum_duration`, `zscore_threshold`, `close_event_threshold`, `speed_threshold`) flow through the detector as `mua_params` at mua.py:111-112. To change detector behavior, either update the params dict (still using `multiunit_HSE_detector`) or swap in a different detector by subclassing and overriding `make()`.

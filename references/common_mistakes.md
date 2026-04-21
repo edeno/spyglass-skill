@@ -96,7 +96,7 @@ A method, kwarg, column, or table name that sounds right given surrounding conve
 - `reference_electrodes` as a kwarg on `set_lfp_band_electrodes` — plausible because shorter names are common. Real kwarg is `reference_electrode_list` (`src/spyglass/lfp/analysis/v1/lfp_band.py:48`).
 - `welch_nperseg` as a params field — plausible because welch-method parameters commonly use `nperseg`. Nowhere in the Spyglass codebase; fabricated whole.
 - `delete_downstream_parts` as a SpyglassMixin method — plausible because it survived in a deprecated wrapper's docstring. Not present on the current `SpyglassMixin` (search `src/spyglass/utils/dj_mixin.py` and `src/spyglass/utils/mixins/`); calling it raises `AttributeError`.
-- `sampling_frequency` as a top-level key of `ripple_param_dict` — plausible because sampling_frequency is everywhere else. Real schema is nested under `ripple_detection_params`, and `sampling_frequency` isn't even stored in the blob — it flows in from `LFPBandV1` at populate time (`src/spyglass/ripple/v1/ripple.py:286`).
+- `sampling_frequency` as a top-level key of `ripple_param_dict` — plausible because sampling_frequency is everywhere else. Real schema is nested under `ripple_detection_params`, and `sampling_frequency` isn't even stored in the blob — it flows in from `LFPBandV1` at populate time via `RippleTimesV1.make` (`src/spyglass/ripple/v1/ripple.py:204-223`).
 
 The failure mode is uniform: LLMs and humans alike pattern-match from similar contexts and guess a name that sounds consistent. The verification step takes seconds; the cost of shipping the wrong name can be weeks of downstream confusion.
 
