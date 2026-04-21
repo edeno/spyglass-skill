@@ -96,10 +96,7 @@ looking for drive-by maintenance.
 
 ## Working on the skill content itself
 
-Edit `SKILL.md` or `references/*.md`, then run the validator. A clean run
-is 1450+ passed, ≤17 warnings, 0 failed. The 17 warnings are pre-existing
-accepted signal being drained in prose-cleanup passes — new warnings
-should not push that count up.
+Edit `SKILL.md` or `references/*.md`, then run the validator.
 
 Size budgets are enforced: reference files have a 500-line soft cap and
 700-line hard cap (hard = CI fail). H2 subsections warn above 150 lines.
@@ -111,5 +108,5 @@ the cap.
 
 `evals/evals.json` holds behavioral eval cases for `run_loop.py`-style
 optimization. See `evals/README.md` for authoring conventions. The
-validator's check #14 scans eval prose for hallucinated method references
+validator's check scans eval prose for hallucinated method references
 — a clean validator run is a precondition for trusting eval results.

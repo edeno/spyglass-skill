@@ -187,7 +187,10 @@ convert_epoch_interval_name_to_position_interval_name(
 
 For DLC-only sessions (no Trodes-derived position), there's no
 `'pos N valid times'` IntervalList to match against; insert the
-`RawPosition` / `PositionSource` rows first, or upgrade past PR #1160.
+`RawPosition` / `PositionSource` rows first. Older releases required
+the Trodes path to exist; current Spyglass handles the DLC-only case
+via `convert_epoch_interval_name_to_position_interval_name` in
+`src/spyglass/common/common_behav.py`.
 
 **Gotcha — DLC env vars must be set in the kernel, not just
 `~/.bashrc`.** IDEs / SSH sessions frequently don't source the login
@@ -258,10 +261,10 @@ print(test_mode, type(test_mode))   # must be <class 'bool'>
 If the type is `str`, remove the entry from your DataJoint config file
 (or overwrite with an actual Python `False`) and restart the kernel.
 
-**Fixed in current Spyglass (PR #1572).** `SpyglassConfig` now applies
+**Current Spyglass handles this.** `SpyglassConfig` applies
 `str_to_bool` on load (`src/spyglass/settings.py:171`), so the type
 check will always show `bool` on a current install. If you see
-`type(test_mode) == str` on post-#1572 code, something is overwriting
+`type(test_mode) == str` on current Spyglass, something is overwriting
 `test_mode` after load — investigate the import path.
 
 Sanity check if the training keeps stopping early even with a proper

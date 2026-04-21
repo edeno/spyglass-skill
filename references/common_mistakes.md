@@ -95,7 +95,7 @@ A method, kwarg, column, or table name that sounds right given surrounding conve
 - `moseq_model_params_name` — plausible because other params tables use the `<pipeline>_params_name` pattern (`trodes_pos_params_name`, `ripple_param_name`). But `MoseqModelParams` breaks the pattern — the real PK is `model_params_name` (`src/spyglass/behavior/v1/moseq.py:37`).
 - `reference_electrodes` as a kwarg on `set_lfp_band_electrodes` — plausible because shorter names are common. Real kwarg is `reference_electrode_list` (`src/spyglass/lfp/analysis/v1/lfp_band.py:48`).
 - `welch_nperseg` as a params field — plausible because welch-method parameters commonly use `nperseg`. Nowhere in the Spyglass codebase; fabricated whole.
-- `delete_downstream_parts` as a SpyglassMixin method — plausible because it survived in a deprecated wrapper's docstring. Actually removed from the mixin in PR #1435; calling it raises `AttributeError`.
+- `delete_downstream_parts` as a SpyglassMixin method — plausible because it survived in a deprecated wrapper's docstring. Not present on the current `SpyglassMixin` (search `src/spyglass/utils/dj_mixin.py` and `src/spyglass/utils/mixins/`); calling it raises `AttributeError`.
 - `sampling_frequency` as a top-level key of `ripple_param_dict` — plausible because sampling_frequency is everywhere else. Real schema is nested under `ripple_detection_params`, and `sampling_frequency` isn't even stored in the blob — it flows in from `LFPBandV1` at populate time (`src/spyglass/ripple/v1/ripple.py:286`).
 
 The failure mode is uniform: LLMs and humans alike pattern-match from similar contexts and guess a name that sounds consistent. The verification step takes seconds; the cost of shipping the wrong name can be weeks of downstream confusion.

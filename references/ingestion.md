@@ -244,7 +244,8 @@ with pynwb.NWBHDF5IO(path, 'r') as io:
 electrode `name` + `id` are unique across probes (generate globally
 unique integer IDs at NWB creation), replace NaN geometry with `-1`
 or require real coordinates, and if the NWB uses `channel_name` make
-sure Spyglass is on a version that handles it (post-PR #1447).
+sure Spyglass is on a version that handles it (confirm by searching
+`src/spyglass/common/common_ephys.py` for `channel_name` support).
 
 ## TaskEpoch silently drops epochs on tag-format mismatch
 
@@ -254,7 +255,9 @@ sure Spyglass is on a version that handles it (post-PR #1447).
 - Rows silently missing for some epochs
 - `KeyError: 0` on a multi-row task table
 - `ValueError: could not convert string to float` for tags like `'custom_name'`
-- Tag `'2'` double-matching `'02_r1'` AND `'03_s2'` after PR #1459
+- Tag `'2'` double-matching `'02_r1'` AND `'03_s2'` on versions where
+  the numeric-tag comparison was substring-based (current implementation
+  in `src/spyglass/common/common_task.py` uses exact matching)
 
 **Required NWB shape.**
 

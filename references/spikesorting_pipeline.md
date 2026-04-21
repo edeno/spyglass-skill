@@ -318,27 +318,14 @@ spikes with spikeinterface.curation.remove_excess_spikes()` when the
 sorter placed a spike at or past the last recording timestamp.
 Typically ~30% of units can be affected on a bad sort.
 
-**Fixed in current Spyglass (PR #1564).** `CurationV1.get_sorting` now
+**Current Spyglass handles this automatically.** `CurationV1.get_sorting`
 calls `spike_times_to_valid_samples` internally to trim excess spikes
 at fetch time (see `src/spyglass/spikesorting/v1/curation.py:182-230`),
 so `MetricCuration.populate` succeeds without any user action. If you
 hit the error on current Spyglass, file a bug — the automatic
-trimming should have caught it.
-
-**Pre-populate check for older installs** (pre-#1564):
-
-```python
-from spikeinterface.curation import has_exceeding_spikes
-
-rec = CurationV1.get_recording(curation_key)
-sort = CurationV1.get_sorting(curation_key)
-if has_exceeding_spikes(rec, sort):
-    print('This sort will fail MetricCuration.populate on pre-#1564 Spyglass.')
-```
-
-On a pre-#1564 install, there was no user-side workaround in the
-published API — upgrade Spyglass (`git pull && pip install -e .`) and
-the trimming happens automatically.
+trimming should have caught it. On older installs that predate the
+fix, there was no user-side workaround in the published API — upgrade
+Spyglass (`git pull && pip install -e .`).
 
 ## Step 6: Burst-Pair Curation (Optional)
 
