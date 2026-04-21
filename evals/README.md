@@ -27,7 +27,8 @@ Every entry in `evals` has exactly these keys:
 | `tier` | string | What *kind* of capability is being tested (skill activation, atomic lookup, multi-step reasoning, pressure on guardrails, etc.). See [Tiers](#tiers). |
 | `prompt` | string | The literal user message the grader sends. Written in realistic voice — casual, frustrated, or concise, with concrete file paths, session IDs, and error strings where that's how a real user would phrase it. |
 | `expected_output` | string | Prose description of the ideal response. Not a literal string to match — a human-readable reference that captures what the answer should route to, which commands/APIs it should mention, and what it must not recommend. Used by the LLM grader as the ground-truth description when evaluating behavioral checks. |
-| `assertions` | object | Three-bucket scoring criteria (see below). |
+| `assertions` | object | Three-bucket scoring criteria (see below). **Authoring surface — edit this.** |
+| `expectations` | array | **Auto-generated from `assertions`.** Flat list of declarative pass/fail statements in skill-creator's stock `expectations: [str]` format. Do not hand-edit. Regenerate with `scripts/flatten_expectations.py` after any change to `assertions`. |
 | `files` | array | Optional attachments shipped with the prompt (not currently used). |
 
 ## Assertions
@@ -96,8 +97,24 @@ A `runtime-errors` eval in stage `ingestion` tests a different failure mode than
 4. Draft `expected_output` as a description, not a script. Name the reference file the answer should route to and the specific APIs / flags it should mention.
 5. Start `assertions.required_substrings` with the one or two discriminating strings the right answer *must* contain. Add `forbidden_substrings` for the specific wrong answer you're guarding against. Put anything that needs reasoning (order, root-cause framing, "asks before destructive action") in `behavioral_checks`.
 6. Sanity-check your substrings against [Substring hygiene](#substring-hygiene).
-7. `python3 -c 'import json; json.load(open("evals.json"))'` to confirm the JSON still parses.
+7. Run `python3 scripts/flatten_expectations.py` to regenerate the `expectations` field for the new eval.
+8. `python3 -c 'import json; json.load(open("evals.json"))'` to confirm the JSON still parses.
 
 ## Running
 
-This suite follows skill-creator's eval lifecycle (one `with_skill` run + one baseline per eval; outputs aggregate into a tier/stage benchmark) but uses a **three-bucket `assertions` object** (required/forbidden/behavioral) instead of skill-creator's stock flat `expectations: [str]` field. It is **not** drop-in compatible with skill-creator's shipped `agents/grader.md` — use a custom grader that understands the three buckets, or flatten `assertions` into `expectations` before passing the eval file to stock skill-creator tooling. The extra structure is deliberate: grep-scorable required/forbidden substrings are deterministic and cheap to re-check across iterations, while behavioral checks stay reserved for reasoning steps a grep can't verify.
+This suite follows skill-creator's eval lifecycle (one `with_skill` run + one baseline per eval; outputs aggregate into a tier/stage benchmark) and is **drop-in compatible** with skill-creator's shipped `agents/grader.md` via the auto-generated `expectations` field. Two parallel representations coexist in `evals.json`:
+
+- **`assertions`** (authoring surface): three buckets — `required_substrings`, `forbidden_substrings`, `behavioral_checks`. Grep-scorable substrings are deterministic and cheap to re-check across iterations; behavioral checks stay reserved for reasoning steps a grep can't verify. Edit this when adding or changing an eval.
+- **`expectations`** (derived, skill-creator compat): a flat list of declarative pass/fail statements. Regenerated from `assertions` by `scripts/flatten_expectations.py`. Do not hand-edit.
+
+### Keeping `expectations` in sync
+
+```bash
+# After any change to an eval's `assertions`:
+python3 scripts/flatten_expectations.py
+
+# Pre-commit / CI check — exits 1 if stale:
+python3 scripts/flatten_expectations.py --check
+```
+
+The script is idempotent: running it on an in-sync file is a no-op. The `--check` flag is suitable as a pre-commit hook or CI gate so `expectations` can never drift from `assertions` in a merged commit.

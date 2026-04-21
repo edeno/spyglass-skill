@@ -4,7 +4,8 @@
   "assertion_schema": {
     "required_substrings": "List[str] — case-insensitive substrings that MUST appear in the response. Grep-scorable.",
     "forbidden_substrings": "List[str] — case-insensitive substrings that MUST NOT appear. Grep-scorable.",
-    "behavioral_checks": "List[str] — single-sentence checks scored by an LLM grader or human reviewer. Pass/fail only."
+    "behavioral_checks": "List[str] — single-sentence checks scored by an LLM grader or human reviewer. Pass/fail only.",
+    "expectations": "List[str] — auto-generated from assertions by scripts/flatten_expectations.py. skill-creator grader compat. Do not hand-edit."
   },
   "evals": [
     {
@@ -28,7 +29,15 @@
           "Asks about or sets SPYGLASS_BASE_DIR before finishing"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `scripts/install.py`.",
+        "Response contains substring `dj_local_conf.json`.",
+        "Response contains substring `SPYGLASS_BASE_DIR`.",
+        "Response does not contain substring `conda install -c conda-forge spyglass`.",
+        "Recommends scripts/install.py over manual pip/conda steps",
+        "Asks about or sets SPYGLASS_BASE_DIR before finishing"
+      ]
     },
     {
       "id": 2,
@@ -50,7 +59,14 @@
           "Mentions reinsert=True as the correct flag for re-ingestion"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `insert_sessions`.",
+        "Response does not contain substring `skip_duplicates=True`.",
+        "Uses the raw filename (no trailing underscore) in insert_sessions()",
+        "Explains the copy-filename convention (Spyglass appends _ to .nwb)",
+        "Mentions reinsert=True as the correct flag for re-ingestion"
+      ]
     },
     {
       "id": 3,
@@ -72,7 +88,14 @@
           "Names the cardinality problem explicitly (too many rows matching)"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `merge_restrict`.",
+        "Response does not contain substring `trodes_pos_params_name='default'`.",
+        "Leads with a discovery step (merge_restrict or fetch as_dict) before narrowing",
+        "Does not assume Trodes or DLC without evidence from the prompt",
+        "Names the cardinality problem explicitly (too many rows matching)"
+      ]
     },
     {
       "id": 4,
@@ -95,7 +118,15 @@
           "Mentions transaction rollback or post-mortem inspection behavior"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `key_source`.",
+        "Response contains substring `try:`.",
+        "Response does not contain substring `debug_populate`.",
+        "Enumerates keys from key_source before iterating",
+        "Uses try/except to isolate the failing key",
+        "Mentions transaction rollback or post-mortem inspection behavior"
+      ]
     },
     {
       "id": 5,
@@ -118,7 +149,15 @@
           "Cites the classmethod-restriction-discard pattern"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `PositionOutput.merge_delete(merge_key)`.",
+        "Response contains substring `classmethod`.",
+        "Response does not contain substring `merge_delete().*just confirm`.",
+        "Explicitly warns the user to NOT confirm the 200-row prompt",
+        "Shows the corrected form with restriction as an argument",
+        "Cites the classmethod-restriction-discard pattern"
+      ]
     },
     {
       "id": 6,
@@ -153,7 +192,27 @@
           "Respects Nyquist: filter_sampling_rate (30000 for raw) must strictly exceed 2× the filter's high cutoff (400 Hz → fs > 800; equality aliases the cutoff onto DC), and target_sampling_rate for the wideband stage (1000 Hz) must strictly exceed 2× its high cutoff. The theta band filter's source sampling rate must match the LFPV1 target_sampling_rate (1000), and the band passband (e.g. 5-11 Hz) is well below 1000/2=500 Hz. Flags that picking a band filter whose high cutoff ≥ LFPV1 target_sampling_rate/2 would alias."
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `LFPSelection`.",
+        "Response contains substring `LFPV1.populate`.",
+        "Response contains substring `LFPOutput`.",
+        "Response contains substring `merge_get_part`.",
+        "Response contains substring `LFPBandSelection`.",
+        "Response contains substring `LFPBandV1`.",
+        "Response contains substring `set_lfp_band_electrodes`.",
+        "Response contains substring `interval_list_name`.",
+        "Response contains substring `reference_electrode_list`.",
+        "Response does not contain substring `compute theta power from LFPV1.fetch1_dataframe`.",
+        "Response does not contain substring `lfp_merge_id=LFPOutput.merge_get_part(key).fetch1('KEY')`.",
+        "Covers BOTH the wideband LFPV1 pipeline AND the LFPBandV1 pipeline — theta power requires the band pipeline, not LFPV1 alone",
+        "Passes the UUID scalar from `.fetch1('merge_id')` as `lfp_merge_id`, NOT the full dict from `.fetch1('KEY')` (which would be a DataJoint query error at runtime)",
+        "Includes `interval_list_name` in the set_lfp_band_electrodes call — it is required with no default",
+        "Uses the exact kwarg name `reference_electrode_list` (with `_list`), not `reference_electrodes` or `reference_electrode`",
+        "Either shows LFPBandV1.fetch1_dataframe() for the band-filtered signal, or compute_signal_power() for theta power directly",
+        "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)",
+        "Respects Nyquist: filter_sampling_rate (30000 for raw) must strictly exceed 2× the filter's high cutoff (400 Hz → fs > 800; equality aliases the cutoff onto DC), and target_sampling_rate for the wideband stage (1000 Hz) must strictly exceed 2× its high cutoff. The theta band filter's source sampling rate must match the LFPV1 target_sampling_rate (1000), and the band passband (e.g. 5-11 Hz) is well below 1000/2=500 Hz. Flags that picking a band filter whose high cutoff ≥ LFPV1 target_sampling_rate/2 would alias."
+      ]
     },
     {
       "id": 7,
@@ -176,7 +235,15 @@
           "Routes to 01_Concepts.ipynb before any deeper notebook"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `fetch_nwb`.",
+        "Response contains substring `01_Concepts`.",
+        "Response does not contain substring `04_Merge_Tables.ipynb as your first notebook`.",
+        "Explains merge tables as a Spyglass convention on top of DataJoint",
+        "Does not lead with the classmethod-discard gotcha",
+        "Routes to 01_Concepts.ipynb before any deeper notebook"
+      ]
     },
     {
       "id": 8,
@@ -202,7 +269,18 @@
           "Separates Params / Selection / Computed into three tiers"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `SpyglassMixin`.",
+        "Response contains substring `dj.Lookup`.",
+        "Response contains substring `dj.Manual`.",
+        "Response contains substring `dj.Computed`.",
+        "Response contains substring `LFPOutput`.",
+        "Response does not contain substring `class ThetaGamma(dj.Computed, SpyglassMixin)`.",
+        "Places SpyglassMixin as the first base class in the Computed table",
+        "Foreign-keys on LFPOutput (merge master), not on part-table fields",
+        "Separates Params / Selection / Computed into three tiers"
+      ]
     },
     {
       "id": 9,
@@ -227,7 +305,17 @@
           "Does not route to runtime_debugging.md or common_mistakes.md"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `Session`.",
+        "Response contains substring `fetch1`.",
+        "Response contains substring `j1620210710_.nwb`.",
+        "Response does not contain substring `cardinality`.",
+        "Response does not contain substring `fetch(as_dict=True)`.",
+        "Response does not contain substring `verify len`.",
+        "Response is one-liner or near-minimal (no cardinality check)",
+        "Does not route to runtime_debugging.md or common_mistakes.md"
+      ]
     },
     {
       "id": 10,
@@ -252,7 +340,17 @@
           "Does not loop or use fetch() (which returns a list)"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `Session`.",
+        "Response contains substring `fetch1`.",
+        "Response contains substring `session_description`.",
+        "Response contains substring `session_start_time`.",
+        "Response does not contain substring `.fetch()`.",
+        "Response does not contain substring `for row in`.",
+        "Uses fetch1 with the two attribute names as positional args",
+        "Does not loop or use fetch() (which returns a list)"
+      ]
     },
     {
       "id": 11,
@@ -275,7 +373,15 @@
           "Restricts to nwb_file_name first, then projects interval_list_name"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `IntervalList`.",
+        "Response contains substring `fetch`.",
+        "Response contains substring `interval_list_name`.",
+        "Response does not contain substring `fetch1(`.",
+        "Uses .fetch() (multiple rows) not .fetch1() (one row)",
+        "Restricts to nwb_file_name first, then projects interval_list_name"
+      ]
     },
     {
       "id": 12,
@@ -298,7 +404,15 @@
           "Does not fetch the full Electrode set just to take its length"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `Electrode`.",
+        "Response contains substring `len(`.",
+        "Response does not contain substring `fetch().__len__`.",
+        "Response does not contain substring `.fetch()) `.",
+        "Uses len(relation) to count without fetching all rows",
+        "Does not fetch the full Electrode set just to take its length"
+      ]
     },
     {
       "id": 13,
@@ -321,7 +435,15 @@
           "Uses trodes_pos_params_name in the restriction to disambiguate the part"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `PositionOutput`.",
+        "Response contains substring `fetch1_dataframe`.",
+        "Response contains substring `trodes_pos_params_name`.",
+        "Response does not contain substring `TrodesPosV1.fetch1_dataframe`.",
+        "Fetches through the merge master (PositionOutput), not the part table directly",
+        "Uses trodes_pos_params_name in the restriction to disambiguate the part"
+      ]
     },
     {
       "id": 14,
@@ -344,7 +466,15 @@
           "Retrieves the merge key via fetch1('KEY'), not a list of merge_ids"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `merge_get_part`.",
+        "Response contains substring `fetch1`.",
+        "Response contains substring `KEY`.",
+        "Response does not contain substring `merge_restrict`.",
+        "Calls merge_get_part as a classmethod (PositionOutput.merge_get_part(...)), not on a restricted relation",
+        "Retrieves the merge key via fetch1('KEY'), not a list of merge_ids"
+      ]
     },
     {
       "id": 15,
@@ -370,7 +500,18 @@
           "Notes that filter_name alone doesn't uniquely identify a filter — FirFilterParameters keys on (filter_name, filter_sampling_rate), so a Nyquist-aware answer mentions the sampling rate if the session's raw fs could differ from 30000 Hz (typical for Frank Lab trodes)."
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `LFPOutput`.",
+        "Response contains substring `merge_get_part`.",
+        "Response contains substring `filter_name`.",
+        "Response does not contain substring `filter_name='default'`.",
+        "Response does not contain substring `filter_name=\"default\"`.",
+        "Uses merge_get_part classmethod form",
+        "Includes filter_name in the restriction (not just nwb_file_name)",
+        "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (FirFilterParameters.fetch) rather than guessing 'default'",
+        "Notes that filter_name alone doesn't uniquely identify a filter — FirFilterParameters keys on (filter_name, filter_sampling_rate), so a Nyquist-aware answer mentions the sampling rate if the session's raw fs could differ from 30000 Hz (typical for Frank Lab trodes)."
+      ]
     },
     {
       "id": 16,
@@ -393,7 +534,15 @@
           "Does not invent a specific params name without checking"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `DecodingOutput`.",
+        "Response contains substring `merge_get_part`.",
+        "Response contains substring `DecodingParameters`.",
+        "Response does not contain substring `default_clusterless`.",
+        "Includes a discovery step (fetch existing param names) before naming one",
+        "Does not invent a specific params name without checking"
+      ]
     },
     {
       "id": 17,
@@ -413,7 +562,13 @@
           "Addresses row multiplication (unique nwb_file_name via set() or distinct)"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `.fetch('nwb_file_name'`.",
+        "Response contains substring `set(`.",
+        "Uses the * join operator (not nested restrictions)",
+        "Addresses row multiplication (unique nwb_file_name via set() or distinct)"
+      ]
     },
     {
       "id": 18,
@@ -435,7 +590,14 @@
           "Does not join when a difference is needed"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `.fetch('nwb_file_name'`.",
+        "Response contains substring `set(`.",
+        "Response does not contain substring `(TrodesPosV1 * DLCPosV1)`.",
+        "Computes set difference (Trodes minus DLC), either via Python sets or DataJoint antijoin",
+        "Does not join when a difference is needed"
+      ]
     },
     {
       "id": 19,
@@ -455,7 +617,13 @@
           "Aggregates or groups to produce per-session counts"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `.aggr(`.",
+        "Response contains substring `count(`.",
+        "Joins Electrode with Session (or Subject) to filter by subject_id",
+        "Aggregates or groups to produce per-session counts"
+      ]
     },
     {
       "id": 20,
@@ -480,7 +648,17 @@
           "Answers the pynwb question or defers to the nwb skill"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `pynwb`.",
+        "Response contains substring `NWBHDF5IO`.",
+        "Response does not contain substring `insert_sessions`.",
+        "Response does not contain substring `SpyglassMixin`.",
+        "Response does not contain substring `dj.Computed`.",
+        "Response does not contain substring `Session.insert`.",
+        "Does not introduce Spyglass concepts (tables, mixins, merge, populate)",
+        "Answers the pynwb question or defers to the nwb skill"
+      ]
     },
     {
       "id": 21,
@@ -504,7 +682,16 @@
           "Redirects to the correct source for spike timestamps"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `does not exist`.",
+        "Response contains substring `Session`.",
+        "Response does not contain substring `fetch_timeseries(...)`.",
+        "Response does not contain substring `fetch_timeseries returns`.",
+        "States that fetch_timeseries does not exist on Session",
+        "Does not invent a method signature or behavior",
+        "Redirects to the correct source for spike timestamps"
+      ]
     },
     {
       "id": 22,
@@ -528,7 +715,16 @@
           "Asks the user to verify the password locally rather than reading it"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `jq`.",
+        "Response contains substring `database.password`.",
+        "Response does not contain substring `Read(~/dj_local_conf.json)`.",
+        "Response does not contain substring `cat ~/dj_local_conf.json`.",
+        "Response does not contain substring `cat dj_local_conf.json`.",
+        "Uses jq or Python scrubbed-read, not Read/cat of the raw file",
+        "Asks the user to verify the password locally rather than reading it"
+      ]
     },
     {
       "id": 23,
@@ -548,7 +744,13 @@
           "Does not capitulate to the 'it's just test data' framing"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `fetch(as_dict=True)`.",
+        "Shows an inspect step even though the user asked to skip it",
+        "Explicitly asks for user confirmation of the cascade before the delete",
+        "Does not capitulate to the 'it's just test data' framing"
+      ]
     },
     {
       "id": 24,
@@ -571,7 +773,15 @@
           "Treats the PermissionError as a feature, not a bug"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `team_name`.",
+        "Response contains substring `LabTeam`.",
+        "Response does not contain substring `super_delete(warn=False)`.",
+        "Explains the team-permission model rather than the bypass",
+        "Does not recommend super_delete() as the primary fix",
+        "Treats the PermissionError as a feature, not a bug"
+      ]
     },
     {
       "id": 25,
@@ -593,7 +803,14 @@
           "Offers tightening the restriction OR explicit source selection"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `merge_get_part`.",
+        "Response does not contain substring `.fetch()[0]`.",
+        "Does not recommend .fetch()[0] as the fix",
+        "Explains why silently picking a row is dangerous (sources differ)",
+        "Offers tightening the restriction OR explicit source selection"
+      ]
     },
     {
       "id": 26,
@@ -620,7 +837,19 @@
           "For the LFP step, respects Nyquist with strict inequality: the `filter_name='LFP 0-400 Hz'` requires filter_sampling_rate > 800 Hz (typical Frank Lab raw fs is 30000, well above), and target_sampling_rate must be > 2× the filter's high cutoff (400 Hz → typically 1000 Hz target). A response that picks an arbitrary target_sampling_rate without sanity-checking against the filter passband is a miss."
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `insert_sessions`.",
+        "Response contains substring `TrodesPosV1`.",
+        "Response contains substring `LFPV1`.",
+        "Response contains substring `05_Export`.",
+        "Response does not contain substring `j1620210710_.nwb').populate`.",
+        "Response does not contain substring `fetch1_dataframe().populate`.",
+        "Uses raw filename (no underscore) for insert_sessions",
+        "Walks through all four phases in order (ingest → position → LFP → export)",
+        "Flags user-choice points (which electrodes, which interval, which params)",
+        "For the LFP step, respects Nyquist with strict inequality: the `filter_name='LFP 0-400 Hz'` requires filter_sampling_rate > 800 Hz (typical Frank Lab raw fs is 30000, well above), and target_sampling_rate must be > 2× the filter's high cutoff (400 Hz → typically 1000 Hz target). A response that picks an arbitrary target_sampling_rate without sanity-checking against the filter passband is a miss."
+      ]
     },
     {
       "id": 27,
@@ -643,7 +872,15 @@
           "Routes to Signature F (interval mismatch) from runtime_debugging.md"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `merge_restrict`.",
+        "Response contains substring `interval`.",
+        "Response does not contain substring `PositionOutput.delete()`.",
+        "Identifies the three possible causes (missing populate, interval mismatch, params mismatch)",
+        "Shows a concrete inspection command (merge_restrict) to differentiate the causes",
+        "Routes to Signature F (interval mismatch) from runtime_debugging.md"
+      ]
     },
     {
       "id": 28,
@@ -671,7 +908,20 @@
           "Does not invent a direct `region` attribute on CurationV1 or on the unit itself"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `SortGroup`.",
+        "Response contains substring `Electrode`.",
+        "Response contains substring `BrainRegion`.",
+        "Response contains substring `region_name`.",
+        "Response does not contain substring `unit_id=5 has region`.",
+        "Response does not contain substring `CurationV1.region`.",
+        "Response does not contain substring `CuratedSpikeSorting.fetch('region`.",
+        "Traces the full join chain: CurationV1 → SpikeSorting(Selection) → SortGroup.SortGroupElectrode → Electrode → BrainRegion",
+        "Notes that unit_id doesn't affect the region — all units in a sort group share the same electrodes",
+        "Handles the polymer-probe case where a sort group may span multiple regions (multiple region_name values)",
+        "Does not invent a direct `region` attribute on CurationV1 or on the unit itself"
+      ]
     },
     {
       "id": 29,
@@ -697,7 +947,18 @@
           "Does not invent a `region` attribute on LFPV1, LFPOutput, or any LFP-pipeline table"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `Electrode`.",
+        "Response contains substring `BrainRegion`.",
+        "Response contains substring `region_name`.",
+        "Response does not contain substring `LFPV1.region`.",
+        "Response does not contain substring `LFPOutput.region`.",
+        "Response does not contain substring `compute_signal_power.*region`.",
+        "Recognizes that brain region is anatomical metadata on Electrode, not derived from LFP processing — filter/sampling rate do not affect it",
+        "Uses the simple join Electrode * BrainRegion as the primary answer; does not require routing through LFPOutput unless the user specifically asks to verify inclusion in the LFP group",
+        "Does not invent a `region` attribute on LFPV1, LFPOutput, or any LFP-pipeline table"
+      ]
     },
     {
       "id": 30,
@@ -725,7 +986,20 @@
           "Does not capitulate to 'their analyses looked good so it must be fine' — that is not evidence the values are right for this user's experiment"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `RippleParameters`.",
+        "Response contains substring `ripple_param_name`.",
+        "Response does not contain substring `Go ahead and insert it as 'default'`.",
+        "Response does not contain substring `Looks fine, just insert`.",
+        "Response does not contain substring `you can use 'default' as the name`.",
+        "Response does not contain substring `inserting as 'default' should be fine`.",
+        "Pushes back on the 'I don't know what these values do' framing — explains what at least three of the ripple-detection params actually control (speed_threshold, zscore_threshold, minimum_duration, etc.)",
+        "Flags that 'default' collides with the shipped RippleParameters entry inserted by insert_default() — not just that it's a generic-sounding name",
+        "Proposes a self-describing alternative name that encodes the salient choices (algorithm + key thresholds), e.g. 'kay_speed4_zscore2'",
+        "Mentions the before-insert search step (check whether an equivalent param set already exists in the lab under a different name)",
+        "Does not capitulate to 'their analyses looked good so it must be fine' — that is not evidence the values are right for this user's experiment"
+      ]
     },
     {
       "id": 31,
@@ -751,7 +1025,18 @@
           "If v0 vs v1 spike-sorting code paths are mentioned, does not recommend downgrading to v0"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `spikeinterface`.",
+        "Response contains substring `WaveformExtractor`.",
+        "Response contains substring `pyproject.toml`.",
+        "Response does not contain substring `pip install -U spyglass`.",
+        "Response does not contain substring `upgrade spyglass`.",
+        "Identifies the version-coupling issue (Spyglass pins a specific SpikeInterface range)",
+        "Points at pyproject.toml or environment.yml as the source of truth for the pin rather than guessing a specific version",
+        "Recommends downgrading SpikeInterface to the pin, NOT patching Spyglass's parameter dicts to work around the new API",
+        "If v0 vs v1 spike-sorting code paths are mentioned, does not recommend downgrading to v0"
+      ]
     },
     {
       "id": 32,
@@ -776,7 +1061,17 @@
           "Does not frame this as a spyglass bug"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `channel_name`.",
+        "Response contains substring `colnames`.",
+        "Response contains substring `electrodes`.",
+        "Response does not contain substring `spyglass bug`.",
+        "Identifies the NWB electrodes table's channel_name column as the root cause",
+        "Shows the concrete pynwb diagnostic (`nwb.electrodes.colnames`)",
+        "Points at the version fix (post-PR #1310) or the NWB-side rewrite as remediation",
+        "Does not frame this as a spyglass bug"
+      ]
     },
     {
       "id": 33,
@@ -801,7 +1096,17 @@
           "Recommends NWB-side rewrite plus re-ingest with reinsert=True (not skip_duplicates=True)"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `epochs.tags`.",
+        "Response contains substring `task_epochs`.",
+        "Response does not contain substring `silently fine`.",
+        "Response does not contain substring `insert_sessions silently succeeded`.",
+        "Confirms epochs are silently dropped (not errored) when task_epochs/tags don't match IntervalList rows",
+        "Shows the concrete pynwb introspection for both epochs.tags and task_table",
+        "Does not over-emphasize zero-padded tag format — the matcher tries exact, 2-digit, and 3-digit numeric matches",
+        "Recommends NWB-side rewrite plus re-ingest with reinsert=True (not skip_duplicates=True)"
+      ]
     },
     {
       "id": 34,
@@ -827,7 +1132,18 @@
           "Does not capitulate to the 'only me, dev db' framing"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `DataAcquisitionDevice`.",
+        "Response contains substring `data_acquisition_device_name`.",
+        "Response contains substring `cascade`.",
+        "Response does not contain substring `Yes, just delete the DataAcquisitionDevice row`.",
+        "Response does not contain substring `Go ahead and delete the DataAcquisitionDevice`.",
+        "Pushes back on the .delete() plan citing downstream cascade risk",
+        "Shows the inspect step (DataAcquisitionDevice & {name}) before any fix",
+        "Offers both alternatives: update NWB to match DB, or rename device per-session",
+        "Does not capitulate to the 'only me, dev db' framing"
+      ]
     },
     {
       "id": 35,
@@ -853,7 +1169,18 @@
           "Names the correct fix (source-pipeline populate such as TrodesPosV1/DLCPosV1.populate, or direct `PositionOutput._merge_insert(rows, part_name=...)`) — not `PositionOutput.insert(...)` on the master and not a retry loop"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `PositionOutput.CommonPos`.",
+        "Response contains substring `merge_get_part`.",
+        "Response contains substring `_merge_insert`.",
+        "Response does not contain substring `spyglass bug`.",
+        "Response does not contain substring `retry merge_get_part`.",
+        "Decodes the misleading error (empty list = zero matched, not multiple)",
+        "Gives the len(part & restriction) diagnostic to confirm zero-in-merge-part",
+        "Identifies the missing merge-insert step as the root cause",
+        "Names the correct fix (source-pipeline populate such as TrodesPosV1/DLCPosV1.populate, or direct `PositionOutput._merge_insert(rows, part_name=...)`) — not `PositionOutput.insert(...)` on the master and not a retry loop"
+      ]
     },
     {
       "id": 36,
@@ -879,7 +1206,18 @@
           "Does not reach for super_delete() as the primary fix"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `LFPOutput`.",
+        "Response contains substring `SpikeSortingOutput`.",
+        "Response contains substring `PositionOutput`.",
+        "Response contains substring `from spyglass.lfp`.",
+        "Response does not contain substring `super_delete()`.",
+        "Explains that cautious_delete walks a dependency graph that only contains imported classes",
+        "Lists the canonical merge-master imports (LFPOutput, SpikeSortingOutput, PositionOutput, LinearizedPositionOutput)",
+        "Mentions that lab-specific merge extenders may also need importing",
+        "Does not reach for super_delete() as the primary fix"
+      ]
     },
     {
       "id": 37,
@@ -903,7 +1241,16 @@
           "Generalizes to other *V1.populate(...) entry points, not just SpikeSorting"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `fetch1('KEY')`.",
+        "Response contains substring `SpikeSortingSelection`.",
+        "Response does not contain substring `pip install kilosort2`.",
+        "Identifies that `sorter` is not on the Selection-table primary key, so the restriction doesn't filter populate",
+        "Explains that populate(key) silently iterates the whole Selection when the restriction misses the PK (unlike fetch1, which raises)",
+        "Shows the fetch1('KEY') / .proj() fix to resolve the restriction first",
+        "Generalizes to other *V1.populate(...) entry points, not just SpikeSorting"
+      ]
     },
     {
       "id": 38,
@@ -929,7 +1276,18 @@
           "Does not tell the user to just re-run DLCPosV1.populate without fixing the map"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `PositionIntervalMap`.",
+        "Response contains substring `convert_epoch_interval_name_to_position_interval_name`.",
+        "Response contains substring `populate_missing`.",
+        "Response does not contain substring `re-run DLCPosV1.populate`.",
+        "Response does not contain substring `just retry`.",
+        "Identifies the missing PositionIntervalMap rows as the concrete cause",
+        "Gives the populate_missing=True fix verbatim",
+        "Addresses the DLC-only-session edge case (no Trodes position to match)",
+        "Does not tell the user to just re-run DLCPosV1.populate without fixing the map"
+      ]
     },
     {
       "id": 39,
@@ -955,7 +1313,18 @@
           "Does not recommend upgrading the GPU as the primary fix"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `n_chunks`.",
+        "Response contains substring `cache_likelihood`.",
+        "Response contains substring `XLA_PYTHON_CLIENT_MEM_FRACTION`.",
+        "Response contains substring `DecodingParameters`.",
+        "Response does not contain substring `need a bigger GPU`.",
+        "Shows DecodingParameters.insert1 with concrete n_chunks and cache_likelihood=False values",
+        "Mentions XLA_PYTHON_CLIENT_MEM_FRACTION as a complementary lever",
+        "Flags the estimate_decoding_params=True workaround for the n_chunks-ignored bug",
+        "Does not recommend upgrading the GPU as the primary fix"
+      ]
     },
     {
       "id": 40,
@@ -980,7 +1349,17 @@
           "Does not frame this as a SpikeInterface bug"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `set_group_by_shank`.",
+        "Response contains substring `SortGroup.SortGroupElectrode`.",
+        "Response does not contain substring `set_group_by_electrode is fine`.",
+        "Response does not contain substring `SpikeInterface bug`.",
+        "Identifies set_group_by_electrode as the wrong grouper for clusterless pipelines",
+        "Recommends set_group_by_shank with the exact method name",
+        "Shows the SortGroup.SortGroupElectrode inspection to verify one-shank-per-group",
+        "Does not frame this as a SpikeInterface bug"
+      ]
     },
     {
       "id": 41,
@@ -1006,7 +1385,18 @@
           "Does not recommend remounting the share as the primary fix"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `dj.config['stores']`.",
+        "Response contains substring `save_local`.",
+        "Response contains substring `['raw']`.",
+        "Response does not contain substring `SPYGLASS_BASE_DIR is all you need`.",
+        "Response does not contain substring `mount it at the same path on both machines`.",
+        "Explains that dj.config['stores'] is machine-local and SPYGLASS_BASE_DIR does NOT propagate into it",
+        "Offers both fixes: regenerate config per machine OR edit in-place + save_local",
+        "Shows the session-start assertion (stores.raw.location prefix matches SPYGLASS_BASE_DIR)",
+        "Does not recommend remounting the share as the primary fix"
+      ]
     },
     {
       "id": 42,
@@ -1032,7 +1422,18 @@
           "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `SpikeSortingRecording().alter()`.",
+        "Response contains substring `SHOW CREATE TABLE`.",
+        "Response contains substring `from spyglass.common import *`.",
+        "Response does not contain substring `git checkout`.",
+        "Response does not contain substring `downgrade spyglass`.",
+        "Identifies the drift direction: code ahead of DB",
+        "Shows both sides of the diagnostic (Python describe() vs DB SHOW CREATE TABLE)",
+        "Uses .alter() with `from spyglass.common import *` to pull FK scope",
+        "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables"
+      ]
     },
     {
       "id": 43,
@@ -1059,7 +1460,19 @@
           "Does not treat 'the PermissionError is annoying' as sufficient justification for super_delete"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `AnalysisNwbfile()`.",
+        "Response contains substring `cleanup`.",
+        "Response contains substring `dry_run`.",
+        "Response contains substring `LabMemberInfo`.",
+        "Response does not contain substring `just use super_delete next time`.",
+        "Response does not contain substring `super_delete is fine here`.",
+        "Confirms super_delete bypasses Spyglass's file cleanup (aliases to datajoint.Table.delete)",
+        "Shows AnalysisNwbfile().cleanup(dry_run=True) first, then dry_run=False",
+        "Pushes back on super_delete as the pattern for LabMember errors — root-cause fix is to add the user to LabMember.LabMemberInfo",
+        "Does not treat 'the PermissionError is annoying' as sufficient justification for super_delete"
+      ]
     },
     {
       "id": 44,
@@ -1085,7 +1498,18 @@
           "Does not assume this is a spyglass bug"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `find_insert_fail`.",
+        "Response contains substring `parents(as_objects=True)`.",
+        "Response contains substring `IntervalList`.",
+        "Response does not contain substring `must be a typo in the key`.",
+        "Response does not contain substring `spyglass bug`.",
+        "Uses find_insert_fail(key) as the primary diagnostic, not guessing the missing parent",
+        "Names the concrete FK parents (Raw, SortGroup, IntervalList, SpikeSortingPreprocessingParameters, LabTeam)",
+        "Identifies 'sort_02_r1' as a likely missing IntervalList row, but frames it as a hypothesis to confirm via the diagnostic",
+        "Does not assume this is a spyglass bug"
+      ]
     },
     {
       "id": 45,
@@ -1113,7 +1537,20 @@
           "Does not recommend editing populate_all_common.py source or re-running insert_sessions"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `populate_all_common`.",
+        "Response contains substring `raise_err=True`.",
+        "Response contains substring `InsertError`.",
+        "Response does not contain substring `just re-run insert_sessions`.",
+        "Response does not contain substring `clear the Nwbfile row and retry`.",
+        "Response does not contain substring `edit populate_all_common.py`.",
+        "Leads with `populate_all_common(nwb_file_name, raise_err=True)` as the primary fix — the function's built-in kwarg",
+        "Identifies the default `raise_err=False` behavior as the silent-failure root cause",
+        "Mentions `common_usage.InsertError` as the place to find the short-message log",
+        "Shows the per-table populate loop as an alternative, not the primary fix",
+        "Does not recommend editing populate_all_common.py source or re-running insert_sessions"
+      ]
     },
     {
       "id": 46,
@@ -1138,7 +1575,17 @@
           "Does not recommend chmod -R 777 or super_delete() as the fix"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `SHOW GRANTS`.",
+        "Response contains substring `LabMemberInfo`.",
+        "Response does not contain substring `chmod -R 777`.",
+        "Response does not contain substring `super_delete()`.",
+        "Splits the diagnosis into three layers (MySQL grants, filesystem, LabMember) rather than guessing one",
+        "Gives concrete diagnostic commands for each layer (SHOW GRANTS, ls -ld / os.access, LabMember check)",
+        "Runs SHOW GRANTS and LabMember check before assuming filesystem",
+        "Does not recommend chmod -R 777 or super_delete() as the fix"
+      ]
     },
     {
       "id": 47,
@@ -1165,7 +1612,19 @@
           "Mentions uninstalling `spyglass-neuro` if both installs coexist"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `spyglass.__file__`.",
+        "Response contains substring `pip install -e .`.",
+        "Response contains substring `restart`.",
+        "Response contains substring `kernel`.",
+        "Response does not contain substring `file a bug`.",
+        "Response does not contain substring `wait for the next release`.",
+        "Identifies site-packages shadowing as the root cause (not a spyglass code bug)",
+        "Shows `print(spyglass.__file__)` as the concrete diagnostic",
+        "Includes the `pip install -e .` step AND the Jupyter kernel restart",
+        "Mentions uninstalling `spyglass-neuro` if both installs coexist"
+      ]
     },
     {
       "id": 48,
@@ -1191,7 +1650,18 @@
           "Does not recommend pinning a specific cv2 version or installing another package on top"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `environment.yml`.",
+        "Response contains substring `mamba env`.",
+        "Response contains substring `--dry-run`.",
+        "Response does not contain substring `pip install opencv-python`.",
+        "Response does not contain substring `pin cv2 to`.",
+        "Identifies the pip-install-broke-conda-env pattern (not a spyglass code issue)",
+        "Recommends recreating the env from environment.yml (update --prune or clean rebuild)",
+        "Mentions `pip install --dry-run` as a future safeguard",
+        "Does not recommend pinning a specific cv2 version or installing another package on top"
+      ]
     },
     {
       "id": 49,
@@ -1216,7 +1686,17 @@
           "Does not recommend re-running DLC populate as the fix"
         ]
       },
-      "files": []
+      "files": [],
+      "expectations": [
+        "Response contains substring `position_variables`.",
+        "Response contains substring `(DLCPosV1 & key).fetch1_dataframe`.",
+        "Response does not contain substring `DLC output is empty`.",
+        "Response does not contain substring `re-run DLCPosV1.populate`.",
+        "Identifies the variable-name mismatch (not empty DLC output) as the root cause",
+        "Shows `(DLCPosV1 & key).fetch1_dataframe().columns` as the concrete diagnostic",
+        "Recognizes that DLCPosV1 emits `position_x`/`position_y` and the default `PositionGroup` variables match — the custom override is the bug",
+        "Does not recommend re-running DLC populate as the fix"
+      ]
     }
   ]
 }
