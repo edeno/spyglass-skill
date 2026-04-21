@@ -1,0 +1,20 @@
+{
+  "name": "spyglass-skill",
+  "description": "Claude Code skill for the LorenFrankLab Spyglass neurophysiology framework (DataJoint + NWB). Covers setup, NWB ingestion, pipelines (spike sorting, LFP, ripple, decoding, position, linearization, DLC), merge tables, paper exports (DANDI/FigURL/Kachery), custom pipelines, and debugging populate/make/fetch1 failures.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Eric Denovellis",
+    "url": "https://github.com/edeno"
+  },
+  "repository": "https://github.com/edeno/spyglass-skill",
+  "keywords": [
+    "spyglass",
+    "datajoint",
+    "nwb",
+    "neurophysiology",
+    "neuroscience",
+    "electrophysiology",
+    "spike-sorting",
+    "lorenfranklab"
+  ]
+}
