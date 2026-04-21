@@ -7,7 +7,8 @@
 #   spyglass/scripts/validate_all.sh [--spyglass-src PATH] [--python-env PATH]
 #     [--baseline-warnings N] [--strict]
 #
-# If --spyglass-src is omitted we try $SPYGLASS_SRC then ../spyglass/src.
+# If --spyglass-src is omitted we try $SPYGLASS_SRC, then a sibling
+# spyglass/ checkout next to this repo (../spyglass/src from the repo root).
 # If --python-env is omitted the harness step runs under the current
 # python3; pass a conda env's python to actually verify real imports
 # (otherwise the harness skips everything as "spyglass not installed").
@@ -47,8 +48,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$SPYGLASS_SRC" ]]; then
-    # Best-effort guess: sibling checkout of spyglass at ../spyglass/src
-    guess="$(cd "$SKILL_ROOT/../.." 2>/dev/null && pwd)/spyglass/src"
+    # Best-effort guess: sibling checkout of spyglass next to spyglass-skill/
+    # (i.e. .../GitHub/spyglass-skill/ and .../GitHub/spyglass/ side by side).
+    # SKILL_ROOT is spyglass-skill/skills/spyglass, so three levels up lands
+    # on the parent dir that holds spyglass-skill and, hopefully, spyglass.
+    guess="$(cd "$SKILL_ROOT/../../.." 2>/dev/null && pwd)/spyglass/src"
     if [[ -d "$guess/spyglass" ]]; then
         SPYGLASS_SRC="$guess"
     else
