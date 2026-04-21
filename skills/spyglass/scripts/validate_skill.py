@@ -44,6 +44,21 @@ DEFAULT_SPYGLASS_SRC = None
 # receivers (`import spyglass.common as sgc; sgc.Session.fetch()`) — both
 # common in real notebooks — resolve correctly to their canonical classes.
 
+# The five merge masters — tables that inherit from `_Merge` in Spyglass.
+# Source of truth for check_merge_registry, which cross-checks this tuple
+# against (a) the actual `_Merge` subclasses in Spyglass source and
+# (b) the registry table in references/merge_methods.md. Adding a class
+# here without adding it to merge_methods.md's registry (or vice versa)
+# is a test failure; upstream adding a new `_Merge` subclass without
+# updating this tuple is also a test failure.
+MERGE_MASTERS = (
+    "PositionOutput",
+    "LFPOutput",
+    "SpikeSortingOutput",
+    "DecodingOutput",
+    "LinearizedPositionOutput",
+)
+
 # Known classes and the module file that defines them
 # Format: "ClassName": "dotted.module.path" (relative to spyglass src)
 KNOWN_CLASSES = {
@@ -1231,6 +1246,196 @@ def check_class_files_exist(src_root, results):
                 )
         except Exception as e:
             results.fail(f"registry: cannot read {rel_path}: {e}")
+
+
+# Pattern for `class Foo(_Merge, ...)` — the canonical shape for Spyglass
+# merge masters. Tolerates whitespace and additional base classes. Does NOT
+# match `class Foo(Merge, ...)` because merge_masters uniformly use the
+# `_Merge` alias; if upstream changes that convention we'll see both
+# directions fail in check_merge_registry and can update intentionally.
+_MERGE_SUBCLASS_RE = re.compile(r"^class\s+(\w+)\s*\(\s*_Merge\s*[,)]", re.M)
+
+# Pattern for `_Merge` imports so we can confirm the alias resolves before
+# scanning for subclasses. If upstream drops the alias entirely the grep
+# returns nothing and the subsequent mismatch is the correct failure shape.
+_MERGE_ALIAS_ASSIGN_RE = re.compile(r"^_Merge\s*=\s*Merge\b", re.M)
+
+
+def _discover_merge_masters_in_source(src_root):
+    """Return the set of class names that inherit `_Merge` in Spyglass source.
+
+    Scans every .py file under src_root/spyglass/. Uses a regex on the
+    `class Foo(_Merge, ...)` shape rather than AST parsing — this is
+    stable across Spyglass versions (the pattern hasn't changed in years)
+    and avoids paying ast.parse cost on every src file. The regex is
+    anchored at line start with MULTILINE so nested/sample code in
+    docstrings doesn't produce false positives.
+    """
+    found = set()
+    for py in (src_root / "spyglass").rglob("*.py"):
+        try:
+            text = py.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for m in _MERGE_SUBCLASS_RE.finditer(text):
+            found.add(m.group(1))
+    return found
+
+
+def _parse_merge_registry_from_markdown():
+    """Extract the claimed merge-master set and the NOT-a-merge set from
+    merge_methods.md. Returns (claimed_merges, claimed_non_merges) as
+    sets of class names.
+
+    The registry table is recognized by the `## Is this a merge table?`
+    heading and is parsed row-by-row; each row's first backticked token
+    is the class name. The NOT-a-merge list is parsed from the bullet
+    list that follows (`- `... `ClassName` ...`); every backticked
+    CamelCase identifier in those bullets counts.
+    """
+    merge_md = REFERENCES_DIR / "merge_methods.md"
+    if not merge_md.exists():
+        return set(), set()
+    text = merge_md.read_text()
+
+    # Slice to the registry section (through the next H2).
+    match = re.search(
+        r"##\s+Is this a merge table\?(.*?)(?=\n##\s)",
+        text,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return set(), set()
+    section = match.group(1)
+
+    # Split at the NOT-a-merge marker so we can parse the two halves
+    # separately. The bolded phrase is deliberately stable — if it
+    # changes we want the parse to fall through and the cross-check
+    # to fail loudly.
+    split = re.split(r"\*\*Common lookalikes that are NOT merge tables", section)
+    registry_half = split[0]
+    notmerge_half = split[1] if len(split) > 1 else ""
+
+    # Registry table rows: `| \`ClassName\` (...) | ...`. Capture the first
+    # backticked token per row; skip the header + divider rows by requiring
+    # the token start with an uppercase letter and match a bare identifier.
+    claimed_merges = set()
+    for line in registry_half.splitlines():
+        if not line.lstrip().startswith("|"):
+            continue
+        tokens = re.findall(r"`([A-Z]\w+)`", line)
+        if tokens:
+            claimed_merges.add(tokens[0])
+
+    # NOT-a-merge bullets: every backticked CamelCase identifier counts.
+    claimed_non_merges = set()
+    for tok in re.findall(r"`([A-Z]\w+)`", notmerge_half):
+        claimed_non_merges.add(tok)
+
+    return claimed_merges, claimed_non_merges
+
+
+def check_merge_registry(src_root, results):
+    """Cross-check the merge-table registry three ways.
+
+    1. MERGE_MASTERS tuple ↔ Spyglass source: every listed class must
+       inherit `_Merge` upstream; every `_Merge` subclass upstream must be
+       in MERGE_MASTERS. Catches renames, deletions, and new merge masters
+       added upstream that the skill hasn't picked up yet.
+
+    2. MERGE_MASTERS tuple ↔ merge_methods.md registry table: the two must
+       agree. Catches editing one without the other.
+
+    3. merge_methods.md NOT-a-merge list ↔ source: none of those classes
+       may actually inherit `_Merge`. Catches the inverse misclassification
+       (skill says X isn't a merge, but upstream made it one).
+
+    The `_Merge` alias itself is checked — if it disappears from
+    dj_merge_tables.py the subsequent scan returns empty and every
+    comparison fails. That's the right shape: the skill's whole mental
+    model depends on the alias, so its loss should fail noisily.
+    """
+    # Sanity: `_Merge = Merge` alias still present in Spyglass?
+    alias_file = src_root / "spyglass/utils/dj_merge_tables.py"
+    if not alias_file.exists():
+        results.fail(
+            "merge-registry: dj_merge_tables.py missing — "
+            "check_merge_registry cannot run"
+        )
+        return
+    alias_text = alias_file.read_text()
+    if not _MERGE_ALIAS_ASSIGN_RE.search(alias_text):
+        results.warn(
+            "merge-registry: `_Merge = Merge` alias not found in "
+            "dj_merge_tables.py — subsequent subclass scan uses the "
+            "alias name and may under-count"
+        )
+
+    source_merges = _discover_merge_masters_in_source(src_root)
+    tuple_merges = set(MERGE_MASTERS)
+
+    # (1) tuple ↔ source
+    missing_in_source = tuple_merges - source_merges
+    for name in sorted(missing_in_source):
+        results.fail(
+            f"merge-registry: MERGE_MASTERS lists `{name}` but no "
+            f"`class {name}(_Merge, ...)` in Spyglass source — renamed, "
+            f"removed, or reclassified upstream"
+        )
+    extra_in_source = source_merges - tuple_merges
+    for name in sorted(extra_in_source):
+        results.fail(
+            f"merge-registry: `class {name}(_Merge, ...)` exists in "
+            f"Spyglass source but is not in MERGE_MASTERS — new merge "
+            f"master upstream; update validate_skill.py MERGE_MASTERS "
+            f"and merge_methods.md § Is this a merge table?"
+        )
+    if not missing_in_source and not extra_in_source:
+        results.ok(
+            f"merge-registry: {len(tuple_merges)} merge masters in "
+            f"MERGE_MASTERS match Spyglass source"
+        )
+
+    # (2) tuple ↔ merge_methods.md registry table
+    claimed_merges, claimed_non_merges = _parse_merge_registry_from_markdown()
+    if not claimed_merges:
+        results.fail(
+            "merge-registry: could not parse `## Is this a merge table?` "
+            "section from merge_methods.md — section renamed or table "
+            "format changed"
+        )
+    else:
+        tuple_not_in_md = tuple_merges - claimed_merges
+        for name in sorted(tuple_not_in_md):
+            results.fail(
+                f"merge-registry: `{name}` is in MERGE_MASTERS but missing "
+                f"from merge_methods.md registry table"
+            )
+        md_not_in_tuple = claimed_merges - tuple_merges
+        for name in sorted(md_not_in_tuple):
+            results.fail(
+                f"merge-registry: `{name}` is claimed as a merge master "
+                f"in merge_methods.md but not in MERGE_MASTERS"
+            )
+        if not tuple_not_in_md and not md_not_in_tuple:
+            results.ok(
+                "merge-registry: merge_methods.md registry table "
+                "matches MERGE_MASTERS"
+            )
+
+    # (3) NOT-a-merge list ↔ source
+    for name in sorted(claimed_non_merges):
+        if name in source_merges:
+            results.fail(
+                f"merge-registry: merge_methods.md lists `{name}` as NOT "
+                f"a merge, but upstream `class {name}(_Merge, ...)` "
+                f"exists — skill contradicts source"
+            )
+    if claimed_non_merges and not (claimed_non_merges & source_merges):
+        results.ok(
+            f"merge-registry: {len(claimed_non_merges)} NOT-a-merge "
+            f"entries confirmed as non-_Merge in source"
+        )
 
 
 def check_prose_assertions(results: ValidationResult):
@@ -2611,68 +2816,71 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/20] Checking source files and class registry...")
+    print("\n[1/21] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/20] Checking import statements in skill files...")
+    print("[2/21] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/20] Checking method references...")
+    print("[3/21] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/20] Checking keyword arguments...")
+    print("[4/21] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/20] Checking skill structure...")
+    print("[5/21] Checking skill structure...")
     check_structure(results)
 
-    print("[6/20] Checking prose assertions...")
+    print("[6/21] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/20] Parsing Python code blocks (ast.parse)...")
+    print("[7/21] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/20] Verifying prose path references exist in repo...")
+    print("[8/21] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/20] Verifying notebook names exist in repo...")
+    print("[9/21] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/20] Verifying internal markdown links and anchors...")
+    print("[10/21] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/20] Scanning for documented anti-patterns...")
+    print("[11/21] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/20] Checking dict-restriction field names against schemas...")
+    print("[12/21] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
 
-    print("[13/20] Verifying citation line numbers are in range...")
+    print("[13/21] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
 
-    print("[14/20] Scanning evals.json for hallucinated class/method refs...")
+    print("[14/21] Scanning evals.json for hallucinated class/method refs...")
     check_evals_content(src_root, results, registry=registry)
 
-    print("[15/20] Scanning prose for banned PR-number citations...")
+    print("[15/21] Scanning prose for banned PR-number citations...")
     check_no_pr_citations(results)
 
-    print("[16/20] Enforcing reference-file and section size budgets...")
+    print("[16/21] Enforcing reference-file and section size budgets...")
     check_section_budgets(results)
 
-    print("[17/20] Checking markdown link-landing content overlap...")
+    print("[17/21] Checking markdown link-landing content overlap...")
     check_link_landing(results)
 
-    print("[18/20] Verifying citation lines contain cited identifiers...")
+    print("[18/21] Verifying citation lines contain cited identifiers...")
     check_citation_content(src_root, results)
 
-    print("[19/20] Detecting duplicated code blocks across references...")
+    print("[19/21] Detecting duplicated code blocks across references...")
     check_duplicated_blocks(results)
 
-    print("[20/20] Checking DataJoint insert/populate key shape...")
+    print("[20/21] Checking DataJoint insert/populate key shape...")
     check_insert_key_shape(src_root, results)
+
+    print("[21/21] Cross-checking merge-table registry against source...")
+    check_merge_registry(src_root, results)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.

@@ -1157,6 +1157,136 @@ def fixture_shared_imports_not_dup(src_root):
     return False
 
 
+@contextmanager
+def _with_patched_attr(module, name, value):
+    """Temporarily replace `module.name` with `value`, restoring on exit.
+
+    Fixtures below patch `_discover_merge_masters_in_source` or
+    `_parse_merge_registry_from_markdown` to simulate upstream drift
+    without having to scaffold a synthetic Spyglass checkout. Using a
+    context manager so a fixture that forgets to restore can't poison
+    downstream fixtures.
+    """
+    saved = getattr(module, name)
+    setattr(module, name, value)
+    try:
+        yield
+    finally:
+        setattr(module, name, saved)
+
+
+def fixture_merge_registry_baseline_passes(src_root):
+    """Current tree's merge-registry cross-check passes cleanly.
+
+    If the tuple, markdown, and source fall out of sync in a real commit,
+    the other two fixtures cover the failure paths. This fixture exists
+    to catch a different kind of regression: a refactor that accidentally
+    makes the check vacuous (e.g. the parser returns empty sets and every
+    comparison is `empty ⊆ empty`). The baseline fixture asserts we see
+    the three affirmative `[ok]` messages.
+    """
+    results = v.ValidationResult()
+    v.check_merge_registry(src_root, results)
+    required_phrases = [
+        "merge masters in MERGE_MASTERS match Spyglass source",
+        "merge_methods.md registry table matches MERGE_MASTERS",
+        "NOT-a-merge entries confirmed as non-_Merge in source",
+    ]
+    passed_msgs = " ".join(results.passed)
+    missing = [p for p in required_phrases if p not in passed_msgs]
+    if missing or results.failed:
+        print(f"  [FAIL] baseline merge-registry check didn't produce "
+              f"all three affirmatives. missing={missing}, "
+              f"failed={results.failed}")
+        return False
+    print("  [ok] merge-registry: baseline tree passes all three sub-checks")
+    return True
+
+
+def fixture_merge_registry_source_addition_caught(src_root):
+    """Simulated new `_Merge` subclass upstream must fail the check.
+
+    The most important drift case — if Spyglass adds a sixth merge
+    master, the skill's registry is stale and the validator must say so.
+    Simulated by patching the source-discovery helper to return an extra
+    class name.
+    """
+    results = v.ValidationResult()
+    simulated_source = set(v.MERGE_MASTERS) | {"FakeNewMergeOutput"}
+    with _with_patched_attr(
+        v, "_discover_merge_masters_in_source", lambda _src: simulated_source
+    ):
+        v.check_merge_registry(src_root, results)
+    hit = any(
+        "FakeNewMergeOutput" in msg and "new merge master upstream" in msg
+        for msg in results.failed
+    )
+    if hit:
+        print("  [ok] merge-registry: new upstream merge master caught")
+        return True
+    print(f"  [FAIL] expected a 'new merge master upstream' failure for "
+          f"FakeNewMergeOutput. failed={results.failed}")
+    return False
+
+
+def fixture_merge_registry_md_misclassification_caught(src_root):
+    """Markdown claiming a non-merge as a merge master must fail.
+
+    Mirrors the `MuaEventsV1` slip we shipped pre-Phase-0: the registry
+    listed a `dj.Computed` as a merge master. Simulated by patching the
+    markdown parser to add a non-`_Merge` class to the claimed-merges
+    set while the tuple stays correct.
+    """
+    results = v.ValidationResult()
+    bogus_claimed_merges = set(v.MERGE_MASTERS) | {"MuaEventsV1"}
+    bogus_claimed_non_merges = set()  # empty to isolate the failure
+    with _with_patched_attr(
+        v, "_parse_merge_registry_from_markdown",
+        lambda: (bogus_claimed_merges, bogus_claimed_non_merges),
+    ):
+        v.check_merge_registry(src_root, results)
+    hit = any(
+        "MuaEventsV1" in msg
+        and "claimed as a merge master" in msg
+        and "not in MERGE_MASTERS" in msg
+        for msg in results.failed
+    )
+    if hit:
+        print("  [ok] merge-registry: md claiming non-merge as merge caught")
+        return True
+    print(f"  [FAIL] expected a 'claimed as a merge master but not in "
+          f"MERGE_MASTERS' failure for MuaEventsV1. failed={results.failed}")
+    return False
+
+
+def fixture_merge_registry_inverse_misclassification_caught(src_root):
+    """Markdown's NOT-a-merge list containing an actual merge must fail.
+
+    The inverse of the previous fixture — if upstream reclassifies a
+    table (e.g. converts `MuaEventsV1` to a merge master) and the skill
+    still lists it under NOT a merge, the check must catch the lie.
+    Simulated by patching the parser to include `PositionOutput` (a real
+    merge master) in the NOT-a-merge set.
+    """
+    results = v.ValidationResult()
+    with _with_patched_attr(
+        v, "_parse_merge_registry_from_markdown",
+        lambda: (set(v.MERGE_MASTERS), {"PositionOutput"}),
+    ):
+        v.check_merge_registry(src_root, results)
+    hit = any(
+        "PositionOutput" in msg and "NOT a merge" in msg
+        and "skill contradicts source" in msg
+        for msg in results.failed
+    )
+    if hit:
+        print("  [ok] merge-registry: md listing real merge as NOT-a-merge caught")
+        return True
+    print(f"  [FAIL] expected a 'skill contradicts source' failure for "
+          f"PositionOutput in the NOT-a-merge list. failed={results.failed}")
+    return False
+
+
 def fixture_skip_methods_spyglass_subset_still_exists(src_root):
     """Canonical DataJoint/Spyglass methods in SKIP_METHODS must still exist
     somewhere in the Spyglass source. Guards against silent erosion:
@@ -1472,6 +1602,10 @@ FIXTURES = [
     fixture_pr_citation_in_prose_warns,
     fixture_pr_citation_in_code_block_ok,
     fixture_skip_methods_spyglass_subset_still_exists,
+    fixture_merge_registry_baseline_passes,
+    fixture_merge_registry_source_addition_caught,
+    fixture_merge_registry_md_misclassification_caught,
+    fixture_merge_registry_inverse_misclassification_caught,
 ]
 
 
