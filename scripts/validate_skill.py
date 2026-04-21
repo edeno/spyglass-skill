@@ -617,6 +617,8 @@ def collect_table_schemas(src_root):
         "attrs":       set[str],  # literal non-PK attribute names
         "parents":     list[str], # names of tables referenced via `->`
         "projections": list[(new_name, source)],  # from `-> Parent.proj(new='src')`
+        "parent_projections":    # {parent_name: {src_name: new_name}} per-parent
+            dict[str, dict[str, str]],
     }}.
 
     The extraction is approximate — we look for `class Foo(...): ...

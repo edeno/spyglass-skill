@@ -948,8 +948,10 @@ def fixture_insert1_proj_renamed_ok(src_root):
     with _with_md_files(md):
         results = v.ValidationResult()
         v.check_insert_key_shape(src_root, results)
-    bad = [w for w in results.warnings if "pos_merge_id" in w
-           and "LinearizationSelection" in w]
+    # Assert zero warnings on this call — not just zero mentioning a
+    # particular field name. A narrower filter would pass even if the
+    # check spuriously flagged `track_graph_name` or any other valid key.
+    bad = [w for w in results.warnings if "LinearizationSelection" in w]
     if not bad:
         print("  [ok] key-shape: correct projected name accepted")
         return True
