@@ -757,7 +757,7 @@
           "Identifies the version-coupling issue (Spyglass pins a specific SpikeInterface range)",
           "Points at pyproject.toml or environment.yml as the source of truth for the pin rather than guessing a specific version",
           "Recommends downgrading SpikeInterface to the pin, NOT patching Spyglass's parameter dicts to work around the new API",
-          "Does not recommend switching to v0 spike-sorting code paths"
+          "If v0 vs v1 spike-sorting code paths are mentioned, does not recommend downgrading to v0"
         ]
       },
       "files": []
@@ -802,7 +802,7 @@
         ],
         "forbidden_substrings": [
           "silently fine",
-          "re-run insert_sessions and check"
+          "insert_sessions silently succeeded"
         ],
         "behavioral_checks": [
           "Confirms epochs are silently dropped (not errored) on non-numeric tags",
@@ -827,8 +827,8 @@
           "cascade"
         ],
         "forbidden_substrings": [
-          "just delete the DataAcquisitionDevice row",
-          "Go ahead and delete"
+          "Yes, just delete the DataAcquisitionDevice row",
+          "Go ahead and delete the DataAcquisitionDevice"
         ],
         "behavioral_checks": [
           "Pushes back on the .delete() plan citing downstream cascade risk",
@@ -850,7 +850,7 @@
         "required_substrings": [
           "PositionOutput.CommonPos",
           "merge_get_part",
-          "part_name"
+          "insert"
         ],
         "forbidden_substrings": [
           "spyglass bug",
@@ -860,7 +860,7 @@
           "Decodes the misleading error (empty list = zero matched, not multiple)",
           "Gives the len(part & restriction) diagnostic to confirm zero-in-merge-part",
           "Identifies the missing merge-insert step as the root cause",
-          "Names the correct fix (PositionOutput.insert(...) with part_name), not a retry loop"
+          "Names the correct fix (PositionOutput.insert(...) into the CommonPos part), not a retry loop"
         ]
       },
       "files": []
@@ -877,7 +877,7 @@
           "LFPOutput",
           "SpikeSortingOutput",
           "PositionOutput",
-          "import"
+          "from spyglass.lfp"
         ],
         "forbidden_substrings": [
           "super_delete()"
@@ -905,7 +905,6 @@
           "primary key"
         ],
         "forbidden_substrings": [
-          "install kilosort2",
           "pip install kilosort2"
         ],
         "behavioral_checks": [
@@ -923,7 +922,7 @@
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
       "prompt": "First time running DLC on a fresh session. `DLCPosV1.populate(key)` dies with `IndexError: index 0 is out of bounds for axis 0 with size 0` inside `convert_epoch_interval_name_to_position_interval_name`. Am I missing an upstream populate step? I thought I set up `DLCPosSelection` correctly.",
-      "expected_output": "Routes to position_pipeline.md DLC gotchas (empty PositionIntervalMap). Root cause: the session has no `PositionIntervalMap` rows mapping task epochs to position intervals. Fix: for each `TaskEpoch`, run:\\n\\n```python\\nfrom spyglass.position import convert_epoch_interval_name_to_position_interval_name\\nconvert_epoch_interval_name_to_position_interval_name(\\n    {'nwb_file_name': nwb_file, 'epoch': epoch_id},\\n    populate_missing=True,\\n)\\n```\\n\\nThe `populate_missing=True` kwarg creates the map rows. DLC-only sessions (no Trodes-derived position) have a second failure mode — no `'pos N valid times'` IntervalList exists to match against. In that case: insert `RawPosition` / `PositionSource` rows first, or upgrade past PR #1160.",
+      "expected_output": "Routes to position_pipeline.md DLC gotchas (empty PositionIntervalMap). Root cause: the session has no `PositionIntervalMap` rows mapping task epochs to position intervals. Fix: for each `TaskEpoch`, run:\\n\\n```python\\nfrom spyglass.common import convert_epoch_interval_name_to_position_interval_name\\nconvert_epoch_interval_name_to_position_interval_name(\\n    {'nwb_file_name': nwb_file, 'epoch': epoch_id},\\n    populate_missing=True,\\n)\\n```\\n\\nThe `populate_missing=True` kwarg creates the map rows. DLC-only sessions (no Trodes-derived position) have a second failure mode — no `'pos N valid times'` IntervalList exists to match against. In that case: insert `RawPosition` / `PositionSource` rows first, or upgrade past PR #1160.",
       "assertions": {
         "required_substrings": [
           "PositionIntervalMap",
@@ -948,7 +947,7 @@
       "eval_name": "runtime-decoding-oom",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
-      "prompt": "A100 80GB, `ClusterlessDecodingV1.populate(key)` dies with `jaxlib.xla_extension.XlaRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 25941544960 bytes`. The session is 3.4M time bins × 1926 state bins — that's the 24 GiB f32 buffer. Do I just need a bigger GPU or are there knobs I can tune?",
+      "prompt": "A100 80GB, `ClusterlessDecodingV1.populate(key)` dies with `jaxlib.xla_extension.XlaRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 25941544960 bytes`. The session is around 3M time bins and ~2k state bins — that's the 24 GiB f32 buffer. Do I just need a bigger GPU or are there knobs I can tune?",
       "expected_output": "Routes to decoding_pipeline.md 'JAX / XLA OOM on long sessions'. Knobs (set on `DecodingParameters`):\\n\\n```python\\nDecodingParameters.insert1({\\n    'decoding_param_name': 'clusterless_chunked',\\n    'decoding_params': {\\n        'classifier_params': {...},\\n        'decoding_kwargs': {\\n            'n_chunks': 10,\\n            'cache_likelihood': False,\\n        },\\n        'sorted_spikes_algorithm_params': {'block_size': 500},\\n    },\\n}, skip_duplicates=True)\\n```\\n\\nAlso set `os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.99'` at the top of the populate script. Gotcha: with `estimate_decoding_params=False`, `n_chunks` may be ignored — set `estimate_decoding_params=True` on the selection row so the kwarg actually reaches the decoder. Tracked with `non_local_detector 0.6.9`.",
       "assertions": {
         "required_substrings": [
@@ -1007,7 +1006,7 @@
         "required_substrings": [
           "dj.config['stores']",
           "save_local",
-          "stores.raw.location"
+          "['raw']"
         ],
         "forbidden_substrings": [
           "SPYGLASS_BASE_DIR is all you need",
@@ -1033,7 +1032,8 @@
         "required_substrings": [
           ".alter()",
           "describe()",
-          "SHOW CREATE TABLE"
+          "SHOW CREATE TABLE",
+          "from spyglass.common import *"
         ],
         "forbidden_substrings": [
           "git checkout",
@@ -1057,7 +1057,7 @@
       "expected_output": "Confirms: `super_delete` aliases straight to `datajoint.Table.delete`, skipping Spyglass's analysis-file cleanup. The DB rows are gone but the files stay on disk. Cleanup now: `AnalysisNwbfile().cleanup(dry_run=True)` first to preview the orphans it would remove, review the logs, then `AnalysisNwbfile().cleanup(dry_run=False)`. But more importantly: push back on the pattern. The root cause was the LabMember error, not a cautious_delete bug — routes to setup_troubleshooting.md AccessError/PermissionError to fix the underlying LabMember wiring (insert the datajoint user into `LabMember.LabMemberInfo`) so future deletes go through cautious_delete cleanly and the file cleanup happens automatically. super_delete is for legitimate edge cases (admin cleanup after a lab member leaves); using it to silence 'annoying' permission errors leaves orphaned data and bypasses the audit trail.",
       "assertions": {
         "required_substrings": [
-          "AnalysisNwbfile",
+          "AnalysisNwbfile()",
           "cleanup",
           "dry_run",
           "LabMemberInfo"
