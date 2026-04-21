@@ -98,6 +98,24 @@ PositionOutput.merge_restrict({'nwb_file_name': nwb_file})
 PositionOutput.merge_restrict({'nwb_file_name': nwb_file}) & 'source = "TrodesPosV1"'
 ```
 
+**Do not restrict the merge master directly with upstream keys for
+data access.** The master's only primary-key column is `merge_id`;
+fields like `nwb_file_name` live on the part tables. A query like
+`(LFPOutput & {'nwb_file_name': f}).fetch()` returns no usable rows.
+Use `merge_get_part`, `merge_restrict`, or `merge_fetch` instead:
+
+```python
+# Find all merge rows for a session, with part-table columns:
+LFPOutput.merge_get_part(restriction={'nwb_file_name': f},
+                         join_master=True).fetch(as_dict=True)
+
+# Preview unified rows across parts (Nones fill missing columns):
+LFPOutput.merge_view(restriction={'nwb_file_name': f})
+
+# Fetch a specific attribute across parts:
+LFPOutput.merge_fetch('filter_name', restriction={'nwb_file_name': f})
+```
+
 ### Finding Part Tables
 
 #### `merge_get_part(restriction, join_master=False, restrict_part=True, multi_source=False, return_empties=False) -> dj.Table`

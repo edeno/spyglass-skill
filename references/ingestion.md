@@ -195,6 +195,20 @@ Two non-obvious behaviors:
   Either update the NWB to match the DB entry, or rename the device
   per-session. Do not `.delete()` the DB row to "force" the match —
   other sessions depend on it.
+- **`ValueError: ElementIdentifiers must contain integers`**
+  (during `AnalysisNwbfile.add_nwb_object()` /
+  `DynamicTable.from_dataframe`): `hdmf >= 3.14` requires integer IDs.
+  Passing a DataFrame whose index is a float column (e.g. time) trips
+  this. Keep the time column as a regular column; let pandas provide
+  the default RangeIndex, or pass an explicit integer `id` column.
+- **`original_reference_electrode` stuck at `-1` after re-ingesting a
+  fixed NWB**: Spyglass's `Electrode.make` reads per-electrode
+  reference/probe metadata only when the NWB ElectrodeGroup uses the
+  `ndx_franklab_novela.Probe` device. For a generic
+  `pynwb.ecephys.ElectrodeGroup`, it falls back to default values
+  (commonly `-1`) silently. Fix: convert the NWB to use
+  `ndx_franklab_novela.Probe`, or patch the Electrode rows directly
+  via DataJoint `insert(..., allow_direct_insert=True)`.
 
 ## Probe / electrode conflicts from the NWB
 

@@ -64,3 +64,20 @@ for mid in merge_ids:
 ```
 
 Pass `sources=["v0", "v1"]` (or omit `sources`) to mix both. For new sorting/curation work, use v1 — do not populate v0 tables. See `notebooks/10_Spike_SortingV0.ipynb` (or its jupytext mirror `notebooks/py_scripts/10_Spike_SortingV0.py`) for the historical v0 populate flow if you need to read existing v0 code.
+
+## `Curation.get_curated_sorting` does not filter rejected units
+
+Spyglass v0 keeps curation labels in `curation_labels` on the
+`Curation` row and does NOT re-wrap the SpikeInterface sorting per
+curation step. `get_curated_sorting` returns the underlying sorting
+including units labeled `'reject'`.
+
+To apply labels, route through `CuratedSpikeSorting.fetch_nwb`:
+
+```python
+nwb_obj = (CuratedSpikeSorting & key).fetch_nwb()[0]
+units = nwb_obj['units']        # labels already applied
+```
+
+Or replicate the logic from `Curation.save_sorting_nwb`. Prefer the
+v1 pipeline for new work — it doesn't have this split.

@@ -231,6 +231,32 @@ pose_df = (PositionOutput & merge_key).fetch_pose_dataframe()
 # Columns: video_frame_ind, x, y
 ```
 
+## DLC: `test_mode` string vs bool gotcha
+
+Symptom: `DLCModelTraining.populate(...)` finishes in minutes with no
+useful model; log says `max_iters=2`.
+
+Root cause: `spyglass.settings.test_mode` was saved as the string
+`'false'` (not the boolean `False`) in the user's `dj.config`. Python
+evaluates `bool('false')` as `True`, so Spyglass's test-mode code path
+— which shortens DLC training to 2 iterations — runs in production.
+
+**Check.**
+
+```python
+from spyglass.settings import test_mode
+print(test_mode, type(test_mode))   # must be <class 'bool'>
+```
+
+If the type is `str`, remove the entry from your DataJoint config file
+(or overwrite with an actual Python `False`) and restart the kernel.
+Spyglass should ideally cast via `str_to_bool` on load; tracked
+upstream.
+
+Sanity check if the training keeps stopping early even with a proper
+bool: look at the DLC project `config.yaml`'s `num_iterations` — DLC
+itself may have a per-project cap independent of Spyglass.
+
 ## Pipeline 3: Imported Pose
 
 For pre-computed pose data stored in NWB files.

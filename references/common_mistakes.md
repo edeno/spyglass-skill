@@ -21,6 +21,13 @@ Expanded prose for the top-5 Spyglass footguns summarized in SKILL.md. Each sect
 
 The same classmethod-dispatch rule applies to `merge_delete_parent`, `merge_restrict`, `merge_get_part`, `merge_get_parent`, `merge_view`, and `merge_html`. Full affected-method list with correct call forms: [merge_and_mixin_methods.md](merge_and_mixin_methods.md).
 
+**Related footgun (same family).** `(LFPOutput & {'nwb_file_name': f}).fetch()`
+returns no usable rows, for the same reason: the master's PK is
+`merge_id`, and `nwb_file_name` lives on the part tables. For the full
+fix list (`merge_get_part`, `merge_restrict`, `merge_view`,
+`merge_fetch`), see
+[`merge_and_mixin_methods.md` §`merge_restrict`](merge_and_mixin_methods.md#merge_restrict).
+
 ## 2. Too-loose restriction + `fetch1()`
 
 `{"nwb_file_name": f}` alone usually matches many rows — every interval, every param set, every pipeline version for that session. `fetch1()`, `merge_get_part()`, and `fetch1_dataframe()` all raise "expected one row, got N" under an under-specified restriction. The decoding-only `DecodingOutput.fetch_results()` shares this behavior since it wraps `fetch1()` internally — but it is decoding-specific, not a universal helper.

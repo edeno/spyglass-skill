@@ -1,6 +1,22 @@
 ---
 name: spyglass
-description: Use when the task involves Spyglass — the LorenFrankLab neurophysiology analysis framework built on DataJoint + NWB. Covers installing/configuring Spyglass, ingesting an NWB file via insert_sessions, running V1 pipelines (spike sorting, LFP, ripple, decoding, position, linearization), working with merge tables (PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput, LinearizedPositionOutput), exporting a paper bundle, authoring custom Spyglass pipelines, or debugging a populate()/make()/fetch1 failure in a Spyglass table. Triggers on `import spyglass` / `from spyglass.*`, on `SPYGLASS_BASE_DIR`, `SpyglassMixin`, `merge_get_part`, `merge_restrict`, and on V1 pipeline classes (`LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`, `SpikeSortingV1`, `CurationV1`, `ClusterlessDecodingV1`, `SortedSpikesDecodingV1`). Activate whenever the task clearly involves a Spyglass table or pipeline — even if the user doesn't name "Spyglass" explicitly.
+description: Use when the task involves Spyglass — the LorenFrankLab
+  neurophysiology analysis framework built on DataJoint + NWB. Covers
+  installing/configuring Spyglass, ingesting an NWB file via
+  insert_sessions, running V1 pipelines (spike sorting, LFP, ripple,
+  decoding, position, linearization, DLC tracking), working with merge
+  tables (PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput,
+  LinearizedPositionOutput), exporting a paper bundle (including DANDI
+  upload and FigURL/Kachery sharing), authoring custom Spyglass
+  pipelines, or debugging a populate()/make()/fetch1 failure in a
+  Spyglass table. Triggers on `import spyglass` / `from spyglass.*`,
+  on `SPYGLASS_BASE_DIR`, `SpyglassMixin`, `merge_get_part`,
+  `merge_restrict`, on V1 pipeline classes (`LFPV1`, `TrodesPosV1`,
+  `DLCPosV1`, `RippleTimesV1`, `SpikeSortingV1`, `CurationV1`,
+  `ClusterlessDecodingV1`, `SortedSpikesDecodingV1`), and on
+  DLC/DANDI/Kachery workflows within a Spyglass context. Activate
+  whenever the task clearly involves a Spyglass table or pipeline —
+  even if the user doesn't name "Spyglass" explicitly.
 ---
 
 # Spyglass Data Analysis Skill

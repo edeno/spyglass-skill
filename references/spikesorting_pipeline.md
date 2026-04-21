@@ -180,6 +180,13 @@ Inspect `(SortGroup.SortGroupElectrode & key)` — if rows from more than
 one shank appear per `sort_group_id`, regroup before inserting
 selection rows.
 
+**Whitening happens during sorting, NOT during
+`SpikeSortingRecording` creation.** Preprocessing parameters like
+`whitening=False` affect whether the **sorter** sees whitened data;
+the `SpikeSortingRecording` stage stores unwhitened filtered data.
+Saved waveforms from `MetricCuration` are unwhitened; the sorter's
+internal decisions use the whitened view. Confirmed with maintainers.
+
 **SpikeSortingPreprocessingParameters** (Lookup)
 
 - Key: `preproc_param_name`
@@ -370,6 +377,18 @@ spike_indicator = SortedSpikesGroup().get_spike_indicator(key, time)
 # Get firing rates
 firing_rate = SortedSpikesGroup().get_firing_rate(
     key, time, multiunit=False, smoothing_sigma=0.015
+)
+```
+
+**`time_slice` must be a `slice` object.** The docstring says
+`time_slice: list of float, optional`, but the implementation accesses
+`time_slice.start` / `time_slice.stop`, so a list raises
+`AttributeError: 'list' object has no attribute 'start'`. Pass
+`slice(t0, t1)`:
+
+```python
+spike_times, unit_ids = SortedSpikesGroup().fetch_spike_data(
+    key, time_slice=slice(t_start, t_stop), return_unit_ids=True,
 )
 ```
 

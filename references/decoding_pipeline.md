@@ -363,6 +363,17 @@ Results are saved as files in `{SPYGLASS_ANALYSIS_DIR}/{nwb_file_name}/`:
 - `.nc` files — xarray Dataset with posteriors
 - `.pkl` files — Pickled classifier model
 
+### Pickled decoder models are networkx-version-sensitive
+
+`DecodingOutput.fetch_model(key)` unpickles a classifier that embeds a
+`networkx.Graph`. If `networkx.__version__` differs from the save-time
+version, unpickling raises
+`AttributeError: 'Graph' object has no attribute '_adj'`.
+
+Either match the networkx version used at save time (visible in
+`environment.yml` or the stored `UserEnvironment` row) or re-train /
+re-save the model in the current env.
+
 `DecodingOutput().cleanup()` sweeps orphaned `.nc` / `.pkl` files. It's an instance method — note the `()` on `DecodingOutput`. Both modes return `None`; with `dry_run=True` it LOGS the paths it would remove (inspect the logs before rerunning). **Destructive when `dry_run=False`** — permanently deletes files from disk with no undo. See SKILL.md's destructive-ops list for the paired pattern.
 
 ```python

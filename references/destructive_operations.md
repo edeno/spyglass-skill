@@ -48,6 +48,16 @@ Any helper that removes rows or files goes through this file's patterns.
 - **`super_delete(warn=True)`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` by default; `warn=False` suppresses both the warning and the log, so the audit trail depends on the default. Appropriate only when you are the data owner OR have explicit written permission from the owner AND there is a specific reason the team check is misfiring.
 - **`.delete(force_permission=True)`** — skips the check and logs. Same guidance.
 
+**`super_delete` does NOT run Spyglass's file cleanup.** Because it
+aliases straight to `datajoint.Table.delete`, the analysis / raw NWB
+files stay on disk — `Nwbfile.cleanup(delete_files=True)` is never
+called. Users reach for `super_delete` most often when
+`cautious_delete` errors with
+`Could not find name for datajoint user <name> in LabMember.LabMemberInfo`;
+the correct fix is to add the user to `LabMember` (see
+`setup_troubleshooting.md` "AccessError / PermissionError"), not to
+bypass.
+
 Both exist for legitimate edge cases (admin cleanup after a lab member leaves, fixing a misconfigured experimenter). Neither is a fallback for "the PermissionError is annoying." Treat either call as if it had a social cost — because it does.
 
 **Coverage gaps where the team check does NOT fire (know these — they let data through):**
