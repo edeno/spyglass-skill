@@ -2,12 +2,12 @@
 name: spyglass
 description: Use when the task involves Spyglass — the LorenFrankLab
   neurophysiology analysis framework built on DataJoint + NWB. Covers
-  installing/configuring Spyglass, ingesting an NWB file via
-  insert_sessions, running V1 pipelines (spike sorting, LFP, ripple,
+  installing/configuring Spyglass, ingesting NWB files via
+  insert_sessions, running pipelines (spike sorting, LFP, ripple,
   decoding, position, linearization, DLC tracking), working with merge
   tables (PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput,
   LinearizedPositionOutput), exporting a paper bundle (including DANDI
-  upload and FigURL/Kachery sharing), authoring custom Spyglass
+  upload, FigURL/Kachery sharing), authoring custom Spyglass
   pipelines, or debugging a populate()/make()/fetch1 failure in a
   Spyglass table. Triggers on `import spyglass` / `from spyglass.*`,
   on `SPYGLASS_BASE_DIR`, `SpyglassMixin`, `merge_get_part`,
@@ -15,7 +15,7 @@ description: Use when the task involves Spyglass — the LorenFrankLab
   `DLCPosV1`, `RippleTimesV1`, `SpikeSortingV1`, `CurationV1`,
   `ClusterlessDecodingV1`, `SortedSpikesDecodingV1`), and on
   DLC/DANDI/Kachery workflows within a Spyglass context. Activate
-  whenever the task clearly involves a Spyglass table or pipeline —
+  when the task clearly involves a Spyglass table or pipeline —
   even if the user doesn't name "Spyglass" explicitly. Do NOT activate
   for plain DataJoint code without Spyglass imports, unrelated NWB
   tooling (pynwb, ndx-*) outside Spyglass, or generic
@@ -57,7 +57,7 @@ Quality-critical operations use a validator → fix → proceed shape. Four loop
 2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.ipynb`.
 3. **Framework concepts** (first time using Spyglass) → [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) + `01_Concepts.ipynb`. `04_Merge_Tables.ipynb` is a later, specialized concept — don't lead with it for novice questions.
 4. **Pipeline usage** (running or querying existing analyses) → pipeline reference files in the table below.
-5. **Pipeline authoring** (extending a pipeline, writing schema modules) → [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md). Very different surface from usage.
+5. **Pipeline authoring** (extending a pipeline, writing schema modules) → [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md). Different from usage.
 6. **Runtime debugging / traceback triage** (populate/make/fetch1 failures, join multiplicity, one-key-fails, NumPy/pandas bugs inside `make()`) → [runtime_debugging.md](references/runtime_debugging.md). Install/config/connection errors go to [setup_troubleshooting.md](references/setup_troubleshooting.md) instead.
 
 Users may span stages. Infer from the question and any imports/table names in context — don't halt to ask unless (a) the answer would change materially (pipeline usage vs. authoring), or (b) the next step is destructive and intent is ambiguous.
@@ -81,7 +81,7 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 
 ## Reference Routing
 
-**Progressive disclosure — load one reference at a time.** Pick the single most relevant row. Only open a second reference if the first doesn't cover the question. Don't pre-load several "to be safe" — it wastes context.
+**Load one reference at a time.** Pick the single most relevant row. Only open a second reference if the first doesn't cover the question. Don't pre-load several "to be safe" — it wastes context.
 
 Repo paths (source, docs) are listed in each reference file — this table routes by topic, not by path.
 
@@ -113,4 +113,3 @@ Repo paths (source, docs) are listed in each reference file — this table route
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) | — |
 | External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — |
 | Authoring a new pipeline / extending an existing one | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) | — |
-
