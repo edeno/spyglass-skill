@@ -1,26 +1,19 @@
 ---
 name: spyglass
 description: Use when the task involves Spyglass — the LorenFrankLab
-  neurophysiology analysis framework built on DataJoint + NWB. Covers
-  installing/configuring Spyglass, ingesting NWB files via
-  insert_sessions, running pipelines (spike sorting, LFP, ripple,
-  decoding, position, linearization, DLC tracking), working with merge
-  tables (PositionOutput, LFPOutput, SpikeSortingOutput, DecodingOutput,
-  LinearizedPositionOutput), exporting a paper bundle (including DANDI
-  upload, FigURL/Kachery sharing), authoring custom Spyglass
-  pipelines, or debugging a populate()/make()/fetch1 failure in a
-  Spyglass table. Triggers on `import spyglass` / `from spyglass.*`,
-  on `SPYGLASS_BASE_DIR`, `SpyglassMixin`, `merge_get_part`,
-  `merge_restrict`, on V1 pipeline classes (`LFPV1`, `TrodesPosV1`,
-  `DLCPosV1`, `RippleTimesV1`, `SpikeSortingV1`, `CurationV1`,
-  `ClusterlessDecodingV1`, `SortedSpikesDecodingV1`), and on
-  DLC/DANDI/Kachery workflows within a Spyglass context. Activate
-  when the task clearly involves a Spyglass table or pipeline —
-  even if the user doesn't name "Spyglass" explicitly. Do NOT activate
-  for plain DataJoint code without Spyglass imports, unrelated NWB
-  tooling (pynwb, ndx-*) outside Spyglass, or generic
-  Python/NumPy/pandas debugging when no Spyglass table is in the call
-  chain.
+  neurophysiology framework built on DataJoint + NWB. Covers setup, NWB
+  ingestion, pipelines (spike sorting, LFP, ripple, decoding, position,
+  linearization, DLC), merge tables, paper exports (DANDI/FigURL/Kachery),
+  custom pipelines, and debugging populate/make/fetch1 failures. Activate
+  when the task touches any of `import spyglass` / `from spyglass.*`,
+  `SPYGLASS_BASE_DIR`, `SpyglassMixin`, `merge_get_part`, `merge_restrict`,
+  V1 pipeline classes (`LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`,
+  `SpikeSortingV1`, `CurationV1`, `ClusterlessDecodingV1`,
+  `SortedSpikesDecodingV1`), or DLC/DANDI/Kachery within a Spyglass context
+  — even if the user doesn't name "Spyglass" explicitly. Do NOT activate
+  for plain DataJoint without Spyglass imports, unrelated NWB tooling
+  (pynwb, ndx-*) outside Spyglass, or generic Python/NumPy/pandas debugging
+  when no Spyglass table is in the call chain.
 ---
 
 # Spyglass Data Analysis Skill
@@ -53,6 +46,8 @@ Quality-critical operations use a validator → fix → proceed shape. Four loop
 
 ## Classify the User's Stage
 
+Stages orient you to *what the user is doing*; the Reference Routing table below resolves *what they're asking about*. Use stages when the topic is ambiguous (a vague "it broke"); use the routing table when the topic is clear.
+
 1. **Setup/install** → `scripts/install.py` is the canonical fast path per `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md), [setup_config.md](references/setup_config.md), or [setup_troubleshooting.md](references/setup_troubleshooting.md). `00_Setup.ipynb` is a manual fallback.
 2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.ipynb`.
 3. **Framework concepts** (first time using Spyglass) → [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md) + `01_Concepts.ipynb`. `04_Merge_Tables.ipynb` is a later, specialized concept — don't lead with it for novice questions.
@@ -64,7 +59,7 @@ Users may span stages. Infer from the question and any imports/table names in co
 
 ## Merge Tables
 
-Two phases. **Inspect (SQL only)**: `MergeTable & key` or `MergeTable.merge_restrict(key)` (classmethod — pass as arg), then `.fetch(as_dict=True)`. `fetch_results` is a decoding-only data loader, not a discovery helper. **Load (disk read — can fail when the row exists)**: `part = MergeTable.merge_get_part(key); merge_key = part.fetch1("KEY"); (MergeTable & merge_key).fetch1_dataframe()`. `DecodingOutput.fetch_results(key)` returns xarray for decoding only; **no other `*Output` ships `fetch_results`**. Treat `merge_key` as opaque. Cardinality-check before any disk fetch. See: [datajoint_api.md](references/datajoint_api.md), [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
+Two phases: **inspect** with `MergeTable & key` or `merge_restrict` (SQL only), then **load** with `merge_get_part` → `fetch1_dataframe` (disk read; cardinality-check first). Full pattern, including the `fetch_results` decoding-only footgun: [merge_and_mixin_methods.md](references/merge_and_mixin_methods.md).
 
 ## Querying an Already-Configured DB
 
