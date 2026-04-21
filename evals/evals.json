@@ -768,7 +768,7 @@
       "stage": "ingestion",
       "tier": "post-ingest-validation",
       "prompt": "ingest ran cleanly on j1620210710.nwb, but now `SpikeSortingRecording.populate(key)` crashes with `AssertionError: ChannelSliceRecording: channel ids are not all in parents`. The NWB came out of a standard trodes_to_nwb conversion. Is this a spyglass bug or is something wrong in my NWB?",
-      "expected_output": "Routes to ingestion.md 'Probe / electrode conflicts from the NWB'. Root cause is at the NWB level: the electrodes table has a `channel_name` column, and SpikeInterface >=0.99 reads that column instead of `electrode_id`, which breaks the `ChannelSliceRecording` parent check. Diagnostic: `import pynwb; with pynwb.NWBHDF5IO(path, 'r') as io: nwb = io.read(); print(nwb.electrodes.colnames)` — look for `channel_name`. Fix: run on a Spyglass version that handles this (post-PR #1447), OR rewrite the NWB to drop the `channel_name` column.",
+      "expected_output": "Routes to ingestion.md 'Probe / electrode conflicts from the NWB'. Root cause is at the NWB level: the electrodes table has a `channel_name` column, and SpikeInterface >=0.99 reads that column instead of `electrode_id`, which breaks the `ChannelSliceRecording` parent check. Diagnostic: `import pynwb; with pynwb.NWBHDF5IO(path, 'r') as io: nwb = io.read(); print(nwb.electrodes.colnames)` — look for `channel_name`. Fix: run on a Spyglass version that handles this (post-PR #1310 — `spikesorting/v1/recording.py` translates via `channel_name` when the column is present), OR rewrite the NWB to drop the `channel_name` column.",
       "assertions": {
         "required_substrings": [
           "channel_name",
@@ -781,7 +781,7 @@
         "behavioral_checks": [
           "Identifies the NWB electrodes table's channel_name column as the root cause",
           "Shows the concrete pynwb diagnostic (`nwb.electrodes.colnames`)",
-          "Points at the version fix (post-PR #1447) or the NWB-side rewrite as remediation",
+          "Points at the version fix (post-PR #1310) or the NWB-side rewrite as remediation",
           "Does not frame this as a spyglass bug"
         ]
       },
@@ -793,7 +793,7 @@
       "stage": "ingestion",
       "tier": "post-ingest-validation",
       "prompt": "My NWB has 8 behavioral epochs — I confirmed via `NWBHDF5IO` that `nwb.epochs` has 8 rows. But after `insert_sessions('j1620210710.nwb')` only 2 rows landed in `TaskEpoch`. insert_sessions didn't raise anything. Are the other 6 getting silently dropped?",
-      "expected_output": "Routes to ingestion.md 'TaskEpoch silently drops epochs on tag-format mismatch'. Yes, silently dropped — `TaskEpoch` matches NWB epochs to `IntervalList` intervals via numeric tags. Required NWB shape: `nwbfile.epochs.tags` must be numeric strings, zero-padded to the convention used elsewhere in the file (`'01'`, `'02'`, not `'1'`, `'2'`); `nwbfile.processing['tasks'].task_table.task_epochs` must be numeric with row count matching epoch count. Diagnostic: `print([list(e) for e in nwb.epochs.tags[:]])` and `print(nwb.processing['tasks'].task_table.to_dataframe())`. Fix: rewrite the NWB to use numeric-only tags, then re-ingest (with `reinsert=True` if already partially ingested).",
+      "expected_output": "Routes to ingestion.md 'TaskEpoch silently drops epochs on tag-format mismatch'. Yes, silently dropped — `TaskEpoch._process_task_epochs` matches each `task_epochs` entry to an `IntervalList` row via `get_epoch_interval_name`, which tries exact/2-digit/3-digit numeric matching (post-PR #1459 the matcher is flexible — `'1'` vs `'01'` both work, so zero-padding isn't the usual culprit today). The real silent-drop is non-numeric tags or a `task_epochs` list whose length doesn't match the NWB epoch count. Diagnostic: `print([list(e) for e in nwb.epochs.tags[:]])` and `print(nwb.processing['tasks'].task_table.to_dataframe())`. Fix: rewrite the NWB so `epochs.tags` are numeric and `task_table.task_epochs` rows line up with the epoch count, then re-ingest with `reinsert=True` (the supported re-run kwarg on `insert_sessions`).",
       "assertions": {
         "required_substrings": [
           "epochs.tags",
@@ -805,10 +805,10 @@
           "insert_sessions silently succeeded"
         ],
         "behavioral_checks": [
-          "Confirms epochs are silently dropped (not errored) on non-numeric tags",
+          "Confirms epochs are silently dropped (not errored) when task_epochs/tags don't match IntervalList rows",
           "Shows the concrete pynwb introspection for both epochs.tags and task_table",
-          "Recommends NWB-side rewrite, not direct DB-level patching",
-          "Mentions reinsert=True (not skip_duplicates=True) for re-ingest"
+          "Does not over-emphasize zero-padded tag format — the matcher tries exact, 2-digit, and 3-digit numeric matches",
+          "Recommends NWB-side rewrite plus re-ingest with reinsert=True (not skip_duplicates=True)"
         ]
       },
       "files": []
@@ -845,12 +845,12 @@
       "stage": "common-mistakes",
       "tier": "merge-table-gotchas",
       "prompt": "I'm confused by this error: `PositionOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'interval_list_name': '02_r1'})` raises `ValueError: Found multiple potential parts: []`. Multiple... AND empty? Which is it? My `IntervalPositionInfo` has rows for that session.",
-      "expected_output": "Routes to merge_and_mixin_methods.md `#merge_get_part` misleading-error note. The message is misleading — the empty list `[]` means zero sources matched, not multiple. Usual cause: an upstream source table (`IntervalPositionInfo` in this case) has rows, but they were never pushed into the corresponding merge part table (`PositionOutput.CommonPos`). Diagnostic: `len(PositionOutput.CommonPos & {'nwb_file_name': ..., 'interval_list_name': '02_r1'})` — zero confirms the upstream never made it into the merge. Fix: run the merge-insert path (e.g. `PositionOutput.insert(...)` with the correct `part_name='CommonPos'`) before retrying `merge_get_part`.",
+      "expected_output": "Routes to merge_and_mixin_methods.md `#merge_get_part` misleading-error note. The message is misleading — the empty list `[]` means zero sources matched, not multiple. Usual cause: an upstream source table (`IntervalPositionInfo` in this case) has rows, but they were never pushed into the corresponding merge part table (`PositionOutput.CommonPos`). Diagnostic: `len(PositionOutput.CommonPos & {'nwb_file_name': ..., 'interval_list_name': '02_r1'})` — zero confirms the upstream never made it into the merge. Fix: populate the source pipeline's `*V1` table (e.g. `TrodesPosV1.populate(...)` or `DLCPosV1.populate(...)`), whose `make()` calls `PositionOutput._merge_insert(rows, part_name='…')` internally. Direct `PositionOutput._merge_insert(rows, part_name='CommonPos')` works too if you already have the rows in hand; don't try to call `PositionOutput.insert(...)` on the master — use the underscore-prefixed merge helper or the source populate.",
       "assertions": {
         "required_substrings": [
           "PositionOutput.CommonPos",
           "merge_get_part",
-          "insert"
+          "_merge_insert"
         ],
         "forbidden_substrings": [
           "spyglass bug",
@@ -860,7 +860,7 @@
           "Decodes the misleading error (empty list = zero matched, not multiple)",
           "Gives the len(part & restriction) diagnostic to confirm zero-in-merge-part",
           "Identifies the missing merge-insert step as the root cause",
-          "Names the correct fix (PositionOutput.insert(...) into the CommonPos part), not a retry loop"
+          "Names the correct fix (source-pipeline populate such as TrodesPosV1/DLCPosV1.populate, or direct `PositionOutput._merge_insert(rows, part_name=...)`) — not `PositionOutput.insert(...)` on the master and not a retry loop"
         ]
       },
       "files": []
@@ -922,7 +922,7 @@
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
       "prompt": "First time running DLC on a fresh session. `DLCPosV1.populate(key)` dies with `IndexError: index 0 is out of bounds for axis 0 with size 0` inside `convert_epoch_interval_name_to_position_interval_name`. Am I missing an upstream populate step? I thought I set up `DLCPosSelection` correctly.",
-      "expected_output": "Routes to position_pipeline.md DLC gotchas (empty PositionIntervalMap). Root cause: the session has no `PositionIntervalMap` rows mapping task epochs to position intervals. Fix: for each `TaskEpoch`, run:\\n\\n```python\\nfrom spyglass.common import convert_epoch_interval_name_to_position_interval_name\\nconvert_epoch_interval_name_to_position_interval_name(\\n    {'nwb_file_name': nwb_file, 'epoch': epoch_id},\\n    populate_missing=True,\\n)\\n```\\n\\nThe `populate_missing=True` kwarg creates the map rows. DLC-only sessions (no Trodes-derived position) have a second failure mode — no `'pos N valid times'` IntervalList exists to match against. In that case: insert `RawPosition` / `PositionSource` rows first, or upgrade past PR #1160.",
+      "expected_output": "Routes to position_pipeline.md DLC gotchas (empty PositionIntervalMap). Root cause: the session has no `PositionIntervalMap` rows mapping task epochs to position intervals. Fix: for each `TaskEpoch`, run:\\n\\n```python\\nfrom spyglass.common import convert_epoch_interval_name_to_position_interval_name\\nconvert_epoch_interval_name_to_position_interval_name(\\n    {'nwb_file_name': nwb_file, 'epoch': epoch_id},\\n    populate_missing=True,\\n)\\n```\\n\\nThe `populate_missing=True` kwarg creates the map rows. DLC-only sessions (no Trodes-derived position) have a second failure mode — no `'pos N valid times'` IntervalList exists to match against. In that case: insert `RawPosition` / `PositionSource` rows first, or upgrade past PR #1208 (`Fix missing pos interval map entry in pose estimation`).",
       "assertions": {
         "required_substrings": [
           "PositionIntervalMap",
@@ -1212,8 +1212,8 @@
       "eval_name": "runtime-positiongroup-variable-mismatch",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
-      "prompt": "clusterless decoding populate failed with `ValueError: No objects to concatenate` inside `fetch_position_info`. My `PositionGroup` points at a DLC source (a `PositionOutput.DLCPosV1` merge entry). I used `PositionGroup().create_group(...)` with the default position_variables. Is my DLC output empty?",
-      "expected_output": "Routes to decoding_pipeline.md PositionGroup Gotcha. Almost certainly NOT that DLC output is empty — it's a variable-name mismatch. `PositionGroup.create_group` defaults `position_variables=['position_x', 'position_y']`. DLC-derived positions expose columns named after the tracked body part — `'head_position_x'`, `'head_position_y'`, `'tail_position_x'`, etc. With default variables on a DLC source, `fetch_position_info` returns empty frames and downstream decoding hits `ValueError: No objects to concatenate`.\\n\\nConfirm and fix:\\n\\n```python\\ncols = list((DLCPosV1 & key).fetch1_dataframe().columns)\\n# Pick matching names (usually the first two position_* columns):\\nPositionGroup().create_group(..., position_variables=cols[:2])\\n```\\n\\nThen re-insert the ClusterlessDecodingSelection row pointing at the corrected PositionGroup and re-populate.",
+      "prompt": "clusterless decoding populate failed with `ValueError: No objects to concatenate` inside `fetch_position_info`. My `PositionGroup` points at a DLC source (a `PositionOutput.DLCPosV1` merge entry). I set `position_variables=['head_position_x', 'head_position_y']` on the group (the default name didn't look like it matched DLC). Is my DLC output empty?",
+      "expected_output": "Routes to decoding_pipeline.md PositionGroup Gotcha. Almost certainly NOT that DLC output is empty — it's a variable-name mismatch in the OTHER direction. `DLCPosV1.fetch1_dataframe()` emits columns literally named `position_x` and `position_y` (see `src/spyglass/position/v1/position_dlc_selection.py`), which happens to match `PositionGroup.create_group`'s default `position_variables=['position_x', 'position_y']`. The custom `['head_position_x', 'head_position_y']` doesn't exist on DLCPosV1 output, so `fetch_position_info` slices empty frames and downstream decoding hits `ValueError: No objects to concatenate`.\\n\\nConfirm and fix:\\n\\n```python\\ncols = list((DLCPosV1 & key).fetch1_dataframe().columns)\\n# Pick the actual column names (for DLCPosV1 this is usually position_x, position_y):\\nPositionGroup().create_group(..., position_variables=cols[:2])\\n```\\n\\nFor DLCPosV1 the default `['position_x', 'position_y']` is usually correct — drop the custom override. Then re-insert the ClusterlessDecodingSelection row pointing at the corrected PositionGroup and re-populate.",
       "assertions": {
         "required_substrings": [
           "position_variables",
@@ -1226,7 +1226,7 @@
         "behavioral_checks": [
           "Identifies the variable-name mismatch (not empty DLC output) as the root cause",
           "Shows `(DLCPosV1 & key).fetch1_dataframe().columns` as the concrete diagnostic",
-          "Recreates PositionGroup with matching variable names (e.g. head_position_x/y)",
+          "Recognizes that DLCPosV1 emits `position_x`/`position_y` and the default `PositionGroup` variables match — the custom override is the bug",
           "Does not recommend re-running DLC populate as the fix"
         ]
       },
