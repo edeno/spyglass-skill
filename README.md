@@ -15,7 +15,7 @@ layout.
 
 Inside Claude Code:
 
-```
+```text
 /plugin install https://github.com/edeno/spyglass-skill
 ```
 
@@ -31,7 +31,7 @@ Spyglass-related prompts.
 
 ## What's in here
 
-```
+```text
 .claude-plugin/plugin.json        # plugin manifest
 skills/spyglass/                  # the skill itself
   SKILL.md                        # entry point loaded into context
@@ -52,8 +52,8 @@ for the detailed topic references. The validator in
 gates skill quality against a live Spyglass checkout — see the skill's
 own README for how to run it.
 
-Issues and PRs welcome at https://github.com/edeno/spyglass-skill.
+Issues and PRs welcome at [github.com/edeno/spyglass-skill](https://github.com/edeno/spyglass-skill).
 
 ## License
 
-TODO — add a `LICENSE` file before distributing widely.
+MIT — see [LICENSE](LICENSE).
