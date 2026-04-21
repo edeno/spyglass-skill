@@ -118,3 +118,27 @@ python3 scripts/flatten_expectations.py --check
 ```
 
 The script is idempotent: running it on an in-sync file is a no-op. The `--check` flag is suitable as a pre-commit hook or CI gate so `expectations` can never drift from `assertions` in a merged commit.
+
+### Gotcha: `assertions` vs skill-creator's `eval_metadata.assertions`
+
+Skill-creator's workflow (`SKILL.md` Step 1) writes a per-run `eval_metadata.json` in the workspace whose `assertions` field is a **flat list of strings** — same shape as `expectations` in `evals.json`, just a different field name. Our `assertions` in `evals.json` is a **three-bucket object** (`required_substrings`, `forbidden_substrings`, `behavioral_checks`). Same field name, incompatible shape.
+
+If you generate `eval_metadata.json` per skill-creator's workflow, copy this suite's **`expectations`** list into that file's `assertions` field — not our `assertions` object. Example:
+
+```python
+# eval_metadata.json generation (skill-creator workspace layout)
+from json import dumps, load
+e = next(x for x in load(open('evals.json'))['evals'] if x['id'] == 1)
+dumps({
+    'eval_id': e['id'],
+    'eval_name': e['eval_name'],
+    'prompt': e['prompt'],
+    'assertions': e['expectations'],  # note: flat list, not our three-bucket object
+})
+```
+
+### Other skill-creator interop notes
+
+- **Extra fields** — `notes`, `assertion_schema` (top-level) and `eval_name`, `stage`, `tier`, `assertions` (per-eval) are not in skill-creator's published schema but are tolerated; none of its scripts schema-validate `evals.json`. `eval_name` is explicitly consumed by `aggregate_benchmark.py` and appears in `benchmark.json`.
+- **Files field** — skill-creator expects `files: ["evals/files/sample1.pdf"]` relative to skill root. Ours are `[]`; add attachments under `evals/files/` if ever needed.
+- **Trigger evals** — skill-creator's `scripts/run_eval.py` reads a *different* eval format (`{query, should_trigger}`) for skill-activation testing, not capability grading. Not this file.
