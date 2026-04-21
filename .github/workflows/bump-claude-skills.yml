@@ -1,0 +1,41 @@
+name: bump claude-skills submodule
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: bump-claude-skills
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out claude-skills (with submodules)
+        uses: actions/checkout@v4
+        with:
+          repository: edeno/claude-skills
+          token: ${{ secrets.CLAUDE_SKILLS_PAT }}
+          submodules: true
+          fetch-depth: 0
+
+      - name: Bump spyglass-skill submodule to current master
+        run: |
+          set -euo pipefail
+          cd spyglass-skill
+          git fetch origin master
+          new_sha=$(git rev-parse origin/master)
+          git checkout "$new_sha"
+          cd ..
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add spyglass-skill
+          if git diff --cached --quiet; then
+            echo "No change — submodule already at $new_sha"
+            exit 0
+          fi
+          short=$(git -C spyglass-skill rev-parse --short HEAD)
+          git commit -m "spyglass-skill: bump to ${short}"
+          git push
