@@ -1205,7 +1205,7 @@ def check_insert_key_shape(src_root, results):
 def check_class_files_exist(src_root, results):
     """Verify all source files in KNOWN_CLASSES exist."""
     checked = set()
-    for class_name, rel_path in sorted(KNOWN_CLASSES.items()):
+    for _class_name, rel_path in sorted(KNOWN_CLASSES.items()):
         filepath = src_root / rel_path
         if rel_path in checked:
             continue

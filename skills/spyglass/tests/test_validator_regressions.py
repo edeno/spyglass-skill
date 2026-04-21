@@ -531,7 +531,8 @@ def fixture_eval_hallucinated_method(src_root):
     3. forbidden_substrings entries must be SKIPPED entirely, since
        they're adversarial wrong-by-design patterns the eval rejects.
     """
-    import json, tempfile
+    import json
+    import tempfile
     from pathlib import Path as P
     tmp = P(tempfile.mkdtemp())
     evals_dir = tmp / "evals"
@@ -573,9 +574,12 @@ def fixture_eval_hallucinated_method(src_root):
     bad_hits = [m for m in results.failed if "yet_another_fake" in m]
 
     if hits_hallucinated and hits_instance and not bad_hits:
-        print("  [ok] evals: hallucinated method + instance-on-bare-class caught; forbidden_substrings skipped")
+        print(
+            "  [ok] evals: hallucinated method + instance-on-bare-class caught; "
+            "forbidden_substrings skipped"
+        )
         return True
-    print(f"  [FAIL] expected both failure shapes flagged; forbidden skipped")
+    print("  [FAIL] expected both failure shapes flagged; forbidden skipped")
     print(f"         hallucinated hits: {hits_hallucinated}")
     print(f"         instance hits:     {hits_instance}")
     print(f"         forbidden bad:     {bad_hits}")
@@ -747,7 +751,7 @@ def fixture_alias_import_resolves(src_root):
     if bad and good:
         print("  [ok] method: alias import resolves (valid + invalid)")
         return True
-    print(f"  [FAIL] expected one fail and one pass")
+    print("  [FAIL] expected one fail and one pass")
     print(f"         failures: {results.failed}")
     print(f"         passes:   {[p for p in results.passed if 'SpikeSorting' in p]}")
     return False
@@ -783,7 +787,7 @@ def fixture_module_qualified_resolves(src_root):
     if bad and good:
         print("  [ok] method: module-qualified call resolves (valid + invalid)")
         return True
-    print(f"  [FAIL] expected one fail and one pass")
+    print("  [FAIL] expected one fail and one pass")
     print(f"         failures: {results.failed}")
     print(f"         passes:   {[p for p in results.passed if 'SpikeSorting' in p]}")
     return False
