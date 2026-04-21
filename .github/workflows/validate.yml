@@ -1,0 +1,57 @@
+name: Validate skill
+
+# Runs the AST validator against a fresh checkout of LorenFrankLab/spyglass
+# master, so drift between this skill's prose and the live Spyglass source
+# fails CI before it reaches users.
+#
+# Weekly schedule catches upstream drift even when nothing in this repo
+# changes — if Spyglass renames a method or drops a kwarg, the skill breaks
+# silently otherwise.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    # Mondays 13:00 UTC — early-week signal without pinging on weekends.
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout spyglass-skill
+        uses: actions/checkout@v4
+        with:
+          path: spyglass-skill
+
+      - name: Checkout LorenFrankLab/spyglass (live master)
+        uses: actions/checkout@v4
+        with:
+          repository: LorenFrankLab/spyglass
+          # Leave ref unset to track master — drift detection is the point.
+          path: spyglass
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Record spyglass revision under test
+        run: |
+          cd spyglass
+          echo "Validating against spyglass @ $(git rev-parse --short HEAD)"
+          echo "  $(git log -1 --format='%s (%an, %ai)')"
+
+      - name: Run validator (main + regression fixtures)
+        # Working dir is spyglass-skill so the sibling-clone fallback
+        # finds ../spyglass/src automatically — no SPYGLASS_SRC needed.
+        working-directory: spyglass-skill
+        run: ./skills/spyglass/scripts/validate_all.sh --baseline-warnings 3
+
+      - name: JSON sanity check
+        working-directory: spyglass-skill
+        run: |
+          python -m json.tool .claude-plugin/plugin.json > /dev/null
+          python -m json.tool skills/spyglass/evals/evals.json > /dev/null
