@@ -69,7 +69,7 @@ cap — the caps exist because context bloat hurts triggering quality.
 
 ## What not to do
 
-- Don't `cat` or `Read` a user's `dj_local_conf.json` / `~/.datajoint_config.json` — they hold DB passwords. SKILL.md teaches a scrubbed-read pattern; this repo's Claude should follow it too.
+- Don't `cat` or `Read` a user's `dj_local_conf.json` / `~/.datajoint_config.json` — they hold DB passwords. Canonical safe-read is `python skills/spyglass/scripts/scrub_dj_config.py` (SKILL.md Core Directive #6); this repo's Claude should follow it too.
 - Don't hand-write HTML for eval reviews; use skill-creator's `generate_review.py`.
 - Don't commit a personal `$SPYGLASS_SRC` path or anything under `*-workspace/` (gitignored).
 - Don't bypass hooks (`--no-verify`) on commits. If the validator fails, fix the drift — that's the point of the gate.
