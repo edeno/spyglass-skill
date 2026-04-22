@@ -35,6 +35,7 @@ Output to the user in one message, before asking for confirmation:
 - Sample rows (`.fetch(as_dict=True, limit=5)` or similar)
 - What will cascade: child tables that will also lose rows
 - For file-cleanup helpers, list filenames that will be deleted
+- For large deletes, also report total disk that will be reclaimed: `rel.get_table_storage_usage(human_readable=True)` (sums sizes of referenced analysis files — useful for "is this worth doing" decisions before the user confirms).
 
 ### Phase 3 — Wait for explicit confirmation
 

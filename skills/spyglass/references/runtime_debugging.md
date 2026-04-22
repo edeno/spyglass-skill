@@ -454,6 +454,10 @@ for p in Table.parents(as_objects=True):
 
 Populate/insert the missing ancestor first, then retry.
 
+### I. `populate()` or a query hangs indefinitely
+
+Long idle stalls (no CPU, no progress) usually mean **lock contention** — another worker or an abandoned transaction is holding a MySQL lock your call is waiting on, not a slow `make()` body. Diagnose with `AnyTable().check_threads(detailed=True)` (any `SpyglassMixin` table works); it returns a DataFrame of live threads from `performance_schema` including blockers. Coordinate with the lab before killing an abandoned transaction.
+
 ## Debugging `populate_all_common`
 
 `populate_all_common` swallows per-table exceptions by default (`raise_err=False`), logging only a short message to `common_usage.InsertError`. When a fresh ingest "completes" but common tables silently miss rows, that's the usual cause. The fix is small (`raise_err=True` or populate tables directly) but the diagnostic context is enough that it lives in its own reference: see [populate_all_common_debugging.md](populate_all_common_debugging.md).
