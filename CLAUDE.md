@@ -50,6 +50,26 @@ The pre-commit config also wires in the full skill validator,
 scoped to content files and graceful about missing Spyglass
 checkouts — see [.pre-commit-config.yaml](.pre-commit-config.yaml).
 
+### Python environment for dev testing
+
+**Never install dependencies into the base / system Python** when
+trying something out — smoke-testing a script, running tests against
+extra packages, probing an import. Use an environment isolated from
+base:
+
+- `uvx --with <pkg> ...` or `uv run --with <pkg> ...` — ephemeral
+  throwaway environment, auto-cleaned, no base pollution. Preferred
+  for one-off checks (`uvx --with pytest --with datajoint pytest
+  skills/spyglass/tests/...`).
+- A dedicated conda environment (`conda create -n spyglass-dev python=...`
+  then activate).
+- A project `venv` (`python -m venv .venv && source .venv/bin/activate`).
+
+Base/system Python is for system tooling; polluting it with
+Spyglass-adjacent packages (datajoint, pynwb, spikeinterface, …) makes
+future env reasoning harder and can break unrelated projects. This
+applies equally to subagents running here.
+
 ## Size budgets (enforced by the validator)
 
 - Reference files: **500-line soft cap**, **700-line hard cap**.
