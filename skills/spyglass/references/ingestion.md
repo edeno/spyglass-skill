@@ -161,7 +161,7 @@ Two non-obvious behaviors:
 
 ## Common Errors
 
-- **File not found**: `insert_sessions` looks in `$SPYGLASS_RAW_DIR`. Confirm the file is there and `SPYGLASS_BASE_DIR` is set correctly.
+- **File not found**: `insert_sessions` looks in `$SPYGLASS_RAW_DIR`. Confirm the file is there and `SPYGLASS_BASE_DIR` is set correctly — `python skills/spyglass/scripts/verify_spyglass_env.py --check base_dir_resolved --check subdirs_exist_writable` reports both in one call.
 - **"Session already exists"**: pass `reinsert=True`, or delete the existing `Nwbfile` row first.
 - **Device/probe not in lookup table**: pre-insert `ProbeType`, `Probe`, `DataAcquisitionDevice` etc. with `skip_duplicates=True` before ingestion.
 - **Partial ingestion after failure**: if `rollback_on_fail=False` (default) and something failed midway, some tables have entries and some don't. Easiest recovery: `rollback_on_fail=True` on a retry, or manually delete the `Nwbfile` entry and its downstream cascades.

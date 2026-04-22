@@ -2,8 +2,13 @@
 
 Common errors during installation and first-run. For installation steps, see [setup_install.md](setup_install.md). For configuration, see [setup_config.md](setup_config.md).
 
+## First-response diagnostic
+
+When a user reports something is "not working" vaguely — a `populate` silently skipping, a `fetch1` failing, a connection error — run `python skills/spyglass/scripts/verify_spyglass_env.py` first. It's a single command that checks DataJoint config, base-dir resolution and writability, subdir layout, DB connection (with a 10-second timeout so it doesn't hang), and version-pin drift. The output tells you which of those seven surfaces is actually broken before you start reading tracebacks. Pass `--json` if you want machine-parseable output; pass `--check <name>` to run one specific check.
+
 ## Contents
 
+- [First-response diagnostic](#first-response-diagnostic)
 - ["Could not find SPYGLASS_BASE_DIR"](#could-not-find-spyglass_base_dir)
 - [Database Connection Fails](#database-connection-fails)
 - ["Cannot import spyglass"](#cannot-import-spyglass)
@@ -19,6 +24,8 @@ Common errors during installation and first-run. For installation steps, see [se
 - [`HDF5_USE_FILE_LOCKING` on shared / NFS filesystems](#hdf5_use_file_locking-on-shared--nfs-filesystems)
 
 ## "Could not find SPYGLASS_BASE_DIR"
+
+Run `python skills/spyglass/scripts/verify_spyglass_env.py --check base_dir_resolved` first — it reports which resolution path (dj.config vs env var) the base dir did or didn't come from, before you start patching either one.
 
 The base directory is not set. Fix by setting the environment variable or adding it to your DataJoint config:
 
@@ -55,7 +62,7 @@ Or in `dj_local_conf.json`:
 
     Check `database.host`, `database.user`, `database.port`, and `database.use_tls` in the scrubbed output. If the password itself is the suspected problem, have the user verify it locally — don't read it through the tool surface. Full pattern: [setup_config.md](setup_config.md) "Reading the config file safely".
 3. For remote databases: confirm TLS settings (`database.use_tls`) match server requirements
-4. Test connection directly: `python -c "import datajoint as dj; dj.conn()"`
+4. Test connection with a timeout: `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_connection --timeout 10` (the bare `python -c "import datajoint as dj; dj.conn()"` hangs indefinitely on an unreachable server, which is itself a useful signal — the script gives you that answer in 10 seconds).
 
 ## "Cannot import spyglass"
 

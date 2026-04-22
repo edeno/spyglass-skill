@@ -55,4 +55,4 @@ If the ingest raised immediately (not silently), you already have a traceback �
 
 - [runtime_debugging.md](runtime_debugging.md) — failure signatures, cardinality checks, the general populate/make triage flow once you have a traceback
 - [ingestion.md](ingestion.md) — `insert_sessions` flow, the raw/copy filename convention, re-ingest with `reinsert=True`
-- [setup_troubleshooting.md](setup_troubleshooting.md) — if the failure is install/config-level (imports, connection, base dir)
+- [setup_troubleshooting.md](setup_troubleshooting.md) — if the failure is install/config-level (imports, connection, base dir). `python skills/spyglass/scripts/verify_spyglass_env.py` is the fast first pass if you're unsure whether you're debugging a populate bug or a broken env.
