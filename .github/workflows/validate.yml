@@ -28,12 +28,12 @@ jobs:
       issues: write
     steps:
       - name: Checkout spyglass-skill
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: spyglass-skill
 
       - name: Checkout LorenFrankLab/spyglass (live master)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: LorenFrankLab/spyglass
           # Leave ref unset to track master — drift detection is the point.
