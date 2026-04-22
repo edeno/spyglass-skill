@@ -14,7 +14,7 @@ description: Use when the task involves Spyglass — the LorenFrankLab
   for plain DataJoint without Spyglass imports, unrelated NWB tooling
   (pynwb, ndx-*) outside Spyglass, or generic Python/NumPy/pandas debugging
   when no Spyglass table is in the call chain.
-allowed-tools: Read, Grep, Glob
+allowed-tools: Read, Grep, Glob, Bash
 ---
 
 # Spyglass Data Analysis Skill
@@ -28,7 +28,7 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 - **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
 - **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** — on any table, including well-known ones. Use `print(len(rel))`; if >1, inspect with `rel.fetch(as_dict=True)` or `merge_restrict` to see which PK fields still need narrowing. `Table.describe()`/`Table.heading` show schema, not row count. See Common Mistake #2.
 - **Environment**: detect the user's setup (local Docker, local data, remote lab) — don't assume Jupyter or remote NWB.
-- **Reading DataJoint config files**: `dj_local_conf.json` / `~/.datajoint_config.json` may hold `database.password` in plaintext. Never `Read`/`cat` raw — use the scrubbed-read pattern in [setup_config.md](references/setup_config.md).
+- **Reading DataJoint config files**: `dj_local_conf.json` / `~/.datajoint_config.json` hold plaintext `database.password`; `Read`/`cat` puts it in Claude's context. Run `python skills/spyglass/scripts/scrub_dj_config.py` (masks secret leaves). Details: [setup_config.md](references/setup_config.md).
 - **Source of truth**: when the skill and repo disagree, trust the repo. Cited paths use the GitHub layout (`src/spyglass/...`); in pip installs, drop `src/` — locate via `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`. Tutorials at `notebooks/*.ipynb` (cite the `.ipynb`, not the `py_scripts/` jupytext mirror). Tutorials drift; when a cell fails on a missing parameter, table, or column, treat it as stale and check the source tree.
 
 ## Common Mistakes

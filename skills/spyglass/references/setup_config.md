@@ -55,13 +55,20 @@ See `dj_local_conf_example.json` in the repo root for a complete template. The k
 
 ### Reading the config file safely
 
-**Never `Read` or `cat` `dj_local_conf.json` or `~/.datajoint_config.json` directly** — they may contain a plaintext password. Once the password enters a tool result, it is in the model's context and can be echoed back inadvertently. Use a scrubbed read that strips `database.password` before it reaches you:
+**Never `Read` or `cat` `dj_local_conf.json` or `~/.datajoint_config.json` directly** — they may contain a plaintext password. Once the password enters a tool result, it is in the model's context and can be echoed back inadvertently. Use the bundled scrub script:
 
 ```bash
-# jq (preferred — works on any key path, including nested)
-jq 'del(.["database.password"])' dj_local_conf.json
+python skills/spyglass/scripts/scrub_dj_config.py
+# Or, with an explicit path:
+python skills/spyglass/scripts/scrub_dj_config.py path/to/dj_local_conf.json
+```
 
-# Python fallback if jq isn't installed
+The script masks `password`, `access_key`, `secret_key`, `token`, `credential`, `api_key`, and `auth` leaves (anywhere in the tree, including nested `stores.*` and `custom.kachery_cloud.*` sections) while preserving host / user / port / dir paths so the rest of the config is still inspectable. Header goes to stderr, scrubbed body to stdout — pipe the body into `jq` or similar without contamination.
+
+If the script isn't available in the current checkout, the equivalent inline patterns — **these only strip `database.password`**. They miss S3 store credentials (`stores.*.access_key` / `stores.*.secret_key`) and Kachery tokens (`custom.kachery_cloud.*`); if your config has either, run the script rather than the fallback:
+
+```bash
+jq 'del(.["database.password"])' dj_local_conf.json
 python3 -c 'import json; d=json.load(open("dj_local_conf.json")); d.pop("database.password", None); print(json.dumps(d, indent=2))'
 ```
 

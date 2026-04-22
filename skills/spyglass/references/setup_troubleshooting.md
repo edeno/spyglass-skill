@@ -40,11 +40,16 @@ Or in `dj_local_conf.json`:
 ## Database Connection Fails
 
 1. If using Docker: ensure Docker Desktop is running
-2. Verify non-secret config fields: **never `Read`/`cat` `dj_local_conf.json` or `~/.datajoint_config.json` directly** — these files may contain a plaintext `database.password`, and any tool output enters the model context. Inspect with the password stripped:
+2. Verify non-secret config fields: **never `Read`/`cat` `dj_local_conf.json` or `~/.datajoint_config.json` directly** — these files may contain a plaintext `database.password`, and any tool output enters the model context. Run the bundled scrub script (masks password, S3 / kachery creds, tokens):
+
+    ```bash
+    python skills/spyglass/scripts/scrub_dj_config.py
+    ```
+
+    If the script isn't available in your checkout, the inline fallback — note this only strips `database.password` and still leaks any S3 store or kachery credentials:
 
     ```bash
     jq 'del(.["database.password"])' dj_local_conf.json
-    # fallback if jq unavailable:
     python3 -c 'import json; d=json.load(open("dj_local_conf.json")); d.pop("database.password", None); print(json.dumps(d, indent=2))'
     ```
 
