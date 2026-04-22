@@ -1558,7 +1558,7 @@
       "stage": "setup",
       "tier": "config-troubleshooting",
       "prompt": "Something's failing with 'permission denied' when I try to populate `LFPV1` on a new session — the exact message is `AccessError: Command credentials rejected` deep in DataJoint internals. This is a shared lab install, and the admin added me yesterday. How do I figure out which permission is actually missing?",
-      "expected_output": "Routes to setup_troubleshooting.md '`AccessError` / `PermissionError` on a shared installation'. Three distinct layers present as 'permission denied' — diagnose them, don't guess:\\n\\n**1. MySQL grants.** `dj.conn().query('SHOW GRANTS FOR CURRENT_USER();').fetchall()` — grants are per-schema-prefix on shared installs. A new schema like `lfp_v1` or `spikesorting_recording` may not be covered. If no entry for that prefix, ask admin for a `GRANT`.\\n\\n**2. Filesystem permissions.** `ls -ld /path/to/failing/dir` and `python -c \\\"import os; print(os.access('/path', os.W_OK))\\\"`. Analysis/recording subdirs are created by the first writer and aren't group-writable unless a lab cron enforces it.\\n\\n**3. `cautious_delete` / LabMember wiring.** If the error text is `ValueError: Could not find exactly 1 datajoint user <name> in common.LabMember.LabMemberInfo`, the user exists in MySQL but not in Spyglass's LabMember table. Fix: `LabMember.insert1(...)` + `LabMember.LabMemberInfo.insert1(...)` with `datajoint_user_name=dj.config['database.user']`.\\n\\nRun `SHOW GRANTS` and the LabMember check before assuming it's a filesystem issue. Do NOT reach for `super_delete()` or `chmod -R 777` as a workaround.",
+      "expected_output": "Routes to setup_troubleshooting.md '`AccessError` / `PermissionError` on a shared installation'. Three distinct layers present as 'permission denied' — diagnose them, don't guess:\\n\\n**1. MySQL grants.** `dj.conn().query('SHOW GRANTS FOR CURRENT_USER();').fetchall()` — grants are per-schema-prefix on shared installs. A new schema like `lfp_v1` or `spikesorting_recording` may not be covered. If no entry for that prefix, ask admin for a `GRANT`.\\n\\n**2. Filesystem permissions.** `python skills/spyglass/scripts/verify_spyglass_env.py --check base_dir_exists_writable --check subdirs_exist_writable` confirms layer 2 in one command — it touch-tests each dir rather than relying on `os.access`, which lies on some filesystems (NFS ACLs, container bind-mounts). If that passes, layer 2 isn't the culprit; move on. If you need per-path detail, fall back to `ls -ld /path/to/failing/dir` and `python -c \\\"import os; print(os.access('/path', os.W_OK))\\\"`. Analysis/recording subdirs are created by the first writer and aren't group-writable unless a lab cron enforces it.\\n\\n**3. `cautious_delete` / LabMember wiring.** If the error text is `ValueError: Could not find exactly 1 datajoint user <name> in common.LabMember.LabMemberInfo`, the user exists in MySQL but not in Spyglass's LabMember table. Fix: `LabMember.insert1(...)` + `LabMember.LabMemberInfo.insert1(...)` with `datajoint_user_name=dj.config['database.user']`.\\n\\nRun `SHOW GRANTS` and the LabMember check before assuming it's a filesystem issue. Do NOT reach for `super_delete()` or `chmod -R 777` as a workaround.",
       "assertions": {
         "required_substrings": [
           "SHOW GRANTS",
@@ -1570,7 +1570,8 @@
         ],
         "behavioral_checks": [
           "Splits the diagnosis into three layers (MySQL grants, filesystem, LabMember) rather than guessing one",
-          "Gives concrete diagnostic commands for each layer (SHOW GRANTS, ls -ld / os.access, LabMember check)",
+          "Gives concrete diagnostic commands for each layer (SHOW GRANTS, filesystem writability check, LabMember check)",
+          "For the filesystem layer, either verify_spyglass_env.py --check base_dir_exists_writable/subdirs_exist_writable OR ls -ld + os.access is acceptable",
           "Runs SHOW GRANTS and LabMember check before assuming filesystem",
           "Does not recommend chmod -R 777 or super_delete() as the fix"
         ]
@@ -1582,7 +1583,8 @@
         "Response does not contain substring `chmod -R 777`.",
         "Response does not contain substring `super_delete()`.",
         "Splits the diagnosis into three layers (MySQL grants, filesystem, LabMember) rather than guessing one",
-        "Gives concrete diagnostic commands for each layer (SHOW GRANTS, ls -ld / os.access, LabMember check)",
+        "Gives concrete diagnostic commands for each layer (SHOW GRANTS, filesystem writability check, LabMember check)",
+        "For the filesystem layer, either verify_spyglass_env.py --check base_dir_exists_writable/subdirs_exist_writable OR ls -ld + os.access is acceptable",
         "Runs SHOW GRANTS and LabMember check before assuming filesystem",
         "Does not recommend chmod -R 777 or super_delete() as the fix"
       ]
