@@ -1,0 +1,23 @@
+{
+  "database.host": "db.example.test",
+  "database.user": "testuser",
+  "database.password": "",
+  "authority": "trusted-ca-bundle.pem",
+  "token_type": "bearer",
+  "my_keyword": "not-a-secret-keyword",
+  "stores": {
+    "raw": {"location": "/data/raw", "access_location": "network-share"}
+  },
+  "custom": {
+    "credentials": null,
+    "empty_secret": "",
+    "nested_credentials": {
+      "access_key": "nested-access-key-value",
+      "public_id": "not-sensitive-identifier"
+    },
+    "auth_list": [
+      {"api_key": "list-item-secret-1"},
+      {"api_key": "list-item-secret-2"}
+    ]
+  }
+}

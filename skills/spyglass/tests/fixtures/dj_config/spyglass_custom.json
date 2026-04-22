@@ -1,0 +1,32 @@
+{
+  "database.host": "db.example.test",
+  "database.port": 3306,
+  "database.user": "testuser",
+  "database.password": "real-password-dont-print-me",
+  "loglevel": "INFO",
+  "stores": {
+    "raw": {"protocol": "file", "location": "/data/raw", "stage": "/data/raw"},
+    "analysis": {"protocol": "file", "location": "/data/analysis", "stage": "/data/analysis"}
+  },
+  "custom": {
+    "spyglass_dirs": {
+      "base": "/data/spyglass",
+      "raw": "/data/spyglass/raw",
+      "analysis": "/data/spyglass/analysis",
+      "recording": "/data/spyglass/recording",
+      "sorting": "/data/spyglass/sorting",
+      "waveforms": "/data/spyglass/waveforms",
+      "temp": "/data/spyglass/tmp"
+    },
+    "kachery_zone": "example-lab.default",
+    "kachery_cloud": {
+      "zone": {
+        "name": "example-lab.default",
+        "credentials": "kachery-zone-credentials-string",
+        "client_id": "not-a-secret-per-se-but-identifier"
+      },
+      "api_token": "kachery-api-token-abcdefg"
+    },
+    "test_mode": false
+  }
+}
