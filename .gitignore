@@ -14,4 +14,3 @@ __pycache__/
 # Local developer config (e.g. path to a Spyglass checkout for the validator)
 .env.local
 scripts/config.local.sh
-docs/plans/
