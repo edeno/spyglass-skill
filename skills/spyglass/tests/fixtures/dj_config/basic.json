@@ -1,0 +1,7 @@
+{
+  "database.host": "db.example.test",
+  "database.port": 3306,
+  "database.user": "testuser",
+  "database.password": "s3cr3t-password",
+  "loglevel": "INFO"
+}

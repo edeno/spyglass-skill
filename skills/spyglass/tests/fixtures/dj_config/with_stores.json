@@ -1,0 +1,22 @@
+{
+  "database.host": "db.example.test",
+  "database.port": 3306,
+  "database.user": "testuser",
+  "database.password": "s3cr3t-password",
+  "stores": {
+    "raw": {
+      "protocol": "s3",
+      "endpoint": "s3.amazonaws.com",
+      "access_key": "AKIAEXAMPLE1234",
+      "secret_key": "extremely-secret-key-value",
+      "bucket": "example-raw-bucket",
+      "location": "/raw",
+      "stage": "/tmp/raw-stage"
+    },
+    "analysis": {
+      "protocol": "file",
+      "location": "/data/analysis",
+      "stage": "/data/analysis-stage"
+    }
+  }
+}
