@@ -182,6 +182,8 @@ To generate just the DataJoint config file without creating a conda environment:
 python scripts/install.py --config-only --remote --db-host db.lab.edu --db-user alice --base-dir ~/data
 ```
 
+This writes `dj_local_conf.json` (or updates `~/.datajoint_config.json`) containing a plaintext `database.password`. Once it exists, never `Read` / `cat` it — use `python skills/spyglass/scripts/scrub_dj_config.py` to inspect safely. See [setup_config.md](setup_config.md) § "Reading the config file safely".
+
 ### Lab Administrator Setup
 
 Lab admins can pre-configure shared settings so new members only need to provide credentials. Two approaches:
