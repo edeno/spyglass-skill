@@ -6,6 +6,7 @@ Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin`
 
 ## Contents
 
+- [Error-signature index](#error-signature-index)
 - [When to use this file](#when-to-use-this-file)
 - [Required inputs](#required-inputs)
 - [Core philosophy](#core-philosophy)
@@ -24,6 +25,26 @@ Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin`
 - [Sub-modes](#sub-modes)
 - [Output shape](#output-shape)
 - [Cross-references](#cross-references)
+
+## Error-signature index
+
+Match the first informative line of your traceback against the left column; jump to the named signature. Use this before reading the full signature prose — it takes a 500-line file and turns it into a grep.
+
+| Traceback fingerprint | Signature |
+| --- | --- |
+| `DataJointError: fetch1 should only be called on relations with exactly one tuple` / `... no tuples` | [A. fetch1() cardinality](#a-fetch1-cardinality) |
+| `ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()` | [B. Ambiguous truth value of an array](#b-ambiguous-truth-value-of-an-array) |
+| Restriction returns more rows than expected, or a `fetch1()` that previously worked starts raising on the same key | [C. Silent row multiplication from joins](#c-silent-row-multiplication-from-joins) |
+| `populate()` succeeds on most sessions, fails on one with `KeyError` / `AttributeError` on a `None` field / shape mismatch | [D. Special-case key failures](#d-special-case-key-failures) |
+| "Job already reserved", worker won't retry; parallel populate crashes without naming the key | [E. Transaction / reservation confusion](#e-transaction--reservation-confusion) |
+| `populate()` silently completes with no new rows; a cross-pipeline join returns zero rows despite each side having data | [F. Interval / epoch mismatch across pipelines](#f-interval--epoch-mismatch-across-pipelines) |
+| `Exception: The sorter kilosort2 is not installed` (or other wrong-sorter / wrong-params) when you asked for something else | [G. populate(key) with a non-PK dict iterates the whole Selection](#g-populatekey-with-a-non-pk-dict-iterates-the-whole-selection) |
+| `IntegrityError: Cannot add or update a child row: a foreign key constraint fails` | [H. IntegrityError on insert often means an ancestor row is missing](#h-integrityerror-on-insert-often-means-an-ancestor-row-is-missing) |
+| Idle hang, no CPU progress, no log output — populate just sits there | [I. populate() or a query hangs indefinitely](#i-populate-or-a-query-hangs-indefinitely) |
+| `ValueError: Could not find exactly 1 datajoint user <name> in common.LabMember.LabMemberInfo` | (not here — go to [setup_troubleshooting.md § AccessError / PermissionError on a shared installation](setup_troubleshooting.md#accesserror--permissionerror-on-a-shared-installation)) |
+| `Could not find SPYGLASS_BASE_DIR`, connection refused, import failure | (not here — go to [setup_troubleshooting.md](setup_troubleshooting.md); that file owns the setup surface) |
+
+If no fingerprint matches, read [When to use this file](#when-to-use-this-file) and the procedure below; otherwise the [Automatic heuristics](#automatic-heuristics) at the end of this file catch the most common untagged shapes.
 
 ## When to use this file
 
