@@ -456,7 +456,7 @@ Populate/insert the missing ancestor first, then retry.
 
 ### I. `populate()` or a query hangs indefinitely
 
-Long idle stalls (no CPU, no progress) usually mean **lock contention** — another worker or an abandoned transaction is holding a MySQL lock your call is waiting on, not a slow `make()` body. Diagnose with `AnyTable().check_threads(detailed=True)` (any `SpyglassMixin` table works); it returns a DataFrame of live threads from `performance_schema` including blockers. Coordinate with the lab before killing an abandoned transaction.
+Long idle stalls (no CPU, no progress) usually mean **lock contention** — another worker or an abandoned transaction is holding a MySQL lock your call is waiting on, not a slow `make()` body. First rule out "the DB isn't reachable at all" with `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_connection --timeout 10` — `check_threads` itself needs a live connection and will hang the same way if the server's unreachable. Once connectivity is confirmed, diagnose with `AnyTable().check_threads(detailed=True)` (any `SpyglassMixin` table works); it returns a DataFrame of live threads from `performance_schema` including blockers. Coordinate with the lab before killing an abandoned transaction.
 
 ## Debugging `populate_all_common`
 

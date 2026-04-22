@@ -153,6 +153,8 @@ The base directory can be set via (in order of precedence):
 3. **`SPYGLASS_BASE_DIR` environment variable**
 4. No default — errors if unset. The installer prompts with `~/spyglass_data/` as a suggestion, but this is not a runtime fallback
 
+Which of the tiers actually resolved the base dir on a given machine is often what you want to know when debugging "my SPYGLASS_BASE_DIR isn't what I expected." `python skills/spyglass/scripts/verify_spyglass_env.py --check base_dir_resolved` walks this exact priority order and reports the winning source.
+
 ```bash
 # Environment variable approach
 export SPYGLASS_BASE_DIR=/data/spyglass
