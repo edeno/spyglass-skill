@@ -28,19 +28,19 @@ jobs:
       issues: write
     steps:
       - name: Checkout spyglass-skill
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: spyglass-skill
 
       - name: Checkout LorenFrankLab/spyglass (live master)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: LorenFrankLab/spyglass
           # Leave ref unset to track master — drift detection is the point.
           path: spyglass
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
