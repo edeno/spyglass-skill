@@ -125,6 +125,31 @@ intervals = (IntervalList & {'nwb_file_name': nwb_file}
 intervals.fetch(limit=5)
 ```
 
+### Interval Arithmetic
+
+Spyglass ships a NumPy-based interval-manipulation suite in `spyglass.common.common_interval` that users routinely reinvent because the tutorials don't mention it. Input/output shape is the standard `(N, 2)` start/stop array.
+
+```python
+from spyglass.common.common_interval import (
+    interval_list_intersect,   # AND across two interval lists
+    interval_list_union,       # OR across two interval lists
+    interval_list_complement,  # intervals1 \ intervals2
+    consolidate_intervals,     # merge overlapping/adjacent ranges
+    intervals_by_length,       # filter by min/max duration
+)
+
+# Example: ripple intervals AND task intervals, ≥ 50 ms only
+ripples = (RippleTimesV1 & key).fetch1("ripple_times")
+task = (IntervalList & {"nwb_file_name": f, "interval_list_name": "run1"}
+        ).fetch1("valid_times")
+
+long_ripples_in_task = intervals_by_length(
+    interval_list_intersect(ripples, task), min_length=0.050
+)
+```
+
+Reach for these before writing a for-loop over intervals. They're correct at the edge cases (zero-overlap, touching-boundaries) that naive implementations get wrong.
+
 ---
 
 ## Troubleshooting

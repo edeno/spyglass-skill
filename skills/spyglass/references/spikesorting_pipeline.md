@@ -493,3 +493,7 @@ For pre-sorted spikes stored in NWB Units table.
 - `insert_from_nwbfile(nwb_file_name)` — Import units from NWB
 - `add_annotation(key, id, label, annotations)` — Add unit annotations
 - Auto-inserts into `SpikeSortingOutput.ImportedSpikeSorting`
+
+## Recomputing Across Environments
+
+Before re-running a sort from a different env (different lab, conda setup, or PyNWB pin), check NWB-namespace compatibility: `RecordingRecomputeVersions().this_env` (from `spyglass.spikesorting.v1.recompute`) is a cached property returning the subset of recordings whose stored `nwb_deps` match the currently installed stack. A mismatch means the stored analysis file won't load cleanly — pin the env or re-run from raw, don't assume.

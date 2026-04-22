@@ -146,6 +146,8 @@ KNOWN_CLASSES = {
     "Export": "spyglass/common/common_usage.py",
     "FigURLCurationSelection": "spyglass/spikesorting/v1/figurl_curation.py",
     "FigURLCuration": "spyglass/spikesorting/v1/figurl_curation.py",
+    # Ambiguous between v0 and v1 — skill documents v1
+    "RecordingRecomputeVersions": "spyglass/spikesorting/v1/recompute.py",
 }
 
 # Methods to skip — DataJoint builtins, mixin methods, etc.

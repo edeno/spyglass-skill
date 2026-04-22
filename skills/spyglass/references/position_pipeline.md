@@ -226,6 +226,8 @@ shared filesystems.
 
 Use `TableName.describe()` to see exact parameter fields for each.
 
+**Validating a proposed params dict before insert.** `spyglass.position.v1.dlc_utils` exposes `validate_option`, `validate_list`, and `validate_smooth_params` — the same validators the DLC pipeline uses internally. Call them before inserting a custom Params row to catch bad values at author time instead of `populate()` time. These are also the idiomatic validators to reuse when authoring a new params table for a custom pipeline downstream of DLC.
+
 ### DLC Data Access
 
 ```python
