@@ -110,4 +110,4 @@ Repo paths (source, docs) are listed in each reference file — this table route
 | Syncing / sharing with collaborators (Kachery) | [setup_config.md](references/setup_config.md) — "Data Sharing Tables (Kachery)" | `03_Data_Sync.ipynb` |
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) | — |
 | External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — |
-| Authoring a new pipeline / extending an existing one | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) | — |
+| Authoring custom tables or pipelines / extending existing ones | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) | — |
