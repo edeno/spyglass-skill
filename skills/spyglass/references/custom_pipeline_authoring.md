@@ -3,8 +3,10 @@
 ## Contents
 
 - [Overview](#overview)
+- [Schema Naming and Your Write Surface](#schema-naming-and-your-write-surface)
 - [Five-Step Decision Tree](#five-step-decision-tree)
 - [Non-Negotiables](#non-negotiables)
+- [Single Custom Table (Not a Pipeline)](#single-custom-table-not-a-pipeline)
 - [Canonical Schema Skeleton](#canonical-schema-skeleton)
 - [Extending an Existing Pipeline](#extending-an-existing-pipeline)
 - [Building from Ingested Tables](#building-from-ingested-tables)
@@ -22,6 +24,26 @@ This reference is for **authoring** a new pipeline that plugs into Spyglass — 
 Both cases follow the same DataJoint tier convention: **parameters → selection → computed**, with outputs stored in an `AnalysisNwbfile`. A merge table is only warranted when multiple interchangeable versions of the same analysis need a unified downstream interface.
 
 Authoritative source for these patterns is `docs/src/ForDevelopers/` in the spyglass repo — links at the bottom of this file.
+
+## Schema Naming and Your Write Surface
+
+Before writing any schema file, know where your user is allowed to write — this rule is enforced by MySQL permissions (`spyglass/utils/database_settings.py`), not just convention. Each user has write access **only** on schemas whose names start with `<database_user>_`. Naming your schema anything else either fails with a MySQL permission error at `dj.schema()` call time or silently targets a lab-shared schema your role happens to allow. Both failure modes are confusing.
+
+**The rule.** Your personal schema must be `<database_user>_<suffix>`, where `<database_user>` matches `dj.config["database.user"]`. Other namespaces:
+
+- **Lab-shared** (reserved names, `SHARED_MODULES` in `database_settings.py`): `behavior`, `common`, `decoding`, `figurl`, `lfp`, `linearization`, `mua`, `position`, `ripple`, `sharing`, `spikesorting`. Writes to these require `dj_user` or `dj_admin` and are coordinated across the lab — never pick one of these as a prefix for personal work.
+- **Other users' prefixes**: off-limits unless you have `dj_admin`.
+
+**Roles your account might hold** (set by whoever admin'd your DB account):
+
+| Role | Select any schema | Write own prefix | Write shared modules |
+| --- | --- | --- | --- |
+| `dj_guest` | ✓ | — | — |
+| `dj_collab` | ✓ | ✓ | — |
+| `dj_user` | ✓ | ✓ | ✓ |
+| `dj_admin` | ✓ | ✓ | ✓ (including other users') |
+
+`dj_collab` is the common default for new lab members — you own your prefix and can read everything, but can't extend lab-shared schemas. This rule applies equally to custom pipelines and to single custom tables.
 
 ## Five-Step Decision Tree
 
@@ -45,6 +67,35 @@ These are the rules most likely to cause mysterious failures if ignored:
 4. **Write analysis outputs to `AnalysisNwbfile`** when the result is sizeable (arrays, waveforms, posteriors). Keep only small metadata in DataJoint columns. Tables should reference exactly one AnalysisNwbfile table — Spyglass validates this on declaration.
 5. **Only introduce a merge table for genuinely multi-source outputs.** If you only have one implementation, skip the merge table and let downstream tables FK-ref your Computed table directly.
 6. **Never use `skip_duplicates=True` when your `make()` inserts into `IntervalList`.** Spyglass's built-in pipelines protect against orphaned-interval drift by nuking orphans on every delete — but custom `make()`s that call `IntervalList.insert1(..., skip_duplicates=True)` bypass that protection. Scenario: you delete the downstream entry, leave the interval row in place, re-run `make()` — the new computation silently attaches to the OLD interval row. Silent wrong data. If your pipeline needs a new `IntervalList` row, either insert without `skip_duplicates` (let it raise) or delete the old interval first. See `docs/src/ForDevelopers/Management.md`.
+
+## Single Custom Table (Not a Pipeline)
+
+You may not need a pipeline. If you want one standalone table — an annotation log, a notes table, an auxiliary grouping / lookup — the minimal shape is:
+
+```python
+import datajoint as dj
+
+from spyglass.common import Session
+from spyglass.utils import SpyglassMixin
+
+schema = dj.schema("edeno_annotations")  # <database_user>_<suffix>, per above
+
+@schema
+class SessionAnnotations(SpyglassMixin, dj.Manual):
+    """Per-session free-text notes keyed by author and timestamp."""
+
+    definition = """
+    -> Session
+    author: varchar(32)
+    annotation_time: datetime
+    ---
+    note: varchar(2000)
+    """
+```
+
+Same non-negotiables as for pipelines (SpyglassMixin first in MRO, correct DataJoint tier, outputs to `AnalysisNwbfile` if the rows hold sizeable arrays). Just no Params / Selection / Computed scaffolding — one `dj.Manual` or `dj.Lookup` is enough.
+
+If later the analysis needs re-runnability with different params, upgrade to the full pipeline shape using the decision tree above. Don't retrofit params into a Manual table by adding a `params: blob` column — that breaks reproducibility (Non-Negotiable #3) and makes parameter sweeps impossible without deleting rows.
 
 ## Canonical Schema Skeleton
 
