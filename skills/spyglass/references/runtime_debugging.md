@@ -427,9 +427,8 @@ print(len(DownstreamTable.key_source & key))  # 0 = no upstream rows match
 
 Unlike `fetch1()`, `populate(key)` does NOT raise on a loose dict.
 Passing `{'nwb_file_name': ..., 'sorter': 'mountainsort4'}` to
-`SpikeSorting.populate` when only `sorting_id` is on the selection
-table's primary key silently walks every unprocessed row in the
-selection table — which may include other users' keys, different
+`SpikeSorting.populate` silently walks every unprocessed row in the
+Selection table — which may include other users' keys, different
 sorters, or wrong sessions. Example of the resulting confusion:
 
 ```
@@ -437,8 +436,21 @@ Exception: The sorter kilosort2 is not installed
 # ...but I asked for mountainsort4!
 ```
 
-**Fix.** Resolve the key to a selection-table primary-key projection
-before `populate`:
+**Mechanism.** `populate(restrictions)` restricts against `key_source`,
+which for a `dj.Computed` table defaults to each parent table projected
+to its **primary key only** (DataJoint `autopopulate.py`, `key_source`
+property: `else table.proj()`). For `SpikeSorting`,
+`key_source = SpikeSortingSelection.proj()` — heading is just
+`{sorting_id}`. DataJoint's `&` silently drops dict keys not in the
+heading, so `sorter` and `nwb_file_name` are discarded and the
+restriction becomes a no-op. The full Selection table's heading *does*
+include those secondary attrs (from its `-> IntervalList` and
+`-> SpikeSorterParameters` FKs), so a restriction on the Selection
+directly works — but `populate()` doesn't use that heading, it uses
+`key_source`'s.
+
+**Fix.** Restrict against the full Selection table, then project to a
+PK-only key before `populate`:
 
 ```python
 sel_key = (SpikeSortingRecordingSelection & key).fetch1('KEY')
@@ -452,6 +464,9 @@ Applies to every `*V1.populate(...)` entry point
 (`ArtifactDetection`, `SpikeSorting`, `MetricCuration`,
 `FigURLCuration`, etc.) and to any custom pipeline whose Selection
 table primary key doesn't include the fields you naturally restrict by.
+The key_source-PK-only behavior is the `dj.Computed` default, not
+Spyglass-specific — override `key_source` on your own Computed table if
+you want secondary attrs to be filterable directly.
 
 ### H. IntegrityError on insert often means an ancestor row is missing
 
