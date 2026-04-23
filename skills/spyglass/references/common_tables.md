@@ -141,7 +141,7 @@ Simple lookup tables referenced by Session.
 
 ### `Electrode`
 
-- **Primary Key**: `nwb_file_name`, `electrode_id`
+- **Primary Key**: `nwb_file_name`, `electrode_group_name`, `electrode_id` (inherits `nwb_file_name`, `electrode_group_name` from `ElectrodeGroup`; adds own `electrode_id`).
 - Channel-level metadata (coordinates, region, probe position).
 - Use `Electrode.heading` to see all available fields.
 
