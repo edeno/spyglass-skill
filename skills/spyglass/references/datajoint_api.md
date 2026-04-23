@@ -55,6 +55,8 @@ Session * Subject
 (Session * Subject).proj(session_date='session_start_time')
 ```
 
+**Footgun — dependent-attribute refusal.** `A * B` raises `DataJointError: Cannot join query expressions on dependent attribute '<name>'` when a shared attribute is secondary on *both* sides. Fires at query-build time, not at fetch. Most common Spyglass trigger: `SpikeSortingSelection * SpikeSortingRecordingSelection` (both carry `nwb_file_name` as secondary via different FK paths). Fix with `.proj(pk_or_kept_secondary)` on one side, or split into two restrictions. Full mechanism and worked example: [common_mistakes.md § 9](common_mistakes.md#9--refuses-to-join-on-a-dependent-attribute).
+
 ### Projection (`.proj()`)
 
 Rename, compute, or select specific attributes.

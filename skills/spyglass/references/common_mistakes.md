@@ -1,6 +1,6 @@
 # Common Mistakes — Expanded
 
-Expanded prose for the 8 most common Spyglass footguns — top 5 are summarized in SKILL.md; entries 6–8 are additional shapes that surface less often but reliably trip up new users. Each section gives the full mechanism, fix, and cross-reference. Load this reference when the user's code shows one of these shapes, or when the SKILL.md one-liner needs a longer explanation.
+Expanded prose for the 9 most common Spyglass footguns — top 5 are summarized in SKILL.md; entries 6–9 are additional shapes that surface less often but reliably trip up new users. Each section gives the full mechanism, fix, and cross-reference. Load this reference when the user's code shows one of these shapes, or when the SKILL.md one-liner needs a longer explanation.
 
 ## Contents
 
@@ -12,6 +12,7 @@ Expanded prose for the 8 most common Spyglass footguns — top 5 are summarized 
 - [6. Interval / epoch mismatch between pipeline selections](#6-interval--epoch-mismatch-between-pipeline-selections)
 - [7. Fragmenting lab-wide search with inconsistent names](#7-fragmenting-lab-wide-search-with-inconsistent-names)
 - [8. Plausible-sounding identifier that doesn't exist](#8-plausible-sounding-identifier-that-doesnt-exist)
+- [9. `*` refuses to join on a "dependent attribute"](#9--refuses-to-join-on-a-dependent-attribute)
 
 ## 1. Classmethod restriction discard on merge tables
 
@@ -116,3 +117,34 @@ python -c "from spyglass.X import Table; print(Table.heading.primary_key); print
 ```
 
 If the symbol doesn't surface in at least one of those checks, assume it doesn't exist and rename. The skill validator enforces this for KNOWN_CLASSES, but field names in blob params, kwargs on lesser-known methods, and part-table attribute-access patterns all slip past it — those are exactly where the pattern-matching guesses hit hardest. Related active check: the validator's `check_evals_content` scans `evals/evals.json` `expected_output`, `behavioral_checks`, and `required_substrings` for method references that don't resolve; `forbidden_substrings` is intentionally skipped because those entries are wrong-by-design adversarial patterns the eval must reject. The corresponding check for reference prose runs via `check_methods`.
+
+## 9. `*` refuses to join on a "dependent attribute"
+
+DataJoint raises `DataJointError: Cannot join query expressions on dependent attribute '<name>'` when a shared attribute is secondary on **both** sides of a `*`. Two like-named secondary columns reached their tables via different FK paths, so DataJoint can't assume they mean the same thing — it refuses rather than silently producing a semantically-unsafe join. The rule fires at query-build time (no row-level test yet), visible in [datajoint/condition.py `assert_join_compatibility`](https://github.com/datajoint/datajoint-python/blob/master/datajoint/condition.py).
+
+Canonical Spyglass trigger: `SpikeSortingSelection * SpikeSortingRecordingSelection`. Both tables carry `nwb_file_name` and `interval_list_name` as secondary attributes — `SpikeSortingSelection` via `-> IntervalList` (`src/spyglass/spikesorting/v1/sorting.py:199-207`), `SpikeSortingRecordingSelection` via `-> Raw` and `-> SortGroup` (`src/spyglass/spikesorting/v1/recording.py:147-157`). The bare `*` raises immediately. The same shape recurs whenever two selection/recording tables each inherit `nwb_file_name` or `interval_list_name` through different FK paths — a very common pattern across Spyglass pipelines.
+
+**Fix 1 — project the left side down** to drop the colliding secondaries before the `*`:
+
+```python
+((SpikeSortingSelection & {'sorting_id': sid}).proj('recording_id')
+ * SpikeSortingRecordingSelection
+ * SortGroup.SortGroupElectrode * Electrode * BrainRegion
+).fetch('region_name')
+```
+
+`.proj('recording_id')` keeps the left-side PK (`sorting_id`) plus the one secondary you need to bridge (`recording_id`), discarding `nwb_file_name` and `interval_list_name`. The remaining shared attribute is `recording_id` — secondary on the left, primary on the right. One-sided-secondary joins are legal; the refusal only fires when it's secondary on **both** sides.
+
+**Fix 2 — split into two restrictions** so the two tables never appear in the same `*`:
+
+```python
+recording_id = (SpikeSortingSelection & {'sorting_id': sid}).fetch1('recording_id')
+(SpikeSortingRecordingSelection
+ * SortGroup.SortGroupElectrode * Electrode * BrainRegion
+ & {'recording_id': recording_id}
+).fetch('region_name')
+```
+
+Both fixes are correct. Fix 1 stays composable in one expression; Fix 2 is more legible when you want to pause and inspect `recording_id` mid-debug.
+
+**Diagnostic habit.** Before recommending a multi-table `*` chain, inspect each side's secondary attributes: `Table.heading.secondary_attributes`. Look for collisions — if any attribute appears in both, you need `.proj()` or a split. The Spyglass attributes most likely to collide are `nwb_file_name` (propagated via `-> Raw`, `-> Session`, `-> IntervalList`, `-> AnalysisNwbfile`, `-> Electrode`) and `interval_list_name` (via `-> IntervalList` on any selection table). When you're unsure, build the join one step at a time and inspect `.heading` after each `*`.
