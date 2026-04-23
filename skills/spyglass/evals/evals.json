@@ -1240,7 +1240,7 @@
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
       "prompt": "I ran `SpikeSorting.populate({'nwb_file_name': 'j1620210710_.nwb', 'sorter': 'mountainsort4'})` and after a while it died with `Exception: The sorter kilosort2 is not installed`. But I clearly passed mountainsort4 — is spyglass ignoring my sorter kwarg?",
-      "expected_output": "Routes to runtime_debugging.md 'populate(key) with a non-PK dict iterates the whole Selection'. Unlike `fetch1`, `populate(key)` does NOT raise on a loose dict. `sorter` is not on `SpikeSortingSelection`'s primary key (the PK is `sorting_id`), so the restriction doesn't filter — Spyglass silently walks every unprocessed row in `SpikeSortingSelection`, including rows from other users / other sorters, hitting kilosort2 along the way. Fix: resolve the key to a PK projection before calling populate:\\n\\n```python\\nsel_key = (SpikeSortingSelection & {'nwb_file_name': ..., 'sorter': 'mountainsort4'}).fetch1('KEY')\\nSpikeSorting.populate(sel_key)\\n```\\n\\nOr for multi-row populates: `SpikeSorting.populate((SpikeSortingSelection & key).proj())`. Applies to every `*V1.populate(...)` entry point.",
+      "expected_output": "Routes to runtime_debugging.md 'populate(key) with a non-PK dict iterates the whole Selection'. Unlike `fetch1`, `populate(key)` does NOT raise on a loose dict. Mechanism: `populate(restrictions)` restricts against `key_source`, which defaults to each parent table projected to its **primary key only** (DataJoint `autopopulate.py` `key_source` property: `else table.proj()`). For `SpikeSorting`, `key_source = SpikeSortingSelection.proj()` — heading is just `{sorting_id}`. DataJoint's `&` silently drops dict keys not in the heading, so `{'nwb_file_name': ..., 'sorter': 'mountainsort4'}` is fully discarded and the restriction degenerates to a no-op. `populate()` then walks every unprocessed row in the Selection, and one of them has `sorter='kilosort2'` — the spikeinterface sorter dispatch raises the error the user saw. Fix: restrict against the full Selection table (whose heading DOES include secondary attrs like `sorter` and `nwb_file_name`), then project to a PK-only key before passing to populate:\n\n```python\nsel_key = (SpikeSortingSelection & {'nwb_file_name': ..., 'sorter': 'mountainsort4'}).fetch1('KEY')\nSpikeSorting.populate(sel_key)\n```\n\nOr for multi-row populates: `SpikeSorting.populate((SpikeSortingSelection & key).proj())`. Generalizes to every `*V1.populate(...)` entry point — the key_source-PK-only behavior is the `dj.Computed` default, not Spyglass-specific.",
       "assertions": {
         "required_substrings": [
           "fetch1('KEY')",
@@ -1253,7 +1253,8 @@
           "Identifies that `sorter` is not on the Selection-table primary key, so the restriction doesn't filter populate",
           "Explains that populate(key) silently iterates the whole Selection when the restriction misses the PK (unlike fetch1, which raises)",
           "Shows the fetch1('KEY') / .proj() fix to resolve the restriction first",
-          "Generalizes to other *V1.populate(...) entry points, not just SpikeSorting"
+          "Generalizes to other *V1.populate(...) entry points, not just SpikeSorting",
+          "Names `key_source` as the mechanism — populate() restricts against `key_source`, which defaults to parents projected to PK only (`.proj()` heading = PK-only); DataJoint's `&` silently drops dict keys not in the heading, so `sorter` and `nwb_file_name` are discarded and the restriction becomes a no-op"
         ]
       },
       "files": [],
@@ -1264,7 +1265,8 @@
         "Identifies that `sorter` is not on the Selection-table primary key, so the restriction doesn't filter populate",
         "Explains that populate(key) silently iterates the whole Selection when the restriction misses the PK (unlike fetch1, which raises)",
         "Shows the fetch1('KEY') / .proj() fix to resolve the restriction first",
-        "Generalizes to other *V1.populate(...) entry points, not just SpikeSorting"
+        "Generalizes to other *V1.populate(...) entry points, not just SpikeSorting",
+        "Names `key_source` as the mechanism — populate() restricts against `key_source`, which defaults to parents projected to PK only (`.proj()` heading = PK-only); DataJoint's `&` silently drops dict keys not in the heading, so `sorter` and `nwb_file_name` are discarded and the restriction becomes a no-op"
       ]
     },
     {
