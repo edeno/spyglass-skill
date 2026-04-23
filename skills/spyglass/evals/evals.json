@@ -103,29 +103,31 @@
       "stage": "runtime-debugging",
       "tier": "baseline",
       "prompt": "I ran `LFPV1.populate()` on about 20 sessions last night and woke up to find it failed somewhere in the middle. The traceback goes 30+ frames deep into datajoint internals and I can't tell which session is broken. Is there a way to figure out the failing key without rerunning everything one at a time by hand?",
-      "expected_output": "Routes to runtime_debugging.md. Walks through the isolate-single-key pattern: enumerate keys via `LFPV1.key_source.fetch('KEY')`, loop with `try/except` printing each key before populate, break on first failure. Explains that Spyglass doesn't ship a debug_populate helper — this pattern is manual. Notes that `use_transaction=True` (Spyglass default) rolls back partial state, so post-mortem inspection shows no residue. Recommends re-running the failing key serially with `reserve_jobs=False, processes=1` to get a clean traceback.",
+      "expected_output": "Routes to runtime_debugging.md § 'Identify the failing key' (~line 110). Three legitimate shapes, each of which admits isolating which session broke: (1) **Manual try/except loop over `key_source`** — `for key in LFPV1.key_source.fetch('KEY'): try: LFPV1.populate(key) except Exception as e: print(key, e); break`. Most explicit, gives a clean traceback per-key. (2) **DataJoint's `suppress_errors=True, return_exception_objects=True`** — `LFPV1.populate(suppress_errors=True, return_exception_objects=True)` returns a list of (key, exception) pairs for every failed key in one pass. Most efficient; no manual loop needed. (3) **Inspect the `~jobs` table** — if populate was running with `reserve_jobs=True`, the error traceback and failing key are already recorded in `schema.jobs` under `status='error'`. Query with `(schema.jobs & \"status='error'\")` or SpyglassMixin's equivalent helpers. Notes that Spyglass ships no `debug_populate` / `populate_one` helper — these are standard DataJoint facilities. Notes that `use_transaction=True` (Spyglass default, `_use_transaction = True` at `src/spyglass/utils/mixins/populate.py:10`) rolls back partial state on failure, so post-mortem inspection shows no residue. Once the failing key is identified, re-running it serially with `processes=1` (the single-process default) gives a cleanest traceback.",
       "assertions": {
         "required_substrings": [
-          "key_source",
-          "try:"
+          "key_source"
         ],
         "forbidden_substrings": [
-          "debug_populate"
+          "debug_populate",
+          "populate_one"
         ],
         "behavioral_checks": [
-          "Enumerates keys from key_source before iterating",
-          "Uses try/except to isolate the failing key",
-          "Mentions transaction rollback or post-mortem inspection behavior"
+          "Isolates the failing key via one of the three legitimate shapes — manual try/except over key_source, OR `suppress_errors=True, return_exception_objects=True`, OR inspecting `~jobs` for rows with status='error'",
+          "Enumerates or references keys from `key_source` (either for iteration, for comparison against jobs, or to define the populate scope)",
+          "Mentions transaction rollback or post-mortem inspection behavior — populate with `_use_transaction=True` (Spyglass default) leaves no residue on failure",
+          "Does not invent a Spyglass-specific `debug_populate` or `populate_one` helper — the recovery path is standard DataJoint facilities"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `key_source`.",
-        "Response contains substring `try:`.",
         "Response does not contain substring `debug_populate`.",
-        "Enumerates keys from key_source before iterating",
-        "Uses try/except to isolate the failing key",
-        "Mentions transaction rollback or post-mortem inspection behavior"
+        "Response does not contain substring `populate_one`.",
+        "Isolates the failing key via one of the three legitimate shapes — manual try/except over key_source, OR `suppress_errors=True, return_exception_objects=True`, OR inspecting `~jobs` for rows with status='error'",
+        "Enumerates or references keys from `key_source` (either for iteration, for comparison against jobs, or to define the populate scope)",
+        "Mentions transaction rollback or post-mortem inspection behavior — populate with `_use_transaction=True` (Spyglass default) leaves no residue on failure",
+        "Does not invent a Spyglass-specific `debug_populate` or `populate_one` helper — the recovery path is standard DataJoint facilities"
       ]
     },
     {
@@ -246,7 +248,7 @@
       "stage": "pipeline-authoring",
       "tier": "baseline",
       "prompt": "I want to build a custom analysis pipeline that takes LFPOutput as upstream and computes per-interval theta/gamma power ratios. Each interval + LFP entry should produce one row with mean power in theta (6-10 Hz), mean power in gamma (30-50 Hz), and their ratio. Give me a schema sketch — which DataJoint tiers for the parameters vs selection vs computed tables, how to reference LFPOutput without violating merge conventions, and what goes in `make()`. I want this in a new schema called `edeno_theta_gamma`. Also: should the computed table inherit SpyglassMixin?",
-      "expected_output": "Routes to custom_pipeline_authoring.md (+ `docs/src/ForDevelopers/` under the hood). Proposes the canonical 3-tier layout: ThetaGammaParams (dj.Lookup or dj.Manual), ThetaGammaSelection (dj.Manual — joins LFPOutput merge-key + params + interval), ThetaGamma (dj.Computed, inherits SpyglassMixin). STRONGLY flags that the Computed table MUST inherit SpyglassMixin first in the MRO (a validator regression fixture exists for this exact mistake). For referencing LFPOutput: foreign-key on the merge primary key (`-> LFPOutput`), NOT on any part-table fields directly — that's the merge-convention rule. Shows a `make()` skeleton that: (1) resolves the merge entry via `LFPOutput.merge_get_part(key)`, (2) fetches the band-filtered dataframe, (3) computes power ratios, (4) inserts the result row. Notes the schema name should follow `spyglass_<user_or_team>_<topic>` convention. Does NOT collapse LFPOutput into a direct part-table dependency.",
+      "expected_output": "Routes to custom_pipeline_authoring.md (+ `docs/src/ForDevelopers/Schema.md` under the hood). Proposes the canonical 3-tier layout: `ThetaGammaParams` (dj.Lookup or dj.Manual), `ThetaGammaSelection` (dj.Manual — joins the LFPOutput merge-key + params + interval), `ThetaGamma` (dj.Computed, inherits SpyglassMixin). STRONGLY flags that the Computed table MUST inherit SpyglassMixin **first** in the MRO (a validator regression fixture in tests/test_validator_regressions.py pins this exact mistake). For referencing LFPOutput: foreign-key on the merge master. The idiomatic Spyglass form is `-> LFPOutput.proj(lfp_merge_id='merge_id')` — renaming `merge_id` on projection to avoid collision when multiple merge masters appear as upstream dependencies (see `src/spyglass/lfp/analysis/v1/lfp_band.py:26` for the canonical example). Bare `-> LFPOutput` is acceptable when only one merge master is referenced; NEVER foreign-key a part-table column directly — that breaks the merge convention. Shows a `make()` skeleton that: (1) resolves the merge entry via `LFPOutput.merge_get_part(key)` or `(LFPOutput & key).fetch1_dataframe()`, (2) fetches the band-filtered dataframe, (3) computes power ratios, (4) inserts the result row. Schema naming: personal/team schemas use `<database_user>_<suffix>` (enforced by MySQL GRANT permissions, see `spyglass/utils/database_settings.py` and `docs/src/ForDevelopers/Schema.md`). The user's proposed `edeno_theta_gamma` is **correct as-is** — do NOT prefix with `spyglass_`. The `spyglass_` prefix is reserved for the framework's own schemas.",
       "assertions": {
         "required_substrings": [
           "SpyglassMixin",
@@ -256,12 +258,13 @@
           "LFPOutput"
         ],
         "forbidden_substrings": [
-          "class ThetaGamma(dj.Computed, SpyglassMixin)"
+          "spyglass_edeno_theta_gamma"
         ],
         "behavioral_checks": [
-          "Places SpyglassMixin as the first base class in the Computed table",
-          "Foreign-keys on LFPOutput (merge master), not on part-table fields",
-          "Separates Params / Selection / Computed into three tiers"
+          "Places SpyglassMixin as the FIRST base class in the Computed table (MRO order: `class X(SpyglassMixin, dj.Computed):`)",
+          "Foreign-keys on LFPOutput master. Preferred form: `-> LFPOutput.proj(lfp_merge_id='merge_id')` (renames `merge_id` to avoid collision when multiple merge masters appear as upstream — the idiomatic Spyglass form, see `src/spyglass/lfp/analysis/v1/lfp_band.py:26`). Bare `-> LFPOutput` is only acceptable if the response explicitly notes it is a single-merge-upstream table. NEVER foreign-keys a part-table column directly.",
+          "Separates Params / Selection / Computed into three tiers",
+          "Does NOT prefix the schema name with `spyglass_` — personal/team schemas use `<database_user>_<suffix>`, so `edeno_theta_gamma` as the user proposed is correct, not `spyglass_edeno_theta_gamma`"
         ]
       },
       "files": [],
@@ -271,10 +274,11 @@
         "Response contains substring `dj.Manual`.",
         "Response contains substring `dj.Computed`.",
         "Response contains substring `LFPOutput`.",
-        "Response does not contain substring `class ThetaGamma(dj.Computed, SpyglassMixin)`.",
-        "Places SpyglassMixin as the first base class in the Computed table",
-        "Foreign-keys on LFPOutput (merge master), not on part-table fields",
-        "Separates Params / Selection / Computed into three tiers"
+        "Response does not contain substring `spyglass_edeno_theta_gamma`.",
+        "Places SpyglassMixin as the FIRST base class in the Computed table (MRO order: `class X(SpyglassMixin, dj.Computed):`)",
+        "Foreign-keys on LFPOutput master. Preferred form: `-> LFPOutput.proj(lfp_merge_id='merge_id')` (renames `merge_id` to avoid collision when multiple merge masters appear as upstream — the idiomatic Spyglass form, see `src/spyglass/lfp/analysis/v1/lfp_band.py:26`). Bare `-> LFPOutput` is only acceptable if the response explicitly notes it is a single-merge-upstream table. NEVER foreign-keys a part-table column directly.",
+        "Separates Params / Selection / Computed into three tiers",
+        "Does NOT prefix the schema name with `spyglass_` — personal/team schemas use `<database_user>_<suffix>`, so `edeno_theta_gamma` as the user proposed is correct, not `spyglass_edeno_theta_gamma`"
       ]
     },
     {
@@ -603,7 +607,7 @@
       ]
     },
     {
-      "id": 20,
+      "id": 19,
       "eval_name": "count-tetrodes-per-session",
       "stage": "pipeline-usage",
       "tier": "joins",
@@ -829,7 +833,7 @@
       "stage": "pipeline-usage",
       "tier": "compound",
       "prompt": "I'm new to the Frank lab and I need to: (1) ingest `j1620210710.nwb` which I just converted, (2) set up the Trodes position pipeline for the 02_r1 interval, (3) run LFP on the sleep epoch using the standard wideband filter, (4) eventually export everything for a paper. Give me the end-to-end flow. Assume defaults where reasonable and flag anywhere I need to supply a choice.",
-      "expected_output": "Multi-reference handoff routing through ingestion.md → position_pipeline.md → lfp_pipeline.md → export.md. (1) `insert_sessions('j1620210710.nwb')` (raw filename). (2) Insert `TrodesPosSelection` for 02_r1 with `trodes_pos_params_name='default'` (the TrodesPosParams canonical default name IS `'default'`), populate `TrodesPosV1`. (3) Insert `LFPSelection` for the sleep interval with `filter_name='LFP 0-400 Hz'` (the canonical Frank Lab wideband filter registered in `FirFilterParameters`) and target electrodes, populate `LFPV1`. (4) Flags that the Export pipeline wants the user to pick an Export name and will capture everything the population steps touched — route to `05_Export.ipynb`. Each step names the restriction the user needs to choose, e.g. which electrodes for LFP.",
+      "expected_output": "Multi-reference handoff routing through ingestion.md → position_pipeline.md → lfp_pipeline.md → export.md. (1) `insert_sessions('j1620210710.nwb')` (raw filename; Spyglass appends the trailing `_` internally). (2) Insert `TrodesPosSelection` for the 02_r1 interval with `trodes_pos_params_name='default'` (the TrodesPosParams canonical default name IS `'default'`), then `TrodesPosV1.populate()`. (3) LFP step needs TWO choices from the user: (a) which interval — the user said 'sleep epoch', but 02_r1 is a run epoch, so a separate sleep interval name must be picked from `IntervalList`; (b) which electrodes — `set_lfp_electrodes()` with a concrete electrode list. Pair `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that equals the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at 20000 and 30000 Hz only (see `src/spyglass/common/common_filter.py`). The match is an exact lookup, not a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) — leave at default unless there's a specific reason to change. Then `LFPV1.populate()`. (4) Flags that the Export pipeline wants the user to pick an Export name and will capture every table the population steps touched — route to `05_Export.ipynb`. Each step names the restriction the user needs to choose (electrodes, intervals, params).",
       "assertions": {
         "required_substrings": [
           "insert_sessions",
@@ -838,14 +842,13 @@
           "05_Export"
         ],
         "forbidden_substrings": [
-          "j1620210710_.nwb').populate",
-          "fetch1_dataframe().populate"
+          "j1620210710_.nwb').populate"
         ],
         "behavioral_checks": [
           "Uses raw filename (no underscore) for insert_sessions",
           "Walks through all four phases in order (ingest → position → LFP → export)",
-          "Flags user-choice points (which electrodes, which interval, which params)",
-          "For the LFP step, respects Nyquist with strict inequality: the `filter_name='LFP 0-400 Hz'` requires filter_sampling_rate > 800 Hz (typical Frank Lab raw fs is 30000, well above), and target_sampling_rate must be > 2× the filter's high cutoff (400 Hz → typically 1000 Hz target). A response that picks an arbitrary target_sampling_rate without sanity-checking against the filter passband is a miss."
+          "Flags user-choice points (which electrodes, which interval/epoch, which params — and notably that '02_r1' is a run epoch while the user asked for LFP on the 'sleep epoch', so a separate interval must be picked for LFP)",
+          "For the LFP step, pairs `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that MATCHES the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at fs=20000 and fs=30000 only (see `src/spyglass/common/common_filter.py`). The match is by equality (filter lookup), not by a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) and need not be set explicitly. A response that invents a `filter_sampling_rate` not registered in FirFilterParameters, or claims the filter works at any `fs > 800 Hz`, is a miss."
         ]
       },
       "files": [],
@@ -855,11 +858,10 @@
         "Response contains substring `LFPV1`.",
         "Response contains substring `05_Export`.",
         "Response does not contain substring `j1620210710_.nwb').populate`.",
-        "Response does not contain substring `fetch1_dataframe().populate`.",
         "Uses raw filename (no underscore) for insert_sessions",
         "Walks through all four phases in order (ingest → position → LFP → export)",
-        "Flags user-choice points (which electrodes, which interval, which params)",
-        "For the LFP step, respects Nyquist with strict inequality: the `filter_name='LFP 0-400 Hz'` requires filter_sampling_rate > 800 Hz (typical Frank Lab raw fs is 30000, well above), and target_sampling_rate must be > 2× the filter's high cutoff (400 Hz → typically 1000 Hz target). A response that picks an arbitrary target_sampling_rate without sanity-checking against the filter passband is a miss."
+        "Flags user-choice points (which electrodes, which interval/epoch, which params — and notably that '02_r1' is a run epoch while the user asked for LFP on the 'sleep epoch', so a separate interval must be picked for LFP)",
+        "For the LFP step, pairs `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that MATCHES the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at fs=20000 and fs=30000 only (see `src/spyglass/common/common_filter.py`). The match is by equality (filter lookup), not by a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) and need not be set explicitly. A response that invents a `filter_sampling_rate` not registered in FirFilterParameters, or claims the filter works at any `fs > 800 Hz`, is a miss."
       ]
     },
     {
@@ -868,29 +870,39 @@
       "stage": "runtime-debugging",
       "tier": "compound",
       "prompt": "`ClusterlessDecodingV1.populate(key)` failed with a fetch1 error inside the `make()` body. I ran the isolate-single-key pattern from runtime_debugging and I have the failing key in hand. The error trace mentions something about `PositionOutput.merge_get_part` returning 0 rows. What do I check next?",
-      "expected_output": "Triage path: the decoding V1 selection references a position merge entry via a specific interval + params combination. If `merge_get_part` returned 0 rows, either (a) the position pipeline wasn't populated for that interval, (b) the interval name in the decoding selection doesn't match the interval name used when position was populated, or (c) the params name doesn't match. Route: (1) check `PositionOutput.merge_restrict({'nwb_file_name': ...})` for the target session, (2) compare its interval/params fields to the decoding key, (3) if position isn't populated for the right interval, populate it; if the names mismatch, re-insert the decoding selection with the correct values. References runtime_debugging.md Signature F (interval mismatch) and decoding_pipeline.md.",
+      "expected_output": "Triage path grounded in the actual `make()` call chain: `ClusterlessDecodingV1` reaches position data via `fetch_position_info` (`src/spyglass/decoding/v1/core.py:209-225`), which iterates `(PositionGroup.Position & key).fetch('pos_merge_id')` and for each id runs `PositionOutput & {'merge_id': pos_merge_id}` followed by `fetch1_dataframe()`. (Note: the user says the traceback mentions `merge_get_part`, but the real failure site is `fetch1_dataframe()` raising 'expected one row, got 0'. Same root cause either way.) Three possible causes: (a) the position pipeline was never populated for this session/interval, so no `PositionOutput` row matches that merge_id; (b) the `pos_merge_id` stored in `PositionGroup.Position` is stale — position was re-populated after this decoding selection was inserted, and the old merge_id was orphaned; (c) the decoding selection points at the wrong `position_group_name`, so the `PositionGroup.Position` entry being walked references a position row that doesn't exist for the session. (Interval / params mismatch on the decoding side will surface differently — as an empty `DecodingParameters` fetch1 or a zero-row restriction on `ClusterlessDecodingSelection` — not as a PositionOutput 0-row result.) Inspection commands: `PositionOutput.merge_restrict({'nwb_file_name': key['nwb_file_name']})` lists the live merge entries for the session; `(PositionGroup.Position & key).fetch('pos_merge_id', as_dict=True)` shows what the decoding selection is reaching for; compare the two sets. If they diverge, the `pos_merge_id` in `PositionGroup.Position` is stale (case b) or `position_group_name` is wrong (case c); if `merge_restrict` is empty for the session, position wasn't populated (case a). Also check `interval_list_name` on the matching `PositionOutput.TrodesPosV1` / `.DLCPosV1` part row vs. the decoding key's `encoding_interval` / `decoding_interval` — if those names diverge, that is Signature F from runtime_debugging.md. Fix: re-populate position for the correct interval, or re-insert `PositionGroup.Position` with the current `merge_id` and re-insert the decoding selection. Do NOT reach for `PositionOutput.delete()` or `merge_delete` as the fix — the stale `pos_merge_id` lives in `PositionGroup.Position`, not on PositionOutput itself. References decoding_pipeline.md and runtime_debugging.md Signature F (interval mismatch).",
       "assertions": {
         "required_substrings": [
           "merge_restrict",
-          "interval"
+          "interval",
+          "PositionGroup",
+          "pos_merge_id"
         ],
         "forbidden_substrings": [
-          "PositionOutput.delete()"
+          "PositionOutput.delete()",
+          "PositionOutput.merge_delete"
         ],
         "behavioral_checks": [
-          "Identifies the three possible causes (missing populate, interval mismatch, params mismatch)",
-          "Shows a concrete inspection command (merge_restrict) to differentiate the causes",
-          "Routes to Signature F (interval mismatch) from runtime_debugging.md"
+          "Identifies at least three concrete causes — position not populated for the session/interval, stale/orphaned pos_merge_id in PositionGroup.Position, or wrong position_group_name in the decoding selection",
+          "Grounds the triage in the actual call path (`fetch_position_info` walks `PositionGroup.Position.pos_merge_id`, then `PositionOutput & {merge_id: ...}`.fetch1_dataframe()) — does NOT misattribute the failure to `merge_get_part` verbatim",
+          "Shows concrete inspection commands: merge_restrict on PositionOutput AND fetch on PositionGroup.Position — so the two sets can be compared",
+          "Routes to Signature F (interval mismatch) from runtime_debugging.md only as a sub-case — not as the sole diagnosis",
+          "Does not suggest PositionOutput.delete() or merge_delete as a fix — the stale reference lives in PositionGroup.Position, deleting from PositionOutput is the wrong layer"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `merge_restrict`.",
         "Response contains substring `interval`.",
+        "Response contains substring `PositionGroup`.",
+        "Response contains substring `pos_merge_id`.",
         "Response does not contain substring `PositionOutput.delete()`.",
-        "Identifies the three possible causes (missing populate, interval mismatch, params mismatch)",
-        "Shows a concrete inspection command (merge_restrict) to differentiate the causes",
-        "Routes to Signature F (interval mismatch) from runtime_debugging.md"
+        "Response does not contain substring `PositionOutput.merge_delete`.",
+        "Identifies at least three concrete causes — position not populated for the session/interval, stale/orphaned pos_merge_id in PositionGroup.Position, or wrong position_group_name in the decoding selection",
+        "Grounds the triage in the actual call path (`fetch_position_info` walks `PositionGroup.Position.pos_merge_id`, then `PositionOutput & {merge_id: ...}`.fetch1_dataframe()) — does NOT misattribute the failure to `merge_get_part` verbatim",
+        "Shows concrete inspection commands: merge_restrict on PositionOutput AND fetch on PositionGroup.Position — so the two sets can be compared",
+        "Routes to Signature F (interval mismatch) from runtime_debugging.md only as a sub-case — not as the sole diagnosis",
+        "Does not suggest PositionOutput.delete() or merge_delete as a fix — the stale reference lives in PositionGroup.Position, deleting from PositionOutput is the wrong layer"
       ]
     },
     {
