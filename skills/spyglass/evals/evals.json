@@ -1831,6 +1831,53 @@
         "Mentions that the `*V1` / `*Output` suffixes are not a reliable merge signal",
         "Offers the isinstance(table(), Merge) check OR equivalent as a programmatic check"
       ]
+    },
+    {
+      "id": 53,
+      "eval_name": "runtime-join-dependent-attribute",
+      "stage": "runtime-debugging",
+      "tier": "runtime-errors",
+      "prompt": "I'm trying to join two spike-sorting tables with `SpikeSortingSelection * SpikeSortingRecordingSelection & {'sorting_id': 'abc'}` and I keep getting `DataJointError: Cannot join query expressions on dependent attribute 'nwb_file_name'`. What does this mean and how do I fix it?",
+      "expected_output": "Routes to common_mistakes.md § 9 (+ datajoint_api.md Join section pointer). Explains the rule: `*` refuses when a shared attribute is secondary on *both* sides — because two like-named secondary columns reached the tables via different FK paths and DataJoint can't guarantee they mean the same thing. Names the specific cause in this case: `nwb_file_name` is secondary on `SpikeSortingSelection` via its `-> IntervalList` FK, and secondary on `SpikeSortingRecordingSelection` via `-> Raw` / `-> SortGroup`. The rule fires at query-build time, not at fetch — so this is not a 'no matching rows' problem and restricting harder won't help. Two correct fixes: (a) `.proj('recording_id')` on the SpikeSortingSelection side to drop the colliding secondaries while keeping the bridge attribute — then `recording_id` is secondary on the left, primary on the right, which is a legal one-sided-secondary join; (b) split into two restrictions (`recording_id = (SpikeSortingSelection & {...}).fetch1('recording_id')`, then restrict the downstream chain). Mentions the diagnostic habit: inspect `Table.heading.secondary_attributes` on each side before recommending a multi-table `*` chain, and look for collisions — `nwb_file_name` and `interval_list_name` are the attributes most often involved. Does NOT misinterpret the error as missing data, suggest renaming the column, suggest using `&` instead of `*`, or suggest that `sorting_id` needs to be more specific.",
+      "assertions": {
+        "required_substrings": [
+          "dependent attribute",
+          "secondary",
+          ".proj(",
+          "recording_id"
+        ],
+        "forbidden_substrings": [
+          "no matching rows",
+          "rename the column",
+          "sorting_id is too loose",
+          "use `&` instead of `*`"
+        ],
+        "behavioral_checks": [
+          "Explains the rule: `*` refuses when a shared attribute is secondary on both sides, not just when it appears in one side",
+          "Identifies nwb_file_name as the specific collision, and names at least one of the FK paths (-> IntervalList on SpikeSortingSelection, or -> Raw / -> SortGroup on SpikeSortingRecordingSelection)",
+          "Recommends .proj('recording_id') OR a two-restriction split as the fix — not both hedged as 'either might work'; both are correct and the response should pick one canonical shape",
+          "Notes that the error fires at query-build time, so this is not a 'no matching rows' / under-restricted issue — restricting harder won't help",
+          "Points to common_mistakes.md § 9 (or equivalent location) for the full rule",
+          "Does not misdiagnose as an under-specified restriction, a data-missing problem, or a merge-table/classmethod-dispatch issue"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `dependent attribute`.",
+        "Response contains substring `secondary`.",
+        "Response contains substring `.proj(`.",
+        "Response contains substring `recording_id`.",
+        "Response does not contain substring `no matching rows`.",
+        "Response does not contain substring `rename the column`.",
+        "Response does not contain substring `sorting_id is too loose`.",
+        "Response does not contain substring `use `&` instead of `*``.",
+        "Explains the rule: `*` refuses when a shared attribute is secondary on both sides, not just when it appears in one side",
+        "Identifies nwb_file_name as the specific collision, and names at least one of the FK paths (-> IntervalList on SpikeSortingSelection, or -> Raw / -> SortGroup on SpikeSortingRecordingSelection)",
+        "Recommends .proj('recording_id') OR a two-restriction split as the fix — not both hedged as 'either might work'; both are correct and the response should pick one canonical shape",
+        "Notes that the error fires at query-build time, so this is not a 'no matching rows' / under-restricted issue — restricting harder won't help",
+        "Points to common_mistakes.md § 9 (or equivalent location) for the full rule",
+        "Does not misdiagnose as an under-specified restriction, a data-missing problem, or a merge-table/classmethod-dispatch issue"
+      ]
     }
   ]
 }
