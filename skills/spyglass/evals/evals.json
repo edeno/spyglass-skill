@@ -188,8 +188,7 @@
           "Includes `interval_list_name` in the set_lfp_band_electrodes call — it is required with no default",
           "Uses the exact kwarg name `reference_electrode_list` (with `_list`), not `reference_electrodes` or `reference_electrode`",
           "Either shows LFPBandV1.fetch1_dataframe() for the band-filtered signal, or compute_signal_power() for theta power directly",
-          "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)",
-          "Respects Nyquist: filter_sampling_rate (30000 for raw) must strictly exceed 2× the filter's high cutoff (400 Hz → fs > 800; equality aliases the cutoff onto DC), and target_sampling_rate for the wideband stage (1000 Hz) must strictly exceed 2× its high cutoff. The theta band filter's source sampling rate must match the LFPV1 target_sampling_rate (1000), and the band passband (e.g. 5-11 Hz) is well below 1000/2=500 Hz. Flags that picking a band filter whose high cutoff ≥ LFPV1 target_sampling_rate/2 would alias."
+          "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)"
         ]
       },
       "files": [],
@@ -210,8 +209,7 @@
         "Includes `interval_list_name` in the set_lfp_band_electrodes call — it is required with no default",
         "Uses the exact kwarg name `reference_electrode_list` (with `_list`), not `reference_electrodes` or `reference_electrode`",
         "Either shows LFPBandV1.fetch1_dataframe() for the band-filtered signal, or compute_signal_power() for theta power directly",
-        "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)",
-        "Respects Nyquist: filter_sampling_rate (30000 for raw) must strictly exceed 2× the filter's high cutoff (400 Hz → fs > 800; equality aliases the cutoff onto DC), and target_sampling_rate for the wideband stage (1000 Hz) must strictly exceed 2× its high cutoff. The theta band filter's source sampling rate must match the LFPV1 target_sampling_rate (1000), and the band passband (e.g. 5-11 Hz) is well below 1000/2=500 Hz. Flags that picking a band filter whose high cutoff ≥ LFPV1 target_sampling_rate/2 would alias."
+        "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)"
       ]
     },
     {
@@ -226,9 +224,7 @@
           "fetch_nwb",
           "01_Concepts"
         ],
-        "forbidden_substrings": [
-          "04_Merge_Tables.ipynb as your first notebook"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Explains merge tables as a Spyglass convention on top of DataJoint",
           "Does not lead with the classmethod-discard gotcha",
@@ -239,7 +235,6 @@
       "expectations": [
         "Response contains substring `fetch_nwb`.",
         "Response contains substring `01_Concepts`.",
-        "Response does not contain substring `04_Merge_Tables.ipynb as your first notebook`.",
         "Explains merge tables as a Spyglass convention on top of DataJoint",
         "Does not lead with the classmethod-discard gotcha",
         "Routes to 01_Concepts.ipynb before any deeper notebook"
@@ -250,7 +245,7 @@
       "eval_name": "author-custom-pipeline-off-lfp",
       "stage": "pipeline-authoring",
       "tier": "baseline",
-      "prompt": "I want to build a custom analysis pipeline that takes LFPOutput as upstream and computes per-interval theta/gamma power ratios. Each interval + LFP entry should produce one row with mean power in theta (6-10 Hz), mean power in gamma (30-50 Hz), and their ratio. Give me a schema sketch — which DataJoint tiers for the parameters vs selection vs computed tables, how to reference LFPOutput without violating merge conventions, and what goes in `make()`. I want this in a new schema called `spyglass_edeno_theta_gamma`. Also: should the computed table inherit SpyglassMixin?",
+      "prompt": "I want to build a custom analysis pipeline that takes LFPOutput as upstream and computes per-interval theta/gamma power ratios. Each interval + LFP entry should produce one row with mean power in theta (6-10 Hz), mean power in gamma (30-50 Hz), and their ratio. Give me a schema sketch — which DataJoint tiers for the parameters vs selection vs computed tables, how to reference LFPOutput without violating merge conventions, and what goes in `make()`. I want this in a new schema called `edeno_theta_gamma`. Also: should the computed table inherit SpyglassMixin?",
       "expected_output": "Routes to custom_pipeline_authoring.md (+ `docs/src/ForDevelopers/` under the hood). Proposes the canonical 3-tier layout: ThetaGammaParams (dj.Lookup or dj.Manual), ThetaGammaSelection (dj.Manual — joins LFPOutput merge-key + params + interval), ThetaGamma (dj.Computed, inherits SpyglassMixin). STRONGLY flags that the Computed table MUST inherit SpyglassMixin first in the MRO (a validator regression fixture exists for this exact mistake). For referencing LFPOutput: foreign-key on the merge primary key (`-> LFPOutput`), NOT on any part-table fields directly — that's the merge-convention rule. Shows a `make()` skeleton that: (1) resolves the merge entry via `LFPOutput.merge_get_part(key)`, (2) fetches the band-filtered dataframe, (3) computes power ratios, (4) inserts the result row. Notes the schema name should follow `spyglass_<user_or_team>_<topic>` convention. Does NOT collapse LFPOutput into a direct part-table dependency.",
       "assertions": {
         "required_substrings": [
@@ -401,7 +396,8 @@
         ],
         "behavioral_checks": [
           "Uses len(relation) to count without fetching all rows",
-          "Does not fetch the full Electrode set just to take its length"
+          "Does not fetch the full Electrode set just to take its length",
+          "Bonus: notes that each Electrode row is one recording contact (keyed by electrode_id within an ElectrodeGroup), so the count returns total contacts — not tetrodes/shanks/ElectrodeGroups (e.g., a 32-tetrode session yields 128 Electrode rows, not 32)"
         ]
       },
       "files": [],
@@ -411,7 +407,8 @@
         "Response does not contain substring `fetch().__len__`.",
         "Response does not contain substring `.fetch()) `.",
         "Uses len(relation) to count without fetching all rows",
-        "Does not fetch the full Electrode set just to take its length"
+        "Does not fetch the full Electrode set just to take its length",
+        "Bonus: notes that each Electrode row is one recording contact (keyed by electrode_id within an ElectrodeGroup), so the count returns total contacts — not tetrodes/shanks/ElectrodeGroups (e.g., a 32-tetrode session yields 128 Electrode rows, not 32)"
       ]
     },
     {
@@ -519,7 +516,7 @@
       "stage": "pipeline-usage",
       "tier": "merge-key-discovery",
       "prompt": "For session j1620210710_, encoding_interval='02_r1', decoding_interval='02_r1', and whatever the lab's standard clusterless params are called — what's the DecodingOutput merge_id?",
-      "expected_output": "Two-phase: (1) discover the params name: `DecodingParameters.fetch('decoding_param_name')` to see what's registered, (2) pick the clusterless one and restrict: `DecodingOutput.merge_get_part({...}).fetch1('KEY')`. If the skill answer includes a made-up params name like `'default_clusterless'`, that's a failure — the discovery step must come first because params names are lab-specific and not in the skill registry.",
+      "expected_output": "Two-phase: (1) discover the param name from `DecodingParameters` — a single dj.Lookup table that holds both clusterless and sorted-spikes parameter sets, distinguished only by naming suffix (`*_clusterless_*` vs `*_sorted_*`). Call `DecodingParameters.fetch('decoding_param_name')` (optionally filtering by the clusterless substring) to see what's registered in this lab's copy. (2) Pick a clusterless entry and restrict: `DecodingOutput.merge_get_part({...}).fetch1('KEY')`. If the skill answer supplies a made-up params name like `'default_clusterless'`, that's a failure — the discovery step must come first because param names are lab-specific and not in the skill registry. Answers that imply a separate \"clusterless decoding parameters\" table are also wrong: there is no such table; the distinction is purely by name.",
       "assertions": {
         "required_substrings": [
           "DecodingOutput",
@@ -530,8 +527,9 @@
           "default_clusterless"
         ],
         "behavioral_checks": [
-          "Includes a discovery step (fetch existing param names) before naming one",
-          "Does not invent a specific params name without checking"
+          "Includes a discovery step (fetch existing param names from DecodingParameters and select the clusterless variant by its naming suffix) before naming one",
+          "Does not invent a specific params name without checking",
+          "Does not imply that clusterless and sorted-spikes params live in separate tables — DecodingParameters is a single dj.Lookup; the distinction is by naming convention"
         ]
       },
       "files": [],
@@ -540,8 +538,9 @@
         "Response contains substring `merge_get_part`.",
         "Response contains substring `DecodingParameters`.",
         "Response does not contain substring `default_clusterless`.",
-        "Includes a discovery step (fetch existing param names) before naming one",
-        "Does not invent a specific params name without checking"
+        "Includes a discovery step (fetch existing param names from DecodingParameters and select the clusterless variant by its naming suffix) before naming one",
+        "Does not invent a specific params name without checking",
+        "Does not imply that clusterless and sorted-spikes params live in separate tables — DecodingParameters is a single dj.Lookup; the distinction is by naming convention"
       ]
     },
     {
@@ -600,29 +599,37 @@
       ]
     },
     {
-      "id": 19,
-      "eval_name": "join-count-tetrodes-per-session",
+      "id": 20,
+      "eval_name": "count-tetrodes-per-session",
       "stage": "pipeline-usage",
       "tier": "joins",
-      "prompt": "For each session in subject 10 (sub-10), how many tetrodes are in electrode group 'hpc'?",
-      "expected_output": "Restrict Electrode to `{'subject_id': '10', 'electrode_group_name': 'hpc'}` via join through Session, group by nwb_file_name, count. DataJoint form: `Electrode.aggr(Session & {'subject_id': '10'} & {'electrode_group_name': 'hpc'}, n_tetrodes='count(*)')` or equivalent. Python fallback is to fetch and use pandas `groupby`.",
+      "prompt": "For each session from subject aj80, how many tetrodes were recorded?",
+      "expected_output": "(Session & {'subject_id': 'aj80'}).aggr(Electrode, n_tetrodes='count(distinct electrode_group_name)')",
       "assertions": {
         "required_substrings": [
           ".aggr(",
-          "count("
+          "count(",
+          "electrode_group_name",
+          "subject_id"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Joins Electrode with Session (or Subject) to filter by subject_id",
-          "Aggregates or groups to produce per-session counts"
+          "Uses Session on the left side of .aggr() so the result is one row per session",
+          "Restricts to subject aj80",
+          "Counts distinct electrode_group_name values per session",
+          "Does not count raw Electrode rows as tetrodes"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `.aggr(`.",
         "Response contains substring `count(`.",
-        "Joins Electrode with Session (or Subject) to filter by subject_id",
-        "Aggregates or groups to produce per-session counts"
+        "Response contains substring `electrode_group_name`.",
+        "Response contains substring `subject_id`.",
+        "Uses Session on the left side of .aggr() so the result is one row per session",
+        "Restricts to subject aj80",
+        "Counts distinct electrode_group_name values per session",
+        "Does not count raw Electrode rows as tetrodes"
       ]
     },
     {
@@ -884,11 +891,11 @@
     },
     {
       "id": 28,
-      "eval_name": "brain-region-for-sorted-unit",
+      "eval_name": "brain-region-for-curated-sorting",
       "stage": "pipeline-usage",
       "tier": "joins",
-      "prompt": "I have a curated sorting in `CurationV1` with `curation_id='d3b7f9a2-4c1e-11ee-b962-0242ac120002'` and I'm looking at `unit_id=5` from it. What brain region is this unit in?",
-      "expected_output": "Routes to spikesorting_pipeline.md + common_tables.md. Units don't carry brain region directly — region comes from the electrodes in the unit's sort group, and all units in a sort group share electrodes, so the region is the same for every unit in that group (unit_id doesn't affect the answer). FK chain by declaration: CurationV1 → SpikeSorting → SpikeSortingSelection → SpikeSortingRecording → SpikeSortingRecordingSelection (which carries `sort_group_id` + `nwb_file_name` via its own FKs to SortGroup and Raw); SortGroup.SortGroupElectrode maps sort_group_id to electrode_ids; Electrode has `region_id`; BrainRegion has `region_name`. DataJoint form: because `*` is a natural join on shared attributes (propagated transitively through FK inheritance), the query does NOT need every bridge table named explicitly — `(CurationV1 * SpikeSortingRecordingSelection & {'curation_id': ...})` joins on the inherited `recording_id` shared between them. Recommended shape: `rec_key = (CurationV1 * SpikeSortingRecordingSelection & {'curation_id': ...}).fetch1('nwb_file_name', 'sort_group_id', as_dict=True)`, then `(SortGroup.SortGroupElectrode * Electrode * BrainRegion & rec_key).fetch('region_name')`. For tetrodes, all 4 electrodes are in the same region so the result is a single name (wrap with `set()` or `np.unique()` if expecting one); for polymer probes spanning regions, multiple names may come back.",
+      "prompt": "I have a curated sorting in `CurationV1` with `sorting_id='003581ca-a7e4-4953-bfc3-42198c1ba2a8'` and `curation_id=0`. What brain regions correspond to this sorting?",
+      "expected_output": "Routes to spikesorting_pipeline.md + common_tables.md. Units don't carry brain region directly — region comes from the electrodes in the unit's sort group, and all units in a sort group share electrodes, so the region is the same for every unit in that group (unit_id doesn't affect the answer). FK chain by declaration: CurationV1 → SpikeSorting → SpikeSortingSelection (carries `recording_id` as a secondary FK to SpikeSortingRecording) → SpikeSortingRecordingSelection (carries `nwb_file_name` + `sort_group_id` via its own FKs to Raw and SortGroup); SortGroup.SortGroupElectrode maps sort_group_id to electrode_ids; Electrode has `region_id`; BrainRegion has `region_name`. Two DataJoint subtleties matter here. (1) FK inheritance propagates only the **primary key** of the referenced table, not secondary attributes. `recording_id` is secondary on SpikeSortingSelection (its `-> SpikeSortingRecording` is declared as a secondary FK, after `---`), so it does not reach SpikeSorting or CurationV1 — shapes like `CurationV1 * SpikeSortingRecordingSelection` share no attributes and degenerate to a Cartesian product. (2) `*` refuses to join on a \"dependent attribute\" (secondary on **both** sides). SpikeSortingSelection carries `nwb_file_name` and `interval_list_name` as secondary attrs via `-> IntervalList`, and SpikeSortingRecordingSelection carries `nwb_file_name` as secondary via `-> Raw`, so the bare `SpikeSortingSelection * SpikeSortingRecordingSelection` raises `DataJointError: Cannot join query expressions on dependent attribute 'nwb_file_name'`. Two correct shapes: (a) two restrictions — `recording_id = (SpikeSortingSelection & {'sorting_id': sid}).fetch1('recording_id')` then `(SpikeSortingRecordingSelection * SortGroup.SortGroupElectrode * Electrode * BrainRegion & {'recording_id': recording_id}).fetch('region_name')`; or (b) one expression with `.proj('recording_id')` to drop the colliding secondary attrs — `((SpikeSortingSelection & {'sorting_id': sid}).proj('recording_id') * SpikeSortingRecordingSelection * SortGroup.SortGroupElectrode * Electrode * BrainRegion).fetch('region_name')`. For tetrodes, all 4 electrodes are in the same region so the result is a single name (wrap with `set()` or `np.unique()` if expecting one); for polymer probes spanning regions, multiple names may come back.",
       "assertions": {
         "required_substrings": [
           "SortGroup",
@@ -899,13 +906,17 @@
         "forbidden_substrings": [
           "unit_id=5 has region",
           "CurationV1.region",
-          "CuratedSpikeSorting.fetch('region"
+          "CuratedSpikeSorting.fetch('region",
+          "CurationV1 * SpikeSortingRecordingSelection"
         ],
         "behavioral_checks": [
           "Traces the full join chain: CurationV1 → SpikeSorting(Selection) → SortGroup.SortGroupElectrode → Electrode → BrainRegion",
           "Notes that unit_id doesn't affect the region — all units in a sort group share the same electrodes",
           "Handles the polymer-probe case where a sort group may span multiple regions (multiple region_name values)",
-          "Does not invent a direct `region` attribute on CurationV1 or on the unit itself"
+          "Does not invent a direct `region` attribute on CurationV1 or on the unit itself",
+          "Does not claim that recording_id propagates from SpikeSortingSelection to CurationV1 via FK inheritance — recording_id is a secondary attribute on SpikeSortingSelection, and only primary keys propagate through FK declarations",
+          "Uses .proj('recording_id') on SpikeSortingSelection, or a two-step restriction, when joining with SpikeSortingRecordingSelection — avoids DataJoint's 'Cannot join query expressions on dependent attribute nwb_file_name' error caused by nwb_file_name being secondary in both tables",
+          "Does not recommend bare `SpikeSortingSelection * SpikeSortingRecordingSelection` without .proj('recording_id') or a prior restriction — that shape raises DataJointError on the nwb_file_name dependent-attribute collision at runtime"
         ]
       },
       "files": [],
@@ -917,10 +928,14 @@
         "Response does not contain substring `unit_id=5 has region`.",
         "Response does not contain substring `CurationV1.region`.",
         "Response does not contain substring `CuratedSpikeSorting.fetch('region`.",
+        "Response does not contain substring `CurationV1 * SpikeSortingRecordingSelection`.",
         "Traces the full join chain: CurationV1 → SpikeSorting(Selection) → SortGroup.SortGroupElectrode → Electrode → BrainRegion",
         "Notes that unit_id doesn't affect the region — all units in a sort group share the same electrodes",
         "Handles the polymer-probe case where a sort group may span multiple regions (multiple region_name values)",
-        "Does not invent a direct `region` attribute on CurationV1 or on the unit itself"
+        "Does not invent a direct `region` attribute on CurationV1 or on the unit itself",
+        "Does not claim that recording_id propagates from SpikeSortingSelection to CurationV1 via FK inheritance — recording_id is a secondary attribute on SpikeSortingSelection, and only primary keys propagate through FK declarations",
+        "Uses .proj('recording_id') on SpikeSortingSelection, or a two-step restriction, when joining with SpikeSortingRecordingSelection — avoids DataJoint's 'Cannot join query expressions on dependent attribute nwb_file_name' error caused by nwb_file_name being secondary in both tables",
+        "Does not recommend bare `SpikeSortingSelection * SpikeSortingRecordingSelection` without .proj('recording_id') or a prior restriction — that shape raises DataJointError on the nwb_file_name dependent-attribute collision at runtime"
       ]
     },
     {
@@ -1638,7 +1653,6 @@
       "assertions": {
         "required_substrings": [
           "environment.yml",
-          "mamba env",
           "--dry-run"
         ],
         "forbidden_substrings": [
@@ -1647,7 +1661,7 @@
         ],
         "behavioral_checks": [
           "Identifies the pip-install-broke-conda-env pattern (not a spyglass code issue)",
-          "Recommends recreating the env from environment.yml (update --prune or clean rebuild)",
+          "Recommends recreating the env from environment.yml using either `mamba env update --prune` or `conda env update --prune` (either tool is acceptable — labs use both)",
           "Mentions `pip install --dry-run` as a future safeguard",
           "Does not recommend pinning a specific cv2 version or installing another package on top"
         ]
@@ -1655,12 +1669,11 @@
       "files": [],
       "expectations": [
         "Response contains substring `environment.yml`.",
-        "Response contains substring `mamba env`.",
         "Response contains substring `--dry-run`.",
         "Response does not contain substring `pip install opencv-python`.",
         "Response does not contain substring `pin cv2 to`.",
         "Identifies the pip-install-broke-conda-env pattern (not a spyglass code issue)",
-        "Recommends recreating the env from environment.yml (update --prune or clean rebuild)",
+        "Recommends recreating the env from environment.yml using either `mamba env update --prune` or `conda env update --prune` (either tool is acceptable — labs use both)",
         "Mentions `pip install --dry-run` as a future safeguard",
         "Does not recommend pinning a specific cv2 version or installing another package on top"
       ]
