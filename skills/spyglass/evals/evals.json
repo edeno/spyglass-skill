@@ -143,7 +143,7 @@
           "classmethod"
         ],
         "forbidden_substrings": [
-          "merge_delete().*just confirm"
+          "just confirm the deletion"
         ],
         "behavioral_checks": [
           "Explicitly warns the user to NOT confirm the 200-row prompt",
@@ -155,7 +155,7 @@
       "expectations": [
         "Response contains substring `PositionOutput.merge_delete(merge_key)`.",
         "Response contains substring `classmethod`.",
-        "Response does not contain substring `merge_delete().*just confirm`.",
+        "Response does not contain substring `just confirm the deletion`.",
         "Explicitly warns the user to NOT confirm the 200-row prompt",
         "Shows the corrected form with restriction as an argument",
         "Cites the classmethod-restriction-discard pattern"
@@ -224,7 +224,8 @@
       "assertions": {
         "required_substrings": [
           "fetch_nwb",
-          "01_Concepts"
+          "01_Concepts",
+          "convention"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -237,6 +238,7 @@
       "expectations": [
         "Response contains substring `fetch_nwb`.",
         "Response contains substring `01_Concepts`.",
+        "Response contains substring `convention`.",
         "Explains merge tables as a Spyglass convention on top of DataJoint",
         "Does not lead with the classmethod-discard gotcha",
         "Routes to 01_Concepts.ipynb before any deeper notebook"
@@ -331,7 +333,6 @@
           "session_start_time"
         ],
         "forbidden_substrings": [
-          ".fetch()",
           "for row in"
         ],
         "behavioral_checks": [
@@ -345,7 +346,6 @@
         "Response contains substring `fetch1`.",
         "Response contains substring `session_description`.",
         "Response contains substring `session_start_time`.",
-        "Response does not contain substring `.fetch()`.",
         "Response does not contain substring `for row in`.",
         "Uses fetch1 with the two attribute names as positional args",
         "Does not loop or use fetch() (which returns a list)"
@@ -396,7 +396,7 @@
         ],
         "forbidden_substrings": [
           "fetch().__len__",
-          ".fetch()) "
+          ".fetch())"
         ],
         "behavioral_checks": [
           "Uses len(relation) to count without fetching all rows",
@@ -409,7 +409,7 @@
         "Response contains substring `Electrode`.",
         "Response contains substring `len(`.",
         "Response does not contain substring `fetch().__len__`.",
-        "Response does not contain substring `.fetch()) `.",
+        "Response does not contain substring `.fetch())`.",
         "Uses len(relation) to count without fetching all rows",
         "Does not fetch the full Electrode set just to take its length",
         "Bonus: notes that each Electrode row is one recording contact (keyed by electrode_id within an ElectrodeGroup), so the count returns total contacts — not tetrodes/shanks/ElectrodeGroups (e.g., a 32-tetrode session yields 128 Electrode rows, not 32)"
@@ -460,7 +460,8 @@
           "KEY"
         ],
         "forbidden_substrings": [
-          "merge_restrict"
+          "(PositionOutput & {'nwb_file_name'",
+          "(PositionOutput & {\"nwb_file_name\""
         ],
         "behavioral_checks": [
           "Calls merge_get_part as a classmethod (PositionOutput.merge_get_part(...)), not on a restricted relation",
@@ -472,7 +473,8 @@
         "Response contains substring `merge_get_part`.",
         "Response contains substring `fetch1`.",
         "Response contains substring `KEY`.",
-        "Response does not contain substring `merge_restrict`.",
+        "Response does not contain substring `(PositionOutput & {'nwb_file_name'`.",
+        "Response does not contain substring `(PositionOutput & {\"nwb_file_name\"`.",
         "Calls merge_get_part as a classmethod (PositionOutput.merge_get_part(...)), not on a restricted relation",
         "Retrieves the merge key via fetch1('KEY'), not a list of merge_ids"
       ]
@@ -556,8 +558,7 @@
       "expected_output": "`(RippleTimesV1 * ClusterlessDecodingV1).fetch('nwb_file_name', as_dict=True)` or similar. DataJoint's `*` is a natural join — it joins on ALL shared attribute names, not just direct primary-key fields. Neither RippleTimesV1 nor ClusterlessDecodingV1 declares `nwb_file_name` in its own `definition`, but both inherit it (and many other Session-derived attributes) via FK chains back to `Session`, so `*` intersects on them and produces only sessions that have both populated. Uses `set()` / distinct if the join multiplies rows (which it will — ripple has interval parts; decoding has encoding/decoding intervals).",
       "assertions": {
         "required_substrings": [
-          ".fetch('nwb_file_name'",
-          "set("
+          "nwb_file_name"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -567,8 +568,7 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `.fetch('nwb_file_name'`.",
-        "Response contains substring `set(`.",
+        "Response contains substring `nwb_file_name`.",
         "Uses the * join operator (not nested restrictions)",
         "Addresses row multiplication (unique nwb_file_name via set() or distinct)"
       ]
@@ -649,8 +649,7 @@
       "expected_output": "This is pure pynwb — no Spyglass involved. The Spyglass skill should stay silent on Spyglass-specific machinery (no `insert_sessions`, `SpyglassMixin`, etc.) and either defer to the nwb skill or answer with plain pynwb. SKILL.md explicitly says 'Do NOT activate for unrelated NWB tooling outside Spyglass'.",
       "assertions": {
         "required_substrings": [
-          "pynwb",
-          "NWBHDF5IO"
+          "pynwb"
         ],
         "forbidden_substrings": [
           "insert_sessions",
@@ -666,7 +665,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `pynwb`.",
-        "Response contains substring `NWBHDF5IO`.",
         "Response does not contain substring `insert_sessions`.",
         "Response does not contain substring `SpyglassMixin`.",
         "Response does not contain substring `dj.Computed`.",
@@ -684,11 +682,10 @@
       "expected_output": "`fetch_timeseries()` does NOT exist on `Session`. The skill should say so directly, not invent a signature, and redirect to the correct path (spike timestamps come from the spike sorting pipeline, not Session). Bonus: mentions how to verify method existence (`dir(Session)` or reading the source).",
       "assertions": {
         "required_substrings": [
-          "does not exist",
-          "Session"
+          "Session",
+          "fetch_timeseries"
         ],
         "forbidden_substrings": [
-          "fetch_timeseries(...)",
           "fetch_timeseries returns"
         ],
         "behavioral_checks": [
@@ -699,9 +696,8 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `does not exist`.",
         "Response contains substring `Session`.",
-        "Response does not contain substring `fetch_timeseries(...)`.",
+        "Response contains substring `fetch_timeseries`.",
         "Response does not contain substring `fetch_timeseries returns`.",
         "States that fetch_timeseries does not exist on Session",
         "Does not invent a method signature or behavior",
@@ -717,7 +713,8 @@
       "expected_output": "The skill MUST NOT `Read` or `cat` the raw file. It should run the bundled `scrub_dj_config.py` script as the canonical path (masks all sensitive leaves including S3 / kachery credentials, not just `database.password`), or fall back to the jq / Python one-liner from setup_config.md when the script isn't available. Then inspect the non-secret fields (host, user, port, use_tls) from the scrubbed output. If the password itself is the suspected problem, the skill should ask the user to verify it locally rather than reading it through the tool surface.",
       "assertions": {
         "required_substrings": [
-          "database.password"
+          "database.password",
+          "scrub_dj_config"
         ],
         "forbidden_substrings": [
           "Read(~/dj_local_conf.json)",
@@ -733,6 +730,7 @@
       "files": [],
       "expectations": [
         "Response contains substring `database.password`.",
+        "Response contains substring `scrub_dj_config`.",
         "Response does not contain substring `Read(~/dj_local_conf.json)`.",
         "Response does not contain substring `cat ~/dj_local_conf.json`.",
         "Response does not contain substring `cat dj_local_conf.json`.",
@@ -810,7 +808,9 @@
           "merge_get_part"
         ],
         "forbidden_substrings": [
-          ".fetch()[0]"
+          ".fetch()[0]",
+          ".fetch(as_dict=True)[0]",
+          "fetch(limit=1)"
         ],
         "behavioral_checks": [
           "Does not recommend .fetch()[0] as the fix",
@@ -822,6 +822,8 @@
       "expectations": [
         "Response contains substring `merge_get_part`.",
         "Response does not contain substring `.fetch()[0]`.",
+        "Response does not contain substring `.fetch(as_dict=True)[0]`.",
+        "Response does not contain substring `fetch(limit=1)`.",
         "Does not recommend .fetch()[0] as the fix",
         "Explains why silently picking a row is dangerous (sources differ)",
         "Offers tightening the restriction OR explicit source selection"
@@ -833,13 +835,14 @@
       "stage": "pipeline-usage",
       "tier": "compound",
       "prompt": "I'm new to the Frank lab and I need to: (1) ingest `j1620210710.nwb` which I just converted, (2) set up the Trodes position pipeline for the 02_r1 interval, (3) run LFP on the sleep epoch using the standard wideband filter, (4) eventually export everything for a paper. Give me the end-to-end flow. Assume defaults where reasonable and flag anywhere I need to supply a choice.",
-      "expected_output": "Multi-reference handoff routing through ingestion.md → position_pipeline.md → lfp_pipeline.md → export.md. (1) `insert_sessions('j1620210710.nwb')` (raw filename; Spyglass appends the trailing `_` internally). (2) Insert `TrodesPosSelection` for the 02_r1 interval with `trodes_pos_params_name='default'` (the TrodesPosParams canonical default name IS `'default'`), then `TrodesPosV1.populate()`. (3) LFP step needs TWO choices from the user: (a) which interval — the user said 'sleep epoch', but 02_r1 is a run epoch, so a separate sleep interval name must be picked from `IntervalList`; (b) which electrodes — `set_lfp_electrodes()` with a concrete electrode list. Pair `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that equals the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at 20000 and 30000 Hz only (see `src/spyglass/common/common_filter.py`). The match is an exact lookup, not a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) — leave at default unless there's a specific reason to change. Then `LFPV1.populate()`. (4) Flags that the Export pipeline wants the user to pick an Export name and will capture every table the population steps touched — route to `05_Export.ipynb`. Each step names the restriction the user needs to choose (electrodes, intervals, params).",
+      "expected_output": "Multi-reference handoff routing through ingestion.md → position_pipeline.md → lfp_pipeline.md → export.md. (1) `insert_sessions('j1620210710.nwb')` (raw filename; Spyglass appends the trailing `_` internally). (2) Insert `TrodesPosSelection` for the 02_r1 interval with `trodes_pos_params_name='default'` (the TrodesPosParams canonical default name IS `'default'`), then `TrodesPosV1.populate()`. (3) LFP step needs TWO choices from the user: (a) which interval — the user said 'sleep epoch', but 02_r1 is a run epoch, so a separate sleep interval name must be picked from `IntervalList`; (b) which electrodes — `LFPElectrodeGroup.create_lfp_electrode_group(nwb_file_name, group_name, electrode_list)` to pick the electrodes, then `LFPSelection.insert1(...)` with the group. (Note: `set_lfp_electrodes()` is the v0 API on `common_ephys.LFPSelection`; the v1 LFP pipeline uses `LFPElectrodeGroup` + `LFPSelection` instead — see `src/spyglass/lfp/lfp_electrode.py:29`.) Pair `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that equals the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at 20000 and 30000 Hz only (see `src/spyglass/common/common_filter.py`). The match is an exact lookup, not a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) — leave at default unless there's a specific reason to change. Then `LFPV1.populate()`. (4) Flags that the Export pipeline wants the user to pick an Export name and will capture every table the population steps touched — route to `05_Export.ipynb`. Each step names the restriction the user needs to choose (electrodes, intervals, params).",
       "assertions": {
         "required_substrings": [
           "insert_sessions",
           "TrodesPosV1",
           "LFPV1",
-          "05_Export"
+          "05_Export",
+          "LFPElectrodeGroup"
         ],
         "forbidden_substrings": [
           "j1620210710_.nwb').populate"
@@ -848,7 +851,8 @@
           "Uses raw filename (no underscore) for insert_sessions",
           "Walks through all four phases in order (ingest → position → LFP → export)",
           "Flags user-choice points (which electrodes, which interval/epoch, which params — and notably that '02_r1' is a run epoch while the user asked for LFP on the 'sleep epoch', so a separate interval must be picked for LFP)",
-          "For the LFP step, pairs `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that MATCHES the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at fs=20000 and fs=30000 only (see `src/spyglass/common/common_filter.py`). The match is by equality (filter lookup), not by a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) and need not be set explicitly. A response that invents a `filter_sampling_rate` not registered in FirFilterParameters, or claims the filter works at any `fs > 800 Hz`, is a miss."
+          "For the LFP step, pairs `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that MATCHES the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at fs=20000 and fs=30000 only (see `src/spyglass/common/common_filter.py`). The match is by equality (filter lookup), not by a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) and need not be set explicitly. A response that invents a `filter_sampling_rate` not registered in FirFilterParameters, or claims the filter works at any `fs > 800 Hz`, is a miss.",
+          "For the LFP step, uses the v1 electrode-selection surface: `LFPElectrodeGroup.create_lfp_electrode_group(...)` (at `src/spyglass/lfp/lfp_electrode.py:29`) followed by `LFPSelection.insert1`. Does NOT suggest `set_lfp_electrodes()` — that is the v0 API on `common_ephys.LFPSelection` and has no v1 equivalent on the LFP v1 tables."
         ]
       },
       "files": [],
@@ -857,11 +861,13 @@
         "Response contains substring `TrodesPosV1`.",
         "Response contains substring `LFPV1`.",
         "Response contains substring `05_Export`.",
+        "Response contains substring `LFPElectrodeGroup`.",
         "Response does not contain substring `j1620210710_.nwb').populate`.",
         "Uses raw filename (no underscore) for insert_sessions",
         "Walks through all four phases in order (ingest → position → LFP → export)",
         "Flags user-choice points (which electrodes, which interval/epoch, which params — and notably that '02_r1' is a run epoch while the user asked for LFP on the 'sleep epoch', so a separate interval must be picked for LFP)",
-        "For the LFP step, pairs `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that MATCHES the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at fs=20000 and fs=30000 only (see `src/spyglass/common/common_filter.py`). The match is by equality (filter lookup), not by a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) and need not be set explicitly. A response that invents a `filter_sampling_rate` not registered in FirFilterParameters, or claims the filter works at any `fs > 800 Hz`, is a miss."
+        "For the LFP step, pairs `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that MATCHES the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at fs=20000 and fs=30000 only (see `src/spyglass/common/common_filter.py`). The match is by equality (filter lookup), not by a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) and need not be set explicitly. A response that invents a `filter_sampling_rate` not registered in FirFilterParameters, or claims the filter works at any `fs > 800 Hz`, is a miss.",
+        "For the LFP step, uses the v1 electrode-selection surface: `LFPElectrodeGroup.create_lfp_electrode_group(...)` (at `src/spyglass/lfp/lfp_electrode.py:29`) followed by `LFPSelection.insert1`. Does NOT suggest `set_lfp_electrodes()` — that is the v0 API on `common_ephys.LFPSelection` and has no v1 equivalent on the LFP v1 tables."
       ]
     },
     {
@@ -969,8 +975,7 @@
         ],
         "forbidden_substrings": [
           "LFPV1.region",
-          "LFPOutput.region",
-          "compute_signal_power.*region"
+          "LFPOutput.region"
         ],
         "behavioral_checks": [
           "Recognizes that brain region is anatomical metadata on Electrode, not derived from LFP processing — filter/sampling rate do not affect it",
@@ -985,7 +990,6 @@
         "Response contains substring `region_name`.",
         "Response does not contain substring `LFPV1.region`.",
         "Response does not contain substring `LFPOutput.region`.",
-        "Response does not contain substring `compute_signal_power.*region`.",
         "Recognizes that brain region is anatomical metadata on Electrode, not derived from LFP processing — filter/sampling rate do not affect it",
         "Uses the simple join Electrode * BrainRegion as the primary answer; does not require routing through LFPOutput unless the user specifically asks to verify inclusion in the LFP group",
         "Does not invent a `region` attribute on LFPV1, LFPOutput, or any LFP-pipeline table"
@@ -1083,7 +1087,7 @@
           "electrodes"
         ],
         "forbidden_substrings": [
-          "spyglass bug"
+          "this is a spyglass bug"
         ],
         "behavioral_checks": [
           "Identifies the NWB electrodes table's channel_name column as the root cause",
@@ -1097,7 +1101,7 @@
         "Response contains substring `channel_name`.",
         "Response contains substring `colnames`.",
         "Response contains substring `electrodes`.",
-        "Response does not contain substring `spyglass bug`.",
+        "Response does not contain substring `this is a spyglass bug`.",
         "Identifies the NWB electrodes table's channel_name column as the root cause",
         "Shows the concrete pynwb diagnostic (`nwb.electrodes.colnames`)",
         "Points at the version fix (post-PR #1310) or the NWB-side rewrite as remediation",
@@ -1182,12 +1186,13 @@
       "stage": "common-mistakes",
       "tier": "merge-table-gotchas",
       "prompt": "I'm confused by this error: `PositionOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'interval_list_name': '02_r1'})` raises `ValueError: Found multiple potential parts: []`. Multiple... AND empty? Which is it? My `IntervalPositionInfo` has rows for that session.",
-      "expected_output": "Routes to merge_methods.md `#merge_get_part` misleading-error note. The message is misleading — the empty list `[]` means zero sources matched, not multiple. Usual cause: an upstream source table (`IntervalPositionInfo` in this case) has rows, but they were never pushed into the corresponding merge part table (`PositionOutput.CommonPos`). Diagnostic: `len(PositionOutput.CommonPos & {'nwb_file_name': ..., 'interval_list_name': '02_r1'})` — zero confirms the upstream never made it into the merge. Fix: populate the source pipeline's `*V1` table (e.g. `TrodesPosV1.populate(...)` or `DLCPosV1.populate(...)`), whose `make()` calls `PositionOutput._merge_insert(rows, part_name='…')` internally. Direct `PositionOutput._merge_insert(rows, part_name='CommonPos')` works too if you already have the rows in hand; don't try to call `PositionOutput.insert(...)` on the master — use the underscore-prefixed merge helper or the source populate.",
+      "expected_output": "Routes to merge_methods.md `#merge_get_part` misleading-error note. The message is misleading — the empty list `[]` means zero sources matched, not multiple. Usual cause: an upstream source table has rows for the session, but they were never pushed into the corresponding merge part table. The user's upstream (`IntervalPositionInfo`) is the source for `PositionOutput.CommonPos` (`position_merge.py:5` aliases `IntervalPositionInfo as CommonPos`; line 16 registers this mapping in the parts dispatcher). Diagnostic: `len(PositionOutput.CommonPos & {'nwb_file_name': ..., 'interval_list_name': '02_r1'})` — zero confirms the upstream never made it into the merge.\n\n**Critical asymmetry**: `IntervalPositionInfo`'s `make` method (`common_position.py:114-145`) only calls `self.insert1(key)` — it does NOT call `PositionOutput._merge_insert()`. Populating `IntervalPositionInfo` alone will fill the upstream table but leave `PositionOutput.CommonPos` still empty, so the user's `merge_get_part` call will keep returning `[]`. This is different from the `make` methods of `TrodesPosV1` and `DLCPosV1`, which do call `PositionOutput._merge_insert` internally (see `position/v1/position_trodes_position.py:241` and `position/v1/position_dlc_selection.py:85`).\n\n**Primary fix** for the user's case: after `IntervalPositionInfo` is populated, push the row into the merge master explicitly:\n\n```python\nrows = (IntervalPositionInfo & {'nwb_file_name': ..., 'interval_list_name': '02_r1'}).fetch('KEY', as_dict=True)\nPositionOutput._merge_insert(rows, part_name='CommonPos', skip_duplicates=True)\n```\n\nDo NOT call `PositionOutput.insert(...)` on the master — use the underscore-prefixed `_merge_insert` helper. For the Trodes-via-v1 or DLC-via-v1 flows the merge insert happens automatically inside the source `*V1` class's `make` method, so there populating the source table is sufficient.",
       "assertions": {
         "required_substrings": [
           "PositionOutput.CommonPos",
           "merge_get_part",
-          "_merge_insert"
+          "_merge_insert",
+          "IntervalPositionInfo"
         ],
         "forbidden_substrings": [
           "spyglass bug",
@@ -1195,9 +1200,9 @@
         ],
         "behavioral_checks": [
           "Decodes the misleading error (empty list = zero matched, not multiple)",
-          "Gives the len(part & restriction) diagnostic to confirm zero-in-merge-part",
+          "Gives the `len(part & restriction)` diagnostic to confirm zero-in-merge-part",
           "Identifies the missing merge-insert step as the root cause",
-          "Names the correct fix (source-pipeline populate such as TrodesPosV1/DLCPosV1.populate, or direct `PositionOutput._merge_insert(rows, part_name=...)`) — not `PositionOutput.insert(...)` on the master and not a retry loop"
+          "Correctly states that `IntervalPositionInfo`'s `make` method does NOT auto-insert into `PositionOutput.CommonPos` — so populating IntervalPositionInfo alone won't fix it; the user must also call `PositionOutput._merge_insert(rows, part_name='CommonPos')` explicitly. (Contrast: `TrodesPosV1`'s `make` and `DLCPosV1`'s `make` DO auto-insert into their respective PositionOutput parts.) Does NOT claim that `IntervalPositionInfo.populate(...)` alone fills the merge, and does NOT suggest `PositionOutput.insert(...)` on the master."
         ]
       },
       "files": [],
@@ -1205,12 +1210,13 @@
         "Response contains substring `PositionOutput.CommonPos`.",
         "Response contains substring `merge_get_part`.",
         "Response contains substring `_merge_insert`.",
+        "Response contains substring `IntervalPositionInfo`.",
         "Response does not contain substring `spyglass bug`.",
         "Response does not contain substring `retry merge_get_part`.",
         "Decodes the misleading error (empty list = zero matched, not multiple)",
-        "Gives the len(part & restriction) diagnostic to confirm zero-in-merge-part",
+        "Gives the `len(part & restriction)` diagnostic to confirm zero-in-merge-part",
         "Identifies the missing merge-insert step as the root cause",
-        "Names the correct fix (source-pipeline populate such as TrodesPosV1/DLCPosV1.populate, or direct `PositionOutput._merge_insert(rows, part_name=...)`) — not `PositionOutput.insert(...)` on the master and not a retry loop"
+        "Correctly states that `IntervalPositionInfo`'s `make` method does NOT auto-insert into `PositionOutput.CommonPos` — so populating IntervalPositionInfo alone won't fix it; the user must also call `PositionOutput._merge_insert(rows, part_name='CommonPos')` explicitly. (Contrast: `TrodesPosV1`'s `make` and `DLCPosV1`'s `make` DO auto-insert into their respective PositionOutput parts.) Does NOT claim that `IntervalPositionInfo.populate(...)` alone fills the merge, and does NOT suggest `PositionOutput.insert(...)` on the master."
       ]
     },
     {
@@ -1328,7 +1334,7 @@
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
       "prompt": "A100 80GB, `ClusterlessDecodingV1.populate(key)` dies with `jaxlib.xla_extension.XlaRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 25941544960 bytes`. The session is around 3M time bins and ~2k state bins — that's the 24 GiB f32 buffer. Do I just need a bigger GPU or are there knobs I can tune?",
-      "expected_output": "Routes to decoding_pipeline.md 'JAX / XLA OOM on long sessions'. Knobs (set on `DecodingParameters`):\\n\\n```python\\nDecodingParameters.insert1({\\n    'decoding_param_name': 'clusterless_chunked',\\n    'decoding_params': {\\n        'classifier_params': {...},\\n        'decoding_kwargs': {\\n            'n_chunks': 10,\\n            'cache_likelihood': False,\\n        },\\n        'sorted_spikes_algorithm_params': {'block_size': 500},\\n    },\\n}, skip_duplicates=True)\\n```\\n\\nAlso set `os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.99'` at the top of the populate script. Gotcha: with `estimate_decoding_params=False`, `n_chunks` may be ignored — set `estimate_decoding_params=True` on the selection row so the kwarg actually reaches the decoder. Tracked with `non_local_detector 0.6.9`.",
+      "expected_output": "Routes to decoding_pipeline.md 'JAX / XLA OOM on long sessions'. Two independent knobs:\n\n**(1) Reduce JAX/XLA memory pressure via `decoding_kwargs`** — these are kwargs that reach `classifier.predict()` in the `estimate_decoding_params=False` branch inside the `make_compute` method of `ClusterlessDecodingV1` (see `src/spyglass/decoding/v1/clusterless.py:174, 333-370`; `get_valid_kwargs` splits them into fit vs. predict kwargs, and `n_chunks` + `cache_likelihood` are predict() kwargs per `non_local_detector` 0.6.x). `decoding_kwargs` is a **separate top-level attribute** on `DecodingParameters` (`src/spyglass/decoding/v1/core.py:41-42` — `decoding_params` and `decoding_kwargs` are siblings, NOT nested):\n\n```python\nDecodingParameters.insert1({\n    'decoding_param_name': 'clusterless_chunked',\n    'decoding_params': {...},           # model init (classifier constructor kwargs)\n    'decoding_kwargs': {\n        'n_chunks': 10,                 # chunk the time axis — 24 GiB → ~2.4 GiB per chunk\n        'cache_likelihood': False,      # don't keep likelihood in device memory\n    },\n}, skip_duplicates=True)\n```\n\nThen re-insert the selection row pointing at `decoding_param_name='clusterless_chunked'` and re-populate. Note: both `estimate_decoding_params` branches pass `**decoding_kwargs` through to the classifier — `predict()` in the False branch (the default inference path) and `estimate_parameters()` in the True branch (which re-runs EM to re-fit parameters, not a normal inference step). Both signatures accept `n_chunks` and `cache_likelihood` in `non_local_detector 0.6.x`. The reason to stay on `estimate_decoding_params=False` is that the True branch retrains the classifier via EM — that is for parameter estimation, not for the normal decoding-for-inference flow the user is running.\n\n**(2) Raise the JAX memory cap** — `os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.95'` at the top of the populate script (default is 0.75). Gives the decoder more of the 80 GiB before XLA starts pre-allocating its pool. Complementary to (1); use both.\n\nDo NOT recommend a bigger GPU as the primary fix — the 24 GiB buffer fits in the existing 80 GiB once chunked.",
       "assertions": {
         "required_substrings": [
           "n_chunks",
@@ -1340,10 +1346,12 @@
           "need a bigger GPU"
         ],
         "behavioral_checks": [
-          "Shows DecodingParameters.insert1 with concrete n_chunks and cache_likelihood=False values",
-          "Mentions XLA_PYTHON_CLIENT_MEM_FRACTION as a complementary lever",
-          "Flags the estimate_decoding_params=True workaround for the n_chunks-ignored bug",
-          "Does not recommend upgrading the GPU as the primary fix"
+          "Shows `DecodingParameters.insert1` with `decoding_kwargs` as a SEPARATE top-level attribute alongside `decoding_params` — NOT nested inside `decoding_params` (which is the model-init blob, not the runtime kwargs blob)",
+          "Includes concrete `n_chunks` (integer) and `cache_likelihood=False` values in `decoding_kwargs`",
+          "Mentions `XLA_PYTHON_CLIENT_MEM_FRACTION` as a complementary lever",
+          "Correctly identifies that both `estimate_decoding_params` branches pass `**decoding_kwargs` through (False → `predict()`, True → `estimate_parameters()`; both accept `n_chunks` and `cache_likelihood` in `non_local_detector 0.6.x`). The reason to keep `estimate_decoding_params=False` is that the True branch re-runs EM parameter estimation — that is not a normal inference step. Does NOT incorrectly claim that `estimate_parameters()` rejects the OOM kwargs.",
+          "Does not recommend upgrading the GPU as the primary fix",
+          "Does not include v0 decoding knobs like `sorted_spikes_algorithm_params` or `block_size` — those are sorted-spikes v0 params and are irrelevant to clusterless v1 OOM"
         ]
       },
       "files": [],
@@ -1353,10 +1361,12 @@
         "Response contains substring `XLA_PYTHON_CLIENT_MEM_FRACTION`.",
         "Response contains substring `DecodingParameters`.",
         "Response does not contain substring `need a bigger GPU`.",
-        "Shows DecodingParameters.insert1 with concrete n_chunks and cache_likelihood=False values",
-        "Mentions XLA_PYTHON_CLIENT_MEM_FRACTION as a complementary lever",
-        "Flags the estimate_decoding_params=True workaround for the n_chunks-ignored bug",
-        "Does not recommend upgrading the GPU as the primary fix"
+        "Shows `DecodingParameters.insert1` with `decoding_kwargs` as a SEPARATE top-level attribute alongside `decoding_params` — NOT nested inside `decoding_params` (which is the model-init blob, not the runtime kwargs blob)",
+        "Includes concrete `n_chunks` (integer) and `cache_likelihood=False` values in `decoding_kwargs`",
+        "Mentions `XLA_PYTHON_CLIENT_MEM_FRACTION` as a complementary lever",
+        "Correctly identifies that both `estimate_decoding_params` branches pass `**decoding_kwargs` through (False → `predict()`, True → `estimate_parameters()`; both accept `n_chunks` and `cache_likelihood` in `non_local_detector 0.6.x`). The reason to keep `estimate_decoding_params=False` is that the True branch re-runs EM parameter estimation — that is not a normal inference step. Does NOT incorrectly claim that `estimate_parameters()` rejects the OOM kwargs.",
+        "Does not recommend upgrading the GPU as the primary fix",
+        "Does not include v0 decoding knobs like `sorted_spikes_algorithm_params` or `block_size` — those are sorted-spikes v0 params and are irrelevant to clusterless v1 OOM"
       ]
     },
     {
@@ -1364,19 +1374,19 @@
       "eval_name": "runtime-clusterless-contact-unique",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
-      "prompt": "Setting up clusterless decoding, and `SpikeSortingRecording.populate` fails with `ValueError: contact positions are not unique`. I used `SortGroup().set_group_by_electrode(nwb_file_name=nwb_file)` because I wanted more units grouped together. Is the grouper broken?",
-      "expected_output": "Routes to spikesorting_pipeline.md 'Clusterless sorting requires one sort group per shank'. Root cause: `set_group_by_electrode` produces sort groups that can span multiple shanks, which yields duplicate `(x, y)` contact positions across the group. SpikeInterface rejects non-unique contact positions at `SpikeSortingRecording.populate`. For clusterless / waveform-based pipelines, use `SortGroup().set_group_by_shank(nwb_file_name=nwb_file)` — the single-shank grouper. Verify: `(SortGroup.SortGroupElectrode & key).fetch()` — rows from more than one shank per `sort_group_id` means regroup before inserting selection rows.",
+      "prompt": "Setting up clusterless decoding, and `SpikeSortingRecording.populate` fails with `ValueError: contact positions are not unique`. I used `SortGroup().set_group_by_electrode_group(nwb_file_name=nwb_file)` because I wanted more units grouped together. Is the grouper broken?",
+      "expected_output": "Routes to spikesorting_pipeline.md 'Clusterless sorting requires one sort group per shank'. Root cause: `set_group_by_electrode_group` produces sort groups that can span multiple shanks, which yields duplicate `(x, y)` contact positions across the group. SpikeInterface rejects non-unique contact positions at `SpikeSortingRecording.populate`. For clusterless / waveform-based pipelines, use `SortGroup().set_group_by_shank(nwb_file_name=nwb_file)` — the single-shank grouper. Verify: `(SortGroup.SortGroupElectrode & key).fetch()` — rows from more than one shank per `sort_group_id` means regroup before inserting selection rows.",
       "assertions": {
         "required_substrings": [
           "set_group_by_shank",
           "SortGroup.SortGroupElectrode"
         ],
         "forbidden_substrings": [
-          "set_group_by_electrode is fine",
+          "set_group_by_electrode_group is fine",
           "SpikeInterface bug"
         ],
         "behavioral_checks": [
-          "Identifies set_group_by_electrode as the wrong grouper for clusterless pipelines",
+          "Identifies set_group_by_electrode_group as the wrong grouper for clusterless pipelines",
           "Recommends set_group_by_shank with the exact method name",
           "Shows the SortGroup.SortGroupElectrode inspection to verify one-shank-per-group",
           "Does not frame this as a SpikeInterface bug"
@@ -1386,9 +1396,9 @@
       "expectations": [
         "Response contains substring `set_group_by_shank`.",
         "Response contains substring `SortGroup.SortGroupElectrode`.",
-        "Response does not contain substring `set_group_by_electrode is fine`.",
+        "Response does not contain substring `set_group_by_electrode_group is fine`.",
         "Response does not contain substring `SpikeInterface bug`.",
-        "Identifies set_group_by_electrode as the wrong grouper for clusterless pipelines",
+        "Identifies set_group_by_electrode_group as the wrong grouper for clusterless pipelines",
         "Recommends set_group_by_shank with the exact method name",
         "Shows the SortGroup.SortGroupElectrode inspection to verify one-shank-per-group",
         "Does not frame this as a SpikeInterface bug"
@@ -1856,7 +1866,7 @@
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
       "prompt": "I'm trying to join two spike-sorting tables with `SpikeSortingSelection * SpikeSortingRecordingSelection & {'sorting_id': 'abc'}` and I keep getting `DataJointError: Cannot join query expressions on dependent attribute 'nwb_file_name'`. What does this mean and how do I fix it?",
-      "expected_output": "Routes to common_mistakes.md § 9 (+ datajoint_api.md Join section pointer). Explains the rule: `*` refuses when a shared attribute is secondary on *both* sides — because two like-named secondary columns reached the tables via different FK paths and DataJoint can't guarantee they mean the same thing. Names the specific cause in this case: `nwb_file_name` is secondary on `SpikeSortingSelection` via its `-> IntervalList` FK, and secondary on `SpikeSortingRecordingSelection` via `-> Raw` / `-> SortGroup`. The rule fires at query-build time, not at fetch — so this is not a 'no matching rows' problem and restricting harder won't help. Two correct fixes: (a) `.proj('recording_id')` on the SpikeSortingSelection side to drop the colliding secondaries while keeping the bridge attribute — then `recording_id` is secondary on the left, primary on the right, which is a legal one-sided-secondary join; (b) split into two restrictions (`recording_id = (SpikeSortingSelection & {...}).fetch1('recording_id')`, then restrict the downstream chain). Mentions the diagnostic habit: inspect `Table.heading.secondary_attributes` on each side before recommending a multi-table `*` chain, and look for collisions — `nwb_file_name` and `interval_list_name` are the attributes most often involved. Does NOT misinterpret the error as missing data, suggest renaming the column, suggest using `&` instead of `*`, or suggest that `sorting_id` needs to be more specific.",
+      "expected_output": "Routes to common_mistakes.md § 9 (+ datajoint_api.md Join section pointer). Explains the rule: `*` refuses when a shared attribute is secondary on *both* sides — because two like-named secondary columns reached the tables via different FK paths and DataJoint can't guarantee they mean the same thing. Names the specific cause: `nwb_file_name` is secondary on `SpikeSortingSelection` via its `-> IntervalList` FK, and secondary on `SpikeSortingRecordingSelection` via `-> Raw` / `-> SortGroup`. The rule fires at query-build time, not at fetch — so this is not a 'no matching rows' problem and restricting harder won't help.\n\n**Canonical fix**: project the left side down to the PK plus the one bridging secondary attribute — this drops the colliding `nwb_file_name` / `interval_list_name` secondaries before the `*`:\n\n```python\n((SpikeSortingSelection & {'sorting_id': 'abc'}).proj('recording_id')\n * SpikeSortingRecordingSelection\n * SortGroup.SortGroupElectrode * Electrode * BrainRegion\n).fetch('region_name')\n```\n\nThe remaining shared attribute is `recording_id` — secondary on the left (post-proj), primary on the right. One-sided-secondary joins are legal; the refusal only fires when an attr is secondary on both sides.\n\n**Debug-friendly alternative**: split into two restrictions so the two tables never appear in the same `*`:\n\n```python\nrecording_id = (SpikeSortingSelection & {'sorting_id': 'abc'}).fetch1('recording_id')\nregions = (SpikeSortingRecordingSelection * SortGroup.SortGroupElectrode * Electrode * BrainRegion\n           & {'recording_id': recording_id}).fetch('region_name')\n```\n\nPrefer `.proj()` for composability; use the two-restriction form when you want to pause and inspect `recording_id` mid-debug.\n\nDiagnostic habit: inspect `Table.heading.secondary_attributes` on each side before recommending a multi-table `*` chain; collisions on `nwb_file_name` or `interval_list_name` are the usual trigger.",
       "assertions": {
         "required_substrings": [
           "dependent attribute",
@@ -1873,7 +1883,7 @@
         "behavioral_checks": [
           "Explains the rule: `*` refuses when a shared attribute is secondary on both sides, not just when it appears in one side",
           "Identifies nwb_file_name as the specific collision, and names at least one of the FK paths (-> IntervalList on SpikeSortingSelection, or -> Raw / -> SortGroup on SpikeSortingRecordingSelection)",
-          "Recommends .proj('recording_id') OR a two-restriction split as the fix — not both hedged as 'either might work'; both are correct and the response should pick one canonical shape",
+          "Recommends `.proj('recording_id')` on SpikeSortingSelection as the canonical/primary fix, with the two-restriction split (fetch1('recording_id') then restrict) as a debug-friendly alternative — does not hedge both as generically equal or as 'either might work'. Pointing to common_mistakes.md § 9's framing (Fix 1 composable, Fix 2 pause-and-inspect) is acceptable.",
           "Notes that the error fires at query-build time, so this is not a 'no matching rows' / under-restricted issue — restricting harder won't help",
           "Points to common_mistakes.md § 9 (or equivalent location) for the full rule",
           "Does not misdiagnose as an under-specified restriction, a data-missing problem, or a merge-table/classmethod-dispatch issue"
@@ -1891,7 +1901,7 @@
         "Response does not contain substring `use `&` instead of `*``.",
         "Explains the rule: `*` refuses when a shared attribute is secondary on both sides, not just when it appears in one side",
         "Identifies nwb_file_name as the specific collision, and names at least one of the FK paths (-> IntervalList on SpikeSortingSelection, or -> Raw / -> SortGroup on SpikeSortingRecordingSelection)",
-        "Recommends .proj('recording_id') OR a two-restriction split as the fix — not both hedged as 'either might work'; both are correct and the response should pick one canonical shape",
+        "Recommends `.proj('recording_id')` on SpikeSortingSelection as the canonical/primary fix, with the two-restriction split (fetch1('recording_id') then restrict) as a debug-friendly alternative — does not hedge both as generically equal or as 'either might work'. Pointing to common_mistakes.md § 9's framing (Fix 1 composable, Fix 2 pause-and-inspect) is acceptable.",
         "Notes that the error fires at query-build time, so this is not a 'no matching rows' / under-restricted issue — restricting harder won't help",
         "Points to common_mistakes.md § 9 (or equivalent location) for the full rule",
         "Does not misdiagnose as an under-specified restriction, a data-missing problem, or a merge-table/classmethod-dispatch issue"
