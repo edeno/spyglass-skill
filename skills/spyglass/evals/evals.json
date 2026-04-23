@@ -575,7 +575,7 @@
       "stage": "pipeline-usage",
       "tier": "joins",
       "prompt": "Find sessions where the Trodes position pipeline populated but the DLC pipeline did not — I want to know which ones still need DLC tracking.",
-      "expected_output": "Set difference via `TrodesPosV1.fetch('nwb_file_name')` minus `DLCPosV1.fetch('nwb_file_name')`, or the DataJoint-native form using `-` (antijoin) if the answer reaches for it. Both are acceptable — the antijoin form is more efficient but less familiar.",
+      "expected_output": "Correct, portable answer: `set(TrodesPosV1.fetch('nwb_file_name')) - set(DLCPosV1.fetch('nwb_file_name'))`. A DataJoint-native antijoin is tempting, but **bare `TrodesPosV1 - DLCPosV1` raises** `DataJointError: Cannot join query expressions on dependent attribute 'analysis_file_name'` — both tables inherit `analysis_file_name` (via `-> AnalysisNwbfile`) and the three identical NWB `*_object_id` columns as secondary attrs, and DataJoint's `-` operator uses the same dependent-attribute refusal rule as `*` (see common_mistakes.md § 9). The working antijoin form projects the secondaries away on both sides: `set((TrodesPosV1.proj() - DLCPosV1.proj()).fetch('nwb_file_name'))` — `.proj()` with no args reduces each side to PK only, leaving just `nwb_file_name` as a shared attribute (PK on both, so no dependent-attribute collision). Set-difference via `.fetch()` is usually more legible and less fragile.",
       "assertions": {
         "required_substrings": [
           ".fetch('nwb_file_name'",
@@ -585,8 +585,10 @@
           "(TrodesPosV1 * DLCPosV1)"
         ],
         "behavioral_checks": [
-          "Computes set difference (Trodes minus DLC), either via Python sets or DataJoint antijoin",
-          "Does not join when a difference is needed"
+          "Computes set difference (Trodes minus DLC) via set(A.fetch('nwb_file_name')) - set(B.fetch('nwb_file_name'))",
+          "Does not use an inner join (`*`) when a difference is needed",
+          "If the response reaches for the DataJoint antijoin `-` form, it projects BOTH sides with .proj() first — bare `TrodesPosV1 - DLCPosV1` raises DataJointError because both tables share `analysis_file_name` and the three NWB object_id columns as secondary attrs",
+          "Does not claim the naive antijoin `TrodesPosV1 - DLCPosV1` is a valid drop-in for the set-difference form — it raises at query-build time (see common_mistakes.md § 9)"
         ]
       },
       "files": [],
@@ -594,8 +596,10 @@
         "Response contains substring `.fetch('nwb_file_name'`.",
         "Response contains substring `set(`.",
         "Response does not contain substring `(TrodesPosV1 * DLCPosV1)`.",
-        "Computes set difference (Trodes minus DLC), either via Python sets or DataJoint antijoin",
-        "Does not join when a difference is needed"
+        "Computes set difference (Trodes minus DLC) via set(A.fetch('nwb_file_name')) - set(B.fetch('nwb_file_name'))",
+        "Does not use an inner join (`*`) when a difference is needed",
+        "If the response reaches for the DataJoint antijoin `-` form, it projects BOTH sides with .proj() first — bare `TrodesPosV1 - DLCPosV1` raises DataJointError because both tables share `analysis_file_name` and the three NWB object_id columns as secondary attrs",
+        "Does not claim the naive antijoin `TrodesPosV1 - DLCPosV1` is a valid drop-in for the set-difference form — it raises at query-build time (see common_mistakes.md § 9)"
       ]
     },
     {
