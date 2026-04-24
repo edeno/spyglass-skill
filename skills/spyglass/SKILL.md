@@ -7,7 +7,7 @@ description: Use when the task involves Spyglass — the LorenFrankLab
   custom pipelines, and debugging populate/make/fetch1 failures. Activate
   when the task touches any of `import spyglass` / `from spyglass.*`,
   `SPYGLASS_BASE_DIR`, `SpyglassMixin`, `merge_get_part`, `merge_restrict`,
-  V1 pipeline classes (`LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`,
+  pipeline classes (`LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`,
   `SpikeSorting`, `CurationV1`, `ClusterlessDecodingV1`,
   `SortedSpikesDecodingV1`), or DLC/DANDI/Kachery within a Spyglass context
   — even if the user doesn't name "Spyglass" explicitly. Do NOT activate
