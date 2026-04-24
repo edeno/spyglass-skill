@@ -1,7 +1,7 @@
 # Implementation plan — close eval gaps in `skills/spyglass/evals/evals.json`
 
 **Date:** 2026-04-23
-**Status:** Draft — ready to execute
+**Status:** **Executed 2026-04-23.** All 25 target evals (IDs 54–78) landed across five phased commit batches: Phase A `bdc0c78` + `872f129` (table-understanding 54–57), Phase B `0b4cbb4` + `401218c` (parameter-understanding 58–62), Phase C `b7fd73f` + `97ee1ce` (disambiguation/counterfactual/resource-selection/workflow-position/dependency-tracing 63–73), Phase C' `5339e01` (schema-introspection 74–78), Phase D `e088d79` (anonymize evals 1–53). Follow-on hygiene work — `5b8b9b7`, `58871ba`, `696e4bc`, `ca2c041`, `6fe2beb` — resolved ~174 substring-hygiene + completeness warnings down to the current baseline of 3. Taxonomy vocabulary agreed and applied.
 **Scope:** Add 25 new evals (IDs 54–78) covering nine under-served capability categories (eight gap categories + a new schema-introspection batch). Establish a single agreed-upon classification vocabulary (stages × tiers × difficulty) and apply it to existing evals 1–53. Retro-anonymize hostnames / usernames / lab names in existing prompts.
 
 ## Goals and non-goals
