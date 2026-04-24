@@ -2636,7 +2636,8 @@
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id) in any order, with no extra fields",
-          "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key"
+          "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key",
+          "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
         ]
       },
       "files": [],
@@ -2645,7 +2646,8 @@
         "Response contains substring `electrode_group_name`.",
         "Response contains substring `electrode_id`.",
         "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id) in any order, with no extra fields",
-        "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key"
+        "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key",
+        "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
       ]
     },
     {
@@ -2663,14 +2665,16 @@
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Lists exactly the two PK fields (filter_name, filter_sampling_rate); no extra fields"
+          "Lists exactly the two PK fields (filter_name, filter_sampling_rate); no extra fields",
+          "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `filter_name`.",
         "Response contains substring `filter_sampling_rate`.",
-        "Lists exactly the two PK fields (filter_name, filter_sampling_rate); no extra fields"
+        "Lists exactly the two PK fields (filter_name, filter_sampling_rate); no extra fields",
+        "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
       ]
     },
     {
@@ -2687,13 +2691,17 @@
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Names Session as the single direct dependency; does not speculate about other dependencies"
+          "Names Session as the single direct dependency; does not speculate about other dependencies",
+          "Does not name Nwbfile, Subject, or any ancestor-of-Session as the direct dependency — the only FK declared at IntervalList is `-> Session`",
+          "Response obeys the requested format — a single table name with no prose, headers, or extra commentary"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `Session`.",
-        "Names Session as the single direct dependency; does not speculate about other dependencies"
+        "Names Session as the single direct dependency; does not speculate about other dependencies",
+        "Does not name Nwbfile, Subject, or any ancestor-of-Session as the direct dependency — the only FK declared at IntervalList is `-> Session`",
+        "Response obeys the requested format — a single table name with no prose, headers, or extra commentary"
       ]
     },
     {
@@ -2710,13 +2718,15 @@
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Names FirFilterParameters as the lookup table for filter coefficients (distinct from LFPSelection, which carries filter_name as FK but is the per-run selection, not the kernel store)"
+          "Names FirFilterParameters as the lookup table for filter coefficients (distinct from LFPSelection, which carries filter_name as FK but is the per-run selection, not the kernel store)",
+          "Response obeys the requested format — a single table name with no prose, headers, or extra commentary"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `FirFilterParameters`.",
-        "Names FirFilterParameters as the lookup table for filter coefficients (distinct from LFPSelection, which carries filter_name as FK but is the per-run selection, not the kernel store)"
+        "Names FirFilterParameters as the lookup table for filter coefficients (distinct from LFPSelection, which carries filter_name as FK but is the per-run selection, not the kernel store)",
+        "Response obeys the requested format — a single table name with no prose, headers, or extra commentary"
       ]
     },
     {
@@ -2734,14 +2744,16 @@
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist"
+          "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist",
+          "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `Probe.Shank`.",
         "Response contains substring `Probe.Electrode`.",
-        "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist"
+        "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist",
+        "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
       ]
     }
   ]
