@@ -39,7 +39,87 @@
 
 ## Executor checklist
 
-Eight commits. Each commit's "validation gate" is the [Per-commit validation](#per-commit-validation) block below.
+Eight commits, preceded by one mandatory verification step. Each commit's "validation gate" is the [Per-commit validation](#per-commit-validation) block below.
+
+### Step -1 (mandatory) — re-verify the pre-req evidence before touching any file
+
+The [Pre-req source verification](#pre-req-source-verification-captured-2026-04-24-against-spyglass_srchomedocumentsgithubspyglasssrc) table below was captured on a specific date. Spyglass evolves — fields get renamed, files move, part-table lists grow. Before commit 0, re-run each verification and confirm the evidence still holds. If *any* row has drifted, **stop and update the plan** — do not paper over with a guess.
+
+```bash
+# Required: SPYGLASS_SRC must point at a current checkout
+test -n "$SPYGLASS_SRC" || { echo "SPYGLASS_SRC unset; see README.md"; exit 1; }
+test -d "$SPYGLASS_SRC/spyglass" || { echo "$SPYGLASS_SRC/spyglass not found"; exit 1; }
+
+# Claim-by-claim verification. Each command's expected output is stated inline.
+# If any output differs from the captured evidence below, STOP.
+
+# 1. Session has no sampling_rate
+python3 -c "from spyglass.common import Session; n=Session.heading.names; assert 'sampling_rate' not in n, n; print('OK: Session has no sampling_rate')"
+
+# 2. SpyglassMixin has no get_pk
+grep -rn "def get_pk\b" "$SPYGLASS_SRC/spyglass/utils/" && echo "FAIL: get_pk now exists" || echo "OK: no get_pk"
+
+# 3. Raw.sampling_rate is a direct secondary column
+grep -n "^    sampling_rate" "$SPYGLASS_SRC/spyglass/common/common_ephys.py" | grep "float" || echo "FAIL: Raw.sampling_rate shape changed"
+
+# 4. RippleTimesV1 has three direct parents (RippleLFPSelection, RippleParameters, PositionOutput)
+grep -n -A 8 "^class RippleTimesV1" "$SPYGLASS_SRC/spyglass/ripple/v1/ripple.py" | grep -E "RippleLFPSelection|RippleParameters|PositionOutput"
+# Expect three matches.
+
+# 5. common_usage.InsertError still exists
+grep -n "^class InsertError" "$SPYGLASS_SRC/spyglass/common/common_usage.py" || echo "FAIL: InsertError moved"
+
+# 6. Bundled scripts unchanged
+ls "$(pwd)/skills/spyglass/scripts/"*.py | sort
+# Expect: scrub_dj_config.py, validate_skill.py, verify_spyglass_env.py
+
+# 7. Reference-file split preserved
+head -3 skills/spyglass/references/custom_pipeline_authoring.md
+head -3 skills/spyglass/references/spyglassmixin_methods.md
+
+# 8. ClusterlessDecodingSelection still has exactly 4 FK surfaces
+grep -n -A 8 "^class ClusterlessDecodingSelection" "$SPYGLASS_SRC/spyglass/decoding/v1/clusterless.py"
+# Expect: UnitWaveformFeaturesGroup, PositionGroup, DecodingParameters, encoding_interval, decoding_interval
+
+# 9. position_info_param_name is v0 only; v1 uses trodes_pos_params_name
+grep -rn "position_info_param_name\b" "$SPYGLASS_SRC/spyglass/position/" && echo "FAIL: v1 now has position_info_param_name"
+grep -n "trodes_pos_params_name" "$SPYGLASS_SRC/spyglass/position/v1/position_trodes_position.py" | head -3
+
+# 10. ripple_param_name (singular) is the correct PK
+grep -n "ripple_param_name\b" "$SPYGLASS_SRC/spyglass/ripple/v1/ripple.py" | head -3
+grep -n "ripple_params_name\b" "$SPYGLASS_SRC/spyglass/ripple/v1/ripple.py" && echo "FAIL: plural now exists"
+
+# 11. SpikeSortingV1 does NOT exist; SpikeSorting does
+grep -rn "^class SpikeSortingV1\b" "$SPYGLASS_SRC/spyglass/" && echo "FAIL: SpikeSortingV1 now exists — eval 89 premise invalidated"
+grep -n "^class SpikeSorting\b" "$SPYGLASS_SRC/spyglass/spikesorting/v1/sorting.py" || echo "FAIL: SpikeSorting v1 class moved"
+
+# 12. The two seed mentions that commit 7 removes are still there at the expected sites
+grep -n "SpikeSortingV1" skills/spyglass/SKILL.md || echo "NOTE: SKILL.md seed mention already gone — skip fix 1 in commit 7"
+grep -n "SpikeSortingV1" skills/spyglass/references/merge_methods.md || echo "NOTE: merge_methods.md seed mention already gone — skip fix 2 in commit 7"
+
+# 13. flatten_expectations.py path unchanged
+test -f skills/spyglass/evals/scripts/flatten_expectations.py || echo "FAIL: flatten_expectations.py moved"
+```
+
+**Interpretation rule.** "STOP" means: pause execution, open this plan, update the affected row's evidence (file path, line number, field name), and — if the change is semantic, not cosmetic — re-walk the affected eval draft before the insert commit. Specifically:
+
+| Drift type | Impact | Action |
+| --- | --- | --- |
+| File moved but content identical | Cosmetic | Update file:line refs in the plan, proceed |
+| Field renamed (e.g., `ripple_param_name` → something else) | Semantic | Rewrite affected eval's `required_substrings`, `expected_output`, `behavioral_checks` before inserting |
+| Class / method disappeared | Premise broken | Delete or rewrite the affected eval; don't author around the hole |
+| Seed mention already removed (commit 7 fix #1 or #2) | Lower scope | Skip that specific fix in commit 7; proceed with the other |
+| Validator's `KNOWN_CLASSES` already has `InsertError` | Lower scope | Skip commit 0; proceed from commit 1 |
+
+Do NOT proceed if:
+
+- `$SPYGLASS_SRC` is unset (no source to verify against).
+- `SpikeSortingV1` now exists as a real class (eval 89's entire premise is gone).
+- `ripple_param_name` is not the PK of `RippleParameters` (eval 85's required substring is a hallucination against current source).
+
+**This verification gate is not optional.** Authoring against stale evidence is exactly the failure mode the plan's r1 review caught; not re-verifying before execute would re-introduce that failure on a slower time horizon.
+
+### Per-commit plan
 
 | Step | What | Where | Validation gate |
 | --- | --- | --- | --- |
@@ -572,7 +652,21 @@ Order matters. If commit 7 lands before eval 89, a skill-equipped model has neve
 
 ## Per-commit validation
 
-After each commit (1–7):
+### Before each commit (drift spot-check)
+
+Even after Step -1 passes, re-check the *specific* evidence each commit depends on before making the change. Cheap insurance against a drift that slipped through the bulk check:
+
+| Commit | Spot-check before editing |
+| --- | --- |
+| 0 | `grep -n "InsertError" skills/spyglass/scripts/validate_skill.py` — confirm NOT already registered. If it is, skip commit 0. |
+| 1 | `grep -n "workflow-recovery" skills/spyglass/evals/README.md` — confirm the new tier isn't already there. |
+| 2–6 | `python3 -c "import json; ids=[e['id'] for e in json.load(open('skills/spyglass/evals/evals.json'))['evals']]; print('next free id:', max(ids)+1)"` — confirm the next free ID is what the plan expects for the commit you're about to write. |
+| 7 (fix 1) | `sed -n '10,14p' skills/spyglass/SKILL.md` — confirm the line containing `SpikeSortingV1` is still at or near line 11 and still says what the plan claims it says. If the surrounding context has changed, update the edit accordingly (keep the *intent*: drop one keyword). |
+| 7 (fix 2) | `grep -n "SpikeSortingV1" skills/spyglass/references/merge_methods.md` — confirm the mention is still present at the expected location; the line number may have shifted from 49. |
+
+If any spot-check shows the evidence the commit depends on has already moved, *do not blindly apply the plan's diff* — re-read the surrounding context and write a replacement edit that preserves intent.
+
+### After each commit (standard validation)
 
 ```bash
 # 1. Regenerate the flat expectations list (skill validator expects it in sync)
