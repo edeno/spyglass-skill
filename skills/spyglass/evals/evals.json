@@ -3083,6 +3083,191 @@
         "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist",
         "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
       ]
+    },
+    {
+      "id": 79,
+      "eval_name": "abstain-session-samplingrate",
+      "stage": "hallucination-resistance",
+      "tier": "adversarial",
+      "difficulty": "medium",
+      "prompt": "Quick one — can I just pull the raw-ephys sampling rate straight off Session? I'm thinking something like `(Session & {'nwb_file_name': 'j1620210710_.nwb'}).fetch1('sampling_rate')`. Will that work?",
+      "expected_output": "No — `Session` does not have a `sampling_rate` column, so that fetch1 call will raise `DataJointError: unknown attribute 'sampling_rate'`. The correct table is `Raw` (from `spyglass.common.common_ephys`), which has `sampling_rate: float` as a direct secondary column — so `(Raw & {'nwb_file_name': 'j1620210710_.nwb'}).fetch1('sampling_rate')` returns the value directly. Names `Session.heading` (or `.heading.names` / `.describe()`) as the verification primitive. Does not guess a numeric default or a made-up field shape on Session.",
+      "assertions": {
+        "required_substrings": [
+          "Session",
+          "heading",
+          "Raw"
+        ],
+        "required_substrings_exempt": [
+          "heading"
+        ],
+        "forbidden_substrings": [
+          "sampling_rate is stored on Session",
+          "Session has a sampling_rate"
+        ],
+        "behavioral_checks": [
+          "States that `sampling_rate` does not exist as a column on Session",
+          "Names `Session.heading` (or `.heading.names` / `.describe()`) as the verification primitive",
+          "Redirects to `Raw` (direct column `sampling_rate`) as the correct source — accepts either `Raw.fetch1('sampling_rate')` or a fetch_nwb-based path",
+          "Does not invent a numeric default sampling rate or a fake fetch1 return shape on Session"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Session`.",
+        "Response contains substring `heading`.",
+        "Response contains substring `Raw`.",
+        "Response does not contain substring `sampling_rate is stored on Session`.",
+        "Response does not contain substring `Session has a sampling_rate`.",
+        "States that `sampling_rate` does not exist as a column on Session",
+        "Names `Session.heading` (or `.heading.names` / `.describe()`) as the verification primitive",
+        "Redirects to `Raw` (direct column `sampling_rate`) as the correct source — accepts either `Raw.fetch1('sampling_rate')` or a fetch_nwb-based path",
+        "Does not invent a numeric default sampling rate or a fake fetch1 return shape on Session"
+      ]
+    },
+    {
+      "id": 80,
+      "eval_name": "abstain-spyglassmixin-get-pk",
+      "stage": "hallucination-resistance",
+      "tier": "adversarial",
+      "difficulty": "easy",
+      "prompt": "I need the primary-key dicts for every row in my current restriction. I vaguely remember there's a `.get_pk()` convenience on SpyglassMixin — can you show me the exact signature?",
+      "expected_output": "`get_pk()` is not a method on `SpyglassMixin`. The skill should say so directly and not fabricate a signature. The real idioms are `(Table & restriction).fetch('KEY')` (returns a list of PK dicts) or `(Table & restriction).proj().fetch(as_dict=True)`. Names `dir(SpyglassMixin)` or a grep of `src/spyglass/utils/dj_mixin.py` as the verification path. Routes to spyglassmixin_methods.md for the supported helper surface. Does not invent a signature like `def get_pk(self, ...) -> list[dict]`.",
+      "assertions": {
+        "required_substrings": [
+          "fetch('KEY')",
+          "spyglassmixin_methods.md"
+        ],
+        "required_substrings_exempt": [
+          "fetch('KEY')"
+        ],
+        "forbidden_substrings": [
+          "def get_pk",
+          "get_pk returns",
+          "SpyglassMixin.get_pk"
+        ],
+        "behavioral_checks": [
+          "States that `get_pk` does not exist on SpyglassMixin",
+          "Recommends `.fetch('KEY')` (or `.proj().fetch()`) as the real way to get PK dicts",
+          "Names `dir(SpyglassMixin)` or a source-grep as the verification primitive",
+          "Does not fabricate a signature, docstring, or return-shape for `get_pk`"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `fetch('KEY')`.",
+        "Response contains substring `spyglassmixin_methods.md`.",
+        "Response does not contain substring `def get_pk`.",
+        "Response does not contain substring `get_pk returns`.",
+        "Response does not contain substring `SpyglassMixin.get_pk`.",
+        "States that `get_pk` does not exist on SpyglassMixin",
+        "Recommends `.fetch('KEY')` (or `.proj().fetch()`) as the real way to get PK dicts",
+        "Names `dir(SpyglassMixin)` or a source-grep as the verification primitive",
+        "Does not fabricate a signature, docstring, or return-shape for `get_pk`"
+      ]
+    },
+    {
+      "id": 81,
+      "eval_name": "abstain-ripple-direct-dependency",
+      "stage": "hallucination-resistance",
+      "tier": "adversarial",
+      "difficulty": "medium",
+      "prompt": "I'm about to cautious_delete a single `LFPV1` row. Before I do — does `RippleTimesV1` depend on `LFPV1` directly, so the delete will cascade into my ripple times?",
+      "expected_output": "Not directly. `RippleTimesV1` has three direct parents: `RippleLFPSelection`, `RippleParameters`, and `PositionOutput` (via `PositionOutput.proj(pos_merge_id='merge_id')`). `LFPV1` is reachable only indirectly — `RippleLFPSelection` references `LFPBandSelection.LFPBandElectrode`, and the `LFPBandV1 → LFPV1` chain sits above that. The correct diagnostic before any delete is to inspect the actual cascade scope for *this specific row*: `RippleTimesV1.parents()` or `dj.Diagram(RippleTimesV1)` to see the full dependency graph, and `(LFPV1 & key).descendants()` to see what the delete would actually take out (cascades don't stop at intermediate tables — if LFPBandV1 is populated off this LFPV1 row, RippleTimesV1 rows downstream of that LFPBand entry will also cascade). Routes to destructive_operations.md (inspect-before-destroy). Does not commit to a yes/no on cascade scope from memory alone.",
+      "assertions": {
+        "required_substrings": [
+          "parents()",
+          "RippleLFPSelection",
+          "RippleParameters",
+          "PositionOutput",
+          "destructive_operations.md"
+        ],
+        "required_substrings_exempt": [
+          "parents()"
+        ],
+        "expected_output_tables_exempt": [
+          "RippleTimesV1",
+          "LFPBandSelection",
+          "LFPBandV1",
+          "LFPV1",
+          "LFPBand"
+        ],
+        "forbidden_substrings": [
+          "RippleTimesV1 directly depends on LFPV1",
+          "LFPV1 is the direct parent of RippleTimesV1"
+        ],
+        "behavioral_checks": [
+          "States that `LFPV1` is NOT a direct parent of `RippleTimesV1`",
+          "Names at least two of the three actual direct parents: `RippleLFPSelection`, `RippleParameters`, `PositionOutput`",
+          "Recommends `Table.parents()` / `.descendants()` (or `dj.Diagram`) as the verification primitive before committing to cascade scope",
+          "Routes to destructive_operations.md before recommending any delete"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `parents()`.",
+        "Response contains substring `RippleLFPSelection`.",
+        "Response contains substring `RippleParameters`.",
+        "Response contains substring `PositionOutput`.",
+        "Response contains substring `destructive_operations.md`.",
+        "Response does not contain substring `RippleTimesV1 directly depends on LFPV1`.",
+        "Response does not contain substring `LFPV1 is the direct parent of RippleTimesV1`.",
+        "States that `LFPV1` is NOT a direct parent of `RippleTimesV1`",
+        "Names at least two of the three actual direct parents: `RippleLFPSelection`, `RippleParameters`, `PositionOutput`",
+        "Recommends `Table.parents()` / `.descendants()` (or `dj.Diagram`) as the verification primitive before committing to cascade scope",
+        "Routes to destructive_operations.md before recommending any delete"
+      ]
+    },
+    {
+      "id": 89,
+      "eval_name": "abstain-v1-naming-extrapolation",
+      "stage": "hallucination-resistance",
+      "tier": "adversarial",
+      "difficulty": "medium",
+      "prompt": "I just inserted a row in `SpikeSortingSelection`. To actually run the sort, do I call `SpikeSortingV1.populate(key)` or `SpikeSortingV1().populate(key)`? I've seen both forms and I'm not sure which the v1 pipeline wants.",
+      "expected_output": "Neither — `SpikeSortingV1` does not exist. The v1 spike-sorting Computed class is `SpikeSorting` (from `spyglass.spikesorting.v1.sorting`). Correct call is `SpikeSorting.populate(key)` (or `SpikeSorting().populate(key)` — DataJoint accepts both class- and instance-form populate, so the user's real question about populate form is orthogonal). The skill should flag the v0→v1 naming asymmetry explicitly: v1 classes that keep the `V1` suffix are `LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`, `CurationV1`, `ClusterlessDecodingV1`, `SortedSpikesDecodingV1`; v1 classes that drop the suffix include `SpikeSorting`, `SpikeSortingRecording`, `SpikeSortingSelection`, `MetricCuration`, `FigURLCuration`. There is no consistent rule — verify by import (`from spyglass.spikesorting.v1 import SpikeSorting`) or `python -c 'import spyglass.spikesorting.v1 as m; print([n for n in dir(m) if \"Sort\" in n])'` rather than extrapolating from the naming of adjacent v1 tables. Routes to spikesorting_pipeline.md.",
+      "assertions": {
+        "required_substrings": [
+          "SpikeSorting",
+          "spikesorting_pipeline.md"
+        ],
+        "expected_output_tables_exempt": [
+          "SpikeSortingSelection",
+          "SpikeSortingRecording",
+          "MetricCuration",
+          "FigURLCuration",
+          "LFPV1",
+          "TrodesPosV1",
+          "DLCPosV1",
+          "RippleTimesV1",
+          "CurationV1",
+          "ClusterlessDecodingV1",
+          "SortedSpikesDecodingV1"
+        ],
+        "forbidden_substrings": [
+          "SpikeSortingV1.populate",
+          "class SpikeSortingV1",
+          "SpikeSortingV1 is the v1 class"
+        ],
+        "behavioral_checks": [
+          "States that `SpikeSortingV1` does not exist",
+          "Identifies `SpikeSorting` (no V1 suffix) as the correct v1 spike-sorting Computed class and names its module (`spyglass.spikesorting.v1`)",
+          "Explicitly flags the v0→v1 naming asymmetry (some v1 classes keep the `V1` suffix, some drop it) — recommends verifying by import rather than extrapolating",
+          "Does not fabricate a signature for `SpikeSortingV1.populate` or claim it is an alias / deprecated name for `SpikeSorting`"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `SpikeSorting`.",
+        "Response contains substring `spikesorting_pipeline.md`.",
+        "Response does not contain substring `SpikeSortingV1.populate`.",
+        "Response does not contain substring `class SpikeSortingV1`.",
+        "Response does not contain substring `SpikeSortingV1 is the v1 class`.",
+        "States that `SpikeSortingV1` does not exist",
+        "Identifies `SpikeSorting` (no V1 suffix) as the correct v1 spike-sorting Computed class and names its module (`spyglass.spikesorting.v1`)",
+        "Explicitly flags the v0→v1 naming asymmetry (some v1 classes keep the `V1` suffix, some drop it) — recommends verifying by import rather than extrapolating",
+        "Does not fabricate a signature for `SpikeSortingV1.populate` or claim it is an alias / deprecated name for `SpikeSorting`"
+      ]
     }
   ]
 }
