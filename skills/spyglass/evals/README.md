@@ -93,6 +93,16 @@ Both rules are warn-level, not fail. When a warning is a false positive for an e
 
 **Each exempt entry is audit-worthy.** Every entry says "I looked at this warning and decided the substring is discriminating (or the mention is contextual) despite the heuristic." Use sparingly — prefer tightening the substring (`"Manual"` → `"Manual table"`) or moving the claim to a behavioral check.
 
+#### Legitimate exempt categories (three buckets)
+
+Independent audit of the post-cleanup state found `expected_output_tables_exempt` entries fall into three recurring patterns. If your exempt doesn't match one of these, the class probably belongs in `required_substrings` instead:
+
+1. **Prose distractors / contrast tables.** The class is named to say what the answer is *not* or to list lookalikes the user should distinguish. Example: eval 52 exempts `CurationV1`, `DLCPosV1`, `LFPV1` etc. — the 5 merge masters are required; the V1-suffix lookalikes are prose "these look like merges but aren't" examples.
+2. **Concept-word false-positives** on 3–4 letter class names matching ordinary English. Example: eval 54 exempts `Raw` because the match hit "Filter Raw Data" (a reference-file section title), not a reference to the `Raw` table. Eval 29 exempts `LFP` because "LFP stream" refers to the signal, not a class.
+3. **Subject appearing in its own explanation.** Schema-introspection evals (74-77) ask for field-name-only answers; the expected_output mentions the target class to explain why (e.g., "Electrode's PK is..."), but a terse correct answer doesn't need to produce `Electrode` as a token.
+
+`required_substrings_exempt` has two legitimate categories: rare domain terms that are discriminating in practice despite looking bare (`Nyquist`, `immobility`, `pynwb`, `spikeinterface`), and DJ-API literals where the specific form IS the test token (`len(`, `.aggr(`, `.proj(`, `set(`, `secondary`).
+
 ## Tiers
 
 Tiers capture *what kind of capability* the eval tests. A single skill can be strong at atomic reads and weak at adversarial pushback — slicing by tier shows that.
