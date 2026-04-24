@@ -197,16 +197,13 @@ class MyComputedTable(SpyglassMixin, dj.Computed):
     """
 
     def make_fetch(self, key):
-        # All DB reads happen here. Return a tuple of fetched values.
         return [(UpstreamSelection & key).fetch1(...)]
 
     def make_compute(self, key, upstream_data):
-        # Pure computation — no DB access. Return a tuple consumed by make_insert.
         result = do_the_math(upstream_data)
         return [result]
 
     def make_insert(self, key, result):
-        # All DB writes happen here.
         self.insert1({**key, "result": result})
 ```
 
