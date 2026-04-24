@@ -1970,7 +1970,7 @@
       "expected_output": "Routes to lfp_pipeline.md (Step 2: Filter Raw Data block). Identifies LFPSelection as a Manual table at the DataJoint level and a 'selection table' in Spyglass terms — picks the input (electrode group + interval + filter) for the paired Computed table LFPV1, which is what actually runs the populate. Mentions filter_name and lfp_electrode_group_name as PK fields on LFPSelection. Does not call LFPSelection a Computed, Lookup, or Imported table.",
       "assertions": {
         "required_substrings": [
-          "Manual",
+          "Manual table",
           "selection table",
           "filter_name",
           "lfp_electrode_group_name"
@@ -1987,7 +1987,7 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `Manual`.",
+        "Response contains substring `Manual table`.",
         "Response contains substring `selection table`.",
         "Response contains substring `filter_name`.",
         "Response contains substring `lfp_electrode_group_name`.",
@@ -2005,10 +2005,10 @@
       "tier": "table-classification",
       "difficulty": "medium",
       "prompt": "What's the difference between `TrodesPosParams` and `TrodesPosSelection`? Looking at both, they feel kind of similar and I can't tell which one I'm supposed to insert my parameter dict into.",
-      "expected_output": "Routes to position_pipeline.md (Pipeline 1 — Tables block). Identifies TrodesPosParams as the parameter table (Lookup tier): a named, reusable parameter dictionary; insert once per parameter set via TrodesPosParams.insert1(). Identifies TrodesPosSelection as the selection table (Manual tier): picks one (session, interval, params-name) tuple per intended populate run. Names trodes_pos_params_name as the FK that joins selection back to params. Does not say the two tables are the same or interchangeable.",
+      "expected_output": "Routes to position_pipeline.md (Pipeline 1 — Tables block). Identifies TrodesPosParams as the parameter table (Manual tier — Spyglass uses Manual for many parameter tables by convention; the 'parameter table' label refers to the Spyglass role, not the DataJoint Lookup tier): a named, reusable parameter dictionary; insert once per parameter set via TrodesPosParams.insert1(). Identifies TrodesPosSelection as the selection table (Manual tier): picks one (session, interval, params-name) tuple per intended populate run. Names trodes_pos_params_name as the FK that joins selection back to params. Does not say the two tables are the same or interchangeable.",
       "assertions": {
         "required_substrings": [
-          "Lookup",
+          "Manual",
           "parameter table",
           "selection table",
           "insert1",
@@ -2025,7 +2025,7 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `Lookup`.",
+        "Response contains substring `Manual`.",
         "Response contains substring `parameter table`.",
         "Response contains substring `selection table`.",
         "Response contains substring `insert1`.",
@@ -2051,13 +2051,11 @@
           "PositionOutput.TrodesPosV1",
           "PositionOutput.DLCPosV1"
         ],
-        "forbidden_substrings": [
-          "PositionOutput.populate",
-          "populate(PositionOutput"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Explains that rows enter PositionOutput via insert into a part table (PositionOutput.TrodesPosV1 or PositionOutput.DLCPosV1), not via populate()",
-          "Names at least one valid downstream consumer pattern (e.g., merge_get_part(key).fetch1('KEY'))"
+          "Names at least one valid downstream consumer pattern (e.g., merge_get_part(key).fetch1('KEY'))",
+          "Does not recommend PositionOutput.populate() or populate(PositionOutput, ...) as the entry point — explicitly contrasts with how rows actually arrive (insert into a part table)"
         ]
       },
       "files": [],
@@ -2066,10 +2064,9 @@
         "Response contains substring `part table`.",
         "Response contains substring `PositionOutput.TrodesPosV1`.",
         "Response contains substring `PositionOutput.DLCPosV1`.",
-        "Response does not contain substring `PositionOutput.populate`.",
-        "Response does not contain substring `populate(PositionOutput`.",
         "Explains that rows enter PositionOutput via insert into a part table (PositionOutput.TrodesPosV1 or PositionOutput.DLCPosV1), not via populate()",
-        "Names at least one valid downstream consumer pattern (e.g., merge_get_part(key).fetch1('KEY'))"
+        "Names at least one valid downstream consumer pattern (e.g., merge_get_part(key).fetch1('KEY'))",
+        "Does not recommend PositionOutput.populate() or populate(PositionOutput, ...) as the entry point — explicitly contrasts with how rows actually arrive (insert into a part table)"
       ]
     },
     {
