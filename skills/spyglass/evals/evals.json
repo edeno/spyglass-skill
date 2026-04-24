@@ -3450,6 +3450,108 @@
         "Recommends cautious_delete (not super_delete or a manual drop) and routes to destructive_operations.md",
         "Flags editing a params row in place as an anti-pattern and recommends inserting a new `ripple_param_name` entry for future runs"
       ]
+    },
+    {
+      "id": 86,
+      "eval_name": "counterfactual-decoding-noise-divergence",
+      "stage": "runtime-debugging",
+      "tier": "counterfactual",
+      "difficulty": "hard",
+      "prompt": "A collaborator and I both ran clusterless decoding on `j1620210710_.nwb` with what we think are the same parameters. Both populates finished without errors. My posterior is visibly noisier than theirs. Which upstream selection differences could explain the divergence, and what's the minimal diagnostic to isolate which one it is?",
+      "expected_output": "Enumerate the direct-FK divergence surfaces on `ClusterlessDecodingSelection` — there are four plus one secondary bool (per `decoding/v1/clusterless.py:83–91`): (1) different `waveform_features_group_name` (FK to `UnitWaveformFeaturesGroup`) — different units / waveform features feeding the decoder; (2) different `position_group_name` (FK to `PositionGroup`) — different PositionOutput merge_ids threaded in, hence different behavioral alignment and speed; (3) different `decoding_param_name` (FK to `DecodingParameters`) — different state transition prior, smoothing, or emission model; (4) different `encoding_interval` (FK to `IntervalList.proj(encoding_interval=...)`) — different training epoch; (5) different `decoding_interval` (FK to `IntervalList.proj(decoding_interval=...)`) — different test epoch; (6) different `estimate_decoding_params` bool — whether the decoder re-estimates params at inference. Minimal diagnostic: fetch `ClusterlessDecodingSelection & key` row-by-row for both users and diff the PK fields. Upstream-chain differences (e.g., different sorter params feeding `UnitWaveformFeaturesGroup`, different position params feeding `PositionGroup`) are also possible but are a *second-order* check — they matter only if the direct selection keys match. Routes to decoding_pipeline.md. Does not commit to one cause before the diff is run. Does not attribute divergence purely to environment drift (the selection keys gate determinism).",
+      "assertions": {
+        "required_substrings": [
+          "ClusterlessDecodingSelection",
+          "decoding_param_name",
+          "decoding_pipeline.md"
+        ],
+        "expected_output_tables_exempt": [
+          "UnitWaveformFeaturesGroup",
+          "PositionGroup",
+          "DecodingParameters",
+          "IntervalList",
+          "PositionOutput"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Enumerates at least four distinct direct-FK divergence surfaces on `ClusterlessDecodingSelection` (waveform features group, position group, decoding params, encoding interval, decoding interval — any four of these five)",
+          "Recommends fetching and diffing `ClusterlessDecodingSelection & key` between the two users as the minimal isolating diagnostic",
+          "Does not commit to one cause before the diagnostic is run",
+          "Distinguishes direct-FK surfaces from upstream-chain differences (sorter params, position params) — latter is a second-order check",
+          "Does not misattribute divergence purely to environment / package drift"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `ClusterlessDecodingSelection`.",
+        "Response contains substring `decoding_param_name`.",
+        "Response contains substring `decoding_pipeline.md`.",
+        "Enumerates at least four distinct direct-FK divergence surfaces on `ClusterlessDecodingSelection` (waveform features group, position group, decoding params, encoding interval, decoding interval — any four of these five)",
+        "Recommends fetching and diffing `ClusterlessDecodingSelection & key` between the two users as the minimal isolating diagnostic",
+        "Does not commit to one cause before the diagnostic is run",
+        "Distinguishes direct-FK surfaces from upstream-chain differences (sorter params, position params) — latter is a second-order check",
+        "Does not misattribute divergence purely to environment / package drift"
+      ]
+    },
+    {
+      "id": 87,
+      "eval_name": "counterfactual-trodes-pos-params-swap",
+      "stage": "pipeline-usage",
+      "tier": "counterfactual",
+      "difficulty": "hard",
+      "prompt": "If I change `trodes_pos_params_name` on my `TrodesPosSelection` from `default` to `default_decoding` and re-populate `TrodesPosV1`, which downstream tables would produce different entries, and which would be completely unaffected if every other selection is the same?",
+      "expected_output": "A change to `trodes_pos_params_name` on `TrodesPosSelection` produces a new row in `TrodesPosV1` keyed by the new params name — the old row is still there (same `nwb_file_name`, `interval_list_name`, different `trodes_pos_params_name`). Inserting that new `TrodesPosV1` row into `PositionOutput.TrodesPosV1` issues a new `merge_id` on `PositionOutput`. Downstream that diverges — anything consuming the new PositionOutput merge_id: `LinearizedPositionV1` (if re-inserted keyed on the new merge_id), clusterless/sorted decoding selections that reference the new `PositionGroup` (if the group is updated to include the new merge_id), ripple detection if `RippleLFPSelection` is paired with the new PositionOutput merge via `RippleTimesV1`'s `pos_merge_id` FK. Unchanged: everything not downstream of `PositionOutput` — `LFPV1`, `LFPBandV1`, `SpikeSorting`, `SpikeSortingRecording`, `CurationV1`, the Session/Electrode/IntervalList common tables, raw ephys. The old position entry and its downstream consumers stay valid; divergence threads through the new merge_id. Routes to position_pipeline.md and decoding_pipeline.md. Does not claim spike sorting or LFP are affected (they don't consume position).",
+      "assertions": {
+        "required_substrings": [
+          "PositionOutput",
+          "TrodesPosV1",
+          "position_pipeline.md"
+        ],
+        "expected_output_tables_exempt": [
+          "TrodesPosSelection",
+          "LinearizedPositionV1",
+          "PositionGroup",
+          "RippleLFPSelection",
+          "RippleTimesV1",
+          "LFPV1",
+          "LFPBandV1",
+          "SpikeSorting",
+          "SpikeSortingRecording",
+          "CurationV1",
+          "Session",
+          "Electrode",
+          "IntervalList",
+          "LFP"
+        ],
+        "forbidden_substrings": [
+          "LFPV1 would need to be re-populated",
+          "SpikeSorting depends on position",
+          "CurationV1 would change",
+          "SpikeSortingV1"
+        ],
+        "behavioral_checks": [
+          "Identifies that a new `TrodesPosV1` row (new params_name) is produced, not an in-place update",
+          "Identifies that inserting into `PositionOutput.TrodesPosV1` issues a new merge_id on `PositionOutput`",
+          "Lists at least two downstream tables that would diverge (linearization, decoding via PositionGroup, ripple via pos_merge_id)",
+          "Explicitly names LFP, spike-sorting, and curation as unaffected — they do not consume position",
+          "Does not use the v0 field name `position_info_param_name` or the nonexistent class `SpikeSortingV1`"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `PositionOutput`.",
+        "Response contains substring `TrodesPosV1`.",
+        "Response contains substring `position_pipeline.md`.",
+        "Response does not contain substring `LFPV1 would need to be re-populated`.",
+        "Response does not contain substring `SpikeSorting depends on position`.",
+        "Response does not contain substring `CurationV1 would change`.",
+        "Response does not contain substring `SpikeSortingV1`.",
+        "Identifies that a new `TrodesPosV1` row (new params_name) is produced, not an in-place update",
+        "Identifies that inserting into `PositionOutput.TrodesPosV1` issues a new merge_id on `PositionOutput`",
+        "Lists at least two downstream tables that would diverge (linearization, decoding via PositionGroup, ripple via pos_merge_id)",
+        "Explicitly names LFP, spike-sorting, and curation as unaffected — they do not consume position",
+        "Does not use the v0 field name `position_info_param_name` or the nonexistent class `SpikeSortingV1`"
+      ]
     }
   ]
 }
