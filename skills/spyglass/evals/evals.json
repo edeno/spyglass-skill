@@ -2102,6 +2102,172 @@
         "Identifies LFPBandV1 as Computed; user populates it after inserting LFPBandSelection",
         "Notes there is no merge wrapper — LFPBandV1 itself is the consumer-facing endpoint"
       ]
+    },
+    {
+      "id": 58,
+      "eval_name": "param-target-sampling-rate",
+      "stage": "parameter-understanding",
+      "tier": "parameter-semantics",
+      "difficulty": "hard",
+      "prompt": "`LFPSelection` has a `target_sampling_rate` field. What does this control, and what goes wrong if I set it too low for a ripple-band analysis I want to do later?",
+      "expected_output": "Routes to lfp_pipeline.md (Nyquist note around line 122). Identifies target_sampling_rate as the downsampled output rate of LFPV1. Connects the rate to the Nyquist constraint for downstream band filters: a band filter selecting the ripple band (150–250 Hz) requires the LFP stream's sampling rate to strictly exceed 2× the band's high cutoff, so a target_sampling_rate below ~500 Hz would alias ripple-band signal. Names 1000 Hz as the canonical Spyglass default and the consequence of going lower (aliasing in the downstream band). Does not say sample rate is arbitrary or doesn't matter.",
+      "assertions": {
+        "required_substrings": [
+          "Nyquist",
+          "1000",
+          "downsample"
+        ],
+        "forbidden_substrings": [
+          "sample rate doesn't matter",
+          "arbitrary"
+        ],
+        "behavioral_checks": [
+          "Explains that target_sampling_rate sets the downsampled output rate of LFPV1",
+          "Connects the rate to the Nyquist constraint for downstream band filters (e.g., ripple band 150–250 Hz needs > 500 Hz sampling)",
+          "Names 1000 Hz as the canonical default and the consequence of going lower (aliasing in the downstream band)"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Nyquist`.",
+        "Response contains substring `1000`.",
+        "Response contains substring `downsample`.",
+        "Response does not contain substring `sample rate doesn't matter`.",
+        "Response does not contain substring `arbitrary`.",
+        "Explains that target_sampling_rate sets the downsampled output rate of LFPV1",
+        "Connects the rate to the Nyquist constraint for downstream band filters (e.g., ripple band 150–250 Hz needs > 500 Hz sampling)",
+        "Names 1000 Hz as the canonical default and the consequence of going lower (aliasing in the downstream band)"
+      ]
+    },
+    {
+      "id": 59,
+      "eval_name": "param-speed-threshold-ripple",
+      "stage": "parameter-understanding",
+      "tier": "parameter-semantics",
+      "difficulty": "medium",
+      "prompt": "In ripple params, what does `speed_threshold: 4.0` actually do? If I bump it to 10 cm/s, more ripples or fewer, and what quality tradeoff am I making?",
+      "expected_output": "Routes to ripple_pipeline.md. Explains that speed_threshold filters out candidate ripple events while the animal moves faster than the threshold value (cm/s). Predicts the direction: raising the threshold from 4 to 10 yields fewer detected events, with a cleaner immobility-conditioned set, but risks losing peri-movement sharp-wave ripples. Does not claim raising the threshold yields more ripples.",
+      "assertions": {
+        "required_substrings": [
+          "immobility",
+          "fewer detected",
+          "candidate"
+        ],
+        "forbidden_substrings": [
+          "more ripples"
+        ],
+        "behavioral_checks": [
+          "Explains the threshold filters out candidate events while the animal moves faster than the speed value (cm/s)",
+          "Predicts the direction: raising → fewer events, cleaner immobility-conditioned set; risks losing peri-movement SWRs"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `immobility`.",
+        "Response contains substring `fewer detected`.",
+        "Response contains substring `candidate`.",
+        "Response does not contain substring `more ripples`.",
+        "Explains the threshold filters out candidate events while the animal moves faster than the speed value (cm/s)",
+        "Predicts the direction: raising → fewer events, cleaner immobility-conditioned set; risks losing peri-movement SWRs"
+      ]
+    },
+    {
+      "id": 60,
+      "eval_name": "param-encoding-vs-decoding-interval",
+      "stage": "parameter-understanding",
+      "tier": "parameter-semantics",
+      "difficulty": "medium",
+      "prompt": "Clusterless decoding selection has both `encoding_interval` and `decoding_interval`. Can these be the same interval? When would I set them differently?",
+      "expected_output": "Routes to decoding_pipeline.md. Explains that the encoding interval is where the place-field / receptive-field model is trained, while the decoding interval is where the trained model is applied. Yes, they can be the same interval (within-run reconstruction). Setting them differently is the standard pattern for replay analysis: train the model on a run interval, then apply it to a sleep or reward interval to decode replayed trajectories.",
+      "assertions": {
+        "required_substrings": [
+          "training",
+          "apply",
+          "replay"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Explains that encoding_interval trains the place-field / receptive-field model; decoding_interval is where the trained model is applied",
+          "Gives a same-interval use (within-run reconstruction) and a different-interval use (train on run, decode replay during sleep / reward)"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `training`.",
+        "Response contains substring `apply`.",
+        "Response contains substring `replay`.",
+        "Explains that encoding_interval trains the place-field / receptive-field model; decoding_interval is where the trained model is applied",
+        "Gives a same-interval use (within-run reconstruction) and a different-interval use (train on run, decode replay during sleep / reward)"
+      ]
+    },
+    {
+      "id": 61,
+      "eval_name": "param-trodes-smoothing",
+      "stage": "parameter-understanding",
+      "tier": "parameter-semantics",
+      "difficulty": "hard",
+      "prompt": "In `TrodesPosParams.insert_default()`'s params dict I see smoothing / filter fields. What happens to my resulting `speed` column if I turn smoothing off?",
+      "expected_output": "Routes to position_pipeline.md. Explains that the smoothing fields apply a low-pass filter to raw position samples before computing the velocity / speed derivative. Predicts that disabling smoothing produces a noisier speed trace, which causes spurious crossings of downstream thresholds (ripple speed_threshold, decoding interval gating, etc.). Recommends inspecting TrodesPosParams.describe() or .heading for the exact smoothing field names rather than guessing.",
+      "assertions": {
+        "required_substrings": [
+          "low-pass",
+          "noise",
+          "derivative",
+          "TrodesPosParams.describe"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Explains smoothing low-passes raw position before the velocity / speed derivative",
+          "Predicts: disabling smoothing gives a noisier speed trace, causing spurious crossings of downstream thresholds",
+          "Recommends inspecting TrodesPosParams.describe() / .heading for the exact field names rather than guessing"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `low-pass`.",
+        "Response contains substring `noise`.",
+        "Response contains substring `derivative`.",
+        "Response contains substring `TrodesPosParams.describe`.",
+        "Explains smoothing low-passes raw position before the velocity / speed derivative",
+        "Predicts: disabling smoothing gives a noisier speed trace, causing spurious crossings of downstream thresholds",
+        "Recommends inspecting TrodesPosParams.describe() / .heading for the exact field names rather than guessing"
+      ]
+    },
+    {
+      "id": 62,
+      "eval_name": "param-sort-group-by-electrode-group",
+      "stage": "parameter-understanding",
+      "tier": "parameter-semantics",
+      "difficulty": "hard",
+      "prompt": "What does `SortGroup().set_group_by_electrode_group(nwb_file_name=nwb_file)` actually do — what defines a sort group when you call it? And on a multi-shank probe, why does this conflict with the clusterless decoding / spike sorting pipeline?",
+      "expected_output": "Routes to spikesorting_pipeline.md (clusterless sorting requires one sort group per shank section). Identifies the grouping criterion: one sort group per electrode_group_name (groups all good channels with the same electrode_group_name). Explains the multi-shank conflict: when an electrode_group spans multiple shanks, the resulting sort group contains electrodes at different (x, y) coordinates; SpikeInterface rejects non-unique contact positions at SpikeSortingRecording.populate(). Recommends SortGroup().set_group_by_shank(nwb_file_name=nwb_file) for clusterless / waveform-based workflows. Does not claim set_group_by_electrode_group is correct for clusterless or that it produces one electrode per group.",
+      "assertions": {
+        "required_substrings": [
+          "electrode_group_name",
+          "set_group_by_shank",
+          "contact positions"
+        ],
+        "forbidden_substrings": [
+          "set_group_by_electrode_group is correct for clusterless",
+          "one electrode per group"
+        ],
+        "behavioral_checks": [
+          "Identifies that set_group_by_electrode_group groups by electrode_group_name (one sort group per electrode_group)",
+          "Explains the clusterless failure: multi-shank electrode_groups produce duplicate (x, y) contact positions; SpikeInterface rejects at SpikeSortingRecording.populate()",
+          "Recommends set_group_by_shank for clusterless / waveform-based pipelines"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `electrode_group_name`.",
+        "Response contains substring `set_group_by_shank`.",
+        "Response contains substring `contact positions`.",
+        "Response does not contain substring `set_group_by_electrode_group is correct for clusterless`.",
+        "Response does not contain substring `one electrode per group`.",
+        "Identifies that set_group_by_electrode_group groups by electrode_group_name (one sort group per electrode_group)",
+        "Explains the clusterless failure: multi-shank electrode_groups produce duplicate (x, y) contact positions; SpikeInterface rejects at SpikeSortingRecording.populate()",
+        "Recommends set_group_by_shank for clusterless / waveform-based pipelines"
+      ]
     }
   ]
 }
