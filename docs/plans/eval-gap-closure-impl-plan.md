@@ -228,7 +228,7 @@ Each subsection lists the prompt verbatim, the routing target, and the discrimin
 - **stage / tier / difficulty:** `table-understanding` / `table-classification` / `easy`
 - **prompt:** "Is `LFPSelection` a manual, lookup, computed, or imported table? And is it a 'selection' or 'parameter' table in spyglass terms? I'm trying to understand what I put into it vs. what gets computed."
 - **routes to:** [lfp_pipeline.md](../../skills/spyglass/references/lfp_pipeline.md) → "Step 2: Filter Raw Data" block.
-- **required_substrings:** `Manual`, `selection table`, `filter_name`, `lfp_electrode_group_name`
+- **required_substrings:** `Manual table`, `selection table`, `filter_name`, `lfp_electrode_group_name`
 - **forbidden_substrings:** `is Computed`, `is Lookup`, `is Imported`
 - **behavioral_checks:**
   - Distinguishes DataJoint tier (Manual) from Spyglass role (selection table — picks input for the paired Computed table).
@@ -239,12 +239,12 @@ Each subsection lists the prompt verbatim, the routing target, and the discrimin
 - **stage / tier / difficulty:** `table-understanding` / `table-classification` / `medium`
 - **prompt:** "What's the difference between `TrodesPosParams` and `TrodesPosSelection`? Looking at both, they feel kind of similar and I can't tell which one I'm supposed to insert my parameter dict into."
 - **routes to:** [position_pipeline.md](../../skills/spyglass/references/position_pipeline.md) → "Tables" block under Pipeline 1.
-- **required_substrings:** `Lookup`, `parameter table`, `selection table`, `insert1`, `trodes_pos_params_name`
+- **required_substrings:** `Manual`, `parameter table`, `selection table`, `insert1`, `trodes_pos_params_name`
 - **forbidden_substrings:** `same table`, `interchangeable`
 - **behavioral_checks:**
-  - Identifies `TrodesPosParams` as the parameter table (named, reusable param dict; insert once per param set).
-  - Identifies `TrodesPosSelection` as the selection table (picks session + interval + params name for one populate run).
-  - Discriminator note: `TrodesPosParams`/`TrodesPosSelection` removed from required (echoed in prompt); `trodes_pos_params_name` is the joining FK and a non-echoed discriminator.
+  - Identifies `TrodesPosParams` as the parameter table — Manual tier in DataJoint terms; named, reusable param dict; insert once per param set.
+  - Identifies `TrodesPosSelection` as the selection table — also Manual; picks session + interval + params name for one populate run.
+  - Discriminator note: `TrodesPosParams`/`TrodesPosSelection` removed from required (echoed in prompt); `trodes_pos_params_name` is the joining FK and a non-echoed discriminator. **Spyglass convention:** many `*Params` tables are `dj.Manual`, not `dj.Lookup` — verify each `*Params` class's tier individually before authoring related evals (do not assume parameter-table = Lookup tier).
 
 ### Eval 56 — `classify-positionoutput-merge`
 
@@ -252,11 +252,12 @@ Each subsection lists the prompt verbatim, the routing target, and the discrimin
 - **prompt:** "What kind of table is `PositionOutput`? It doesn't have a `populate()` and I can't figure out how a row gets in there."
 - **routes to:** [merge_methods.md](../../skills/spyglass/references/merge_methods.md) → mechanism intro; [position_pipeline.md](../../skills/spyglass/references/position_pipeline.md) → "PositionOutput Merge Table".
 - **required_substrings:** `merge table`, `part table`, `PositionOutput.TrodesPosV1`, `PositionOutput.DLCPosV1`
-- **forbidden_substrings:** `PositionOutput.populate`, `populate(PositionOutput`
+- **forbidden_substrings:** (none — see discriminator note)
 - **behavioral_checks:**
   - Explains that rows enter PositionOutput via insert into a part table (`PositionOutput.TrodesPosV1` or `PositionOutput.DLCPosV1`), not via `populate()`.
   - Names at least one valid downstream consumer pattern (`merge_get_part(key).fetch1('KEY')`).
-  - Discriminator note: bare `populate` removed from forbidden — good answers explain "you don't `populate()` it" and would false-fail.
+  - Does not recommend `PositionOutput.populate()` or `populate(PositionOutput, ...)` as the entry point — explicitly contrasts with how rows actually arrive (insert into a part table).
+  - Discriminator note: scoped forbidden substrings (`PositionOutput.populate`, `populate(PositionOutput`) were considered but moved to a behavioral check — a correct answer phrased as a denial ("you don't call `PositionOutput.populate()`") would still contain those substrings and false-fail. Behavioral grader handles the negation correctly.
 
 ### Eval 57 — `classify-lfpband-role`
 
