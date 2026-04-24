@@ -253,7 +253,7 @@ def main(argv: list[str] | None = None) -> int: ...
 Usage: python describe_params.py (--pipeline P | --table T) [--json]
                                                             [--include-usage]
 
---pipeline    Named pipeline (SpikeSortingV1, LFPV1, ...). Resolves to its
+--pipeline    Named pipeline (SpikeSorting, LFPV1, ...). Resolves to its
               Params table set via hardcoded map.
 --table       Single Params table name. Mutually exclusive with --pipeline.
 --include-usage
@@ -268,7 +268,7 @@ Hardcoded for review auditability. Each entry is `(fully_qualified_class_path, p
 
 ```python
 _PIPELINE_PARAMS: dict[str, list[tuple[str, str]]] = {
-    "SpikeSortingV1": [
+    "SpikeSorting": [
         ("spyglass.spikesorting.v1.recording.SpikeSortingPreprocessingParameters", "preproc_param_name"),
         ("spyglass.spikesorting.v1.sorting.SpikeSorterParameters",                  "sorter_params_name"),
         ("spyglass.spikesorting.v1.artifact.ArtifactDetectionParameters",           "artifact_params_name"),
@@ -299,7 +299,7 @@ JSON payload:
 
 ```json
 {
-  "pipeline": "SpikeSortingV1",
+  "pipeline": "SpikeSorting",
   "usage_counted": false,
   "params_tables": [
     {

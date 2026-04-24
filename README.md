@@ -10,7 +10,7 @@ neurophysiology framework (DataJoint + NWB).
 
 Activates automatically when you're working on Spyglass code:
 imports from `spyglass.*`, `SpyglassMixin` subclasses, V1 pipeline
-classes (`LFPV1`, `SpikeSortingV1`, `RippleTimesV1`, etc.), or
+classes (`LFPV1`, `SpikeSorting`, `RippleTimesV1`, etc.), or
 DLC / DANDI / Kachery within a Spyglass context. The skill provides:
 
 - **Core directives** that prevent the most common failure modes
@@ -30,7 +30,7 @@ Once installed, the skill engages on questions like:
 
 ```text
 "How do I populate LFPV1 for nwb_file X?"
-"My populate() is failing with fetch1 cardinality errors in SpikeSortingV1."
+"My populate() is failing with fetch1 cardinality errors in SpikeSorting."
 "Write a make() that reads ripple bands from LFPBandV1."
 "What's the right way to delete a subject's decoding results?"
 "Set up Spyglass against my lab's MySQL server."

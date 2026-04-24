@@ -46,7 +46,7 @@ methods on them:
 
 - `MuaEventsV1` (`dj.Computed` at `src/spyglass/mua/v1/mua.py:63`)
 - `CurationV1` (`dj.Manual` at `src/spyglass/spikesorting/v1/curation.py:30`)
-- `SpikeSortingV1`, `LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`, `ClusterlessDecodingV1`, `SortedSpikesDecodingV1` — all `dj.Computed`
+- `SpikeSorting`, `LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`, `ClusterlessDecodingV1`, `SortedSpikesDecodingV1` — all `dj.Computed`
 - `SpikeSortingSelection`, `SpikeSortingRecordingSelection`, `LFPSelection` and other `*Selection` tables — all `dj.Manual`
 
 **Quick check in Python:**
