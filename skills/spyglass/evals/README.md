@@ -11,7 +11,7 @@ Capability evals for the Spyglass skill. Each eval is a realistic user prompt pa
 | Key | Type | Purpose |
 | --- | --- | --- |
 | `skill_name` | string | Identifies the skill under test (`spyglass`). |
-| `notes` | string | Suite-wide context: what the tiers mean, why the prompts use Frank-Lab-specific names, how assertions are scored. Kept here rather than in a README so it travels with the JSON if the suite is redistributed. |
+| `notes` | string | Suite-wide context: the three classification axes, the anonymization convention for lab/host/user identifiers (`db.example.test`, `testuser`, `otheruser`, `example lab`, `example institution`), and how assertions are scored. Kept here rather than only in a README so it travels with the JSON if the suite is redistributed. |
 | `assertion_schema` | object | Self-describing summary of how to interpret each assertion type. Lets a new grader understand the scoring without reading this README. |
 | `evals` | array | The eval entries themselves. |
 
