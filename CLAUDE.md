@@ -10,7 +10,7 @@ and is a different audience — do not merge the two.
 - [skills/spyglass/SKILL.md](skills/spyglass/SKILL.md) — entry point loaded into Claude's context when the frontmatter triggers match.
 - [skills/spyglass/references/](skills/spyglass/references/) — progressive-disclosure topic files, pulled in on demand.
 - [skills/spyglass/scripts/](skills/spyglass/scripts/) — validator (`validate_skill.py`) + runner (`validate_all.sh`).
-- [skills/spyglass/tests/](skills/spyglass/tests/) — 46 regression fixtures + opt-in import harness.
+- [skills/spyglass/tests/](skills/spyglass/tests/) — 58 regression fixtures + opt-in import harness.
 - [skills/spyglass/evals/](skills/spyglass/evals/) — behavioral eval cases for skill-creator's optimization loop.
 
 ## Editing workflow

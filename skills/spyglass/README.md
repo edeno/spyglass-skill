@@ -58,7 +58,7 @@ SKILL.md                       # entry point (always loaded into context)
 references/                    # progressive-disclosure topic files
 scripts/validate_skill.py      # static validator (AST over .md files)
 scripts/validate_all.sh        # one-command runner for all checks
-tests/test_validator_regressions.py   # 46 regression fixtures
+tests/test_validator_regressions.py   # 58 regression fixtures
 tests/test_runnable_imports.py        # opt-in live-import harness
 evals/evals.json               # behavioral eval cases
 evals/README.md                # eval authoring notes
