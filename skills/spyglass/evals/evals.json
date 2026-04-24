@@ -2346,13 +2346,11 @@
           "SpikeSortingOutput",
           "recommend v1"
         ],
-        "forbidden_substrings": [
-          "v0 for new sessions",
-          "use v0"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Recommends v1 for new work; identifies v0 as legacy / read-only for old data",
-          "Routes to spikesorting_v0_legacy.md only for reading old sorts, not for new work"
+          "Routes to spikesorting_v0_legacy.md only for reading old sorts, not for new work",
+          "Does not recommend v0 for new sessions or as the default — v0 is for reading legacy data only"
         ]
       },
       "files": [],
@@ -2360,10 +2358,9 @@
         "Response contains substring `legacy`.",
         "Response contains substring `SpikeSortingOutput`.",
         "Response contains substring `recommend v1`.",
-        "Response does not contain substring `v0 for new sessions`.",
-        "Response does not contain substring `use v0`.",
         "Recommends v1 for new work; identifies v0 as legacy / read-only for old data",
-        "Routes to spikesorting_v0_legacy.md only for reading old sorts, not for new work"
+        "Routes to spikesorting_v0_legacy.md only for reading old sorts, not for new work",
+        "Does not recommend v0 for new sessions or as the default — v0 is for reading legacy data only"
       ]
     },
     {
@@ -2461,10 +2458,7 @@
           "cautious_delete",
           "restriction"
         ],
-        "forbidden_substrings": [
-          "same selection key",
-          "identical pipeline state"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Lists at least three plausible state differences (different params name, missing upstream populate, different selection key, team-permission gating, environment / package version drift)",
           "Does not assume one cause",
@@ -2476,8 +2470,6 @@
         "Response contains substring `params_name`.",
         "Response contains substring `cautious_delete`.",
         "Response contains substring `restriction`.",
-        "Response does not contain substring `same selection key`.",
-        "Response does not contain substring `identical pipeline state`.",
         "Lists at least three plausible state differences (different params name, missing upstream populate, different selection key, team-permission gating, environment / package version drift)",
         "Does not assume one cause",
         "Does not claim the pipeline state is identical when the symptoms prove otherwise"
