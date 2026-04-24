@@ -159,7 +159,7 @@ git clone https://github.com/LorenFrankLab/spyglass.git ../spyglass
 uvx pre-commit install   # or: pip install pre-commit && pre-commit install
 
 # Run the full local check
-./skills/spyglass/scripts/validate_all.sh --baseline-warnings 180
+./skills/spyglass/scripts/validate_all.sh --baseline-warnings 3
 ruff check .
 ```
 

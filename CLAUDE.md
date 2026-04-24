@@ -18,7 +18,7 @@ and is a different audience — do not merge the two.
 After any change to `SKILL.md` or `references/*.md`, run the validator:
 
 ```bash
-./skills/spyglass/scripts/validate_all.sh --baseline-warnings 180
+./skills/spyglass/scripts/validate_all.sh --baseline-warnings 3
 ```
 
 It reads `$SPYGLASS_SRC` (see README.md for how to set it). Exit
