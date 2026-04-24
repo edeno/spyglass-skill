@@ -1,12 +1,52 @@
 # Implementation plan — schema-fact validator (Option E: lint + verify)
 
 **Date:** 2026-04-24
-**Status:** Draft — ready to execute
-**Scope:** Add a `check_schema_facts` step to `skills/spyglass/scripts/validate_skill.py` that (1) lints catalog-style class entries in references for the presence of a structured PK declaration, and (2) verifies the structured declaration matches the actual class definition in Spyglass source.
+**Status:** **Not executing — audit found zero drift.** Kept as historical context + design reference for future revisit.
+**Decision date:** 2026-04-24 (same session; see outcome block below).
+**Scope:** Would add a `check_schema_facts` step to `skills/spyglass/scripts/validate_skill.py` that (1) lints catalog-style class entries in references for the presence of a structured PK declaration, and (2) verifies the structured declaration matches the actual class definition in Spyglass source.
 
 This is **option E** from the design discussion: hybrid lint + verify. Closes the false-confidence gap of pure verify-only by enforcing that catalog entries opt into the checkable form.
 
 **Supersedes** an earlier draft of this file that described option A (verify-only). The audit results below explain why option E became the chosen design. See [Alternatives considered](#alternatives-considered) for the explicit option F (audit-only) comparison.
+
+## Outcome (2026-04-24, prereq-check session)
+
+Before starting Phase 1 the three prerequisites were re-run against current state. Two of them changed the decision:
+
+1. **`resolve_table_fields` exists** (`validate_skill.py:769`) — intact. ✅
+2. **Five known reference bugs** (Phase 0, §Commit 1.1 + 1.3) — verified against source using the production parser. **All 5 are throwaway-parser false positives caused by projection-alias mis-resolution.**
+   - `preproc_param_name`, `artifact_param_name`, `sorter_param_name`: these are the *actual* singular PK field names in source (`spikesorting/v1/recording.py:99`, `artifact.py:27`, `sorting.py:84`). Plan's claim of plural `_params_name` was wrong.
+   - `spikesorting_merge_id` in `UnitAnnotation`: `-> SpikeSortingOutput.proj(spikesorting_merge_id='merge_id')` renames the FK field locally; reference correctly uses `spikesorting_merge_id` as the PK field name.
+   - `CurationV1` → reference says `sorting_id, curation_id`. Source transitive PK resolves to exactly that (`-> SpikeSorting` → `-> SpikeSortingSelection` → `sorting_id`, plus own `curation_id`). Plan's "9-field PK" claim was wrong.
+   - The plan's own caveat at §Source-side AST resolution line 144 ("throwaway script didn't handle projection aliases") applies to all 5, not just the LFP tables it named.
+3. **Phase 0 audit replay with production parser:** 76 catalog entries / 42 with PK / 34 without (of which ~10 use prose `Primary key:` syntax not counted) / **0 real drift**.
+
+### Revised cost-benefit
+
+| Dimension | Plan claim | Post-audit reality |
+| --- | --- | --- |
+| Phase 1 cost | ~3 hrs | ~0 hrs (no drift to fix) |
+| Phase 2 cost | ~2 hrs | ~2-3 hrs (~20 real missing-PK entries + ~10 prose-syntax normalizations) |
+| Phase 3 cost | ~3-5 hrs | ~3-5 hrs (unchanged) |
+| Past bugs caught | 7 (plan: 5 audit + 2 historical) | 2 historical only |
+| Future drift prevention | real | real |
+
+The value proposition shrinks from "catches 7 known bug patterns" to "prevents a failure mode that has occurred ~2 times in the skill's lifetime." Estimated per-incident saving vs. human review: ~15-30 min/year. Against a 4-5 hr one-time cost, payback is 10-20 years.
+
+### Why not execute
+
+- **Zero demonstrated drift.** The audit proved the references are currently clean. That fact is the real deliverable from this exercise.
+- **Opportunity cost.** 4-5 hrs here displaces higher-leverage work: improving the skill's content (eval 61 showed skill-documentation gaps are the upstream cause of eval mistakes), the eval-failure-mode-coverage draft plan, adding evals to thin tiers.
+- **Insurance pricing is wrong.** 4-5 hrs buys insurance against a failure mode with ~0 observed annual rate. Human review already catches the two historical instances the plan cited.
+
+### When to revisit
+
+- If a catalog-entry PK drift actually ships to users (discovered via eval failure, user report, or a Spyglass version bump invalidating a reference). At that point the full Option E (or the lighter Option B / "presence-only lint") becomes cheap insurance against the now-demonstrated pattern.
+- If the reference corpus grows substantially (e.g., Spyglass adds 10+ new pipelines with catalog entries), pure human review will scale poorly and the lint half of Option E becomes justifiable on forcing-function grounds alone.
+
+The sections below are the design as of plan drafting; treat everything after this outcome block as historical context. Phase 0 audit numbers (59 / 40 / 19 / 12 / 5) were based on the throwaway parser and are superseded by the production-parser replay above.
+
+---
 
 ## Phase 0 audit (already complete — findings baked in)
 
