@@ -65,6 +65,34 @@ Examples that **fail** the rule (use behavioral checks instead):
 
 Test: "Could a correct answer contain this string in a denial like 'this is NOT X' or 'you do NOT call Y'?" If yes → behavioral check, not forbidden.
 
+### Validator-enforced hygiene (two rules)
+
+Two `validate_skill.py` checks mechanically surface the traps above so authors don't have to catch them by eye:
+
+- **Bare-word / literal-format hygiene** (`check_eval_required_substring_hygiene`) — warns when a `required_substring` is a single lowercase English word (trap #2), wraps literal backticks (`` `Raw` `` forces one rendering), or ends with `(` (`SpikeSorting.populate(` locks the call form). Known Spyglass class names (`Electrode`, `Session`, `LFPV1`) are auto-exempted via the class registry since they're discriminating identifiers even when they look like bare words.
+- **Required-vs-expected completeness** (`check_eval_required_substring_completeness`) — warns when `expected_output` names a Spyglass class that no `required_substring` contains. Catches the eval-72 pattern where the prose description enumerates tables but the grep-scorable assertion list omits them, leaving a grep-pass possible on answers that skip substantive upstreams.
+
+### Silencing a warning (per-eval exempt lists)
+
+Both rules are warn-level, not fail. When a warning is a false positive for an eval — e.g. a rare domain term that really is discriminating, or a class named in passing as a distractor — add the substring to a per-eval exempt list inside `assertions`:
+
+```json
+{
+  "id": 58,
+  "assertions": {
+    "required_substrings": ["Nyquist", "downsample"],
+    "required_substrings_exempt": ["Nyquist"],
+    "expected_output_tables_exempt": [],
+    ...
+  }
+}
+```
+
+- `required_substrings_exempt` silences the bare-word / literal-format check for the listed substrings.
+- `expected_output_tables_exempt` silences the completeness check for the listed Spyglass class names.
+
+**Each exempt entry is audit-worthy.** Every entry says "I looked at this warning and decided the substring is discriminating (or the mention is contextual) despite the heuristic." Use sparingly — prefer tightening the substring (`"Manual"` → `"Manual table"`) or moving the claim to a behavioral check.
+
 ## Tiers
 
 Tiers capture *what kind of capability* the eval tests. A single skill can be strong at atomic reads and weak at adversarial pushback — slicing by tier shows that.

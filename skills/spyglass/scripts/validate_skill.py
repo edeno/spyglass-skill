@@ -2252,6 +2252,216 @@ _EVAL_METHOD_CALL_PATTERN = re.compile(
 )
 
 
+def _looks_code_like(s: str, registry=None) -> bool:
+    """True if a required_substring is a code-shaped token (class/method/path/
+    flag/kwarg/CLI-flag/dict-key) rather than a bare English word/phrase.
+
+    The substring-hygiene rule (evals/README.md §Substring hygiene) warns
+    about bare words ("restart" matches "no need to restart") and
+    phrasing-locked bigrams ("recommend v1" fails on "use v1"). This
+    helper is the conservative exempt side — anything with code-looking
+    punctuation, digits, internal caps, or a known Spyglass class name
+    is unlikely to be bare, so the hygiene check skips it.
+
+    Bare-word examples (_looks_code_like returns False — the check will
+    warn): `Manual`, `legacy`, `noise`, `Raw`, `derivative`, `restart`,
+    `kernel`.
+    Code-looking examples (returns True — skipped): `Manual table`
+    (has space), `SpikeSorting.populate` (dotted), `raise_err=True`
+    (has `=`), `target_sampling_rate` (underscored), `LFPV1` (digit),
+    `--dry-run` (CLI flag), `['raw']` (dict-key), `Electrode` (known
+    Spyglass class — discriminating even though the string itself looks
+    bare).
+    """
+    if not s:
+        return True  # empty = degenerate, skip
+    # Any code-punct is a strong signal the substring is a specific
+    # identifier / path / call site / CLI flag / dict-key / string
+    # literal. Hyphens cover `--dry-run`; brackets+quotes cover
+    # `['raw']`; comparison/operator chars cover flags like `<=`.
+    if any(c in s for c in "._@/():=&-[]{}'\"<>,;!?*%"):
+        return True
+    if any(c.isdigit() for c in s):
+        return True
+    # Internal capitals (LFPBandV1, CamelCase) signal a typed identifier.
+    # A lone leading capital ("Nyquist", "Manual") does NOT — those read
+    # as ordinary proper nouns or title-cased English.
+    if any(c.isupper() for c in s[1:]):
+        return True
+    # Known Spyglass class names are discriminating by definition even
+    # if they look like a single leading-capital word (`Electrode`,
+    # `Session`, `Nwbfile`). The registry check lets these through while
+    # still catching single English words like `Manual` or `Computed`
+    # that aren't class names.
+    if registry is not None and registry.methods(s) is not None:
+        return True
+    return False
+
+
+def check_eval_required_substring_hygiene(
+    results: ValidationResult, src_root=None, registry=None,
+):
+    """Warn on required_substrings that are likely to suffer from the
+    substring-hygiene traps documented in evals/README.md.
+
+    Two patterns caught:
+
+    1. **Bare single word** — a required_substring that's a single
+       alphabetic word with no code-punct or digits. `required_substrings:
+       ["Manual"]` passes on "this is not a Manual table" just as well
+       as "it IS a Manual table". The README's guidance: pair with a
+       disambiguating word or use a phrase.
+
+    2. **Overly-literal formatting** — a required_substring that includes
+       literal backticks (`` `Raw` ``), a trailing open-paren
+       (`SpikeSorting.populate(`), or other formatting punctuation that
+       locks the match to one specific rendering. Correct answers using
+       a different code-style would false-fail.
+
+    Both are warnings, not failures — author may intentionally want a
+    bare match (e.g., for a rare domain term) or an exact form. Silence
+    per-eval by adding `assertions.required_substrings_exempt: [...]`
+    with the exact substring. Author-discipline: the exempt list is
+    itself audit-worthy — every entry should be a conscious choice that
+    the substring discriminates despite being bare.
+    """
+    if registry is None and src_root is not None:
+        registry = _ClassRegistry(src_root, results)
+    evals_path = SKILL_DIR / "evals" / "evals.json"
+    if not evals_path.exists():
+        return
+    try:
+        data = json.loads(evals_path.read_text())
+    except json.JSONDecodeError:
+        return  # earlier check already failed on parse
+    for eval_entry in data.get("evals", []):
+        eid = eval_entry.get("id", "?")
+        a = eval_entry.get("assertions", {}) or {}
+        reqs = a.get("required_substrings", []) or []
+        exempt = set(a.get("required_substrings_exempt", []) or [])
+        for sub in reqs:
+            if not isinstance(sub, str) or sub in exempt:
+                continue
+            stripped = sub.strip()
+            # Overly-literal formatting: leading/trailing backtick or
+            # trailing open-paren. These lock the match to a specific
+            # rendering.
+            if stripped.startswith("`") or stripped.endswith("`"):
+                results.warn(
+                    f"evals.json[id={eid}]: required_substring {sub!r} wraps "
+                    f"literal backticks — correct answers using a different "
+                    f"code-style rendering will false-fail. Drop the backticks "
+                    f"or add to required_substrings_exempt if intentional."
+                )
+                continue
+            if stripped.endswith("("):
+                results.warn(
+                    f"evals.json[id={eid}]: required_substring {sub!r} ends "
+                    f"with '(' — locks the match to a specific call form "
+                    f"(`.populate()` vs `.populate(key)` vs `.populate` verb). "
+                    f"Drop the paren or add to required_substrings_exempt."
+                )
+                continue
+            # Bare single word: no code-punct, no digits, no internal
+            # capital, and not a known Spyglass class name.
+            if " " not in stripped and not _looks_code_like(stripped, registry):
+                results.warn(
+                    f"evals.json[id={eid}]: required_substring {sub!r} is a "
+                    f"bare word (no code-punct, no digits, no internal caps) — "
+                    f"matches denial phrasings ('not {stripped}') equally well. "
+                    f"Pair with a disambiguating word, use a phrase, or add "
+                    f"to required_substrings_exempt if the bare match really "
+                    f"is discriminating (rare domain term)."
+                )
+
+
+# Matches CapitalCase identifier tokens in eval expected_output prose —
+# what we use to enumerate tables/classes the eval claims are relevant.
+# Pattern: starts with uppercase, then 2+ identifier chars. 2-char
+# minimum on the tail avoids matching sentence-start words like "It" or
+# "In" (too short to be a class). We further filter against the
+# Spyglass class registry so ordinary proper nouns don't false-fire.
+_EVAL_CAPITAL_TOKEN_PATTERN = re.compile(r"\b[A-Z][a-zA-Z0-9_]{2,}\b")
+
+# Infrastructure classes (mixins, base wrappers) that legitimately appear
+# in eval expected_output as context but are never themselves the target
+# table a correct answer must enumerate. The completeness check excludes
+# these so mentioning `SpyglassMixin` in passing doesn't trigger a
+# "missing from required_substrings" warning.
+_EVAL_COMPLETENESS_IGNORE = {
+    "SpyglassMixin", "SpyglassIngestion", "ExportMixin", "PopulateMixin",
+    "TimeIntervalMixin",
+}
+
+
+def check_eval_required_substring_completeness(
+    src_root, results: ValidationResult, registry=None,
+):
+    """Warn when an eval's `expected_output` names a Spyglass class that
+    `required_substrings` doesn't require.
+
+    The eval author writes a human-readable `expected_output` describing
+    the ideal response, then picks `required_substrings` that a correct
+    answer must contain. Those two surfaces can drift — eval 72 originally
+    named `SpikeSortingOutput`, `CurationV1`, `WaveformFeaturesParams` in
+    `expected_output` but omitted them from `required_substrings`, so a
+    grep-pass was possible while missing substantive upstream tables.
+
+    This check extracts CapitalCase tokens from `expected_output`,
+    filters to names that resolve against the Spyglass class registry
+    (so ordinary English proper nouns don't trip it), then confirms each
+    appears as a substring in at least one `required_substring`. Misses
+    warn. Silence per-eval via
+    `assertions.expected_output_tables_exempt: [...]` — use this when
+    `expected_output` mentions a table as context/distractor rather
+    than as a token a correct answer must produce.
+    """
+    if registry is None:
+        registry = _ClassRegistry(src_root, results)
+    evals_path = SKILL_DIR / "evals" / "evals.json"
+    if not evals_path.exists():
+        return
+    try:
+        data = json.loads(evals_path.read_text())
+    except json.JSONDecodeError:
+        return
+    for eval_entry in data.get("evals", []):
+        eid = eval_entry.get("id", "?")
+        expected = eval_entry.get("expected_output", "") or ""
+        if not isinstance(expected, str):
+            continue
+        a = eval_entry.get("assertions", {}) or {}
+        reqs = a.get("required_substrings", []) or []
+        exempt = set(a.get("expected_output_tables_exempt", []) or [])
+        # Candidate tokens: CapitalCase identifiers in expected_output.
+        candidates = set(_EVAL_CAPITAL_TOKEN_PATTERN.findall(expected))
+        # Filter to known Spyglass classes — anything else is prose.
+        # Exclude infrastructure mixins/wrappers (see
+        # _EVAL_COMPLETENESS_IGNORE) that only appear as context.
+        tables = {
+            c for c in candidates
+            if registry.methods(c) is not None
+            and c not in _EVAL_COMPLETENESS_IGNORE
+        }
+        # For each table the eval *names*, confirm a required_substring
+        # contains it. Substring-in-substring lets `SpikeSortingOutput`
+        # satisfy both itself and `SpikeSortingOutput.CurationV1`.
+        req_blob = " ".join(s for s in reqs if isinstance(s, str))
+        missing = [
+            t for t in tables
+            if t not in exempt and t not in req_blob
+        ]
+        for t in sorted(missing):
+            results.warn(
+                f"evals.json[id={eid}]: expected_output names Spyglass class "
+                f"{t!r} but no required_substring contains it — a grep-pass "
+                f"is possible while missing this table. Add {t!r} (or a "
+                f"dotted form like `{t}.PartName`) to required_substrings, "
+                f"or add to expected_output_tables_exempt if the mention is "
+                f"contextual/distractor-only."
+            )
+
+
 def check_evals_content(src_root, results: ValidationResult, registry=None):
     """Scan evals.json for method/class references that don't resolve.
 
@@ -2844,71 +3054,77 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/21] Checking source files and class registry...")
+    print("\n[1/23] Checking source files and class registry...")
     check_class_files_exist(src_root, results)
 
-    print("[2/21] Checking import statements in skill files...")
+    print("[2/23] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/21] Checking method references...")
+    print("[3/23] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/21] Checking keyword arguments...")
+    print("[4/23] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/21] Checking skill structure...")
+    print("[5/23] Checking skill structure...")
     check_structure(results)
 
-    print("[6/21] Checking prose assertions...")
+    print("[6/23] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/21] Parsing Python code blocks (ast.parse)...")
+    print("[7/23] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/21] Verifying prose path references exist in repo...")
+    print("[8/23] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
 
-    print("[9/21] Verifying notebook names exist in repo...")
+    print("[9/23] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/21] Verifying internal markdown links and anchors...")
+    print("[10/23] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/21] Scanning for documented anti-patterns...")
+    print("[11/23] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/21] Checking dict-restriction field names against schemas...")
+    print("[12/23] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
 
-    print("[13/21] Verifying citation line numbers are in range...")
+    print("[13/23] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
 
-    print("[14/21] Scanning evals.json for hallucinated class/method refs...")
+    print("[14/23] Scanning evals.json for hallucinated class/method refs...")
     check_evals_content(src_root, results, registry=registry)
 
-    print("[15/21] Scanning prose for banned PR-number citations...")
+    print("[15/23] Scanning prose for banned PR-number citations...")
     check_no_pr_citations(results)
 
-    print("[16/21] Enforcing reference-file and section size budgets...")
+    print("[16/23] Enforcing reference-file and section size budgets...")
     check_section_budgets(results)
 
-    print("[17/21] Checking markdown link-landing content overlap...")
+    print("[17/23] Checking markdown link-landing content overlap...")
     check_link_landing(results)
 
-    print("[18/21] Verifying citation lines contain cited identifiers...")
+    print("[18/23] Verifying citation lines contain cited identifiers...")
     check_citation_content(src_root, results)
 
-    print("[19/21] Detecting duplicated code blocks across references...")
+    print("[19/23] Detecting duplicated code blocks across references...")
     check_duplicated_blocks(results)
 
-    print("[20/21] Checking DataJoint insert/populate key shape...")
+    print("[20/23] Checking DataJoint insert/populate key shape...")
     check_insert_key_shape(src_root, results)
 
-    print("[21/21] Cross-checking merge-table registry against source...")
+    print("[21/23] Cross-checking merge-table registry against source...")
     check_merge_registry(src_root, results)
+
+    print("[22/23] Checking eval required_substring hygiene (bare-word / literal-format)...")
+    check_eval_required_substring_hygiene(results, src_root, registry=registry)
+
+    print("[23/23] Checking eval required_substring completeness vs expected_output tables...")
+    check_eval_required_substring_completeness(src_root, results, registry=registry)
 
     # Scoped collision report: only warn about v0/v1 duplicates for classes
     # the skill actually references. Avoids noise from unreferenced dupes.

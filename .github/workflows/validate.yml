@@ -69,7 +69,7 @@ jobs:
         # Working dir is spyglass-skill so the sibling-clone fallback
         # finds ../spyglass/src automatically — no SPYGLASS_SRC needed.
         working-directory: spyglass-skill
-        run: ./skills/spyglass/scripts/validate_all.sh --baseline-warnings 3
+        run: ./skills/spyglass/scripts/validate_all.sh --baseline-warnings 180
 
       - name: JSON sanity check
         working-directory: spyglass-skill
