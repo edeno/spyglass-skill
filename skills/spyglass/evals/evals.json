@@ -1975,14 +1975,11 @@
           "filter_name",
           "lfp_electrode_group_name"
         ],
-        "forbidden_substrings": [
-          "is Computed",
-          "is Lookup",
-          "is Imported"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Distinguishes DataJoint tier (Manual) from Spyglass role (selection table — picks input for the paired Computed table)",
-          "Names LFPV1 as the Computed counterpart whose populate() consumes LFPSelection rows"
+          "Names LFPV1 as the Computed counterpart whose populate() consumes LFPSelection rows",
+          "Does not classify LFPSelection itself as Computed, Lookup, or Imported (LFPSelection is Manual; LFPV1 is the Computed counterpart, but the question is about LFPSelection)"
         ]
       },
       "files": [],
@@ -1991,11 +1988,9 @@
         "Response contains substring `selection table`.",
         "Response contains substring `filter_name`.",
         "Response contains substring `lfp_electrode_group_name`.",
-        "Response does not contain substring `is Computed`.",
-        "Response does not contain substring `is Lookup`.",
-        "Response does not contain substring `is Imported`.",
         "Distinguishes DataJoint tier (Manual) from Spyglass role (selection table — picks input for the paired Computed table)",
-        "Names LFPV1 as the Computed counterpart whose populate() consumes LFPSelection rows"
+        "Names LFPV1 as the Computed counterpart whose populate() consumes LFPSelection rows",
+        "Does not classify LFPSelection itself as Computed, Lookup, or Imported (LFPSelection is Manual; LFPV1 is the Computed counterpart, but the question is about LFPSelection)"
       ]
     },
     {
@@ -2043,7 +2038,7 @@
       "tier": "table-classification",
       "difficulty": "medium",
       "prompt": "What kind of table is `PositionOutput`? It doesn't have a `populate()` and I can't figure out how a row gets in there.",
-      "expected_output": "Routes to merge_methods.md (mechanism intro) and position_pipeline.md (PositionOutput Merge Table section). Identifies PositionOutput as a merge table — rows enter via insert into a part table (PositionOutput.TrodesPosV1 or PositionOutput.DLCPosV1), not via a top-level populate(). Mentions at least one valid downstream consumer pattern such as merge_get_part(key).fetch1('KEY'). Does not claim PositionOutput.populate() is the entry point.",
+      "expected_output": "Routes to merge_methods.md (mechanism intro) and position_pipeline.md (PositionOutput Merge Table section). Identifies PositionOutput as a merge table — rows enter PositionOutput via the merge insert path: an upstream Computed table's make() body calls PositionOutput._merge_insert(rows, part_name=...) (or PositionOutput.insert(...) which dispatches to _merge_insert), which atomically writes the master row plus the part row (PositionOutput.TrodesPosV1 or PositionOutput.DLCPosV1). PositionOutput itself has no top-level populate(). Mentions at least one valid downstream consumer pattern such as merge_get_part(key).fetch1('KEY'). Does not claim PositionOutput.populate() is the entry point.",
       "assertions": {
         "required_substrings": [
           "merge table",
@@ -2114,29 +2109,29 @@
       "assertions": {
         "required_substrings": [
           "Nyquist",
-          "1000",
+          "1000 Hz",
           "downsample"
         ],
         "forbidden_substrings": [
-          "sample rate doesn't matter",
-          "arbitrary"
+          "sample rate doesn't matter"
         ],
         "behavioral_checks": [
           "Explains that target_sampling_rate sets the downsampled output rate of LFPV1",
           "Connects the rate to the Nyquist constraint for downstream band filters (e.g., ripple band 150–250 Hz needs > 500 Hz sampling)",
-          "Names 1000 Hz as the canonical default and the consequence of going lower (aliasing in the downstream band)"
+          "Names 1000 Hz as the canonical default and the consequence of going lower (aliasing in the downstream band)",
+          "Does not say the sample rate is arbitrary or that any value works (this would contradict the Nyquist constraint)"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `Nyquist`.",
-        "Response contains substring `1000`.",
+        "Response contains substring `1000 Hz`.",
         "Response contains substring `downsample`.",
         "Response does not contain substring `sample rate doesn't matter`.",
-        "Response does not contain substring `arbitrary`.",
         "Explains that target_sampling_rate sets the downsampled output rate of LFPV1",
         "Connects the rate to the Nyquist constraint for downstream band filters (e.g., ripple band 150–250 Hz needs > 500 Hz sampling)",
-        "Names 1000 Hz as the canonical default and the consequence of going lower (aliasing in the downstream band)"
+        "Names 1000 Hz as the canonical default and the consequence of going lower (aliasing in the downstream band)",
+        "Does not say the sample rate is arbitrary or that any value works (this would contradict the Nyquist constraint)"
       ]
     },
     {
@@ -2146,28 +2141,30 @@
       "tier": "parameter-semantics",
       "difficulty": "medium",
       "prompt": "In ripple params, what does `speed_threshold: 4.0` actually do? If I bump it to 10 cm/s, more ripples or fewer, and what quality tradeoff am I making?",
-      "expected_output": "Routes to ripple_pipeline.md. Explains that speed_threshold filters out candidate ripple events while the animal moves faster than the threshold value (cm/s). Predicts the direction: raising the threshold from 4 to 10 yields fewer detected events, with a cleaner immobility-conditioned set, but risks losing peri-movement sharp-wave ripples. Does not claim raising the threshold yields more ripples.",
+      "expected_output": "Routes to ripple_pipeline.md. Explains that speed_threshold is a movement-exclusion cutoff: candidate ripple events are kept only when the animal's speed at start AND end is below the threshold (speed <= speed_threshold). Predicts the direction correctly: raising 4 -> 10 cm/s loosens the immobility filter, KEEPING MORE candidate events (events at speeds up to 10 cm/s that were previously rejected now pass). The quality tradeoff: more peri-movement events get included, which may not be true sharp-wave ripples — looser immobility conditioning. To get fewer / cleaner SWRs, LOWER the threshold. Source proof: ripple_detection/core.py keeps events where speed <= speed_threshold; the package's own docstring at detectors.py says \"Increasing speed_threshold if movement exclusion is too strict\".",
       "assertions": {
         "required_substrings": [
           "immobility",
-          "fewer detected",
-          "candidate"
+          "more candidate",
+          "speed <= speed_threshold"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Explains the threshold filters out candidate events while the animal moves faster than the speed value (cm/s)",
-          "Predicts the direction: raising → fewer events, cleaner immobility-conditioned set; risks losing peri-movement SWRs",
-          "Does not predict that raising speed_threshold will yield more detected ripples (the direction is the opposite)"
+          "Identifies speed_threshold as a movement-exclusion cutoff (events kept when speed <= threshold)",
+          "Predicts the direction correctly: raising 4 -> 10 keeps MORE candidate events, not fewer",
+          "Identifies the tradeoff: looser immobility conditioning admits peri-movement events that may not be true SWRs",
+          "Does NOT predict that raising speed_threshold yields fewer ripples — that is the opposite of how the filter works"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `immobility`.",
-        "Response contains substring `fewer detected`.",
-        "Response contains substring `candidate`.",
-        "Explains the threshold filters out candidate events while the animal moves faster than the speed value (cm/s)",
-        "Predicts the direction: raising → fewer events, cleaner immobility-conditioned set; risks losing peri-movement SWRs",
-        "Does not predict that raising speed_threshold will yield more detected ripples (the direction is the opposite)"
+        "Response contains substring `more candidate`.",
+        "Response contains substring `speed <= speed_threshold`.",
+        "Identifies speed_threshold as a movement-exclusion cutoff (events kept when speed <= threshold)",
+        "Predicts the direction correctly: raising 4 -> 10 keeps MORE candidate events, not fewer",
+        "Identifies the tradeoff: looser immobility conditioning admits peri-movement events that may not be true SWRs",
+        "Does NOT predict that raising speed_threshold yields fewer ripples — that is the opposite of how the filter works"
       ]
     },
     {
@@ -2181,7 +2178,7 @@
       "assertions": {
         "required_substrings": [
           "training",
-          "apply",
+          "applied to",
           "replay",
           "IntervalList"
         ],
@@ -2194,7 +2191,7 @@
       "files": [],
       "expectations": [
         "Response contains substring `training`.",
-        "Response contains substring `apply`.",
+        "Response contains substring `applied to`.",
         "Response contains substring `replay`.",
         "Response contains substring `IntervalList`.",
         "Explains that encoding_interval trains the place-field / receptive-field model; decoding_interval is where the trained model is applied",
@@ -2208,13 +2205,14 @@
       "tier": "parameter-semantics",
       "difficulty": "hard",
       "prompt": "In `TrodesPosParams.insert_default()`'s params dict I see smoothing / filter fields. What happens to my resulting `speed` column if I turn smoothing off?",
-      "expected_output": "Routes to position_pipeline.md. Explains that the smoothing fields apply a low-pass filter to raw position samples before computing the velocity / speed derivative. Predicts that disabling smoothing produces a noisier speed trace, which causes spurious crossings of downstream thresholds (ripple speed_threshold, decoding interval gating, etc.). Recommends inspecting TrodesPosParams.describe() or .heading for the exact smoothing field names rather than guessing.",
+      "expected_output": "Routes to position_pipeline.md. Names the actual smoothing field: position_smoothing_duration (a moving-window duration in seconds; default 0.125s) — a Spyglass-specific field name worth flagging vs. generic 'smoothing'. Explains that the smoothing fields apply a low-pass filter to raw position samples before computing the velocity / speed derivative. Predicts that disabling smoothing produces a noisier speed trace, which causes spurious crossings of downstream thresholds (ripple speed_threshold, decoding interval gating, etc.). Recommends inspecting TrodesPosParams.describe() or .heading for the exact smoothing field names rather than guessing.",
       "assertions": {
         "required_substrings": [
           "low-pass",
           "noise",
           "derivative",
-          "TrodesPosParams.describe"
+          "TrodesPosParams.describe",
+          "position_smoothing_duration"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -2229,6 +2227,7 @@
         "Response contains substring `noise`.",
         "Response contains substring `derivative`.",
         "Response contains substring `TrodesPosParams.describe`.",
+        "Response contains substring `position_smoothing_duration`.",
         "Explains smoothing low-passes raw position before the velocity / speed derivative",
         "Predicts: disabling smoothing gives a noisier speed trace, causing spurious crossings of downstream thresholds",
         "Recommends inspecting TrodesPosParams.describe() / .heading for the exact field names rather than guessing"
@@ -2249,13 +2248,13 @@
           "contact positions"
         ],
         "forbidden_substrings": [
-          "set_group_by_electrode_group is correct for clusterless",
-          "one electrode per group"
+          "set_group_by_electrode_group is correct for clusterless"
         ],
         "behavioral_checks": [
           "Identifies that set_group_by_electrode_group groups by electrode_group_name (one sort group per electrode_group)",
           "Explains the clusterless failure: multi-shank electrode_groups produce duplicate (x, y) contact positions; SpikeInterface rejects at SpikeSortingRecording.populate()",
-          "Recommends set_group_by_shank for clusterless / waveform-based pipelines"
+          "Recommends set_group_by_shank for clusterless / waveform-based pipelines",
+          "Does not claim set_group_by_electrode_group produces one electrode per sort group (it groups by electrode_group_name, which can include multiple electrodes per group — that is precisely the source of the multi-shank conflict)"
         ]
       },
       "files": [],
@@ -2264,10 +2263,10 @@
         "Response contains substring `set_group_by_shank`.",
         "Response contains substring `contact positions`.",
         "Response does not contain substring `set_group_by_electrode_group is correct for clusterless`.",
-        "Response does not contain substring `one electrode per group`.",
         "Identifies that set_group_by_electrode_group groups by electrode_group_name (one sort group per electrode_group)",
         "Explains the clusterless failure: multi-shank electrode_groups produce duplicate (x, y) contact positions; SpikeInterface rejects at SpikeSortingRecording.populate()",
-        "Recommends set_group_by_shank for clusterless / waveform-based pipelines"
+        "Recommends set_group_by_shank for clusterless / waveform-based pipelines",
+        "Does not claim set_group_by_electrode_group produces one electrode per sort group (it groups by electrode_group_name, which can include multiple electrodes per group — that is precisely the source of the multi-shank conflict)"
       ]
     },
     {
@@ -2344,7 +2343,8 @@
         "required_substrings": [
           "legacy",
           "SpikeSortingOutput",
-          "recommend v1"
+          "recommend v1",
+          "SpikeSortingOutput.CurationV1"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -2358,6 +2358,7 @@
         "Response contains substring `legacy`.",
         "Response contains substring `SpikeSortingOutput`.",
         "Response contains substring `recommend v1`.",
+        "Response contains substring `SpikeSortingOutput.CurationV1`.",
         "Recommends v1 for new work; identifies v0 as legacy / read-only for old data",
         "Routes to spikesorting_v0_legacy.md only for reading old sorts, not for new work",
         "Does not recommend v0 for new sessions or as the default — v0 is for reading legacy data only"
@@ -2402,15 +2403,15 @@
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Names destructive_operations.md or merge_methods.md as the first reference",
-          "Mentions inspect-before-destroy as the operative pattern (or the classmethod-discard merge gotcha)"
+          "Names destructive_operations.md as the first reference (merge_methods.md acceptable as the second stop for the merge-specific classmethod-discard mechanics)",
+          "Mentions inspect-before-destroy as the operative pattern; bonus credit for naming the classmethod-discard merge gotcha"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `destructive_operations.md`.",
-        "Names destructive_operations.md or merge_methods.md as the first reference",
-        "Mentions inspect-before-destroy as the operative pattern (or the classmethod-discard merge gotcha)"
+        "Names destructive_operations.md as the first reference (merge_methods.md acceptable as the second stop for the merge-specific classmethod-discard mechanics)",
+        "Mentions inspect-before-destroy as the operative pattern; bonus credit for naming the classmethod-discard merge gotcha"
       ]
     },
     {
@@ -2420,7 +2421,7 @@
       "tier": "counterfactual",
       "difficulty": "hard",
       "prompt": "If I added 3 more CA1 tetrodes to my ripple detection electrode selection and re-populated, which downstream tables would change and which would be unaffected?",
-      "expected_output": "Routes to ripple_pipeline.md and lfp_pipeline.md. Identifies what changes: a new RippleLFPSelection row (or modified one) flows into a new RippleTimesV1 entry. Notes that LFPBandV1 itself only needs to be re-populated if the new electrodes weren't already in the LFPElectrodeGroup that LFPV1/LFPBandV1 used (often they're in the LFP-band group already, so LFPBandV1 may not need to change). Identifies what is unaffected: position pipelines, decoding pipelines that don't directly depend on these specific ripple times, anything not downstream of RippleTimesV1. Mentions RippleParameters does not change (it's the parameter table, not electrode-dependent).",
+      "expected_output": "Routes to ripple_pipeline.md and lfp_pipeline.md. Identifies what changes: a new RippleLFPSelection row (or modified one) flows into a new RippleTimesV1 entry. Notes that LFPBandV1 itself only needs to be re-populated if the new electrodes weren't already in the LFPBandElectrode part-table of LFPBandSelection (the precise gate — LFPBand has its own electrode part table that's a subset of LFPElectrodeGroup; if the new electrodes are already represented in LFPBandSelection's LFPBandElectrode rows, LFPBandV1 doesn't need re-population) (often they're in the LFP-band group already, so LFPBandV1 may not need to change). Identifies what is unaffected: position pipelines, decoding pipelines that don't directly depend on these specific ripple times, anything not downstream of RippleTimesV1. Mentions RippleParameters does not change (it's the parameter table, not electrode-dependent).",
       "assertions": {
         "required_substrings": [
           "RippleTimesV1",
@@ -2451,28 +2452,30 @@
       "tier": "counterfactual",
       "difficulty": "hard",
       "prompt": "A labmate and I both ran the same selection + populate on `j1620210710_.nwb`. My `fetch_results` returns data, theirs returns empty. What differs between our pipeline states to explain this?",
-      "expected_output": "Lists at least three plausible state differences without committing to one cause: (1) different params_name on the selection — same prompt-level 'parameters' but different named entry in the params table; (2) cautious_delete / team-permission gating — your labmate may not be on the team that owns the populate, blocking write and leaving their fetch empty; (3) different upstream restriction — the selection key resolved to different upstream rows for each user (e.g., different DLCPosV1 merge_id implicit in PositionGroup); (4) environment / package version drift causing different populate behavior per user. Recommends inspecting both users' (Selection & key).fetch() output side-by-side as the first diagnostic. Does not claim the pipeline state must be identical when the symptoms prove otherwise.",
+      "expected_output": "Lists at least three plausible state differences without committing to one cause: (1) different params_name on the selection — same prompt-level 'parameters' but different named entry in the params table; (2) one user's selection row hasn't been populated yet — fetch_results returns empty when the downstream Computed row simply doesn't exist; (3) different upstream restriction — the selection key resolved to different upstream rows for each user (e.g., different DLCPosV1 merge_id implicit in PositionGroup, different SpikeSortingRecording UUID); (4) environment / package version drift causing different populate behavior or different output shapes per user. Recommends inspecting both users' (Selection & key).fetch() output side-by-side as the first diagnostic. Does not claim the pipeline state is identical when the symptoms prove otherwise. Note: cautious_delete only gates DELETES, not writes or populate, so it is not a plausible cause of empty fetch_results.",
       "assertions": {
         "required_substrings": [
           "params_name",
-          "cautious_delete",
+          "Selection & key",
           "restriction"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Lists at least three plausible state differences (different params name, missing upstream populate, different selection key, team-permission gating, environment / package version drift)",
-          "Does not assume one cause",
-          "Does not claim the pipeline state is identical when the symptoms prove otherwise"
+          "Lists at least three plausible state differences (different params name, missing populate, different upstream restriction, env / version drift) without committing to one cause",
+          "Recommends a concrete first diagnostic (e.g., inspecting (Selection & key).fetch() output side-by-side)",
+          "Does not claim the pipeline state must be identical when the symptoms prove otherwise",
+          "Does not misframe cautious_delete as a write/populate gate — cautious_delete blocks deletes only"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `params_name`.",
-        "Response contains substring `cautious_delete`.",
+        "Response contains substring `Selection & key`.",
         "Response contains substring `restriction`.",
-        "Lists at least three plausible state differences (different params name, missing upstream populate, different selection key, team-permission gating, environment / package version drift)",
-        "Does not assume one cause",
-        "Does not claim the pipeline state is identical when the symptoms prove otherwise"
+        "Lists at least three plausible state differences (different params name, missing populate, different upstream restriction, env / version drift) without committing to one cause",
+        "Recommends a concrete first diagnostic (e.g., inspecting (Selection & key).fetch() output side-by-side)",
+        "Does not claim the pipeline state must be identical when the symptoms prove otherwise",
+        "Does not misframe cautious_delete as a write/populate gate — cautious_delete blocks deletes only"
       ]
     },
     {
@@ -2587,11 +2590,11 @@
       "tier": "dependency-tracing",
       "difficulty": "hard",
       "prompt": "Starting from a populated `LFPBandV1` row, list all upstream tables whose entries it depends on. I want to know the minimum set I'd need to re-create this from scratch.",
-      "expected_output": "Routes to lfp_pipeline.md. Names every upstream table: Nwbfile (and Session derivable from it), IntervalList, Electrode (via ElectrodeGroup), Raw, FirFilterParameters (twice — once for LFPV1 and once for LFPBandV1, possibly with different filter_name + filter_sampling_rate), LFPElectrodeGroup (and its LFPElectrode part) → LFPSelection → LFPV1 → LFPOutput (the merge wrapper around LFPV1) → LFPBandSelection → LFPBandV1. Does not skip the LFPOutput merge wrapper between LFPV1 and LFPBandSelection.",
+      "expected_output": "Routes to lfp_pipeline.md. Names every upstream table by name (in backticks where appropriate): Nwbfile (and Session derivable from it), IntervalList, Electrode (via ElectrodeGroup), `Raw`, FirFilterParameters (twice — once for LFPV1 and once for LFPBandV1, possibly with different filter_name + filter_sampling_rate), LFPElectrodeGroup (and its LFPElectrode part) → LFPSelection → LFPV1 → LFPOutput (the merge wrapper around LFPV1) → LFPBandSelection → LFPBandV1. Does not skip the LFPOutput merge wrapper between LFPV1 and LFPBandSelection.",
       "assertions": {
         "required_substrings": [
           "Nwbfile",
-          "Raw",
+          "`Raw`",
           "IntervalList",
           "LFPElectrodeGroup",
           "LFPSelection",
@@ -2609,7 +2612,7 @@
       "files": [],
       "expectations": [
         "Response contains substring `Nwbfile`.",
-        "Response contains substring `Raw`.",
+        "Response contains substring ``Raw``.",
         "Response contains substring `IntervalList`.",
         "Response contains substring `LFPElectrodeGroup`.",
         "Response contains substring `LFPSelection`.",

@@ -130,6 +130,7 @@ Simple lookup tables referenced by Session.
 
 - **Primary Key**: `probe_id`
 - Physical probe instances linked to ProbeType.
+- **Part tables**: `Probe.Shank`, `Probe.Electrode` (channel-level metadata, populated by ingestion).
 
 ## Electrophysiology
 

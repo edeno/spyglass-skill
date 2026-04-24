@@ -44,12 +44,26 @@ Three buckets, designed to catch different failure modes:
 
 ### Substring hygiene
 
-A substring assertion is only useful when it discriminates a good answer from a bad one. Two traps:
+A substring assertion is only useful when it discriminates a good answer from a bad one. Three traps:
 
 1. **Prompt echo.** If the prompt contains `DLCPosV1`, then `required_substrings: ["DLCPosV1"]` passes on any response that parrots the prompt. Pick a string that appears in the *diagnosis*, not the question — e.g. `"(DLCPosV1 & key).fetch1_dataframe"`.
 2. **Bare words.** `required_substrings: ["restart"]` matches "no need to restart" just as well as "restart the kernel." Pair with a disambiguating word (`kernel` + `restart`) or use a phrase.
+3. **Forbidden-fires-on-denial.** Substring grading can't detect negation. A `forbidden_substrings: ["is Computed"]` fires false-positive on a correct answer that says "LFPV1 is Computed" in passing reference. Same for `forbidden_substrings: ["arbitrary"]` — the skill's own Nyquist note uses "arbitrary" naturally, and a correct answer paraphrasing it would false-fail.
 
 If a check can't be expressed without one of these traps, move it to `behavioral_checks`.
+
+**Forbidden-substring rule.** Forbidden substrings must be **uniquely-wrong identifiers or quoted bad commands** — strings a correct answer would never naturally contain, even in a denial. Examples that pass the rule:
+
+- Hallucinated class names (`LFPBandOutput`, `MuaEventsV1.merge_get_part`)
+- Specific bad commands (`super_delete()`, `chmod -R 777`, `skip_duplicates=True` on insert_sessions)
+- Specific bad recommendations the wrong answer would commit to (`Yes, just delete the DataAcquisitionDevice`)
+
+Examples that **fail** the rule (use behavioral checks instead):
+
+- Conceptual claims (`is Computed`, `populate`, `merge`, `arbitrary`, `one electrode per group`)
+- Words that appear naturally in correct denials (`use v0` would fire on "Don't use v0")
+
+Test: "Could a correct answer contain this string in a denial like 'this is NOT X' or 'you do NOT call Y'?" If yes → behavioral check, not forbidden.
 
 ## Tiers
 
