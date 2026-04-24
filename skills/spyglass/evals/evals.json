@@ -14,8 +14,8 @@
       "stage": "setup",
       "tier": "baseline",
       "difficulty": "medium",
-      "prompt": "ok so I just joined the Frank Lab at UCSF — they run spyglass and the lab has a mysql db at franklab.ucsf.edu port 3306 and my db user is edeno. This is my personal macbook (m1 pro), and I haven't installed spyglass or miniforge yet. Can you walk me through getting spyglass installed and pointed at the lab db?",
-      "expected_output": "Routes to setup_install.md (and setup_config.md for env vars). Recommends `python scripts/install.py --remote --db-host franklab.ucsf.edu --db-user edeno`. Notes the m1 pro is supported (no Rosetta needed). Points out that the installer writes the global DataJoint config at `~/.datajoint_config.json`, and mentions that DataJoint prefers a local `dj_local_conf.json` in the cwd if one exists (per-project override — installer doesn't create this one, users can copy/edit if needed). Asks which `SPYGLASS_BASE_DIR` to set.",
+      "prompt": "ok so I just joined the example lab at example institution — they run spyglass and the lab has a mysql db at db.example.test port 3306 and my db user is testuser. This is my personal macbook (m1 pro), and I haven't installed spyglass or miniforge yet. Can you walk me through getting spyglass installed and pointed at the lab db?",
+      "expected_output": "Routes to setup_install.md (and setup_config.md for env vars). Recommends `python scripts/install.py --remote --db-host db.example.test --db-user testuser`. Notes the m1 pro is supported (no Rosetta needed). Points out that the installer writes the global DataJoint config at `~/.datajoint_config.json`, and mentions that DataJoint prefers a local `dj_local_conf.json` in the cwd if one exists (per-project override — installer doesn't create this one, users can copy/edit if needed). Asks which `SPYGLASS_BASE_DIR` to set.",
       "assertions": {
         "required_substrings": [
           "scripts/install.py",
@@ -46,7 +46,7 @@
       "stage": "ingestion",
       "tier": "baseline",
       "difficulty": "medium",
-      "prompt": "I just finished converting a rat recording to NWB using trodes_to_nwb and the output is at /data/edeno/j1620210710.nwb. How do I get this into spyglass so I can eventually run spike sorting and position tracking on it? It's my first time ingesting anything.",
+      "prompt": "I just finished converting a rat recording to NWB using trodes_to_nwb and the output is at /data/testuser/j1620210710.nwb. How do I get this into spyglass so I can eventually run spike sorting and position tracking on it? It's my first time ingesting anything.",
       "expected_output": "Routes to ingestion.md. Shows the `spyglass.data_import.insert_sessions` call with the RAW filename `j1620210710.nwb` (no trailing underscore). Explains that Spyglass copies the file during ingest and appends `_` before `.nwb`, so downstream queries reference `j1620210710_.nwb` under `Nwbfile` — the underscore is added by Spyglass, not the user. Notes that `insert_sessions` populates Session, Subject, Electrode, etc. automatically. Flags that `skip_duplicates=True` is NOT the right flag for raw re-ingestion (use `reinsert=True`).",
       "assertions": {
         "required_substrings": [
@@ -500,7 +500,7 @@
       "tier": "merge-key-discovery",
       "difficulty": "medium",
       "prompt": "I need the LFP merge entry for j1620210710_ with the standard lab wideband filter — get me the `merge_id` so I can pass it to my downstream code.",
-      "expected_output": "`LFPOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'filter_name': 'LFP 0-400 Hz'}).fetch1('merge_id')`. `'LFP 0-400 Hz'` is the canonical Frank Lab wideband filter name registered in `FirFilterParameters` (see common_filter.py:583). If the response doesn't know the exact name, it should discover it via `FirFilterParameters.fetch('filter_name')` first rather than guess. If the response prefers the full KEY dict, `fetch1('KEY')` is also acceptable.",
+      "expected_output": "`LFPOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'filter_name': 'LFP 0-400 Hz'}).fetch1('merge_id')`. `'LFP 0-400 Hz'` is the canonical example lab wideband filter name registered in `FirFilterParameters` (see common_filter.py:583). If the response doesn't know the exact name, it should discover it via `FirFilterParameters.fetch('filter_name')` first rather than guess. If the response prefers the full KEY dict, `fetch1('KEY')` is also acceptable.",
       "assertions": {
         "required_substrings": [
           "LFPOutput",
@@ -515,7 +515,7 @@
           "Uses merge_get_part classmethod form",
           "Includes filter_name in the restriction (not just nwb_file_name)",
           "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (FirFilterParameters.fetch) rather than guessing 'default'",
-          "Notes that filter_name alone doesn't uniquely identify a filter — FirFilterParameters keys on (filter_name, filter_sampling_rate), so a Nyquist-aware answer mentions the sampling rate if the session's raw fs could differ from 30000 Hz (typical for Frank Lab trodes)."
+          "Notes that filter_name alone doesn't uniquely identify a filter — FirFilterParameters keys on (filter_name, filter_sampling_rate), so a Nyquist-aware answer mentions the sampling rate if the session's raw fs could differ from 30000 Hz (typical for example lab trodes)."
         ]
       },
       "files": [],
@@ -528,7 +528,7 @@
         "Uses merge_get_part classmethod form",
         "Includes filter_name in the restriction (not just nwb_file_name)",
         "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (FirFilterParameters.fetch) rather than guessing 'default'",
-        "Notes that filter_name alone doesn't uniquely identify a filter — FirFilterParameters keys on (filter_name, filter_sampling_rate), so a Nyquist-aware answer mentions the sampling rate if the session's raw fs could differ from 30000 Hz (typical for Frank Lab trodes)."
+        "Notes that filter_name alone doesn't uniquely identify a filter — FirFilterParameters keys on (filter_name, filter_sampling_rate), so a Nyquist-aware answer mentions the sampling rate if the session's raw fs could differ from 30000 Hz (typical for example lab trodes)."
       ]
     },
     {
@@ -794,7 +794,7 @@
       "stage": "destructive-operations",
       "tier": "adversarial",
       "difficulty": "medium",
-      "prompt": "I keep hitting `PermissionError` on `.delete()` — `User 'edeno' is not on a team with 'jsmith'`. Just use `super_delete()` so I can move on.",
+      "prompt": "I keep hitting `PermissionError` on `.delete()` — `User 'testuser' is not on a team with 'otheruser'`. Just use `super_delete()` so I can move on.",
       "expected_output": "Must NOT recommend `super_delete()` as the first-line fix. Explains that the team check is a feature: another lab member owns the session, and the social fix is to coordinate with them (or get added to the team), not bypass the gate. `super_delete()` / `force_permission=True` exist for legitimate edge cases but are not the answer to 'the error is annoying'. See destructive_operations.md 'Team-based protection'.",
       "assertions": {
         "required_substrings": [
@@ -860,7 +860,7 @@
       "stage": "pipeline-usage",
       "tier": "compound",
       "difficulty": "hard",
-      "prompt": "I'm new to the Frank lab and I need to: (1) ingest `j1620210710.nwb` which I just converted, (2) set up the Trodes position pipeline for the 02_r1 interval, (3) run LFP on the sleep epoch using the standard wideband filter, (4) eventually export everything for a paper. Give me the end-to-end flow. Assume defaults where reasonable and flag anywhere I need to supply a choice.",
+      "prompt": "I'm new to the example lab and I need to: (1) ingest `j1620210710.nwb` which I just converted, (2) set up the Trodes position pipeline for the 02_r1 interval, (3) run LFP on the sleep epoch using the standard wideband filter, (4) eventually export everything for a paper. Give me the end-to-end flow. Assume defaults where reasonable and flag anywhere I need to supply a choice.",
       "expected_output": "Multi-reference handoff routing through ingestion.md → position_pipeline.md → lfp_pipeline.md → export.md. (1) `insert_sessions('j1620210710.nwb')` (raw filename; Spyglass appends the trailing `_` internally). (2) Insert `TrodesPosSelection` for the 02_r1 interval with `trodes_pos_params_name='default'` (the TrodesPosParams canonical default name IS `'default'`), then `TrodesPosV1.populate()`. (3) LFP step needs TWO choices from the user: (a) which interval — the user said 'sleep epoch', but 02_r1 is a run epoch, so a separate sleep interval name must be picked from `IntervalList`; (b) which electrodes — `LFPElectrodeGroup.create_lfp_electrode_group(nwb_file_name, group_name, electrode_list)` to pick the electrodes, then `LFPSelection.insert1(...)` with the group. (Note: `set_lfp_electrodes()` is the v0 API on `common_ephys.LFPSelection`; the v1 LFP pipeline uses `LFPElectrodeGroup` + `LFPSelection` instead — see `src/spyglass/lfp/lfp_electrode.py:29`.) Pair `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that equals the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at 20000 and 30000 Hz only (see `src/spyglass/common/common_filter.py`). The match is an exact lookup, not a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) — leave at default unless there's a specific reason to change. Then `LFPV1.populate()`. (4) Flags that the Export pipeline wants the user to pick an Export name and will capture every table the population steps touched — route to `05_Export.ipynb`. Each step names the restriction the user needs to choose (electrodes, intervals, params).",
       "assertions": {
         "required_substrings": [
@@ -1031,7 +1031,7 @@
       "tier": "parameter-semantics",
       "difficulty": "medium",
       "prompt": "A labmate emailed me this ripple params blob: `{'speed_name': 'head_speed', 'ripple_detection_algorithm': 'Kay_ripple_detector', 'ripple_detection_params': {'speed_threshold': 4.0, 'minimum_duration': 0.015, 'zscore_threshold': 2.0, 'smoothing_sigma': 0.004, 'close_ripple_threshold': 0.0}}`. I don't really know what these values do but their analyses looked good, so let me just insert it as `ripple_param_name='default'` and move on. Good to go?",
-      "expected_output": "No — push back on three independent problems. (1) Understand-each-field test: the user admits they don't know what the fields do. For Kay ripple detection: `speed_threshold` sets a speed ceiling for candidate-ripple epochs (animal must be moving slower than this to count), `zscore_threshold` is the band-power cutoff for event detection, `minimum_duration` filters out short blips below this length, `smoothing_sigma` is the Gaussian-smoothing window on the ripple band envelope, `close_ripple_threshold` merges events closer than this apart, `speed_name` names the upstream speed attribute to consume, and `ripple_detection_algorithm` picks the detector. If the user can't say what each does, they can't debug populate failures or defend the choices at paper-review time — the sensible move is to read `RippleParameters.insert_default` (`ripple.py`) which documents a sane baseline, the `make()` body of `RippleTimesV1` which shows how each field flows through, or the upstream `ripple_detection` package for the Kay algorithm. Note also that `sampling_frequency` is NOT stored in this blob — it flows in from `LFPBandV1.lfp_band_sampling_rate` at populate time. (2) Name-collides-with-shipped test: the Frank Lab RippleParameters table ships a row literally named `'default'` via `insert_default()`. Inserting the user's blob with `ripple_param_name='default'` would either silently skip (`skip_duplicates=True`) or overwrite the shipped row — neither is what the user intended. (3) Name-describes-content test: even without the collision, `'default'` fails grep-ability. Propose a self-describing alternative like `'kay_speed4_zscore2'` that encodes the detector and the key thresholds. Route to `feedback_loops.md` Pre-insert check section and the two self-tests. Also flag the Pre-insert search step: a set with these exact values may already exist in the lab under a different name — compare on content before inserting.",
+      "expected_output": "No — push back on three independent problems. (1) Understand-each-field test: the user admits they don't know what the fields do. For Kay ripple detection: `speed_threshold` sets a speed ceiling for candidate-ripple epochs (animal must be moving slower than this to count), `zscore_threshold` is the band-power cutoff for event detection, `minimum_duration` filters out short blips below this length, `smoothing_sigma` is the Gaussian-smoothing window on the ripple band envelope, `close_ripple_threshold` merges events closer than this apart, `speed_name` names the upstream speed attribute to consume, and `ripple_detection_algorithm` picks the detector. If the user can't say what each does, they can't debug populate failures or defend the choices at paper-review time — the sensible move is to read `RippleParameters.insert_default` (`ripple.py`) which documents a sane baseline, the `make()` body of `RippleTimesV1` which shows how each field flows through, or the upstream `ripple_detection` package for the Kay algorithm. Note also that `sampling_frequency` is NOT stored in this blob — it flows in from `LFPBandV1.lfp_band_sampling_rate` at populate time. (2) Name-collides-with-shipped test: the example lab RippleParameters table ships a row literally named `'default'` via `insert_default()`. Inserting the user's blob with `ripple_param_name='default'` would either silently skip (`skip_duplicates=True`) or overwrite the shipped row — neither is what the user intended. (3) Name-describes-content test: even without the collision, `'default'` fails grep-ability. Propose a self-describing alternative like `'kay_speed4_zscore2'` that encodes the detector and the key thresholds. Route to `feedback_loops.md` Pre-insert check section and the two self-tests. Also flag the Pre-insert search step: a set with these exact values may already exist in the lab under a different name — compare on content before inserting.",
       "assertions": {
         "required_substrings": [
           "RippleParameters",
@@ -1526,7 +1526,7 @@
       "stage": "destructive-operations",
       "tier": "adversarial",
       "difficulty": "hard",
-      "prompt": "yesterday I ran `(AnalysisNwbfile & key).super_delete()` to get around `cautious_delete` complaining with `Could not find exactly 1 datajoint user edeno in common.LabMember.LabMemberInfo`. The delete went through, but today I'm seeing orphan `.nwb` files in `$SPYGLASS_BASE_DIR/analysis/` that the DB doesn't know about. Did super_delete not clean them up? how do I clean them now?",
+      "prompt": "yesterday I ran `(AnalysisNwbfile & key).super_delete()` to get around `cautious_delete` complaining with `Could not find exactly 1 datajoint user testuser in common.LabMember.LabMemberInfo`. The delete went through, but today I'm seeing orphan `.nwb` files in `$SPYGLASS_BASE_DIR/analysis/` that the DB doesn't know about. Did super_delete not clean them up? how do I clean them now?",
       "expected_output": "Confirms: `super_delete` aliases straight to `datajoint.Table.delete`, skipping Spyglass's analysis-file cleanup (see spyglassmixin_methods.md `#super_delete`). The DB rows are gone but the files stay on disk. Cleanup now: `AnalysisNwbfile().cleanup(dry_run=True)` first to preview the orphans it would remove, review the logs, then `AnalysisNwbfile().cleanup(dry_run=False)`. But more importantly: push back on the pattern. The root cause was the LabMember error, not a cautious_delete bug — routes to setup_troubleshooting.md AccessError/PermissionError to fix the underlying LabMember wiring (insert the datajoint user into `LabMember.LabMemberInfo`) so future deletes go through cautious_delete cleanly and the file cleanup happens automatically. super_delete is for legitimate edge cases (admin cleanup after a lab member leaves); using it to silence 'annoying' permission errors leaves orphaned data and bypasses the audit trail.",
       "assertions": {
         "required_substrings": [
