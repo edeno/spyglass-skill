@@ -2202,32 +2202,30 @@
       "tier": "parameter-semantics",
       "difficulty": "hard",
       "prompt": "In `TrodesPosParams.insert_default()`'s params dict I see smoothing / filter fields. What happens to my resulting `speed` column if I turn smoothing off?",
-      "expected_output": "Routes to position_pipeline.md. Names the actual smoothing field: position_smoothing_duration (a moving-window duration in seconds; default 0.125s) — a Spyglass-specific field name worth flagging vs. generic 'smoothing'. Explains that the smoothing fields apply a low-pass filter to raw position samples before computing the velocity / speed derivative. Predicts that disabling smoothing produces a noisier speed trace, which causes spurious crossings of downstream thresholds (ripple speed_threshold, decoding interval gating, etc.). Recommends inspecting TrodesPosParams.describe() or .heading for the exact smoothing field names rather than guessing.",
+      "expected_output": "Routes to position_pipeline.md and to TrodesPosParams.describe() / .heading for field discovery. Identifies TWO distinct smoothing fields: `speed_smoothing_std_dev` (Gaussian sigma in seconds, passed into `get_speed` inside common_position.py — controls speed-trace noise), and `position_smoothing_duration` (moving-average window on the position columns, applied AFTER speed has already been computed). Correct answer: disabling/shrinking `speed_smoothing_std_dev` is what makes the speed trace noisier and produces spurious crossings of downstream thresholds; `position_smoothing_duration` smooths the position trace but does not affect the speed column because speed is computed earlier in the pipeline. Recommends `TrodesPosParams.describe()` / `.heading` to discover the exact field names instead of guessing.",
       "assertions": {
         "required_substrings": [
-          "low-pass",
-          "noise",
-          "derivative",
-          "TrodesPosParams.describe",
-          "position_smoothing_duration"
+          "speed_smoothing_std_dev",
+          "position_smoothing_duration",
+          "TrodesPosParams.describe"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Explains smoothing low-passes raw position before the velocity / speed derivative",
-          "Predicts: disabling smoothing gives a noisier speed trace, causing spurious crossings of downstream thresholds",
-          "Recommends inspecting TrodesPosParams.describe() / .heading for the exact field names rather than guessing"
+          "Names `speed_smoothing_std_dev` (Gaussian sigma) as the field that controls speed-trace noise",
+          "Distinguishes `speed_smoothing_std_dev` from `position_smoothing_duration` — the latter is a moving-average applied to position AFTER speed is computed, so it does not directly affect the speed column",
+          "Predicts: shrinking / disabling `speed_smoothing_std_dev` gives a noisier speed trace, causing spurious crossings of downstream thresholds",
+          "Recommends inspecting `TrodesPosParams.describe()` / `.heading` for exact field names rather than guessing"
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `low-pass`.",
-        "Response contains substring `noise`.",
-        "Response contains substring `derivative`.",
-        "Response contains substring `TrodesPosParams.describe`.",
+        "Response contains substring `speed_smoothing_std_dev`.",
         "Response contains substring `position_smoothing_duration`.",
-        "Explains smoothing low-passes raw position before the velocity / speed derivative",
-        "Predicts: disabling smoothing gives a noisier speed trace, causing spurious crossings of downstream thresholds",
-        "Recommends inspecting TrodesPosParams.describe() / .heading for the exact field names rather than guessing"
+        "Response contains substring `TrodesPosParams.describe`.",
+        "Names `speed_smoothing_std_dev` (Gaussian sigma) as the field that controls speed-trace noise",
+        "Distinguishes `speed_smoothing_std_dev` from `position_smoothing_duration` — the latter is a moving-average applied to position AFTER speed is computed, so it does not directly affect the speed column",
+        "Predicts: shrinking / disabling `speed_smoothing_std_dev` gives a noisier speed trace, causing spurious crossings of downstream thresholds",
+        "Recommends inspecting `TrodesPosParams.describe()` / `.heading` for exact field names rather than guessing"
       ]
     },
     {
