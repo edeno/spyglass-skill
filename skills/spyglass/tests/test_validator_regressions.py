@@ -1593,6 +1593,182 @@ def fixture_pr_citation_in_code_block_ok(src_root):
     return False
 
 
+def _run_eval_hygiene_on(evals_obj, src_root):
+    """Shared scaffolding: write a synthetic evals.json, run the two
+    new eval-assertion rules against it, return the ValidationResult.
+    """
+    import json
+    import tempfile
+    from pathlib import Path as P
+    tmp = P(tempfile.mkdtemp())
+    (tmp / "evals").mkdir()
+    (tmp / "evals" / "evals.json").write_text(json.dumps(evals_obj))
+    original = v.SKILL_DIR
+    v.SKILL_DIR = tmp
+    try:
+        results = v.ValidationResult()
+        registry = v._ClassRegistry(src_root, results)
+        v.check_eval_required_substring_hygiene(
+            results, src_root, registry=registry,
+        )
+        v.check_eval_required_substring_completeness(
+            src_root, results, registry=registry,
+        )
+        return results
+    finally:
+        v.SKILL_DIR = original
+
+
+def fixture_eval_bare_word_required_substring(src_root):
+    """Bare single English word in required_substrings must warn.
+
+    `"legacy"` is exactly the kind of bare word the evals/README
+    substring-hygiene rule warns about: it matches 'v0 is legacy' and
+    'v0 is NOT legacy' equally well. The hygiene check should flag it.
+    """
+    r = _run_eval_hygiene_on({"evals": [{
+        "id": 901, "expected_output": "v0 is legacy.",
+        "assertions": {
+            "required_substrings": ["legacy"],
+            "forbidden_substrings": [], "behavioral_checks": [],
+        },
+    }]}, src_root)
+    hits = [w for w in r.warnings if "id=901" in w and "bare word" in w]
+    if hits:
+        print("  [ok] eval-hygiene: bare single-word required_substring caught")
+        return True
+    print(f"  [FAIL] expected bare-word warning; got warnings: {r.warnings}")
+    return False
+
+
+def fixture_eval_known_class_not_flagged_as_bare(src_root):
+    """Known Spyglass class names look like bare words (single capital +
+    lowercase) but ARE discriminating identifiers. The hygiene rule
+    exempts them via the registry so `Electrode`, `Session`, `LFPV1`
+    don't false-warn.
+    """
+    r = _run_eval_hygiene_on({"evals": [{
+        "id": 902,
+        "expected_output": "Use Electrode as the upstream table.",
+        "assertions": {
+            "required_substrings": ["Electrode"],  # known class, not bare
+            "forbidden_substrings": [], "behavioral_checks": [],
+        },
+    }]}, src_root)
+    bad = [w for w in r.warnings if "id=902" in w and "bare word" in w]
+    if not bad:
+        print("  [ok] eval-hygiene: known Spyglass class not flagged as bare")
+        return True
+    print(f"  [FAIL] known class wrongly flagged: {bad}")
+    return False
+
+
+def fixture_eval_trailing_paren_required_substring(src_root):
+    """Required substring ending with `(` locks the match to one call
+    form (`SpikeSorting.populate(` won't match `.populate()`). Warn.
+    """
+    r = _run_eval_hygiene_on({"evals": [{
+        "id": 903, "expected_output": "Call SpikeSorting.populate()",
+        "assertions": {
+            "required_substrings": ["SpikeSorting.populate("],
+            "forbidden_substrings": [], "behavioral_checks": [],
+        },
+    }]}, src_root)
+    hits = [w for w in r.warnings if "id=903" in w and "ends with '('" in w]
+    if hits:
+        print("  [ok] eval-hygiene: trailing-paren required_substring caught")
+        return True
+    print(f"  [FAIL] expected trailing-paren warning; got: {r.warnings}")
+    return False
+
+
+def fixture_eval_backtick_wrapped_required_substring(src_root):
+    """Required substring wrapped in literal backticks locks the match
+    to one code-style rendering (`` `Raw` `` won't match plain `Raw`).
+    Warn.
+    """
+    r = _run_eval_hygiene_on({"evals": [{
+        "id": 904, "expected_output": "Upstream includes `Raw`.",
+        "assertions": {
+            "required_substrings": ["`Raw`"],
+            "forbidden_substrings": [], "behavioral_checks": [],
+        },
+    }]}, src_root)
+    hits = [w for w in r.warnings if "id=904" in w and "backticks" in w]
+    if hits:
+        print("  [ok] eval-hygiene: backtick-wrapped required_substring caught")
+        return True
+    print(f"  [FAIL] expected backtick warning; got: {r.warnings}")
+    return False
+
+
+def fixture_eval_required_substrings_exempt_silences_warning(src_root):
+    """`required_substrings_exempt` list silences the hygiene warning
+    for specific substrings the author has reviewed and accepted as
+    discriminating despite looking bare.
+    """
+    r = _run_eval_hygiene_on({"evals": [{
+        "id": 905, "expected_output": "The Nyquist rate...",
+        "assertions": {
+            "required_substrings": ["Nyquist"],
+            "required_substrings_exempt": ["Nyquist"],
+            "forbidden_substrings": [], "behavioral_checks": [],
+        },
+    }]}, src_root)
+    bad = [w for w in r.warnings if "id=905" in w and "bare word" in w]
+    if not bad:
+        print("  [ok] eval-hygiene: required_substrings_exempt silences bare-word warning")
+        return True
+    print(f"  [FAIL] exempt list ignored: {bad}")
+    return False
+
+
+def fixture_eval_completeness_missing_table(src_root):
+    """expected_output names a Spyglass class that no required_substring
+    requires → completeness check warns (eval 72 pattern pre-fix).
+    """
+    r = _run_eval_hygiene_on({"evals": [{
+        "id": 906,
+        "expected_output": (
+            "Upstream chain: LFPSelection → LFPV1 → LFPOutput → LFPBandSelection."
+        ),
+        "assertions": {
+            "required_substrings": ["LFPSelection"],  # misses LFPV1, LFPOutput, LFPBandSelection
+            "forbidden_substrings": [], "behavioral_checks": [],
+        },
+    }]}, src_root)
+    hits = [w for w in r.warnings if "id=906" in w and "expected_output names" in w]
+    # Expect warnings for LFPV1, LFPOutput, LFPBandSelection
+    missing = {cls for cls in ("LFPV1", "LFPOutput", "LFPBandSelection")
+               if not any(cls in h for h in hits)}
+    if not missing:
+        print("  [ok] eval-completeness: missing tables in required_substrings caught")
+        return True
+    print(f"  [FAIL] expected warnings naming each missing table; missing: {missing}")
+    return False
+
+
+def fixture_eval_completeness_exempt_silences_warning(src_root):
+    """`expected_output_tables_exempt` silences the completeness warning
+    for tables mentioned as context/distractor.
+    """
+    r = _run_eval_hygiene_on({"evals": [{
+        "id": 907,
+        "expected_output": "Like LFPV1, LFPBandV1 is Computed.",
+        "assertions": {
+            "required_substrings": ["LFPBandV1"],
+            "expected_output_tables_exempt": ["LFPV1"],
+            "forbidden_substrings": [], "behavioral_checks": [],
+        },
+    }]}, src_root)
+    bad = [w for w in r.warnings if "id=907" in w and "LFPV1" in w and "expected_output names" in w]
+    if not bad:
+        print("  [ok] eval-completeness: expected_output_tables_exempt silences warning")
+        return True
+    print(f"  [FAIL] exempt list ignored: {bad}")
+    return False
+
+
 FIXTURES = [
     fixture_syntax_ellipsis_after_kwargs,
     fixture_trailing_underscore_nwb,
@@ -1645,6 +1821,13 @@ FIXTURES = [
     fixture_merge_registry_md_misclassification_caught,
     fixture_merge_registry_inverse_misclassification_caught,
     fixture_merge_registry_marker_missing_caught,
+    fixture_eval_bare_word_required_substring,
+    fixture_eval_known_class_not_flagged_as_bare,
+    fixture_eval_trailing_paren_required_substring,
+    fixture_eval_backtick_wrapped_required_substring,
+    fixture_eval_required_substrings_exempt_silences_warning,
+    fixture_eval_completeness_missing_table,
+    fixture_eval_completeness_exempt_silences_warning,
 ]
 
 

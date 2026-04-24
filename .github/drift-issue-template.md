@@ -30,7 +30,7 @@ flags as a break.
    locally:
    ```bash
    export SPYGLASS_SRC=/path/to/spyglass/src
-   ./skills/spyglass/scripts/validate_all.sh --baseline-warnings 3
+   ./skills/spyglass/scripts/validate_all.sh --baseline-warnings 180
    ```
 4. If the drift reveals a real Spyglass bug, file it upstream and pin
    this issue with a link.
