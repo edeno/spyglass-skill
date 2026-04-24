@@ -357,18 +357,7 @@ bytes` from JAX during `ClusterlessDecodingV1.populate` /
 `(n_time, n_state_bins)` (e.g. `(3384862, 1926)` = 24 GiB) on an 80 GB
 A100.
 
-**Tuning knobs** (set on `DecodingParameters`). `decoding_params` and `decoding_kwargs` are **sibling top-level attributes** on `DecodingParameters` (see the schema snippet in "Shared Components"), not nested — `decoding_kwargs` inside `decoding_params` is silently discarded. `n_chunks` and `cache_likelihood` are `predict()` kwargs in `non_local_detector` 0.6.x, reached via the default `estimate_decoding_params=False` branch:
-
-```python
-DecodingParameters.insert1({
-    'decoding_param_name': 'clusterless_chunked',
-    'decoding_params': {...},         # model init (classifier constructor kwargs)
-    'decoding_kwargs': {              # runtime kwargs — reach predict()
-        'n_chunks': 10,               # split the decoding dimension
-        'cache_likelihood': False,    # don't hold the likelihood buffer
-    },
-}, skip_duplicates=True)
-```
+**Tuning knobs** (set on `DecodingParameters`). Use the canonical insert shape from [§ DecodingParameters (Lookup)](#decodingparameters-lookup) — `decoding_params` and `decoding_kwargs` as sibling top-level attrs. For the OOM case, populate `decoding_kwargs` with `{'n_chunks': 10, 'cache_likelihood': False}` (both are `predict()` kwargs in `non_local_detector` 0.6.x, reached via the default `estimate_decoding_params=False` branch).
 
 Also set the JAX memory fraction at the top of the populate script:
 

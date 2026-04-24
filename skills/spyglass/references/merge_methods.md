@@ -192,7 +192,7 @@ Both accept the same restriction shapes and both are classmethods — they diffe
 
 **Failure modes differ:**
 
-- `merge_restrict` on an over-broad restriction returns many rows silently; always check `len(...)` before `.fetch1(...)`. On a zero-match restriction it silently returns an empty query (no raise).
+- `merge_restrict` on an over-broad restriction returns many rows (no raise); always check `len(...)` before `.fetch1(...)`. On a zero-match restriction it returns an empty query (no raise).
 - `merge_get_part` on a restriction that matches entries in multiple parts raises `ValueError: Found multiple potential parts: [...]` unless `multi_source=True`.
 - `merge_get_part` on a restriction that matches zero parts raises `ValueError: Found 0 potential parts: []` — usually because the upstream was populated but never inserted into the merge (see the misleading-error note below and common_mistakes.md for the explicit insert fix). This raise does NOT fire for `merge_restrict`.
 
