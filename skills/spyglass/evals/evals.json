@@ -3144,7 +3144,7 @@
         "forbidden_substrings": [
           "def get_pk",
           "get_pk returns",
-          "SpyglassMixin.get_pk"
+          "SpyglassMixin.get_pk("
         ],
         "behavioral_checks": [
           "States that `get_pk` does not exist on SpyglassMixin",
@@ -3159,7 +3159,7 @@
         "Response contains substring `spyglassmixin_methods.md`.",
         "Response does not contain substring `def get_pk`.",
         "Response does not contain substring `get_pk returns`.",
-        "Response does not contain substring `SpyglassMixin.get_pk`.",
+        "Response does not contain substring `SpyglassMixin.get_pk(`.",
         "States that `get_pk` does not exist on SpyglassMixin",
         "Recommends `.fetch('KEY')` (or `.proj().fetch()`) as the real way to get PK dicts",
         "Names `dir(SpyglassMixin)` or a source-grep as the verification primitive",
