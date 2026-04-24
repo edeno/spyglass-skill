@@ -3268,6 +3268,85 @@
         "Explicitly flags the v0→v1 naming asymmetry (some v1 classes keep the `V1` suffix, some drop it) — recommends verifying by import rather than extrapolating",
         "Does not fabricate a signature for `SpikeSortingV1.populate` or claim it is an alias / deprecated name for `SpikeSorting`"
       ]
+    },
+    {
+      "id": 82,
+      "eval_name": "resource-first-ref-populate-all-common",
+      "stage": "runtime-debugging",
+      "tier": "resource-selection",
+      "difficulty": "easy",
+      "prompt": "I ran `populate_all_common('j1620210710_.nwb')` and it completed without raising, but Electrode has no rows for this file. Before I touch any code — which file inside the skill should I open first, and is there a bundled script that helps here?",
+      "expected_output": "Open `populate_all_common_debugging.md` first — it's scoped specifically to silent skips from the `populate_all_common` driver, which catches per-table errors by default (`raise_err=False`) and writes only a short message to `common_usage.InsertError`. `runtime_debugging.md` is the wrong first stop because it covers in-the-traceback errors, not silent-completion symptoms. There is no bundled script that diagnoses populate silent skips — the two user-facing bundled scripts are `scrub_dj_config.py` (config redaction) and `verify_spyglass_env.py` (env/install check), neither of which is relevant here. The answer should name the file, explain the one-line reason (silent-skip has its own reference), and not invent a third-party diagnostic script.",
+      "assertions": {
+        "required_substrings": [
+          "populate_all_common_debugging.md",
+          "InsertError"
+        ],
+        "expected_output_tables_exempt": [
+          "Electrode"
+        ],
+        "forbidden_substrings": [
+          "runtime_debugging.md is the first",
+          "check_populate_status.py",
+          "diagnose_populate.py"
+        ],
+        "behavioral_checks": [
+          "Names `populate_all_common_debugging.md` as the first reference to open",
+          "Explains in one line that silent completion (not an in-hand traceback) is what makes this reference correct over `runtime_debugging.md`",
+          "Identifies `common_usage.InsertError` as the table where the swallowed error message lives",
+          "Does not invent a bundled script for populate diagnostics; correctly notes only scrub_dj_config.py and verify_spyglass_env.py ship today (or that no populate-diagnostic script is bundled)"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `populate_all_common_debugging.md`.",
+        "Response contains substring `InsertError`.",
+        "Response does not contain substring `runtime_debugging.md is the first`.",
+        "Response does not contain substring `check_populate_status.py`.",
+        "Response does not contain substring `diagnose_populate.py`.",
+        "Names `populate_all_common_debugging.md` as the first reference to open",
+        "Explains in one line that silent completion (not an in-hand traceback) is what makes this reference correct over `runtime_debugging.md`",
+        "Identifies `common_usage.InsertError` as the table where the swallowed error message lives",
+        "Does not invent a bundled script for populate diagnostics; correctly notes only scrub_dj_config.py and verify_spyglass_env.py ship today (or that no populate-diagnostic script is bundled)"
+      ]
+    },
+    {
+      "id": 83,
+      "eval_name": "resource-first-ref-custom-pipeline-author",
+      "stage": "pipeline-authoring",
+      "tier": "resource-selection",
+      "difficulty": "easy",
+      "prompt": "I'm writing a new Computed table in my own schema that produces a waveform-feature array, writes it into an AnalysisNwbfile, and registers the artifact with an `_object_id`. Which single reference in the skill is the right starting point, and which similar-sounding one is a distractor?",
+      "expected_output": "Start with `custom_pipeline_authoring.md` — it's the authoring-side reference and covers the `SpyglassMixin` subclass requirement, `AnalysisNwbfile` FK, `_object_id` convention, and the `make()` pattern for writing feature arrays. The distractor is `spyglassmixin_methods.md`, which documents methods users *call on* existing mixin tables (`fetch_nwb`, `cautious_delete`, `<<`, `>>`) — useful once the table is authored but wrong for the write-the-schema step. The answer should name both files, commit to `custom_pipeline_authoring.md` as the first stop, and explain the author-vs-consumer split in one sentence.",
+      "assertions": {
+        "required_substrings": [
+          "custom_pipeline_authoring.md",
+          "spyglassmixin_methods.md",
+          "AnalysisNwbfile"
+        ],
+        "forbidden_substrings": [
+          "spyglassmixin_methods.md is the first",
+          "merge_methods.md is where you start"
+        ],
+        "behavioral_checks": [
+          "Names `custom_pipeline_authoring.md` as the first reference",
+          "Explicitly identifies `spyglassmixin_methods.md` as a distractor and explains the author-vs-consumer split",
+          "Mentions the `_object_id` + AnalysisNwbfile FK convention as a signal that this is an authoring task",
+          "Does not recommend merge_methods.md or ingestion.md as the first stop"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `custom_pipeline_authoring.md`.",
+        "Response contains substring `spyglassmixin_methods.md`.",
+        "Response contains substring `AnalysisNwbfile`.",
+        "Response does not contain substring `spyglassmixin_methods.md is the first`.",
+        "Response does not contain substring `merge_methods.md is where you start`.",
+        "Names `custom_pipeline_authoring.md` as the first reference",
+        "Explicitly identifies `spyglassmixin_methods.md` as a distractor and explains the author-vs-consumer split",
+        "Mentions the `_object_id` + AnalysisNwbfile FK convention as a signal that this is an authoring task",
+        "Does not recommend merge_methods.md or ingestion.md as the first stop"
+      ]
     }
   ]
 }
