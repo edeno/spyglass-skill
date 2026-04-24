@@ -1609,7 +1609,7 @@ def _run_eval_hygiene_on(evals_obj, src_root):
         results = v.ValidationResult()
         registry = v._ClassRegistry(src_root, results)
         v.check_eval_required_substring_hygiene(
-            results, src_root, registry=registry,
+            src_root, results, registry=registry,
         )
         v.check_eval_required_substring_completeness(
             src_root, results, registry=registry,

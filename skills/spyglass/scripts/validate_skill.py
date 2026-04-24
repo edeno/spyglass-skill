@@ -2252,6 +2252,27 @@ _EVAL_METHOD_CALL_PATTERN = re.compile(
 )
 
 
+def _load_evals_for_check(results, fail_on_parse=False):
+    """Load the eval suite for per-eval checks. Returns the list of eval
+    entries (or [] if the file is absent / unparseable).
+
+    `check_evals_content` is the canonical parse-error reporter — it runs
+    first with `fail_on_parse=True` so any JSON error is surfaced once.
+    The hygiene + completeness checks run later and silently skip on a
+    parse failure to avoid triple-reporting the same error.
+    """
+    evals_path = SKILL_DIR / "evals" / "evals.json"
+    if not evals_path.exists():
+        return []
+    try:
+        data = json.loads(evals_path.read_text())
+    except json.JSONDecodeError as e:
+        if fail_on_parse:
+            results.fail(f"evals.json: JSON parse error: {e}")
+        return []
+    return data.get("evals", []) or []
+
+
 def _looks_code_like(s: str, registry=None) -> bool:
     """True if a required_substring is a code-shaped token (class/method/path/
     flag/kwarg/CLI-flag/dict-key) rather than a bare English word/phrase.
@@ -2299,7 +2320,7 @@ def _looks_code_like(s: str, registry=None) -> bool:
 
 
 def check_eval_required_substring_hygiene(
-    results: ValidationResult, src_root=None, registry=None,
+    src_root, results: ValidationResult, registry=None,
 ):
     """Warn on required_substrings that are likely to suffer from the
     substring-hygiene traps documented in evals/README.md.
@@ -2325,16 +2346,9 @@ def check_eval_required_substring_hygiene(
     itself audit-worthy — every entry should be a conscious choice that
     the substring discriminates despite being bare.
     """
-    if registry is None and src_root is not None:
+    if registry is None:
         registry = _ClassRegistry(src_root, results)
-    evals_path = SKILL_DIR / "evals" / "evals.json"
-    if not evals_path.exists():
-        return
-    try:
-        data = json.loads(evals_path.read_text())
-    except json.JSONDecodeError:
-        return  # earlier check already failed on parse
-    for eval_entry in data.get("evals", []):
+    for eval_entry in _load_evals_for_check(results):
         eid = eval_entry.get("id", "?")
         a = eval_entry.get("assertions", {}) or {}
         reqs = a.get("required_substrings", []) or []
@@ -2343,9 +2357,6 @@ def check_eval_required_substring_hygiene(
             if not isinstance(sub, str) or sub in exempt:
                 continue
             stripped = sub.strip()
-            # Overly-literal formatting: leading/trailing backtick or
-            # trailing open-paren. These lock the match to a specific
-            # rendering.
             if stripped.startswith("`") or stripped.endswith("`"):
                 results.warn(
                     f"evals.json[id={eid}]: required_substring {sub!r} wraps "
@@ -2362,8 +2373,6 @@ def check_eval_required_substring_hygiene(
                     f"Drop the paren or add to required_substrings_exempt."
                 )
                 continue
-            # Bare single word: no code-punct, no digits, no internal
-            # capital, and not a known Spyglass class name.
             if " " not in stripped and not _looks_code_like(stripped, registry):
                 results.warn(
                     f"evals.json[id={eid}]: required_substring {sub!r} is a "
@@ -2418,14 +2427,7 @@ def check_eval_required_substring_completeness(
     """
     if registry is None:
         registry = _ClassRegistry(src_root, results)
-    evals_path = SKILL_DIR / "evals" / "evals.json"
-    if not evals_path.exists():
-        return
-    try:
-        data = json.loads(evals_path.read_text())
-    except json.JSONDecodeError:
-        return
-    for eval_entry in data.get("evals", []):
+    for eval_entry in _load_evals_for_check(results):
         eid = eval_entry.get("id", "?")
         expected = eval_entry.get("expected_output", "") or ""
         if not isinstance(expected, str):
@@ -2433,19 +2435,14 @@ def check_eval_required_substring_completeness(
         a = eval_entry.get("assertions", {}) or {}
         reqs = a.get("required_substrings", []) or []
         exempt = set(a.get("expected_output_tables_exempt", []) or [])
-        # Candidate tokens: CapitalCase identifiers in expected_output.
         candidates = set(_EVAL_CAPITAL_TOKEN_PATTERN.findall(expected))
-        # Filter to known Spyglass classes — anything else is prose.
-        # Exclude infrastructure mixins/wrappers (see
-        # _EVAL_COMPLETENESS_IGNORE) that only appear as context.
+        # Substring-in-substring lets `SpikeSortingOutput` satisfy both
+        # itself and a more-specific `SpikeSortingOutput.CurationV1`.
         tables = {
             c for c in candidates
             if registry.methods(c) is not None
             and c not in _EVAL_COMPLETENESS_IGNORE
         }
-        # For each table the eval *names*, confirm a required_substring
-        # contains it. Substring-in-substring lets `SpikeSortingOutput`
-        # satisfy both itself and `SpikeSortingOutput.CurationV1`.
         req_blob = " ".join(s for s in reqs if isinstance(s, str))
         missing = [
             t for t in tables
@@ -2493,16 +2490,8 @@ def check_evals_content(src_root, results: ValidationResult, registry=None):
     """
     if registry is None:
         registry = _ClassRegistry(src_root, results)
-    evals_path = SKILL_DIR / "evals" / "evals.json"
-    if not evals_path.exists():
-        return
-    try:
-        data = json.loads(evals_path.read_text())
-    except json.JSONDecodeError as e:
-        results.fail(f"evals.json: JSON parse error: {e}")
-        return
 
-    for eval_entry in data.get("evals", []):
+    for eval_entry in _load_evals_for_check(results, fail_on_parse=True):
         eval_id = eval_entry.get("id", "?")
         assertions = eval_entry.get("assertions", {}) or {}
         # Join the scannable text fields into one blob. Forbidden_substrings
@@ -3121,7 +3110,7 @@ def main():
     check_merge_registry(src_root, results)
 
     print("[22/23] Checking eval required_substring hygiene (bare-word / literal-format)...")
-    check_eval_required_substring_hygiene(results, src_root, registry=registry)
+    check_eval_required_substring_hygiene(src_root, results, registry=registry)
 
     print("[23/23] Checking eval required_substring completeness vs expected_output tables...")
     check_eval_required_substring_completeness(src_root, results, registry=registry)
