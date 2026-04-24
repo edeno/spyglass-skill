@@ -2620,6 +2620,132 @@
         "Names every upstream table including the parameter (FirFilterParameters) and selection tables (LFPSelection, LFPBandSelection)",
         "Does not skip the LFPOutput merge wrapper between LFPV1 and LFPBandSelection"
       ]
+    },
+    {
+      "id": 74,
+      "eval_name": "schema-pk-electrode",
+      "stage": "framework-concepts",
+      "tier": "schema-introspection",
+      "difficulty": "easy",
+      "prompt": "What is the primary key of the `Electrode` table? Return only the field names as a comma-separated list, nothing else.",
+      "expected_output": "Routes to common_tables.md (Electrode entry). Lists exactly the three PK fields: nwb_file_name, electrode_group_name, electrode_id (in any order). Notes the inheritance: Electrode -> ElectrodeGroup contributes nwb_file_name + electrode_group_name; Electrode adds its own electrode_id. Does not include region_id (which is a secondary FK to BrainRegion, not a PK).",
+      "assertions": {
+        "required_substrings": [
+          "nwb_file_name",
+          "electrode_group_name",
+          "electrode_id"
+        ],
+        "forbidden_substrings": [
+          "region_id"
+        ],
+        "behavioral_checks": [
+          "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id) in any order, with no extra fields"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `nwb_file_name`.",
+        "Response contains substring `electrode_group_name`.",
+        "Response contains substring `electrode_id`.",
+        "Response does not contain substring `region_id`.",
+        "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id) in any order, with no extra fields"
+      ]
+    },
+    {
+      "id": 75,
+      "eval_name": "schema-pk-firfilterparameters",
+      "stage": "framework-concepts",
+      "tier": "schema-introspection",
+      "difficulty": "easy",
+      "prompt": "What is the primary key of the `FirFilterParameters` table? Return only the field names as a comma-separated list, nothing else.",
+      "expected_output": "Routes to common_tables.md (FirFilterParameters entry) or lfp_pipeline.md (Nyquist note references the same FK). Lists exactly the two PK fields: filter_name, filter_sampling_rate. Optionally explains the consequence: a filter named for one rate doesn't apply to a stream at another rate (the canonical 'filter named for one rate' footgun in the Nyquist note).",
+      "assertions": {
+        "required_substrings": [
+          "filter_name",
+          "filter_sampling_rate"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Lists exactly the two PK fields (filter_name, filter_sampling_rate); no extra fields"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `filter_name`.",
+        "Response contains substring `filter_sampling_rate`.",
+        "Lists exactly the two PK fields (filter_name, filter_sampling_rate); no extra fields"
+      ]
+    },
+    {
+      "id": 76,
+      "eval_name": "schema-dep-intervallist",
+      "stage": "framework-concepts",
+      "tier": "schema-introspection",
+      "difficulty": "easy",
+      "prompt": "What table does `IntervalList` directly depend on? Return only the table name.",
+      "expected_output": "Routes to common_tables.md (IntervalList entry). Names exactly Session. Does not speculate about other dependencies (IntervalList depends on Session only at the schema level; nothing else).",
+      "assertions": {
+        "required_substrings": [
+          "Session"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Names Session as the single direct dependency; does not speculate about other dependencies"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Session`.",
+        "Names Session as the single direct dependency; does not speculate about other dependencies"
+      ]
+    },
+    {
+      "id": 77,
+      "eval_name": "schema-dep-lfp-filter",
+      "stage": "framework-concepts",
+      "tier": "schema-introspection",
+      "difficulty": "easy",
+      "prompt": "Which table holds the filter coefficients (FIR kernel data) used by the LFP pipeline? Return only the table name.",
+      "expected_output": "Routes to lfp_pipeline.md or common_tables.md (FirFilterParameters entry). Names FirFilterParameters as the table that stores the filter coefficient blob. Distinguishes from LFPSelection, which carries filter_name as an FK but is the per-run selection, not the kernel store. (LFPV1 references the kernel data through its FK chain via LFPSelection -> FirFilterParameters.)",
+      "assertions": {
+        "required_substrings": [
+          "FirFilterParameters"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Names FirFilterParameters as the lookup table for filter coefficients (distinct from LFPSelection, which carries filter_name as FK but is the per-run selection, not the kernel store)"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `FirFilterParameters`.",
+        "Names FirFilterParameters as the lookup table for filter coefficients (distinct from LFPSelection, which carries filter_name as FK but is the per-run selection, not the kernel store)"
+      ]
+    },
+    {
+      "id": 78,
+      "eval_name": "schema-part-tables-probe",
+      "stage": "framework-concepts",
+      "tier": "schema-introspection",
+      "difficulty": "easy",
+      "prompt": "What are the part tables of `Probe`? Return only the part table names as a comma-separated list.",
+      "expected_output": "Routes to common_tables.md (Probe entry). Lists both part tables in Master.Part notation: Probe.Shank, Probe.Electrode. Does not list non-existent parts.",
+      "assertions": {
+        "required_substrings": [
+          "Probe.Shank",
+          "Probe.Electrode"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Probe.Shank`.",
+        "Response contains substring `Probe.Electrode`.",
+        "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist"
+      ]
     }
   ]
 }

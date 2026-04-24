@@ -75,6 +75,7 @@ Tiers capture *what kind of capability* the eval tests. A single skill can be st
 | `resource-selection` | 2 | Meta-test: which reference file should be opened first to answer a question. |
 | `workflow-position` | 2 | "I'm at point X in the pipeline; what populates next." |
 | `dependency-tracing` | 2 | Abstract enumeration of the full upstream chain for a given output table. |
+| `schema-introspection` | 5 | Direct fact about a table's schema (PK fields, direct dependency, part-table set). Grep-scorable, stable canonical answer. |
 
 ## Stages
 
@@ -88,7 +89,7 @@ Stages capture *which phase of a Spyglass workflow* the prompt lives in. Orthogo
 | `runtime-debugging` | 16 | Triaging an error that already happened. |
 | `common-mistakes` | 5 | Prompts that specifically test the patterns documented in `common_mistakes.md`. |
 | `pipeline-authoring` | 1 | Writing a custom pipeline table (`SpyglassMixin`, `AnalysisNwbfile` FK, `_object_id` convention). |
-| `framework-concepts` | 1 | DataJoint-layer concepts (blob vs external, `filepath@` stores). |
+| `framework-concepts` | 6 | DataJoint-layer concepts (blob vs external, `filepath@` stores) and schema-introspection (PK / dependency / part-table facts). |
 | `non-activation` | 2 | Questions the skill should stay silent on (plain Python, unrelated neuro tooling). |
 | `hallucination-resistance` | 1 | User cites a made-up API; correct answer is "that doesn't exist, here's the real one." |
 | `destructive-operations` | 4 | User asks for `cautious_delete` bypass, `super_delete()`, manual DROP — correct answer pushes back before acting. |
@@ -101,7 +102,7 @@ Captures *how hard the eval is to answer*, independent of stage and tier. Used f
 
 | Difficulty | N | What it tests |
 | --- | --- | --- |
-| `easy` | 17 | One-step lookup or single-fact recall. Atomic-read, schema-introspection, baseline activation, hallucination/non-activation. |
+| `easy` | 22 | One-step lookup or single-fact recall. Atomic-read, schema-introspection, baseline activation, hallucination/non-activation. |
 | `medium` | 39 | Two-step composition or one inference hop. Single-table debugging, merge-key discovery, parameter-semantics with locally documented effects. |
 | `hard` | 17 | Multi-step reasoning, multi-reference handoff, ambiguity, or counterfactual reasoning. Compound, dependency-tracing, recovery-from-incomplete-state. |
 
