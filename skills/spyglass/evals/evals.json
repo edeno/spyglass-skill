@@ -1959,6 +1959,152 @@
         "Points to common_mistakes.md § 9 (or equivalent location) for the full rule",
         "Does not misdiagnose as an under-specified restriction, a data-missing problem, or a merge-table/classmethod-dispatch issue"
       ]
+    },
+    {
+      "id": 54,
+      "eval_name": "classify-lfpselection",
+      "stage": "table-understanding",
+      "tier": "table-classification",
+      "difficulty": "easy",
+      "prompt": "Is `LFPSelection` a manual, lookup, computed, or imported table? And is it a 'selection' or 'parameter' table in spyglass terms? I'm trying to understand what I put into it vs. what gets computed.",
+      "expected_output": "Routes to lfp_pipeline.md (Step 2: Filter Raw Data block). Identifies LFPSelection as a Manual table at the DataJoint level and a 'selection table' in Spyglass terms — picks the input (electrode group + interval + filter) for the paired Computed table LFPV1, which is what actually runs the populate. Mentions filter_name and lfp_electrode_group_name as PK fields on LFPSelection. Does not call LFPSelection a Computed, Lookup, or Imported table.",
+      "assertions": {
+        "required_substrings": [
+          "Manual",
+          "selection table",
+          "filter_name",
+          "lfp_electrode_group_name"
+        ],
+        "forbidden_substrings": [
+          "is Computed",
+          "is Lookup",
+          "is Imported"
+        ],
+        "behavioral_checks": [
+          "Distinguishes DataJoint tier (Manual) from Spyglass role (selection table — picks input for the paired Computed table)",
+          "Names LFPV1 as the Computed counterpart whose populate() consumes LFPSelection rows"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Manual`.",
+        "Response contains substring `selection table`.",
+        "Response contains substring `filter_name`.",
+        "Response contains substring `lfp_electrode_group_name`.",
+        "Response does not contain substring `is Computed`.",
+        "Response does not contain substring `is Lookup`.",
+        "Response does not contain substring `is Imported`.",
+        "Distinguishes DataJoint tier (Manual) from Spyglass role (selection table — picks input for the paired Computed table)",
+        "Names LFPV1 as the Computed counterpart whose populate() consumes LFPSelection rows"
+      ]
+    },
+    {
+      "id": 55,
+      "eval_name": "classify-trodesposparams-vs-selection",
+      "stage": "table-understanding",
+      "tier": "table-classification",
+      "difficulty": "medium",
+      "prompt": "What's the difference between `TrodesPosParams` and `TrodesPosSelection`? Looking at both, they feel kind of similar and I can't tell which one I'm supposed to insert my parameter dict into.",
+      "expected_output": "Routes to position_pipeline.md (Pipeline 1 — Tables block). Identifies TrodesPosParams as the parameter table (Lookup tier): a named, reusable parameter dictionary; insert once per parameter set via TrodesPosParams.insert1(). Identifies TrodesPosSelection as the selection table (Manual tier): picks one (session, interval, params-name) tuple per intended populate run. Names trodes_pos_params_name as the FK that joins selection back to params. Does not say the two tables are the same or interchangeable.",
+      "assertions": {
+        "required_substrings": [
+          "Lookup",
+          "parameter table",
+          "selection table",
+          "insert1",
+          "trodes_pos_params_name"
+        ],
+        "forbidden_substrings": [
+          "same table",
+          "interchangeable"
+        ],
+        "behavioral_checks": [
+          "Identifies TrodesPosParams as the parameter table (named, reusable param dict; insert once per param set)",
+          "Identifies TrodesPosSelection as the selection table (picks session + interval + params name for one populate run)"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Lookup`.",
+        "Response contains substring `parameter table`.",
+        "Response contains substring `selection table`.",
+        "Response contains substring `insert1`.",
+        "Response contains substring `trodes_pos_params_name`.",
+        "Response does not contain substring `same table`.",
+        "Response does not contain substring `interchangeable`.",
+        "Identifies TrodesPosParams as the parameter table (named, reusable param dict; insert once per param set)",
+        "Identifies TrodesPosSelection as the selection table (picks session + interval + params name for one populate run)"
+      ]
+    },
+    {
+      "id": 56,
+      "eval_name": "classify-positionoutput-merge",
+      "stage": "table-understanding",
+      "tier": "table-classification",
+      "difficulty": "medium",
+      "prompt": "What kind of table is `PositionOutput`? It doesn't have a `populate()` and I can't figure out how a row gets in there.",
+      "expected_output": "Routes to merge_methods.md (mechanism intro) and position_pipeline.md (PositionOutput Merge Table section). Identifies PositionOutput as a merge table — rows enter via insert into a part table (PositionOutput.TrodesPosV1 or PositionOutput.DLCPosV1), not via a top-level populate(). Mentions at least one valid downstream consumer pattern such as merge_get_part(key).fetch1('KEY'). Does not claim PositionOutput.populate() is the entry point.",
+      "assertions": {
+        "required_substrings": [
+          "merge table",
+          "part table",
+          "PositionOutput.TrodesPosV1",
+          "PositionOutput.DLCPosV1"
+        ],
+        "forbidden_substrings": [
+          "PositionOutput.populate",
+          "populate(PositionOutput"
+        ],
+        "behavioral_checks": [
+          "Explains that rows enter PositionOutput via insert into a part table (PositionOutput.TrodesPosV1 or PositionOutput.DLCPosV1), not via populate()",
+          "Names at least one valid downstream consumer pattern (e.g., merge_get_part(key).fetch1('KEY'))"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `merge table`.",
+        "Response contains substring `part table`.",
+        "Response contains substring `PositionOutput.TrodesPosV1`.",
+        "Response contains substring `PositionOutput.DLCPosV1`.",
+        "Response does not contain substring `PositionOutput.populate`.",
+        "Response does not contain substring `populate(PositionOutput`.",
+        "Explains that rows enter PositionOutput via insert into a part table (PositionOutput.TrodesPosV1 or PositionOutput.DLCPosV1), not via populate()",
+        "Names at least one valid downstream consumer pattern (e.g., merge_get_part(key).fetch1('KEY'))"
+      ]
+    },
+    {
+      "id": 57,
+      "eval_name": "classify-lfpband-role",
+      "stage": "table-understanding",
+      "tier": "table-classification",
+      "difficulty": "easy",
+      "prompt": "Is `LFPBandV1` a compute table or an output table? I'm trying to decide if I should populate it or just read from it.",
+      "expected_output": "Routes to lfp_pipeline.md. Identifies LFPBandV1 as a Computed table — the user populates it via LFPBandV1.populate() after inserting an LFPBandSelection row. Notes that LFPBandV1 is the consumer-facing endpoint with no merge wrapper above it (unlike LFPV1, which is wrapped by LFPOutput). Does not invent an LFPBandOutput merge or suggest a merge_get_part(LFPBand...) call.",
+      "assertions": {
+        "required_substrings": [
+          "Computed",
+          "LFPBandV1.populate",
+          "LFPBandSelection"
+        ],
+        "forbidden_substrings": [
+          "LFPBandOutput",
+          "merge_get_part(LFPBand"
+        ],
+        "behavioral_checks": [
+          "Identifies LFPBandV1 as Computed; user populates it after inserting LFPBandSelection",
+          "Notes there is no merge wrapper — LFPBandV1 itself is the consumer-facing endpoint"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Computed`.",
+        "Response contains substring `LFPBandV1.populate`.",
+        "Response contains substring `LFPBandSelection`.",
+        "Response does not contain substring `LFPBandOutput`.",
+        "Response does not contain substring `merge_get_part(LFPBand`.",
+        "Identifies LFPBandV1 as Computed; user populates it after inserting LFPBandSelection",
+        "Notes there is no merge wrapper — LFPBandV1 itself is the consumer-facing endpoint"
+      ]
     }
   ]
 }
