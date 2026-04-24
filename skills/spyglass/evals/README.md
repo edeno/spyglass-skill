@@ -25,6 +25,7 @@ Every entry in `evals` has exactly these keys:
 | `eval_name` | string | Short kebab-case slug used in run directories and benchmark output. Should describe what the eval tests, not what tier it's in. |
 | `stage` | string | Which phase of a Spyglass workflow the prompt is about. Orthogonal to tier — used when slicing results by topic area. See [Stages](#stages). |
 | `tier` | string | What *kind* of capability is being tested (skill activation, atomic lookup, multi-step reasoning, pressure on guardrails, etc.). See [Tiers](#tiers). |
+| `difficulty` | string | What kind of cognitive load the eval imposes on the answer side. One of `easy` / `medium` / `hard`. See [Difficulty](#difficulty). |
 | `prompt` | string | The literal user message the grader sends. Written in realistic voice — casual, frustrated, or concise, with concrete file paths, session IDs, and error strings where that's how a real user would phrase it. |
 | `expected_output` | string | Prose description of the ideal response. Not a literal string to match — a human-readable reference that captures what the answer should route to, which commands/APIs it should mention, and what it must not recommend. Used by the LLM grader as the ground-truth description when evaluating behavioral checks. |
 | `assertions` | object | Three-bucket scoring criteria (see below). **Authoring surface — edit this.** |
@@ -56,17 +57,19 @@ Tiers capture *what kind of capability* the eval tests. A single skill can be st
 
 | Tier | N | What it tests |
 | --- | --- | --- |
-| `baseline` | 8 | Skill activation + correct routing on canonical, happy-path questions (fresh install, first ingest, first LFP populate). If these fail, nothing else matters. |
+| `baseline` | 7 | Skill activation + correct routing on canonical, happy-path questions (fresh install, first ingest, first LFP populate). If these fail, nothing else matters. |
 | `atomic-read` | 5 | Single-table fetch by primary key or restricted scan. Tests that the skill can point to the right table and write the right `& key` restriction. |
 | `merge-key-discovery` | 3 | Given a merge-output table and an upstream selector, resolve the specific `merge_id` or part-table entry. Merge tables are Spyglass's highest-friction abstraction. |
 | `joins` | 5 | Compose across 2+ tables to answer a question no single table can. Tests relationship knowledge. |
-| `adversarial` | 8 | Non-activation (the skill should NOT fire on unrelated questions), hallucination resistance (made-up table names), destructive-operation pushback (`cautious_delete` bypass requests). |
+| `adversarial` | 7 | Non-activation (the skill should NOT fire on unrelated questions), hallucination resistance (made-up table names), destructive-operation pushback (`cautious_delete` bypass requests). |
 | `compound` | 2 | Multi-reference handoffs mirroring real session-length problems — the answer must draw on three or more reference files. |
 | `post-ingest-validation` | 3 | After a fresh ingest "completed," verify what actually made it into the tables and catch silent skips (electrodes missing, PositionSource empty, DIOEvents absent). |
-| `merge-table-gotchas` | 2 | Merge-table-specific failure modes beyond key discovery — insert-order violations, `cautious_delete` cascades, `_object_id` + `SpyglassMixin` requirements on custom merge parts. |
-| `runtime-errors` | 7 | Real tracebacks from `populate()` / `make()` / `fetch1()` with the user's debugging context attached. Tests triage: which reference, which diagnostic, which fix. |
+| `merge-table-gotchas` | 5 | Merge-table-specific failure modes beyond key discovery — insert-order violations, `cautious_delete` cascades, `_object_id` + `SpyglassMixin` requirements on custom merge parts. |
+| `runtime-errors` | 8 | Real tracebacks from `populate()` / `make()` / `fetch1()` with the user's debugging context attached. Tests triage: which reference, which diagnostic, which fix. |
 | `environment-triage` | 3 | Install-level failures (editable-install drift after `git pull`, conda env broken by a stray `pip install`, conda path isolation). |
 | `config-troubleshooting` | 3 | Config-level failures (`dj.config` wiring, Kachery credentials, shared-install permission layers). |
+| `table-classification` | 1 | Classify a table by DataJoint tier (Manual / Lookup / Computed / Imported / Part) and Spyglass role (selection / parameter / compute / output / merge). Will grow as Phase A evals land. |
+| `parameter-semantics` | 1 | Explain what a specific parameter controls and predict downstream effects of changing it. Will grow as Phase B evals land. |
 
 ## Stages
 
@@ -77,13 +80,25 @@ Stages capture *which phase of a Spyglass workflow* the prompt lives in. Orthogo
 | `setup` | 6 | Install, env vars, DataJoint config, permissions. |
 | `ingestion` | 4 | Converting + loading NWB files into Spyglass tables. |
 | `pipeline-usage` | 15 | Using a pipeline end-to-end: insert params → populate → fetch. Largest slice by design — pipeline usage is the 80% case. |
-| `runtime-debugging` | 12 | Triaging an error that already happened. |
-| `common-mistakes` | 4 | Prompts that specifically test the patterns documented in `common_mistakes.md`. |
+| `runtime-debugging` | 15 | Triaging an error that already happened. |
+| `common-mistakes` | 5 | Prompts that specifically test the patterns documented in `common_mistakes.md`. |
 | `pipeline-authoring` | 1 | Writing a custom pipeline table (`SpyglassMixin`, `AnalysisNwbfile` FK, `_object_id` convention). |
 | `framework-concepts` | 1 | DataJoint-layer concepts (blob vs external, `filepath@` stores). |
 | `non-activation` | 2 | Questions the skill should stay silent on (plain Python, unrelated neuro tooling). |
 | `hallucination-resistance` | 1 | User cites a made-up API; correct answer is "that doesn't exist, here's the real one." |
 | `destructive-operations` | 3 | User asks for `cautious_delete` bypass, `super_delete()`, manual DROP — correct answer pushes back before acting. |
+
+## Difficulty
+
+Captures *how hard the eval is to answer*, independent of stage and tier. Used for slicing benchmarks within a single tier ("does the skill degrade on harder parameter-semantics evals?").
+
+| Difficulty | N | What it tests |
+| --- | --- | --- |
+| `easy` | 12 | One-step lookup or single-fact recall. Atomic-read, schema-introspection, baseline activation, hallucination/non-activation. |
+| `medium` | 32 | Two-step composition or one inference hop. Single-table debugging, merge-key discovery, parameter-semantics with locally documented effects. |
+| `hard` | 9 | Multi-step reasoning, multi-reference handoff, ambiguity, or counterfactual reasoning. Compound, dependency-tracing, recovery-from-incomplete-state. |
+
+Difficulty is judged on the *answering* side, not the question side. A short prompt can be hard ("trace upstream of `LFPBandV1`") and a long traceback prompt can be easy.
 
 ## Tier vs stage — why both?
 
