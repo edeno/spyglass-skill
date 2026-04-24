@@ -3,6 +3,7 @@
 ## Contents
 
 - [DataJoint Core Operators](#datajoint-core-operators)
+- [Computed Tables: `make()` and tri-part make](#computed-tables-make-and-tri-part-make)
 - [Spyglass-Specific Operators](#spyglass-specific-operators)
 - [Table Inspection Commands](#table-inspection-commands)
 - [NWB File Commands](#nwb-file-commands)
@@ -178,6 +179,48 @@ files = Session & [
     {'nwb_file_name': 'fileB.nwb'},
 ]
 ```
+
+## Computed Tables: `make()` and tri-part make
+
+`dj.Computed` tables populate by defining either:
+
+**Single-method `make(self, key)`** — one monolithic method that fetches upstream data, computes, and inserts, all inside one transaction. This is the classic DataJoint pattern.
+
+**Tri-part `make` — `make_fetch` + `make_compute` + `make_insert`** — DataJoint's newer split-phase pattern. See `autopopulate.py` `make()` docstring in the `datajoint` package for the canonical description. The three methods run in sequence:
+
+```python
+class MyComputedTable(SpyglassMixin, dj.Computed):
+    definition = """
+    -> UpstreamSelection
+    ---
+    result : blob
+    """
+
+    def make_fetch(self, key):
+        # All DB reads happen here. Return a tuple of fetched values.
+        return [(UpstreamSelection & key).fetch1(...)]
+
+    def make_compute(self, key, upstream_data):
+        # Pure computation — no DB access. Return a tuple consumed by make_insert.
+        result = do_the_math(upstream_data)
+        return [result]
+
+    def make_insert(self, key, result):
+        # All DB writes happen here.
+        self.insert1({**key, "result": result})
+```
+
+**Why the split exists.** Long computations shouldn't hold a DB transaction open — the split lets DataJoint release the DB between `make_fetch` (which reads under a snapshot) and `make_insert` (which writes under its own transaction), with `make_compute` running outside any transaction. Before writing, DataJoint re-runs `make_fetch` and checks the result is unchanged — catching cases where an upstream row was deleted/repopulated mid-compute.
+
+**Which pattern a given Spyglass table uses.** Most v1 tables (e.g., `LFPV1`, `TrodesPosV1`, `SortedSpikesDecodingV1`) still use single-method `make()`. Newer tables with expensive pure-compute stages — e.g., `ClusterlessDecodingV1` — use tri-part make. Check the class body: if you see `make_fetch`/`make_compute`/`make_insert`, it's tri-part; in that case `.make()` won't exist as a direct callable — referring to it as `Table.make()` in code or documentation will mislead.
+
+**Consequence for debugging.** When tracing a populate failure inside a tri-part-make table, identify which of the three phases raised:
+
+- Error in `make_fetch` → upstream data issue (missing row, interval mismatch — Signature F in [runtime_debugging.md](runtime_debugging.md)).
+- Error in `make_compute` → bug in the pure function (no DB state matters).
+- Error in `make_insert` → schema mismatch, FK violation, or concurrent modification caught by the re-fetch check.
+
+**Consequence for authoring.** If your custom Computed table has a heavy pure-compute step (GPU inference, large numerical work), prefer tri-part — you'll avoid holding a DB transaction for the duration. See [custom_pipeline_authoring.md](custom_pipeline_authoring.md).
 
 ## Spyglass-Specific Operators
 

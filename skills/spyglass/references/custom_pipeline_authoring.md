@@ -34,6 +34,8 @@ Before writing any schema file, know where your user is allowed to write — thi
 - **Lab-shared** (reserved names, `SHARED_MODULES` in `database_settings.py`): `behavior`, `common`, `decoding`, `figurl`, `lfp`, `linearization`, `mua`, `position`, `ripple`, `sharing`, `spikesorting`. Writes to these require `dj_user` or `dj_admin` and are coordinated across the lab — never pick one of these as a prefix for personal work.
 - **Other users' prefixes**: off-limits unless you have `dj_admin`.
 
+> ⚠️ **Common hallucination to avoid.** Do NOT prefix personal schemas with `spyglass_` (as in `spyglass_<user>_<topic>`). The enforceable rule is simpler: the GRANT prefix must equal your `database.user` value — nothing else works. User `edeno`'s personal theta/gamma analysis belongs in `edeno_theta_gamma`, not `spyglass_edeno_theta_gamma`. `spyglass_edeno_theta_gamma` fails the GRANT check because `spyglass_` ≠ `edeno` (the current `database.user`), and will raise a MySQL permission error at `dj.schema(...)` call time. There is no implicit "framework namespace" for `spyglass_*` — lab-shared names are the explicit `SHARED_MODULES` listed above (`common`, `decoding`, `lfp`, …), not every string starting with `spyglass_`.
+
 **Roles your account might hold** (set by whoever admin'd your DB account):
 
 | Role | Select any schema | Write own prefix | Write shared modules |
