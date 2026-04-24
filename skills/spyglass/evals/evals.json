@@ -2153,12 +2153,11 @@
           "fewer detected",
           "candidate"
         ],
-        "forbidden_substrings": [
-          "more ripples"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Explains the threshold filters out candidate events while the animal moves faster than the speed value (cm/s)",
-          "Predicts the direction: raising → fewer events, cleaner immobility-conditioned set; risks losing peri-movement SWRs"
+          "Predicts the direction: raising → fewer events, cleaner immobility-conditioned set; risks losing peri-movement SWRs",
+          "Does not predict that raising speed_threshold will yield more detected ripples (the direction is the opposite)"
         ]
       },
       "files": [],
@@ -2166,9 +2165,9 @@
         "Response contains substring `immobility`.",
         "Response contains substring `fewer detected`.",
         "Response contains substring `candidate`.",
-        "Response does not contain substring `more ripples`.",
         "Explains the threshold filters out candidate events while the animal moves faster than the speed value (cm/s)",
-        "Predicts the direction: raising → fewer events, cleaner immobility-conditioned set; risks losing peri-movement SWRs"
+        "Predicts the direction: raising → fewer events, cleaner immobility-conditioned set; risks losing peri-movement SWRs",
+        "Does not predict that raising speed_threshold will yield more detected ripples (the direction is the opposite)"
       ]
     },
     {
@@ -2178,12 +2177,13 @@
       "tier": "parameter-semantics",
       "difficulty": "medium",
       "prompt": "Clusterless decoding selection has both `encoding_interval` and `decoding_interval`. Can these be the same interval? When would I set them differently?",
-      "expected_output": "Routes to decoding_pipeline.md. Explains that the encoding interval is where the place-field / receptive-field model is trained, while the decoding interval is where the trained model is applied. Yes, they can be the same interval (within-run reconstruction). Setting them differently is the standard pattern for replay analysis: train the model on a run interval, then apply it to a sleep or reward interval to decode replayed trajectories.",
+      "expected_output": "Routes to decoding_pipeline.md. Notes that both encoding_interval and decoding_interval are projected FKs to IntervalList — they pick existing interval rows by name, not raw time ranges. Explains that the encoding interval is where the place-field / receptive-field model is trained, while the decoding interval is where the trained model is applied. Yes, they can be the same interval (within-run reconstruction). Setting them differently is the standard pattern for replay analysis: train the model on a run interval, then apply it to a sleep or reward interval to decode replayed trajectories.",
       "assertions": {
         "required_substrings": [
           "training",
           "apply",
-          "replay"
+          "replay",
+          "IntervalList"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -2196,6 +2196,7 @@
         "Response contains substring `training`.",
         "Response contains substring `apply`.",
         "Response contains substring `replay`.",
+        "Response contains substring `IntervalList`.",
         "Explains that encoding_interval trains the place-field / receptive-field model; decoding_interval is where the trained model is applied",
         "Gives a same-interval use (within-run reconstruction) and a different-interval use (train on run, decode replay during sleep / reward)"
       ]
