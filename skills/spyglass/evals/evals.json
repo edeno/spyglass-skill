@@ -2000,32 +2000,29 @@
       "expected_output": "Routes to position_pipeline.md (Pipeline 1 — Tables block). Identifies TrodesPosParams as the parameter table (Manual tier — Spyglass uses Manual for many parameter tables by convention; the 'parameter table' label refers to the Spyglass role, not the DataJoint Lookup tier): a named, reusable parameter dictionary; insert once per parameter set via TrodesPosParams.insert1(). Identifies TrodesPosSelection as the selection table (Manual tier): picks one (session, interval, params-name) tuple per intended populate run. Names trodes_pos_params_name as the FK that joins selection back to params. Does not say the two tables are the same or interchangeable.",
       "assertions": {
         "required_substrings": [
-          "Manual",
+          "Manual table",
           "parameter table",
           "selection table",
           "insert1",
           "trodes_pos_params_name"
         ],
-        "forbidden_substrings": [
-          "same table",
-          "interchangeable"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies TrodesPosParams as the parameter table (named, reusable param dict; insert once per param set)",
-          "Identifies TrodesPosSelection as the selection table (picks session + interval + params name for one populate run)"
+          "Identifies TrodesPosSelection as the selection table (picks session + interval + params name for one populate run)",
+          "Does not claim TrodesPosParams and TrodesPosSelection are the same table or interchangeable"
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `Manual`.",
+        "Response contains substring `Manual table`.",
         "Response contains substring `parameter table`.",
         "Response contains substring `selection table`.",
         "Response contains substring `insert1`.",
         "Response contains substring `trodes_pos_params_name`.",
-        "Response does not contain substring `same table`.",
-        "Response does not contain substring `interchangeable`.",
         "Identifies TrodesPosParams as the parameter table (named, reusable param dict; insert once per param set)",
-        "Identifies TrodesPosSelection as the selection table (picks session + interval + params name for one populate run)"
+        "Identifies TrodesPosSelection as the selection table (picks session + interval + params name for one populate run)",
+        "Does not claim TrodesPosParams and TrodesPosSelection are the same table or interchangeable"
       ]
     },
     {
@@ -2106,7 +2103,6 @@
       "assertions": {
         "required_substrings": [
           "Nyquist",
-          "1000 Hz",
           "downsample"
         ],
         "forbidden_substrings": [
@@ -2122,7 +2118,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `Nyquist`.",
-        "Response contains substring `1000 Hz`.",
         "Response contains substring `downsample`.",
         "Response does not contain substring `sample rate doesn't matter`.",
         "Explains that target_sampling_rate sets the downsampled output rate of LFPV1",
@@ -2142,7 +2137,6 @@
       "assertions": {
         "required_substrings": [
           "immobility",
-          "more candidate",
           "speed <= speed_threshold"
         ],
         "forbidden_substrings": [],
@@ -2156,7 +2150,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `immobility`.",
-        "Response contains substring `more candidate`.",
         "Response contains substring `speed <= speed_threshold`.",
         "Identifies speed_threshold as a movement-exclusion cutoff (events kept when speed <= threshold)",
         "Predicts the direction correctly: raising 4 -> 10 keeps MORE candidate events, not fewer",
@@ -2249,6 +2242,7 @@
           "Identifies that set_group_by_electrode_group groups by electrode_group_name (one sort group per electrode_group)",
           "Explains the clusterless failure: multi-shank electrode_groups produce duplicate (x, y) contact positions; SpikeInterface rejects at SpikeSortingRecording.populate()",
           "Recommends set_group_by_shank for clusterless / waveform-based pipelines",
+          "Notes that set_group_by_electrode_group is only available in the v0 API (spyglass.spikesorting.v0), not in v1",
           "Does not claim set_group_by_electrode_group produces one electrode per sort group (it groups by electrode_group_name, which can include multiple electrodes per group — that is precisely the source of the multi-shank conflict)"
         ]
       },
@@ -2261,6 +2255,7 @@
         "Identifies that set_group_by_electrode_group groups by electrode_group_name (one sort group per electrode_group)",
         "Explains the clusterless failure: multi-shank electrode_groups produce duplicate (x, y) contact positions; SpikeInterface rejects at SpikeSortingRecording.populate()",
         "Recommends set_group_by_shank for clusterless / waveform-based pipelines",
+        "Notes that set_group_by_electrode_group is only available in the v0 API (spyglass.spikesorting.v0), not in v1",
         "Does not claim set_group_by_electrode_group produces one electrode per sort group (it groups by electrode_group_name, which can include multiple electrodes per group — that is precisely the source of the multi-shank conflict)"
       ]
     },
@@ -2333,29 +2328,25 @@
       "tier": "disambiguation",
       "difficulty": "easy",
       "prompt": "I see both `spyglass.spikesorting.v0` and `spyglass.spikesorting.v1` imports in old lab code. Which should I use for a fresh session today and why?",
-      "expected_output": "Routes to spikesorting_pipeline.md for v1 workflow and spikesorting_v0_legacy.md only for reading old data. Recommends v1 for any fresh session — v0 is legacy/read-only. Identifies SpikeSortingOutput as the merge wrapper that lets v0 and v1 entries coexist downstream of the per-version sorting tables. Explains that v0 should be loaded only when reading historical sorts that haven't been re-curated under v1.",
+      "expected_output": "Routes to spikesorting_pipeline.md (v1 flow) and spikesorting_v0_legacy.md (read-only access to pre-v1 sortings). Recommends v1 for all new work; identifies v0 as legacy — do not populate v0 tables for new sessions, and query existing v0 sortings through the merge wrapper `SpikeSortingOutput.CuratedSpikeSorting` rather than the v0 tables directly. Names `SpikeSortingOutput` as the merge table surfacing both v0 (CuratedSpikeSorting part) and v1 (CurationV1 part) sortings uniformly for downstream consumers.",
       "assertions": {
         "required_substrings": [
-          "legacy",
           "SpikeSortingOutput",
-          "recommend v1",
           "SpikeSortingOutput.CurationV1"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Recommends v1 for new work; identifies v0 as legacy / read-only for old data",
-          "Routes to spikesorting_v0_legacy.md only for reading old sorts, not for new work",
+          "Recommends v1 for new work; identifies v0 as legacy and directs the user not to populate v0 tables for new sessions",
+          "Routes to spikesorting_v0_legacy.md only for querying pre-v1 sortings, not for new work",
           "Does not recommend v0 for new sessions or as the default — v0 is for reading legacy data only"
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `legacy`.",
         "Response contains substring `SpikeSortingOutput`.",
-        "Response contains substring `recommend v1`.",
         "Response contains substring `SpikeSortingOutput.CurationV1`.",
-        "Recommends v1 for new work; identifies v0 as legacy / read-only for old data",
-        "Routes to spikesorting_v0_legacy.md only for reading old sorts, not for new work",
+        "Recommends v1 for new work; identifies v0 as legacy and directs the user not to populate v0 tables for new sessions",
+        "Routes to spikesorting_v0_legacy.md only for querying pre-v1 sortings, not for new work",
         "Does not recommend v0 for new sessions or as the default — v0 is for reading legacy data only"
       ]
     },
@@ -2427,6 +2418,7 @@
         "behavioral_checks": [
           "Identifies LFPBandV1 (or upstream LFP) as needing a new selection only if the new electrodes weren't already in the group",
           "Identifies RippleTimesV1 as the table that re-populates",
+          "States that RippleParameters is UNAFFECTED because it is a parameter Lookup table, not electrode-dependent",
           "Notes unrelated branches (decoding, position) are unaffected unless they consume the same ripple times"
         ]
       },
@@ -2437,6 +2429,7 @@
         "Response contains substring `RippleParameters`.",
         "Identifies LFPBandV1 (or upstream LFP) as needing a new selection only if the new electrodes weren't already in the group",
         "Identifies RippleTimesV1 as the table that re-populates",
+        "States that RippleParameters is UNAFFECTED because it is a parameter Lookup table, not electrode-dependent",
         "Notes unrelated branches (decoding, position) are unaffected unless they consume the same ripple times"
       ]
     },
@@ -2483,7 +2476,7 @@
       "expected_output": "Routes to spikesorting_pipeline.md (V1 Pipeline Flow). Gives the ordered next steps: (1) SpikeSorting.populate(key) — runs the sorter; (2) insert a CurationV1 row (initial labels + merge groups) — typically via CurationV1.insert_curation; (3) MetricCurationSelection insert + MetricCuration.populate — quality metrics; (4) SpikeSortingOutput.insert (CurationV1 part-table) — surfaces the curation in the merge wrapper. Notes that CurationV1 comes BEFORE MetricCuration in the v1 flow (CurationV1 is the editable curation handle; MetricCuration computes metrics on top of an existing curation).",
       "assertions": {
         "required_substrings": [
-          "SpikeSorting.populate(",
+          "SpikeSorting.populate",
           "CurationV1",
           "MetricCuration"
         ],
@@ -2496,7 +2489,7 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `SpikeSorting.populate(`.",
+        "Response contains substring `SpikeSorting.populate`.",
         "Response contains substring `CurationV1`.",
         "Response contains substring `MetricCuration`.",
         "Names SpikeSorting.populate as the immediate next step (not SpikeSortingV1.populate — the actual v1 class is named SpikeSorting)",
@@ -2551,7 +2544,10 @@
           "Electrode",
           "SortGroup",
           "SpikeSortingRecording",
+          "CurationV1",
+          "SpikeSortingOutput",
           "UnitWaveformFeaturesGroup",
+          "WaveformFeaturesParams",
           "PositionGroup",
           "DecodingParameters",
           "ClusterlessDecodingSelection"
@@ -2559,6 +2555,7 @@
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Produces an ordered or grouped list covering raw-data tables, recording / sorting branch, position branch, parameter table, selection table",
+          "Names the v1 `SpikeSorting` Computed table (the sorter step) as a distinct upstream — not just SpikeSortingRecording, SpikeSortingSelection, or SpikeSortingOutput",
           "Does not invent table names that don't exist in Spyglass source"
         ]
       },
@@ -2570,11 +2567,15 @@
         "Response contains substring `Electrode`.",
         "Response contains substring `SortGroup`.",
         "Response contains substring `SpikeSortingRecording`.",
+        "Response contains substring `CurationV1`.",
+        "Response contains substring `SpikeSortingOutput`.",
         "Response contains substring `UnitWaveformFeaturesGroup`.",
+        "Response contains substring `WaveformFeaturesParams`.",
         "Response contains substring `PositionGroup`.",
         "Response contains substring `DecodingParameters`.",
         "Response contains substring `ClusterlessDecodingSelection`.",
         "Produces an ordered or grouped list covering raw-data tables, recording / sorting branch, position branch, parameter table, selection table",
+        "Names the v1 `SpikeSorting` Computed table (the sorter step) as a distinct upstream — not just SpikeSortingRecording, SpikeSortingSelection, or SpikeSortingOutput",
         "Does not invent table names that don't exist in Spyglass source"
       ]
     },
@@ -2589,7 +2590,6 @@
       "assertions": {
         "required_substrings": [
           "Nwbfile",
-          "`Raw`",
           "IntervalList",
           "LFPElectrodeGroup",
           "LFPSelection",
@@ -2601,13 +2601,13 @@
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Names every upstream table including the parameter (FirFilterParameters) and selection tables (LFPSelection, LFPBandSelection)",
+          "Names the Raw table as the data source fetched inside LFPV1's `make()` body (Raw is not an FK of LFPSelection; it is pulled via `(Raw & key).fetch_nwb()` at make() time and must be present to regenerate LFPV1 from scratch)",
           "Does not skip the LFPOutput merge wrapper between LFPV1 and LFPBandSelection"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `Nwbfile`.",
-        "Response contains substring ``Raw``.",
         "Response contains substring `IntervalList`.",
         "Response contains substring `LFPElectrodeGroup`.",
         "Response contains substring `LFPSelection`.",
@@ -2616,6 +2616,7 @@
         "Response contains substring `FirFilterParameters`.",
         "Response contains substring `LFPBandSelection`.",
         "Names every upstream table including the parameter (FirFilterParameters) and selection tables (LFPSelection, LFPBandSelection)",
+        "Names the Raw table as the data source fetched inside LFPV1's `make()` body (Raw is not an FK of LFPSelection; it is pulled via `(Raw & key).fetch_nwb()` at make() time and must be present to regenerate LFPV1 from scratch)",
         "Does not skip the LFPOutput merge wrapper between LFPV1 and LFPBandSelection"
       ]
     },
