@@ -124,8 +124,35 @@ position_df, var_names = DecodingOutput.fetch_position_info(key)
 from spyglass.decoding import DecodingParameters
 ```
 
+Schema (see `src/spyglass/decoding/v1/core.py:38-43`):
+
+```text
+decoding_param_name : varchar(80)
+---
+decoding_params  : LONGBLOB             # model initialization parameters
+decoding_kwargs  = NULL : LONGBLOB      # additional keyword arguments
+```
+
+**`decoding_params` and `decoding_kwargs` are SIBLING top-level attributes**, not nested inside one another. This matters when inserting a custom param set — a common mistake is to nest `decoding_kwargs` inside `decoding_params`, which silently discards the runtime kwargs.
+
+- `decoding_params` — classifier constructor kwargs (model architecture, state bins, transitions). Consumed as `ClusterlessDetector(**decoding_params)` inside `make_compute`.
+- `decoding_kwargs` — runtime kwargs passed through to the classifier call. In the `estimate_decoding_params=False` branch (the default) they're split by `get_valid_kwargs` into fit and predict kwargs; in the `True` branch they're passed to `estimate_parameters`. Both branches accept the same keyword names (e.g., `n_chunks`, `cache_likelihood`) in `non_local_detector` 0.6.x.
+
+Canonical insert shape for an OOM-conscious clusterless variant:
+
+```python
+DecodingParameters.insert1({
+    'decoding_param_name': 'clusterless_chunked',
+    'decoding_params': {...},                        # model init — goes to the constructor
+    'decoding_kwargs': {                             # runtime kwargs — reach predict() in the False branch
+        'n_chunks': 10,
+        'cache_likelihood': False,
+    },
+}, skip_duplicates=True)
+```
+
 - Key: `decoding_param_name`
-- Stores model initialization parameters and optional fit/predict kwargs
+- Stores model initialization parameters and optional fit/predict kwargs as separate blobs
 - Default presets:
   - `contfrag_clusterless_{version}` — ContFragClusterlessClassifier
   - `nonlocal_clusterless_{version}` — NonLocalClusterlessDetector
@@ -330,20 +357,15 @@ bytes` from JAX during `ClusterlessDecodingV1.populate` /
 `(n_time, n_state_bins)` (e.g. `(3384862, 1926)` = 24 GiB) on an 80 GB
 A100.
 
-**Tuning knobs** (set on `DecodingParameters`):
+**Tuning knobs** (set on `DecodingParameters`). `decoding_params` and `decoding_kwargs` are **sibling top-level attributes** on `DecodingParameters` (see the schema snippet in "Shared Components"), not nested — `decoding_kwargs` inside `decoding_params` is silently discarded. `n_chunks` and `cache_likelihood` are `predict()` kwargs in `non_local_detector` 0.6.x, reached via the default `estimate_decoding_params=False` branch:
 
 ```python
 DecodingParameters.insert1({
     'decoding_param_name': 'clusterless_chunked',
-    'decoding_params': {
-        'classifier_params': {...},
-        'decoding_kwargs': {
-            'n_chunks': 10,              # split the decoding dimension
-            'cache_likelihood': False,   # don't hold the likelihood buffer
-        },
-        'sorted_spikes_algorithm_params': {
-            'block_size': 500,           # coarser block = less memory
-        },
+    'decoding_params': {...},         # model init (classifier constructor kwargs)
+    'decoding_kwargs': {              # runtime kwargs — reach predict()
+        'n_chunks': 10,               # split the decoding dimension
+        'cache_likelihood': False,    # don't hold the likelihood buffer
     },
 }, skip_duplicates=True)
 ```

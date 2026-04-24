@@ -179,6 +179,23 @@ table row directly. Always restrict via the master using
 
 Read-only methods inherited from `_Merge` for exploring merge contents, resolving a merge entry to its part table, and fetching data through the merge. All five merge masters (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, `LinearizedPositionOutput`) share these.
 
+### When to pick `merge_restrict` vs `merge_get_part`
+
+Both accept the same restriction shapes and both are classmethods — they differ in what they return:
+
+| Method | Returns | Use when |
+| --- | --- | --- |
+| `merge_restrict(restriction)` | `dj.U` — a unified view across all parts (secondary attrs become `NULL` where a part lacks them) | You don't know which part the entry lives in, or you want a single query over the whole merge. Good for `.fetch1('KEY')` when resolving a merge-master key. |
+| `merge_get_part(restriction)` | The specific part-table query (one of `PositionOutput.TrodesPosV1`, `.DLCPosV1`, etc.) | You need part-specific attributes for downstream code — fetching part-table secondary columns, joining against the part directly, or running `fetch1_dataframe()` on a source-specific result. |
+
+**For discovering a `merge_id` from upstream keys, both work** — `.fetch1('KEY')` on either returns the merge-master primary key (just `merge_id`). Pick the one whose return type matches what you do next.
+
+**Failure modes differ:**
+
+- `merge_restrict` on an over-broad restriction returns many rows silently; always check `len(...)` before `.fetch1(...)`. On a zero-match restriction it silently returns an empty query (no raise).
+- `merge_get_part` on a restriction that matches entries in multiple parts raises `ValueError: Found multiple potential parts: [...]` unless `multi_source=True`.
+- `merge_get_part` on a restriction that matches zero parts raises `ValueError: Found 0 potential parts: []` — usually because the upstream was populated but never inserted into the merge (see the misleading-error note below and common_mistakes.md for the explicit insert fix). This raise does NOT fire for `merge_restrict`.
+
 ### Data Discovery
 
 #### `merge_view(restriction=True)`
