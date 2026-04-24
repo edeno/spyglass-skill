@@ -2269,6 +2269,365 @@
         "Explains the clusterless failure: multi-shank electrode_groups produce duplicate (x, y) contact positions; SpikeInterface rejects at SpikeSortingRecording.populate()",
         "Recommends set_group_by_shank for clusterless / waveform-based pipelines"
       ]
+    },
+    {
+      "id": 63,
+      "eval_name": "disamb-trodes-vs-dlc",
+      "stage": "pipeline-usage",
+      "tier": "disambiguation",
+      "difficulty": "medium",
+      "prompt": "Rat has both headstage LEDs and a top-down camera with DLC models trained. Which pipeline do I use — Trodes or DLC — and what's the decision logic?",
+      "expected_output": "Routes to position_pipeline.md (Pipelines 1 and 2). Identifies TrodesPosV1 as the SpikeGadgets/Trodes LED-based path and DLCPosV1 as the DeepLabCut pose-estimation path. Notes both can coexist as separate part-table entries (PositionOutput.TrodesPosV1 and PositionOutput.DLCPosV1) on the same session — picking one does not preclude the other. Decision logic: Trodes is faster to set up, lower compute, requires LED visibility; DLC handles pose breakdown into bodyparts (centroid, orientation, head/tail) and is more accurate for natural behavior but requires a trained model and more compute. Recommends matching the choice to the downstream analysis (e.g., decoding usually wants centroid + orientation; either pipeline can supply that, but DLC's per-bodypart cohort step is needed if the analysis cares about specific bodyparts).",
+      "assertions": {
+        "required_substrings": [
+          "TrodesPosV1",
+          "DLCPosV1",
+          "PositionOutput.TrodesPosV1",
+          "PositionOutput.DLCPosV1"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Identifies TrodesPosV1 as the LED-tracking path and DLCPosV1 as the pose-estimation path",
+          "Notes that both can coexist as separate part-table entries on the same session",
+          "Names at least one tradeoff dimension (latency / accuracy / setup cost / bodypart granularity)"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `TrodesPosV1`.",
+        "Response contains substring `DLCPosV1`.",
+        "Response contains substring `PositionOutput.TrodesPosV1`.",
+        "Response contains substring `PositionOutput.DLCPosV1`.",
+        "Identifies TrodesPosV1 as the LED-tracking path and DLCPosV1 as the pose-estimation path",
+        "Notes that both can coexist as separate part-table entries on the same session",
+        "Names at least one tradeoff dimension (latency / accuracy / setup cost / bodypart granularity)"
+      ]
+    },
+    {
+      "id": 64,
+      "eval_name": "disamb-lfpselection-vs-electrodegroup",
+      "stage": "pipeline-usage",
+      "tier": "disambiguation",
+      "difficulty": "medium",
+      "prompt": "What's the difference between `LFPElectrodeGroup` and `LFPSelection`? I see both in the flow and I don't know which to insert into first.",
+      "expected_output": "Routes to lfp_pipeline.md (Step 1: Define Electrode Groups, then Step 2: Filter Raw Data). Establishes the order: LFPElectrodeGroup is created first (typically via the helper LFPElectrodeGroup.create_lfp_electrode_group, which writes both the master and its part LFPElectrodeGroup.LFPElectrode); LFPSelection is inserted second and references that group plus an interval and a filter for one populate run. The group is a reusable electrode bundle (one per intended LFP analysis); the selection is per-populate. Does not say the two are interchangeable.",
+      "assertions": {
+        "required_substrings": [
+          "create_lfp_electrode_group",
+          "LFPElectrodeGroup.LFPElectrode",
+          "LFPSelection.insert1"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Establishes ordering: electrode group must exist before LFPSelection.insert1 can succeed",
+          "Explains the group is a reusable electrode bundle while the selection picks group + interval + filter for one populate run"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `create_lfp_electrode_group`.",
+        "Response contains substring `LFPElectrodeGroup.LFPElectrode`.",
+        "Response contains substring `LFPSelection.insert1`.",
+        "Establishes ordering: electrode group must exist before LFPSelection.insert1 can succeed",
+        "Explains the group is a reusable electrode bundle while the selection picks group + interval + filter for one populate run"
+      ]
+    },
+    {
+      "id": 65,
+      "eval_name": "disamb-spikesortingv0-vs-v1",
+      "stage": "pipeline-usage",
+      "tier": "disambiguation",
+      "difficulty": "easy",
+      "prompt": "I see both `spyglass.spikesorting.v0` and `spyglass.spikesorting.v1` imports in old lab code. Which should I use for a fresh session today and why?",
+      "expected_output": "Routes to spikesorting_pipeline.md for v1 workflow and spikesorting_v0_legacy.md only for reading old data. Recommends v1 for any fresh session — v0 is legacy/read-only. Identifies SpikeSortingOutput as the merge wrapper that lets v0 and v1 entries coexist downstream of the per-version sorting tables. Explains that v0 should be loaded only when reading historical sorts that haven't been re-curated under v1.",
+      "assertions": {
+        "required_substrings": [
+          "legacy",
+          "SpikeSortingOutput",
+          "recommend v1"
+        ],
+        "forbidden_substrings": [
+          "v0 for new sessions",
+          "use v0"
+        ],
+        "behavioral_checks": [
+          "Recommends v1 for new work; identifies v0 as legacy / read-only for old data",
+          "Routes to spikesorting_v0_legacy.md only for reading old sorts, not for new work"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `legacy`.",
+        "Response contains substring `SpikeSortingOutput`.",
+        "Response contains substring `recommend v1`.",
+        "Response does not contain substring `v0 for new sessions`.",
+        "Response does not contain substring `use v0`.",
+        "Recommends v1 for new work; identifies v0 as legacy / read-only for old data",
+        "Routes to spikesorting_v0_legacy.md only for reading old sorts, not for new work"
+      ]
+    },
+    {
+      "id": 66,
+      "eval_name": "resource-first-ref-fetch1",
+      "stage": "runtime-debugging",
+      "tier": "resource-selection",
+      "difficulty": "easy",
+      "prompt": "I got `DataJointError: fetch1 should only be called on one tuple, but 47 were returned`. Before you answer the actual fix — which reference file inside the spyglass skill would you open first?",
+      "expected_output": "Names common_mistakes.md (Mistake #2: too-loose restriction + fetch1) as the first stop, optionally with datajoint_api.md as a follow-up for the broader fetch / fetch1 / heading mechanics. Explains the choice in one line: cardinality errors are the canonical first-page footgun and the common_mistakes file points directly at the diagnostic pattern (print len(rel) before fetch1).",
+      "assertions": {
+        "required_substrings": [
+          "common_mistakes.md"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Names a specific reference file by name — common_mistakes.md (preferred) or datajoint_api.md (also valid)",
+          "Explains the choice in one line (cardinality error → common_mistakes.md #2, or datajoint_api.md fetch section)"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `common_mistakes.md`.",
+        "Names a specific reference file by name — common_mistakes.md (preferred) or datajoint_api.md (also valid)",
+        "Explains the choice in one line (cardinality error → common_mistakes.md #2, or datajoint_api.md fetch section)"
+      ]
+    },
+    {
+      "id": 67,
+      "eval_name": "resource-first-ref-merge-delete",
+      "stage": "destructive-operations",
+      "tier": "resource-selection",
+      "difficulty": "easy",
+      "prompt": "I want to delete one entry from `PositionOutput` via a merge_key. Which spyglass skill reference do you consult first?",
+      "expected_output": "Names destructive_operations.md as the first stop (inspect-before-destroy is the operative pattern for any deletion) and merge_methods.md as the secondary stop (merge_get_part / merge_delete classmethod-discard mechanics). Explains the choice: deletes get the destructive-operations file first because the safe pattern is the same regardless of table; merge mechanics come second because the classmethod-restriction-discard footgun is merge-specific.",
+      "assertions": {
+        "required_substrings": [
+          "destructive_operations.md"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Names destructive_operations.md or merge_methods.md as the first reference",
+          "Mentions inspect-before-destroy as the operative pattern (or the classmethod-discard merge gotcha)"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `destructive_operations.md`.",
+        "Names destructive_operations.md or merge_methods.md as the first reference",
+        "Mentions inspect-before-destroy as the operative pattern (or the classmethod-discard merge gotcha)"
+      ]
+    },
+    {
+      "id": 68,
+      "eval_name": "counterfactual-ripple-electrode-set",
+      "stage": "pipeline-usage",
+      "tier": "counterfactual",
+      "difficulty": "hard",
+      "prompt": "If I added 3 more CA1 tetrodes to my ripple detection electrode selection and re-populated, which downstream tables would change and which would be unaffected?",
+      "expected_output": "Routes to ripple_pipeline.md and lfp_pipeline.md. Identifies what changes: a new RippleLFPSelection row (or modified one) flows into a new RippleTimesV1 entry. Notes that LFPBandV1 itself only needs to be re-populated if the new electrodes weren't already in the LFPElectrodeGroup that LFPV1/LFPBandV1 used (often they're in the LFP-band group already, so LFPBandV1 may not need to change). Identifies what is unaffected: position pipelines, decoding pipelines that don't directly depend on these specific ripple times, anything not downstream of RippleTimesV1. Mentions RippleParameters does not change (it's the parameter table, not electrode-dependent).",
+      "assertions": {
+        "required_substrings": [
+          "RippleTimesV1",
+          "LFPBandV1",
+          "RippleParameters"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Identifies LFPBandV1 (or upstream LFP) as needing a new selection only if the new electrodes weren't already in the group",
+          "Identifies RippleTimesV1 as the table that re-populates",
+          "Notes unrelated branches (decoding, position) are unaffected unless they consume the same ripple times"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `RippleTimesV1`.",
+        "Response contains substring `LFPBandV1`.",
+        "Response contains substring `RippleParameters`.",
+        "Identifies LFPBandV1 (or upstream LFP) as needing a new selection only if the new electrodes weren't already in the group",
+        "Identifies RippleTimesV1 as the table that re-populates",
+        "Notes unrelated branches (decoding, position) are unaffected unless they consume the same ripple times"
+      ]
+    },
+    {
+      "id": 69,
+      "eval_name": "counterfactual-two-users-empty",
+      "stage": "pipeline-usage",
+      "tier": "counterfactual",
+      "difficulty": "hard",
+      "prompt": "A labmate and I both ran the same selection + populate on `j1620210710_.nwb`. My `fetch_results` returns data, theirs returns empty. What differs between our pipeline states to explain this?",
+      "expected_output": "Lists at least three plausible state differences without committing to one cause: (1) different params_name on the selection — same prompt-level 'parameters' but different named entry in the params table; (2) cautious_delete / team-permission gating — your labmate may not be on the team that owns the populate, blocking write and leaving their fetch empty; (3) different upstream restriction — the selection key resolved to different upstream rows for each user (e.g., different DLCPosV1 merge_id implicit in PositionGroup); (4) environment / package version drift causing different populate behavior per user. Recommends inspecting both users' (Selection & key).fetch() output side-by-side as the first diagnostic. Does not claim the pipeline state must be identical when the symptoms prove otherwise.",
+      "assertions": {
+        "required_substrings": [
+          "params_name",
+          "cautious_delete",
+          "restriction"
+        ],
+        "forbidden_substrings": [
+          "same selection key",
+          "identical pipeline state"
+        ],
+        "behavioral_checks": [
+          "Lists at least three plausible state differences (different params name, missing upstream populate, different selection key, team-permission gating, environment / package version drift)",
+          "Does not assume one cause",
+          "Does not claim the pipeline state is identical when the symptoms prove otherwise"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `params_name`.",
+        "Response contains substring `cautious_delete`.",
+        "Response contains substring `restriction`.",
+        "Response does not contain substring `same selection key`.",
+        "Response does not contain substring `identical pipeline state`.",
+        "Lists at least three plausible state differences (different params name, missing upstream populate, different selection key, team-permission gating, environment / package version drift)",
+        "Does not assume one cause",
+        "Does not claim the pipeline state is identical when the symptoms prove otherwise"
+      ]
+    },
+    {
+      "id": 70,
+      "eval_name": "workflow-next-after-spikesortingselection",
+      "stage": "pipeline-usage",
+      "tier": "workflow-position",
+      "difficulty": "medium",
+      "prompt": "I just inserted into `SpikeSortingSelection` without errors. What's the next table I populate, and after that, what's the next?",
+      "expected_output": "Routes to spikesorting_pipeline.md (V1 Pipeline Flow). Gives the ordered next steps: (1) SpikeSorting.populate(key) — runs the sorter; (2) insert a CurationV1 row (initial labels + merge groups) — typically via CurationV1.insert_curation; (3) MetricCurationSelection insert + MetricCuration.populate — quality metrics; (4) SpikeSortingOutput.insert (CurationV1 part-table) — surfaces the curation in the merge wrapper. Notes that CurationV1 comes BEFORE MetricCuration in the v1 flow (CurationV1 is the editable curation handle; MetricCuration computes metrics on top of an existing curation).",
+      "assertions": {
+        "required_substrings": [
+          "SpikeSorting.populate(",
+          "CurationV1",
+          "MetricCuration"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Names SpikeSorting.populate as the immediate next step (not SpikeSortingV1.populate — the actual v1 class is named SpikeSorting)",
+          "Gives an ordered next-N list: SpikeSorting.populate → CurationV1 insert → MetricCuration → SpikeSortingOutput merge insert",
+          "Notes that CurationV1 comes before MetricCuration in the v1 flow"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `SpikeSorting.populate(`.",
+        "Response contains substring `CurationV1`.",
+        "Response contains substring `MetricCuration`.",
+        "Names SpikeSorting.populate as the immediate next step (not SpikeSortingV1.populate — the actual v1 class is named SpikeSorting)",
+        "Gives an ordered next-N list: SpikeSorting.populate → CurationV1 insert → MetricCuration → SpikeSortingOutput merge insert",
+        "Notes that CurationV1 comes before MetricCuration in the v1 flow"
+      ]
+    },
+    {
+      "id": 71,
+      "eval_name": "workflow-next-after-dlcmodeltraining",
+      "stage": "pipeline-usage",
+      "tier": "workflow-position",
+      "difficulty": "hard",
+      "prompt": "DLC model is trained and in the DLC model table. I want to get from here to a merge_id in `PositionOutput`. What's the ordered list of tables I still need to touch?",
+      "expected_output": "Routes to position_pipeline.md (Pipeline 2: DeepLabCut). Lists the ordered 7-step DLC inference workflow: (1) DLCPoseEstimationSelection.insert_estimation_task → DLCPoseEstimation.populate (writes DLCPoseEstimation.BodyPart per bodypart); (2) DLCSmoothInterpSelection insert (per bodypart) → DLCSmoothInterp.populate; (3) DLCSmoothInterpCohortSelection insert (combines bodyparts) → DLCSmoothInterpCohort.populate; (4) DLCCentroidSelection + DLCCentroid.populate; (5) DLCOrientationSelection + DLCOrientation.populate; (6) DLCPosSelection insert → DLCPosV1.populate (this projects dlc_si_cohort_selection_name into two aliases — a known footgun); (7) PositionOutput.DLCPosV1 insert (the merge insert). Notes the cohort step is non-obvious (it aggregates per-bodypart smoothed traces).",
+      "assertions": {
+        "required_substrings": [
+          "DLCPoseEstimation",
+          "DLCSmoothInterpCohort",
+          "DLCPosV1",
+          "PositionOutput.DLCPosV1"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Lists the ordered tables (at least: DLCPoseEstimation → DLCSmoothInterp per bodypart → DLCSmoothInterpCohort → DLCCentroid + DLCOrientation → DLCPosV1 → PositionOutput.DLCPosV1)",
+          "Mentions the bodypart-aggregation step (DLCSmoothInterpCohort) explicitly — it is the non-obvious step that's easy to skip"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `DLCPoseEstimation`.",
+        "Response contains substring `DLCSmoothInterpCohort`.",
+        "Response contains substring `DLCPosV1`.",
+        "Response contains substring `PositionOutput.DLCPosV1`.",
+        "Lists the ordered tables (at least: DLCPoseEstimation → DLCSmoothInterp per bodypart → DLCSmoothInterpCohort → DLCCentroid + DLCOrientation → DLCPosV1 → PositionOutput.DLCPosV1)",
+        "Mentions the bodypart-aggregation step (DLCSmoothInterpCohort) explicitly — it is the non-obvious step that's easy to skip"
+      ]
+    },
+    {
+      "id": 72,
+      "eval_name": "dep-trace-decoding-output",
+      "stage": "pipeline-usage",
+      "tier": "dependency-tracing",
+      "difficulty": "hard",
+      "prompt": "Given a `DecodingOutput.ClusterlessDecodingV1` merge entry, enumerate every upstream table (including selections and parameter tables) that must have had an entry for this row to exist. Assume I want to regenerate from raw NWB.",
+      "expected_output": "Routes to decoding_pipeline.md. Produces an ordered or grouped enumeration covering: raw-data tables (Nwbfile, Session, IntervalList, Electrode); recording / sorting branch (SortGroup, SpikeSortingRecordingSelection → SpikeSortingRecording, SpikeSortingSelection → SpikeSorting, CurationV1, MetricCuration optionally, SpikeSortingOutput, then UnitWaveformFeaturesGroup feeding into the clusterless waveform features pipeline); position branch (one of the position pipeline outputs feeding PositionGroup); decoding-specific (DecodingParameters, ClusterlessDecodingSelection, ClusterlessDecodingV1). Does not invent table names.",
+      "assertions": {
+        "required_substrings": [
+          "Nwbfile",
+          "Session",
+          "IntervalList",
+          "Electrode",
+          "SortGroup",
+          "SpikeSortingRecording",
+          "UnitWaveformFeaturesGroup",
+          "PositionGroup",
+          "DecodingParameters",
+          "ClusterlessDecodingSelection"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Produces an ordered or grouped list covering raw-data tables, recording / sorting branch, position branch, parameter table, selection table",
+          "Does not invent table names that don't exist in Spyglass source"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Nwbfile`.",
+        "Response contains substring `Session`.",
+        "Response contains substring `IntervalList`.",
+        "Response contains substring `Electrode`.",
+        "Response contains substring `SortGroup`.",
+        "Response contains substring `SpikeSortingRecording`.",
+        "Response contains substring `UnitWaveformFeaturesGroup`.",
+        "Response contains substring `PositionGroup`.",
+        "Response contains substring `DecodingParameters`.",
+        "Response contains substring `ClusterlessDecodingSelection`.",
+        "Produces an ordered or grouped list covering raw-data tables, recording / sorting branch, position branch, parameter table, selection table",
+        "Does not invent table names that don't exist in Spyglass source"
+      ]
+    },
+    {
+      "id": 73,
+      "eval_name": "dep-trace-lfpbandv1",
+      "stage": "pipeline-usage",
+      "tier": "dependency-tracing",
+      "difficulty": "hard",
+      "prompt": "Starting from a populated `LFPBandV1` row, list all upstream tables whose entries it depends on. I want to know the minimum set I'd need to re-create this from scratch.",
+      "expected_output": "Routes to lfp_pipeline.md. Names every upstream table: Nwbfile (and Session derivable from it), IntervalList, Electrode (via ElectrodeGroup), Raw, FirFilterParameters (twice — once for LFPV1 and once for LFPBandV1, possibly with different filter_name + filter_sampling_rate), LFPElectrodeGroup (and its LFPElectrode part) → LFPSelection → LFPV1 → LFPOutput (the merge wrapper around LFPV1) → LFPBandSelection → LFPBandV1. Does not skip the LFPOutput merge wrapper between LFPV1 and LFPBandSelection.",
+      "assertions": {
+        "required_substrings": [
+          "Nwbfile",
+          "Raw",
+          "IntervalList",
+          "LFPElectrodeGroup",
+          "LFPSelection",
+          "LFPV1",
+          "LFPOutput",
+          "FirFilterParameters",
+          "LFPBandSelection"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Names every upstream table including the parameter (FirFilterParameters) and selection tables (LFPSelection, LFPBandSelection)",
+          "Does not skip the LFPOutput merge wrapper between LFPV1 and LFPBandSelection"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Nwbfile`.",
+        "Response contains substring `Raw`.",
+        "Response contains substring `IntervalList`.",
+        "Response contains substring `LFPElectrodeGroup`.",
+        "Response contains substring `LFPSelection`.",
+        "Response contains substring `LFPV1`.",
+        "Response contains substring `LFPOutput`.",
+        "Response contains substring `FirFilterParameters`.",
+        "Response contains substring `LFPBandSelection`.",
+        "Names every upstream table including the parameter (FirFilterParameters) and selection tables (LFPSelection, LFPBandSelection)",
+        "Does not skip the LFPOutput merge wrapper between LFPV1 and LFPBandSelection"
+      ]
     }
   ]
 }
