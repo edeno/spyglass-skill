@@ -52,22 +52,21 @@
         "required_substrings": [
           "insert_sessions"
         ],
-        "forbidden_substrings": [
-          "skip_duplicates=True"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Uses the raw filename (no trailing underscore) in insert_sessions()",
           "Explains the copy-filename convention (Spyglass appends _ to .nwb)",
-          "Mentions reinsert=True as the correct flag for re-ingestion"
+          "Mentions reinsert=True as the correct flag for re-ingestion",
+          "Does not recommend skip_duplicates=True on insert_sessions (recommends reinsert=True instead — skip_duplicates=True raises TypeError on insert_sessions per common_mistakes.md #3)"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `insert_sessions`.",
-        "Response does not contain substring `skip_duplicates=True`.",
         "Uses the raw filename (no trailing underscore) in insert_sessions()",
         "Explains the copy-filename convention (Spyglass appends _ to .nwb)",
-        "Mentions reinsert=True as the correct flag for re-ingestion"
+        "Mentions reinsert=True as the correct flag for re-ingestion",
+        "Does not recommend skip_duplicates=True on insert_sessions (recommends reinsert=True instead — skip_duplicates=True raises TypeError on insert_sessions per common_mistakes.md #3)"
       ]
     },
     {
@@ -306,13 +305,12 @@
           "j1620210710_.nwb"
         ],
         "forbidden_substrings": [
-          "cardinality",
-          "fetch(as_dict=True)",
-          "verify len"
+          "fetch(as_dict=True)"
         ],
         "behavioral_checks": [
           "Response is one-liner or near-minimal (no cardinality check)",
-          "Does not route to runtime_debugging.md or common_mistakes.md"
+          "Does not route to runtime_debugging.md or common_mistakes.md",
+          "Does not over-explain with a cardinality-verification dance (len/print) when the PK is unique — the one-liner fetch1() suffices for a known-unique PK lookup"
         ]
       },
       "files": [],
@@ -320,11 +318,10 @@
         "Response contains substring `Session`.",
         "Response contains substring `fetch1`.",
         "Response contains substring `j1620210710_.nwb`.",
-        "Response does not contain substring `cardinality`.",
         "Response does not contain substring `fetch(as_dict=True)`.",
-        "Response does not contain substring `verify len`.",
         "Response is one-liner or near-minimal (no cardinality check)",
-        "Does not route to runtime_debugging.md or common_mistakes.md"
+        "Does not route to runtime_debugging.md or common_mistakes.md",
+        "Does not over-explain with a cardinality-verification dance (len/print) when the PK is unique — the one-liner fetch1() suffices for a known-unique PK lookup"
       ]
     },
     {
@@ -956,8 +953,7 @@
         "forbidden_substrings": [
           "unit_id=5 has region",
           "CurationV1.region",
-          "CuratedSpikeSorting.fetch('region",
-          "CurationV1 * SpikeSortingRecordingSelection"
+          "CuratedSpikeSorting.fetch('region"
         ],
         "behavioral_checks": [
           "Traces the full join chain: CurationV1 → SpikeSorting(Selection) → SortGroup.SortGroupElectrode → Electrode → BrainRegion",
@@ -966,7 +962,8 @@
           "Does not invent a direct `region` attribute on CurationV1 or on the unit itself",
           "Does not claim that recording_id propagates from SpikeSortingSelection to CurationV1 via FK inheritance — recording_id is a secondary attribute on SpikeSortingSelection, and only primary keys propagate through FK declarations",
           "Uses .proj('recording_id') on SpikeSortingSelection, or a two-step restriction, when joining with SpikeSortingRecordingSelection — avoids DataJoint's 'Cannot join query expressions on dependent attribute nwb_file_name' error caused by nwb_file_name being secondary in both tables",
-          "Does not recommend bare `SpikeSortingSelection * SpikeSortingRecordingSelection` without .proj('recording_id') or a prior restriction — that shape raises DataJointError on the nwb_file_name dependent-attribute collision at runtime"
+          "Does not recommend bare `SpikeSortingSelection * SpikeSortingRecordingSelection` without .proj('recording_id') or a prior restriction — that shape raises DataJointError on the nwb_file_name dependent-attribute collision at runtime",
+          "Does not recommend the bare join `CurationV1 * SpikeSortingRecordingSelection` as the brain-region path (this join would fail with the dependent-attribute refusal pattern; the correct path goes through SortGroupElectrode -> Electrode -> BrainRegion)"
         ]
       },
       "files": [],
@@ -978,14 +975,14 @@
         "Response does not contain substring `unit_id=5 has region`.",
         "Response does not contain substring `CurationV1.region`.",
         "Response does not contain substring `CuratedSpikeSorting.fetch('region`.",
-        "Response does not contain substring `CurationV1 * SpikeSortingRecordingSelection`.",
         "Traces the full join chain: CurationV1 → SpikeSorting(Selection) → SortGroup.SortGroupElectrode → Electrode → BrainRegion",
         "Notes that unit_id doesn't affect the region — all units in a sort group share the same electrodes",
         "Handles the polymer-probe case where a sort group may span multiple regions (multiple region_name values)",
         "Does not invent a direct `region` attribute on CurationV1 or on the unit itself",
         "Does not claim that recording_id propagates from SpikeSortingSelection to CurationV1 via FK inheritance — recording_id is a secondary attribute on SpikeSortingSelection, and only primary keys propagate through FK declarations",
         "Uses .proj('recording_id') on SpikeSortingSelection, or a two-step restriction, when joining with SpikeSortingRecordingSelection — avoids DataJoint's 'Cannot join query expressions on dependent attribute nwb_file_name' error caused by nwb_file_name being secondary in both tables",
-        "Does not recommend bare `SpikeSortingSelection * SpikeSortingRecordingSelection` without .proj('recording_id') or a prior restriction — that shape raises DataJointError on the nwb_file_name dependent-attribute collision at runtime"
+        "Does not recommend bare `SpikeSortingSelection * SpikeSortingRecordingSelection` without .proj('recording_id') or a prior restriction — that shape raises DataJointError on the nwb_file_name dependent-attribute collision at runtime",
+        "Does not recommend the bare join `CurationV1 * SpikeSortingRecordingSelection` as the brain-region path (this join would fail with the dependent-attribute refusal pattern; the correct path goes through SortGroupElectrode -> Electrode -> BrainRegion)"
       ]
     },
     {
@@ -1929,9 +1926,7 @@
         ],
         "forbidden_substrings": [
           "no matching rows",
-          "rename the column",
-          "sorting_id is too loose",
-          "use `&` instead of `*`"
+          "rename the column"
         ],
         "behavioral_checks": [
           "Explains the rule: `*` refuses when a shared attribute is secondary on both sides, not just when it appears in one side",
@@ -1939,7 +1934,9 @@
           "Recommends `.proj('recording_id')` on SpikeSortingSelection as the canonical/primary fix, with the two-restriction split (fetch1('recording_id') then restrict) as a debug-friendly alternative — does not hedge both as generically equal or as 'either might work'. Pointing to common_mistakes.md § 9's framing (Fix 1 composable, Fix 2 pause-and-inspect) is acceptable.",
           "Notes that the error fires at query-build time, so this is not a 'no matching rows' / under-restricted issue — restricting harder won't help",
           "Points to common_mistakes.md § 9 (or equivalent location) for the full rule",
-          "Does not misdiagnose as an under-specified restriction, a data-missing problem, or a merge-table/classmethod-dispatch issue"
+          "Does not misdiagnose as an under-specified restriction, a data-missing problem, or a merge-table/classmethod-dispatch issue",
+          "Does not propose 'use & instead of *' as the fix — that would silently change the query semantics; the correct fix is .proj() on one side to drop the dependent attribute, OR splitting into two restrictions",
+          "Does not blame the restriction key (`sorting_id` is not 'too loose'); the failure is the dependent-attribute refusal at query-build time, not a runtime restriction issue"
         ]
       },
       "files": [],
@@ -1950,14 +1947,14 @@
         "Response contains substring `recording_id`.",
         "Response does not contain substring `no matching rows`.",
         "Response does not contain substring `rename the column`.",
-        "Response does not contain substring `sorting_id is too loose`.",
-        "Response does not contain substring `use `&` instead of `*``.",
         "Explains the rule: `*` refuses when a shared attribute is secondary on both sides, not just when it appears in one side",
         "Identifies nwb_file_name as the specific collision, and names at least one of the FK paths (-> IntervalList on SpikeSortingSelection, or -> Raw / -> SortGroup on SpikeSortingRecordingSelection)",
         "Recommends `.proj('recording_id')` on SpikeSortingSelection as the canonical/primary fix, with the two-restriction split (fetch1('recording_id') then restrict) as a debug-friendly alternative — does not hedge both as generically equal or as 'either might work'. Pointing to common_mistakes.md § 9's framing (Fix 1 composable, Fix 2 pause-and-inspect) is acceptable.",
         "Notes that the error fires at query-build time, so this is not a 'no matching rows' / under-restricted issue — restricting harder won't help",
         "Points to common_mistakes.md § 9 (or equivalent location) for the full rule",
-        "Does not misdiagnose as an under-specified restriction, a data-missing problem, or a merge-table/classmethod-dispatch issue"
+        "Does not misdiagnose as an under-specified restriction, a data-missing problem, or a merge-table/classmethod-dispatch issue",
+        "Does not propose 'use & instead of *' as the fix — that would silently change the query semantics; the correct fix is .proj() on one side to drop the dependent attribute, OR splitting into two restrictions",
+        "Does not blame the restriction key (`sorting_id` is not 'too loose'); the failure is the dependent-attribute refusal at query-build time, not a runtime restriction issue"
       ]
     },
     {
@@ -2638,11 +2635,10 @@
           "electrode_group_name",
           "electrode_id"
         ],
-        "forbidden_substrings": [
-          "region_id"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
-          "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id) in any order, with no extra fields"
+          "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id) in any order, with no extra fields",
+          "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key"
         ]
       },
       "files": [],
@@ -2650,8 +2646,8 @@
         "Response contains substring `nwb_file_name`.",
         "Response contains substring `electrode_group_name`.",
         "Response contains substring `electrode_id`.",
-        "Response does not contain substring `region_id`.",
-        "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id) in any order, with no extra fields"
+        "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id) in any order, with no extra fields",
+        "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key"
       ]
     },
     {
