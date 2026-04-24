@@ -147,6 +147,7 @@ KNOWN_CLASSES = {
     "LFPSelection": "spyglass/lfp/v1/lfp.py",
     "ExportSelection": "spyglass/common/common_usage.py",
     "Export": "spyglass/common/common_usage.py",
+    "InsertError": "spyglass/common/common_usage.py",
     "FigURLCurationSelection": "spyglass/spikesorting/v1/figurl_curation.py",
     "FigURLCuration": "spyglass/spikesorting/v1/figurl_curation.py",
     # Ambiguous between v0 and v1 — skill documents v1
