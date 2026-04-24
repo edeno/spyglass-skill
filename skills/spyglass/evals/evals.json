@@ -3552,6 +3552,53 @@
         "Explicitly names LFP, spike-sorting, and curation as unaffected — they do not consume position",
         "Does not use the v0 field name `position_info_param_name` or the nonexistent class `SpikeSortingV1`"
       ]
+    },
+    {
+      "id": 88,
+      "eval_name": "ambiguity-delete-decoding-results",
+      "stage": "destructive-operations",
+      "tier": "disambiguation",
+      "difficulty": "medium",
+      "prompt": "I need to delete my decoding results for `j1620210710_.nwb`. What's the right command?",
+      "expected_output": "This prompt is under-specified — the correct command depends on which layer the user means, and the skill should either ask or narrow explicitly. The three plausible layers: (1) a `DecodingOutput` merge entry (handled via `DecodingOutput.merge_delete(merge_key)` — classmethod form, per Common Mistake #1's classmethod-restriction-discard rule); (2) the underlying Computed row (`ClusterlessDecodingV1` or `SortedSpikesDecodingV1`) which cascades through the merge; (3) just the AnalysisNwbfile artifact on disk (rarely the right move — the DB row is the source of truth). Also missing: which params / interval / selection does 'my decoding results' scope to — there may be multiple decoding rows per session. Correct response either asks (a) which layer, and (b) which selection — or states the assumption explicitly ('I'll assume you mean the DecodingOutput merge entry for your most recent ClusterlessDecodingV1 populate; here's the inspect-before-destroy pattern…'). Routes to destructive_operations.md and merge_methods.md. Does not hand back a bare delete command without scoping.",
+      "assertions": {
+        "required_substrings": [
+          "DecodingOutput",
+          "merge_delete",
+          "destructive_operations.md"
+        ],
+        "expected_output_tables_exempt": [
+          "ClusterlessDecodingV1",
+          "SortedSpikesDecodingV1",
+          "AnalysisNwbfile"
+        ],
+        "forbidden_substrings": [
+          "DecodingOutput.delete()",
+          "ClusterlessDecodingV1.delete() without restriction",
+          "super_delete"
+        ],
+        "behavioral_checks": [
+          "Identifies that the prompt is under-specified and either asks a clarifying question or narrows scope explicitly",
+          "Enumerates at least two plausible delete layers (merge entry vs. V1 computed row vs. on-disk artifact)",
+          "Names the selection-scope ambiguity (which decoding_param_name / interval / session)",
+          "Recommends merge_delete with an explicit key (classmethod form) if the merge layer is chosen, and routes to destructive_operations.md for the inspect-before-destroy pattern",
+          "Does not produce an unscoped `.delete()` command without asking or narrowing"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `DecodingOutput`.",
+        "Response contains substring `merge_delete`.",
+        "Response contains substring `destructive_operations.md`.",
+        "Response does not contain substring `DecodingOutput.delete()`.",
+        "Response does not contain substring `ClusterlessDecodingV1.delete() without restriction`.",
+        "Response does not contain substring `super_delete`.",
+        "Identifies that the prompt is under-specified and either asks a clarifying question or narrows scope explicitly",
+        "Enumerates at least two plausible delete layers (merge entry vs. V1 computed row vs. on-disk artifact)",
+        "Names the selection-scope ambiguity (which decoding_param_name / interval / session)",
+        "Recommends merge_delete with an explicit key (classmethod form) if the merge layer is chosen, and routes to destructive_operations.md for the inspect-before-destroy pattern",
+        "Does not produce an unscoped `.delete()` command without asking or narrowing"
+      ]
     }
   ]
 }
