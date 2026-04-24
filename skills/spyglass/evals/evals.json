@@ -3347,6 +3347,109 @@
         "Mentions the `_object_id` + AnalysisNwbfile FK convention as a signal that this is an authoring task",
         "Does not recommend merge_methods.md or ingestion.md as the first stop"
       ]
+    },
+    {
+      "id": 84,
+      "eval_name": "recover-partial-populate-common",
+      "stage": "runtime-debugging",
+      "tier": "workflow-recovery",
+      "difficulty": "hard",
+      "prompt": "`populate_all_common('j1620210710_.nwb')` finished 20 minutes ago with no exception. `Session`, `IntervalList`, and `Raw` have entries, but `Electrode` and `ElectrodeGroup` are empty for this file. What's the safest next diagnostic — before I delete anything or re-run the whole populate?",
+      "expected_output": "Inspect `common_usage.InsertError & {'nwb_file_name': 'j1620210710_.nwb'}` first — that's where `populate_all_common` writes the short error message per silently-skipped table when `raise_err=False` (its default). Once the failed table and message are identified, re-run only the affected table(s) with `raise_err=True` to surface the full traceback — e.g., `populate_all_common(nwb_file_name, raise_err=True)` on a fresh kernel, or directly call the affected table's `populate()` with the restriction. Do NOT delete Session/IntervalList/Raw rows — they ingested correctly, and deleting them would cascade across the whole schema. Do NOT blindly re-run the full `populate_all_common` without first reading InsertError, since the same per-table failure will silently happen again. Routes to populate_all_common_debugging.md.",
+      "assertions": {
+        "required_substrings": [
+          "InsertError",
+          "raise_err=True",
+          "populate_all_common_debugging.md"
+        ],
+        "required_substrings_exempt": [
+          "raise_err=True"
+        ],
+        "expected_output_tables_exempt": [
+          "Session",
+          "IntervalList",
+          "Raw",
+          "Electrode",
+          "ElectrodeGroup"
+        ],
+        "forbidden_substrings": [
+          "delete the Session row and re-ingest",
+          "super_delete",
+          "just re-run populate_all_common"
+        ],
+        "behavioral_checks": [
+          "Recommends inspecting `common_usage.InsertError` as the first diagnostic",
+          "Recommends re-running with `raise_err=True` to surface the swallowed traceback, scoped narrowly (not a blanket rerun)",
+          "Explicitly warns against deleting the already-ingested rows (Session/IntervalList/Raw) as a recovery step",
+          "Explicitly warns against naively re-running the full `populate_all_common` without inspecting InsertError first"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `InsertError`.",
+        "Response contains substring `raise_err=True`.",
+        "Response contains substring `populate_all_common_debugging.md`.",
+        "Response does not contain substring `delete the Session row and re-ingest`.",
+        "Response does not contain substring `super_delete`.",
+        "Response does not contain substring `just re-run populate_all_common`.",
+        "Recommends inspecting `common_usage.InsertError` as the first diagnostic",
+        "Recommends re-running with `raise_err=True` to surface the swallowed traceback, scoped narrowly (not a blanket rerun)",
+        "Explicitly warns against deleting the already-ingested rows (Session/IntervalList/Raw) as a recovery step",
+        "Explicitly warns against naively re-running the full `populate_all_common` without inspecting InsertError first"
+      ]
+    },
+    {
+      "id": 85,
+      "eval_name": "recover-parameter-edit-in-place",
+      "stage": "pipeline-usage",
+      "tier": "workflow-recovery",
+      "difficulty": "hard",
+      "prompt": "I edited my `RippleParameters` row named `Kay_ripple_detection_v2` in place — bumped the speed threshold inside `ripple_param_dict` from 4 cm/s to 5 cm/s. I already have RippleTimesV1 entries that were populated with the old threshold. What should I recompute, what should I leave alone, and what's the safe order?",
+      "expected_output": "The old RippleTimesV1 rows are stale (they were computed against the pre-edit parameters) but are not flagged stale by the database — editing a params row in place does not invalidate downstream. Safe order: (1) Inspect `RippleTimesV1 & {'ripple_param_name': 'Kay_ripple_detection_v2'}` to see which rows need recomputation — scope is gated by that `ripple_param_name`, not all of RippleTimesV1. (2) `cautious_delete` only those rows (not LFP, not LFPBand, not position, not ripple rows that used a different `ripple_param_name`). (3) Re-populate with the same selection keys. Everything else is unaffected: LFPV1, LFPBandV1, RippleLFPSelection (its own row doesn't change), position pipelines, decoding pipelines not downstream of these ripple times. Flag the anti-pattern: editing a params row in place breaks reproducibility — better practice is to insert a new `ripple_param_name` entry (e.g., `Kay_ripple_detection_v3`) and leave the old one so previously-computed rows stay interpretable. Routes to destructive_operations.md (inspect-before-destroy), ripple_pipeline.md, and common_mistakes.md. Does not recommend deleting all RippleTimesV1 rows or re-running LFP.",
+      "assertions": {
+        "required_substrings": [
+          "ripple_param_name",
+          "cautious_delete",
+          "destructive_operations.md"
+        ],
+        "expected_output_tables_exempt": [
+          "RippleParameters",
+          "RippleTimesV1",
+          "LFPV1",
+          "LFPBandV1",
+          "LFPBand",
+          "RippleLFPSelection",
+          "LFP"
+        ],
+        "forbidden_substrings": [
+          "delete all RippleTimesV1 rows",
+          "re-populate LFPV1",
+          "super_delete",
+          "ripple_params_name"
+        ],
+        "behavioral_checks": [
+          "Uses the correct field name `ripple_param_name` (singular), not `ripple_params_name`",
+          "Scopes the cleanup to RippleTimesV1 rows with the affected `ripple_param_name`, not all RippleTimesV1 rows",
+          "Explicitly lists what is unaffected — LFP, LFPBand, RippleLFPSelection, position, decoding branches not downstream of the affected ripple times",
+          "Recommends cautious_delete (not super_delete or a manual drop) and routes to destructive_operations.md",
+          "Flags editing a params row in place as an anti-pattern and recommends inserting a new `ripple_param_name` entry for future runs"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `ripple_param_name`.",
+        "Response contains substring `cautious_delete`.",
+        "Response contains substring `destructive_operations.md`.",
+        "Response does not contain substring `delete all RippleTimesV1 rows`.",
+        "Response does not contain substring `re-populate LFPV1`.",
+        "Response does not contain substring `super_delete`.",
+        "Response does not contain substring `ripple_params_name`.",
+        "Uses the correct field name `ripple_param_name` (singular), not `ripple_params_name`",
+        "Scopes the cleanup to RippleTimesV1 rows with the affected `ripple_param_name`, not all RippleTimesV1 rows",
+        "Explicitly lists what is unaffected — LFP, LFPBand, RippleLFPSelection, position, decoding branches not downstream of the affected ripple times",
+        "Recommends cautious_delete (not super_delete or a manual drop) and routes to destructive_operations.md",
+        "Flags editing a params row in place as an anti-pattern and recommends inserting a new `ripple_param_name` entry for future runs"
+      ]
     }
   ]
 }
