@@ -12,6 +12,7 @@
 - [Building from Ingested Tables](#building-from-ingested-tables)
 - [AnalysisNwbfile Storage Pattern](#analysisnwbfile-storage-pattern)
 - [Merge Table Guardrail](#merge-table-guardrail)
+- [Permissions and Roles](#permissions-and-roles)
 - [Further Reading in Spyglass docs](#further-reading-in-spyglass-docs)
 
 ## Overview
@@ -302,6 +303,45 @@ Skip this unless you have **multiple interchangeable implementations** of the sa
 If none of these apply, let downstream tables FK-ref your Computed table directly. Adding a merge table for a single-source pipeline adds complexity (UUID indirection, `merge_get_part` calls) with no benefit.
 
 When you do add one, follow the conventions in `TableTypes.md`: name it `{Pipeline}Output`, use tier `_Merge`, primary key `merge_id: uuid`, non-primary key `source: varchar`.
+
+## Permissions and Roles
+
+When authoring a pipeline that other lab members will run, the table tier and `make()` body assume the runner has SELECT on every upstream schema and INSERT/ALTER on the schema your tables live in. Verify those grants before debugging "missing data" — half of `populate()` no-ops trace to a permission gap, not a logic bug.
+
+### Testing for user permissions and roles
+
+Two layers of check, used for different decisions:
+
+**DataJoint-level — what the SQL connection can actually do.** Ask MySQL directly:
+
+```python
+import datajoint as dj
+conn = dj.conn()
+grants = conn.query("SHOW GRANTS FOR CURRENT_USER()").fetchall()
+for row in grants:
+    print(row[0])
+```
+
+Look for `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `ALTER` on the schema names you care about. A user without `ALTER` cannot run `dj.schema(...).drop()` or `Table.alter()`, regardless of admin status in `LabMember`. A user without `DELETE` on a downstream schema gets the IntegrityError-1217 / NoneType-groupdict failure mode documented in [destructive_operations.md](destructive_operations.md#when-delete-raises-integrityerror-1217-or-nonetype-object-has-no-attribute-groupdict).
+
+**Spyglass-level — whether the user is a recognized lab member with team membership.** This is what `cautious_delete` checks before allowing a delete (`src/spyglass/utils/mixins/cautious_delete.py:195`). Replicate the same lookup yourself when an authoring decision depends on it (e.g., a `make()` that branches on whether the runner is the data owner). The `datajoint_user_name` lives on the part table `LabMember.LabMemberInfo`, not on `LabMember` itself — restricting `LabMember & {"datajoint_user_name": ...}` would silently match every row (the `_Merge`-style silent footgun, but on a regular table). Restrict the part:
+
+```python
+from spyglass.common.common_lab import LabMember, LabTeam
+
+dj_user = dj.config["database.user"]
+member_info = (LabMember.LabMemberInfo & {"datajoint_user_name": dj_user}).fetch1()
+print(member_info)  # raises DataJointError if no row — user is unknown to Spyglass
+
+# Teams the user is on
+member_name = member_info["lab_member_name"]
+my_teams = (LabTeam.LabTeamMember & {"lab_member_name": member_name}).fetch("team_name")
+print(list(my_teams))
+```
+
+A user with no `LabMember.LabMemberInfo` row hits `cautious_delete` errors of the form `Could not find name for datajoint user <name> in LabMember.LabMemberInfo`. The fix is to insert the row, not to bypass the check — see [setup_troubleshooting.md](setup_troubleshooting.md) "AccessError / PermissionError".
+
+**When to use which.** SQL grants when the question is "can this connection structurally do X" (ALTER, DROP, cross-schema DELETE). `LabMember` / `LabTeam` when the question is "should Spyglass let this user do X to *this* session's data" (cautious_delete behavior, ownership-aware logic in custom `make()` bodies).
 
 ## Further Reading in Spyglass docs
 
