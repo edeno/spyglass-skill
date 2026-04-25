@@ -286,22 +286,27 @@
       "stage": "pipeline-authoring",
       "tier": "baseline",
       "difficulty": "hard",
-      "prompt": "I want to build a custom analysis pipeline that takes LFPOutput as upstream and computes per-interval theta/gamma power ratios. Each interval + LFP entry should produce one row with mean power in theta (6-10 Hz), mean power in gamma (30-50 Hz), and their ratio. Give me a schema sketch — which DataJoint tiers for the parameters vs selection vs computed tables, how to reference LFPOutput without violating merge conventions, and what goes in `make()`. I want this in a new schema called `edeno_theta_gamma`. Also: should the computed table inherit SpyglassMixin?",
-      "expected_output": "Routes to custom_pipeline_authoring.md (+ `docs/src/ForDevelopers/Schema.md` under the hood). Proposes the canonical 3-tier layout: `ThetaGammaParams` (dj.Lookup or dj.Manual), `ThetaGammaSelection` (dj.Manual — joins the LFPOutput merge-key + params + interval), `ThetaGamma` (dj.Computed, inherits SpyglassMixin). STRONGLY flags that the Computed table MUST inherit SpyglassMixin **first** in the MRO (a validator regression fixture in tests/test_validator_regressions.py pins this exact mistake). For referencing LFPOutput: foreign-key on the merge master. The idiomatic Spyglass form is `-> LFPOutput.proj(lfp_merge_id='merge_id')` — renaming `merge_id` on projection to avoid collision when multiple merge masters appear as upstream dependencies (see `src/spyglass/lfp/analysis/v1/lfp_band.py:26` for the canonical example). Bare `-> LFPOutput` is acceptable when only one merge master is referenced; NEVER foreign-key a part-table column directly — that breaks the merge convention. Shows a `make()` skeleton that: (1) resolves the merge entry via `LFPOutput.merge_get_part(key)` or `(LFPOutput & key).fetch1_dataframe()`, (2) fetches the band-filtered dataframe, (3) computes power ratios, (4) inserts the result row. Schema naming: personal/team schemas use `<database_user>_<suffix>` (enforced by MySQL GRANT permissions, see `spyglass/utils/database_settings.py` and `docs/src/ForDevelopers/Schema.md`). The user's proposed `edeno_theta_gamma` is **correct as-is** — do NOT prefix with `spyglass_`. The `spyglass_` prefix is reserved for the framework's own schemas.",
+      "prompt": "I want to build a custom analysis pipeline that computes per-interval theta/gamma power ratios. Each interval + LFP entry should produce one row with mean power in theta (6-10 Hz), mean power in gamma (30-50 Hz), and their ratio. Give me a schema sketch — what's the right upstream table to FK on (LFPOutput? LFPBandV1?), which DataJoint tiers for the parameters vs selection vs computed tables, and what goes in `make()`. I want this in a new schema called `edeno_theta_gamma`. Also: should the computed table inherit SpyglassMixin?",
+      "expected_output": "Routes to custom_pipeline_authoring.md (+ `docs/src/ForDevelopers/Schema.md` under the hood). The right upstream table is `LFPBandV1` (one row per band per session/interval), NOT `LFPOutput` (which is wideband). The band filtering already happens upstream — the custom `make()` reads the band-filtered signal and computes power, instead of taking wideband LFP and re-filtering inside `make()`. To use `LFPBandV1`, the user first populates two band selections (one for theta, one for gamma) with `LFPBandSelection().set_lfp_band_electrodes(filter_name='Theta 6-10 Hz', ...)` and a second `LFPBandSelection().set_lfp_band_electrodes(filter_name='Gamma 30-50 Hz', ...)` call, then `LFPBandV1.populate(...)` for both. The custom Selection table FKs `LFPBandV1` twice (or carries two `lfp_band_filter_name` references via projection) so each Computed row points at one theta-band entry and one gamma-band entry. Proposes the canonical 3-tier layout: `ThetaGammaParams` (dj.Lookup or dj.Manual — power-window params, e.g., 'Hilbert envelope vs FFT'), `ThetaGammaSelection` (dj.Manual — joins two LFPBandV1 keys + params + interval), `ThetaGamma` (dj.Computed, inherits SpyglassMixin). STRONGLY flags that the Computed table MUST inherit SpyglassMixin **first** in the MRO (a validator regression fixture in tests/test_validator_regressions.py pins this exact mistake). For referencing `LFPBandV1`: foreign-key with projection to disambiguate the two bands, e.g., `-> LFPBandV1.proj(theta_band_key='lfp_band_filter_name')` and `-> LFPBandV1.proj(gamma_band_key='lfp_band_filter_name')`. NEVER foreign-key a part-table column directly. (If the user genuinely needed wideband LFP for some independent reason — say, a broadband spectral analysis — `LFPOutput` would be the right upstream, but for theta/gamma specifically the band filtering belongs upstream.) Shows a `make()` skeleton that: (1) fetches the theta-band dataframe via `(LFPBandV1 & theta_key).fetch1_dataframe()`, (2) fetches the gamma-band dataframe via `(LFPBandV1 & gamma_key).fetch1_dataframe()`, (3) computes mean power and ratio, (4) inserts the result row. Schema naming: personal/team schemas use `<database_user>_<suffix>` (enforced by MySQL GRANT permissions, see `spyglass/utils/database_settings.py` and `docs/src/ForDevelopers/Schema.md`). The user's proposed `edeno_theta_gamma` is **correct as-is** — do NOT prefix with `spyglass_`. The `spyglass_` prefix is reserved for the framework's own schemas.",
       "assertions": {
         "required_substrings": [
           "SpyglassMixin",
           "dj.Lookup",
           "dj.Manual",
           "dj.Computed",
+          "LFPBandV1",
+          "LFPBandSelection"
+        ],
+        "expected_output_tables_exempt": [
           "LFPOutput"
         ],
         "forbidden_substrings": [
           "spyglass_edeno_theta_gamma"
         ],
         "behavioral_checks": [
+          "Routes the custom pipeline to LFPBandV1 (or LFPBandSelection) as the upstream FK — does NOT take LFPOutput (wideband) as upstream and re-filter inside the custom make()",
           "Places SpyglassMixin as the FIRST base class in the Computed table (MRO order: `class X(SpyglassMixin, dj.Computed):`)",
-          "Foreign-keys on LFPOutput master. Preferred form: `-> LFPOutput.proj(lfp_merge_id='merge_id')` (renames `merge_id` to avoid collision when multiple merge masters appear as upstream — the idiomatic Spyglass form, see `src/spyglass/lfp/analysis/v1/lfp_band.py:26`). Bare `-> LFPOutput` is only acceptable if the response explicitly notes it is a single-merge-upstream table. NEVER foreign-keys a part-table column directly.",
+          "Foreign-keys on LFPBandV1 master, projecting `lfp_band_filter_name` (or equivalent) to disambiguate when both theta and gamma rows are referenced. NEVER foreign-keys a part-table column directly.",
           "Separates Params / Selection / Computed into three tiers",
           "Does NOT prefix the schema name with `spyglass_` — personal/team schemas use `<database_user>_<suffix>`, so `edeno_theta_gamma` as the user proposed is correct, not `spyglass_edeno_theta_gamma`"
         ]
@@ -312,10 +317,12 @@
         "Response contains substring `dj.Lookup`.",
         "Response contains substring `dj.Manual`.",
         "Response contains substring `dj.Computed`.",
-        "Response contains substring `LFPOutput`.",
+        "Response contains substring `LFPBandV1`.",
+        "Response contains substring `LFPBandSelection`.",
         "Response does not contain substring `spyglass_edeno_theta_gamma`.",
+        "Routes the custom pipeline to LFPBandV1 (or LFPBandSelection) as the upstream FK — does NOT take LFPOutput (wideband) as upstream and re-filter inside the custom make()",
         "Places SpyglassMixin as the FIRST base class in the Computed table (MRO order: `class X(SpyglassMixin, dj.Computed):`)",
-        "Foreign-keys on LFPOutput master. Preferred form: `-> LFPOutput.proj(lfp_merge_id='merge_id')` (renames `merge_id` to avoid collision when multiple merge masters appear as upstream — the idiomatic Spyglass form, see `src/spyglass/lfp/analysis/v1/lfp_band.py:26`). Bare `-> LFPOutput` is only acceptable if the response explicitly notes it is a single-merge-upstream table. NEVER foreign-keys a part-table column directly.",
+        "Foreign-keys on LFPBandV1 master, projecting `lfp_band_filter_name` (or equivalent) to disambiguate when both theta and gamma rows are referenced. NEVER foreign-keys a part-table column directly.",
         "Separates Params / Selection / Computed into three tiers",
         "Does NOT prefix the schema name with `spyglass_` — personal/team schemas use `<database_user>_<suffix>`, so `edeno_theta_gamma` as the user proposed is correct, not `spyglass_edeno_theta_gamma`"
       ]
@@ -1045,18 +1052,13 @@
       "tier": "joins",
       "difficulty": "medium",
       "prompt": "I have a curated sorting in `CurationV1` with `sorting_id='003581ca-a7e4-4953-bfc3-42198c1ba2a8'` and `curation_id=0`. What brain regions correspond to this sorting?",
-      "expected_output": "Routes to spikesorting_pipeline.md + common_tables.md. Units don't carry brain region directly — region comes from the electrodes in the unit's sort group, and all units in a sort group share electrodes, so the region is the same for every unit in that group (unit_id doesn't affect the answer). FK chain by declaration: CurationV1 → SpikeSorting → SpikeSortingSelection (carries `recording_id` as a secondary FK to SpikeSortingRecording) → SpikeSortingRecordingSelection (carries `nwb_file_name` + `sort_group_id` via its own FKs to Raw and SortGroup); SortGroup.SortGroupElectrode maps sort_group_id to electrode_ids; Electrode has `region_id`; BrainRegion has `region_name`. Two DataJoint subtleties matter here. (1) FK inheritance propagates only the **primary key** of the referenced table, not secondary attributes. `recording_id` is secondary on SpikeSortingSelection (its `-> SpikeSortingRecording` is declared as a secondary FK, after `---`), so it does not reach SpikeSorting or CurationV1 — shapes like `CurationV1 * SpikeSortingRecordingSelection` share no attributes and degenerate to a Cartesian product. (2) `*` refuses to join on a \"dependent attribute\" (secondary on **both** sides). SpikeSortingSelection carries `nwb_file_name` and `interval_list_name` as secondary attrs via `-> IntervalList`, and SpikeSortingRecordingSelection carries `nwb_file_name` as secondary via `-> Raw`, so the bare `SpikeSortingSelection * SpikeSortingRecordingSelection` raises `DataJointError: Cannot join query expressions on dependent attribute 'nwb_file_name'`. Two correct shapes: (a) two restrictions — `recording_id = (SpikeSortingSelection & {'sorting_id': sid}).fetch1('recording_id')` then `(SpikeSortingRecordingSelection * SortGroup.SortGroupElectrode * Electrode * BrainRegion & {'recording_id': recording_id}).fetch('region_name')`; or (b) one expression with `.proj('recording_id')` to drop the colliding secondary attrs — `((SpikeSortingSelection & {'sorting_id': sid}).proj('recording_id') * SpikeSortingRecordingSelection * SortGroup.SortGroupElectrode * Electrode * BrainRegion).fetch('region_name')`. For tetrodes, all 4 electrodes are in the same region so the result is a single name (wrap with `set()` or `np.unique()` if expecting one); for polymer probes spanning regions, multiple names may come back.",
+      "expected_output": "Routes to spikesorting_pipeline.md. Spyglass exposes a helper for exactly this question: `CurationV1.get_sort_group_info(key)` (`src/spyglass/spikesorting/v1/curation.py:269`) returns a table joining the curation key with `SortGroup`, `Electrode`, and `BrainRegion`. Call it and fetch `region_name`:\\n\\n```python\\nkey = {'sorting_id': '003581ca-a7e4-4953-bfc3-42198c1ba2a8', 'curation_id': 0}\\nregions = CurationV1.get_sort_group_info(key).fetch('region_name')\\nprint(set(regions))  # tetrodes: usually one region; polymer probes: may span several\\n```\\n\\nUnits don't carry brain region directly — region comes from the electrodes in the unit's sort group, and all units in a sort group share electrodes (so `unit_id` doesn't affect the answer). For tetrodes, all 4 electrodes are in the same region so the result is a single name; for polymer probes spanning regions, multiple names may come back. (Reinventing the FK chain `CurationV1 → SpikeSorting → SpikeSortingSelection → SpikeSortingRecording → SortGroup.SortGroupElectrode → Electrode → BrainRegion` by hand also works and surfaces interesting DataJoint join semantics, but it's not necessary for this question — the helper exists.)",
       "assertions": {
         "required_substrings": [
-          "SortGroup",
-          "Electrode",
-          "BrainRegion",
-          "region_name",
+          "get_sort_group_info",
           "CurationV1",
-          "SpikeSorting",
-          "SpikeSortingRecording",
-          "SpikeSortingRecordingSelection",
-          "SpikeSortingSelection"
+          "BrainRegion",
+          "region_name"
         ],
         "forbidden_substrings": [
           "unit_id=5 has region",
@@ -1064,42 +1066,33 @@
           "CuratedSpikeSorting.fetch('region"
         ],
         "behavioral_checks": [
-          "Traces the full join chain: CurationV1 → SpikeSorting(Selection) → SortGroup.SortGroupElectrode → Electrode → BrainRegion",
+          "Uses CurationV1.get_sort_group_info(key) as the canonical answer — does not reinvent the FK chain through SpikeSorting / SpikeSortingSelection / SpikeSortingRecordingSelection / SortGroup.SortGroupElectrode when a one-line helper exists",
           "Notes that unit_id doesn't affect the region — all units in a sort group share the same electrodes",
           "Handles the polymer-probe case where a sort group may span multiple regions (multiple region_name values)",
-          "Does not invent a direct `region` attribute on CurationV1 or on the unit itself",
-          "Does not claim that recording_id propagates from SpikeSortingSelection to CurationV1 via FK inheritance — recording_id is a secondary attribute on SpikeSortingSelection, and only primary keys propagate through FK declarations",
-          "Uses .proj('recording_id') on SpikeSortingSelection, or a two-step restriction, when joining with SpikeSortingRecordingSelection — avoids DataJoint's 'Cannot join query expressions on dependent attribute nwb_file_name' error caused by nwb_file_name being secondary in both tables",
-          "Does not recommend bare `SpikeSortingSelection * SpikeSortingRecordingSelection` without .proj('recording_id') or a prior restriction — that shape raises DataJointError on the nwb_file_name dependent-attribute collision at runtime",
-          "Does not recommend the bare join `CurationV1 * SpikeSortingRecordingSelection` as the brain-region path (this join would fail with the dependent-attribute refusal pattern; the correct path goes through SortGroupElectrode -> Electrode -> BrainRegion)"
+          "Does not invent a direct `region` attribute on CurationV1 or on the unit itself"
         ],
         "expected_output_tables_exempt": [
-          "IntervalList",
-          "Raw"
+          "SortGroup",
+          "Electrode",
+          "SpikeSorting",
+          "SpikeSortingSelection",
+          "SpikeSortingRecording",
+          "SpikeSortingRecordingSelection"
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `SortGroup`.",
-        "Response contains substring `Electrode`.",
+        "Response contains substring `get_sort_group_info`.",
+        "Response contains substring `CurationV1`.",
         "Response contains substring `BrainRegion`.",
         "Response contains substring `region_name`.",
-        "Response contains substring `CurationV1`.",
-        "Response contains substring `SpikeSorting`.",
-        "Response contains substring `SpikeSortingRecording`.",
-        "Response contains substring `SpikeSortingRecordingSelection`.",
-        "Response contains substring `SpikeSortingSelection`.",
         "Response does not contain substring `unit_id=5 has region`.",
         "Response does not contain substring `CurationV1.region`.",
         "Response does not contain substring `CuratedSpikeSorting.fetch('region`.",
-        "Traces the full join chain: CurationV1 → SpikeSorting(Selection) → SortGroup.SortGroupElectrode → Electrode → BrainRegion",
+        "Uses CurationV1.get_sort_group_info(key) as the canonical answer — does not reinvent the FK chain through SpikeSorting / SpikeSortingSelection / SpikeSortingRecordingSelection / SortGroup.SortGroupElectrode when a one-line helper exists",
         "Notes that unit_id doesn't affect the region — all units in a sort group share the same electrodes",
         "Handles the polymer-probe case where a sort group may span multiple regions (multiple region_name values)",
-        "Does not invent a direct `region` attribute on CurationV1 or on the unit itself",
-        "Does not claim that recording_id propagates from SpikeSortingSelection to CurationV1 via FK inheritance — recording_id is a secondary attribute on SpikeSortingSelection, and only primary keys propagate through FK declarations",
-        "Uses .proj('recording_id') on SpikeSortingSelection, or a two-step restriction, when joining with SpikeSortingRecordingSelection — avoids DataJoint's 'Cannot join query expressions on dependent attribute nwb_file_name' error caused by nwb_file_name being secondary in both tables",
-        "Does not recommend bare `SpikeSortingSelection * SpikeSortingRecordingSelection` without .proj('recording_id') or a prior restriction — that shape raises DataJointError on the nwb_file_name dependent-attribute collision at runtime",
-        "Does not recommend the bare join `CurationV1 * SpikeSortingRecordingSelection` as the brain-region path (this join would fail with the dependent-attribute refusal pattern; the correct path goes through SortGroupElectrode -> Electrode -> BrainRegion)"
+        "Does not invent a direct `region` attribute on CurationV1 or on the unit itself"
       ]
     },
     {
@@ -1195,8 +1188,8 @@
       "stage": "runtime-debugging",
       "tier": "environment-triage",
       "difficulty": "medium",
-      "prompt": "spike sorting was fine last week and now `SpikeSorting.populate(key)` blows up on import with `AttributeError: module 'spikeinterface' has no attribute 'WaveformExtractor'`. I did `pip install -U spikeinterface` a few days ago because another project wanted a newer version. Did I just torch my spyglass env? and how do I figure out which version I should pin back to?",
-      "expected_output": "Routes to dependencies.md 'SpikeInterface / Spyglass version coupling'. Identifies `WaveformExtractor` as a class removed after SpikeInterface 0.99.x (replaced by `SortingAnalyzer`) — Spyglass's spike sorting pipeline pins a specific SpikeInterface range, and upgrading out of that range breaks every stage (recording, sorter, waveforms, metrics, curation). Source of truth for the pin: `pyproject.toml` / `environment.yml` (NOT a guess). Fix: `pip install 'spikeinterface==<pinned>'` to downgrade back into the supported range, not patch the Spyglass parameter dict to accommodate the new SpikeInterface API. Notes that v0 pipeline code paths are not kept in sync with modern SpikeInterface — migrate to v1 if staying on a newer SI is important.",
+      "prompt": "spike sorting was working last week and now `SpikeSorting.populate(key)` blows up on import with `AttributeError: module 'spikeinterface' has no attribute 'WaveformExtractor'`. What's wrong?",
+      "expected_output": "Routes to dependencies.md 'SpikeInterface / Spyglass version coupling'. Before naming a fix, the agent should first ask whether the user upgraded any package recently (especially spikeinterface, but also a sibling lib that may have pulled it as a dep) — `WaveformExtractor` was removed after SpikeInterface 0.99.x and replaced by `SortingAnalyzer`, so the only realistic way to land on this error in a previously-working env is a SpikeInterface bump out of Spyglass's pinned range. Once an upgrade is confirmed (or the user's env state otherwise establishes drift), point at the source of truth for the pin: `pyproject.toml` (`spikeinterface>=0.99.1,<0.100`). Fix: `pip install 'spikeinterface>=0.99.1,<0.100'` to land back in the supported range, not patch Spyglass's parameter dicts to accommodate the new SortingAnalyzer API. Notes that v0 pipeline code paths are not kept in sync with modern SpikeInterface — migrating to v1 is the answer if staying on newer SI is important, NOT downgrading to v0.",
       "assertions": {
         "required_substrings": [
           "spikeinterface",
@@ -1208,9 +1201,10 @@
           "upgrade spyglass"
         ],
         "behavioral_checks": [
-          "Identifies the version-coupling issue (Spyglass pins a specific SpikeInterface range)",
-          "Points at pyproject.toml or environment.yml as the source of truth for the pin rather than guessing a specific version",
-          "Recommends downgrading SpikeInterface to the pin, NOT patching Spyglass's parameter dicts to work around the new API",
+          "Asks whether the user upgraded any package (especially spikeinterface, or a sibling lib that may have pulled it) before naming a fix — does not assume env drift without checking",
+          "Identifies the version-coupling issue (Spyglass pins a specific SpikeInterface range; WaveformExtractor was removed after 0.99.x in favor of SortingAnalyzer)",
+          "Points at pyproject.toml as the source of truth for the pin rather than guessing a specific version",
+          "Recommends downgrading SpikeInterface to the pinned range, NOT patching Spyglass's parameter dicts to work around the new API",
           "If v0 vs v1 spike-sorting code paths are mentioned, does not recommend downgrading to v0"
         ],
         "required_substrings_exempt": [
@@ -1224,9 +1218,10 @@
         "Response contains substring `pyproject.toml`.",
         "Response does not contain substring `pip install -U spyglass`.",
         "Response does not contain substring `upgrade spyglass`.",
-        "Identifies the version-coupling issue (Spyglass pins a specific SpikeInterface range)",
-        "Points at pyproject.toml or environment.yml as the source of truth for the pin rather than guessing a specific version",
-        "Recommends downgrading SpikeInterface to the pin, NOT patching Spyglass's parameter dicts to work around the new API",
+        "Asks whether the user upgraded any package (especially spikeinterface, or a sibling lib that may have pulled it) before naming a fix — does not assume env drift without checking",
+        "Identifies the version-coupling issue (Spyglass pins a specific SpikeInterface range; WaveformExtractor was removed after 0.99.x in favor of SortingAnalyzer)",
+        "Points at pyproject.toml as the source of truth for the pin rather than guessing a specific version",
+        "Recommends downgrading SpikeInterface to the pinned range, NOT patching Spyglass's parameter dicts to work around the new API",
         "If v0 vs v1 spike-sorting code paths are mentioned, does not recommend downgrading to v0"
       ]
     },
@@ -2969,32 +2964,40 @@
     },
     {
       "id": 76,
-      "eval_name": "schema-dep-intervallist",
+      "eval_name": "schema-dep-probe-electrode",
       "stage": "framework-concepts",
       "tier": "schema-introspection",
       "difficulty": "easy",
-      "prompt": "What table does `IntervalList` directly depend on? Return only the table name.",
-      "expected_output": "Routes to common_tables.md (IntervalList entry). Names exactly Session. Does not speculate about other dependencies (IntervalList depends on Session only at the schema level; nothing else).",
+      "prompt": "Why is `Electrode` connected to `Probe` in this schema? I see `probe_*` columns when I query Electrode but I'd like to verify the connection from inside Python — what should I run to inspect it without reading the source?",
+      "expected_output": "Routes to common_tables.md + datajoint_api.md (schema introspection). Two complementary commands answer this. (1) `Electrode().heading.attributes` (or `Electrode.heading`) shows every column the table carries, including the `probe_*` fields the user is seeing — these come from FK inheritance. (2) `Electrode.parents()` lists the FK declarations that contribute to `Electrode`'s heading; `Probe.Electrode` (the part table) is one of them. The full link declared in `src/spyglass/common/common_ephys.py:78` is `-> [nullable] Probe.Electrode` — a nullable secondary FK to the `Probe.Electrode` part table. 'Nullable secondary' means: the FK lives below the `---` divider in `Electrode.definition` (so `Probe`'s primary keys appear as Electrode's secondary attributes, not part of Electrode's PK), and a row in Electrode is allowed to have NULL for those probe fields (so a session ingested without probe metadata still populates Electrode). The user's `probe_*` columns come from this declaration. Does NOT speculate about other connections without naming a check the user can run to verify.",
       "assertions": {
         "required_substrings": [
-          "Session"
+          "Electrode",
+          "Probe",
+          ".heading",
+          ".parents"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Names Session as the single direct dependency; does not speculate about other dependencies",
-          "Does not name Nwbfile, Subject, or any ancestor-of-Session as the direct dependency — the only FK declared at IntervalList is `-> Session`",
-          "Response obeys the requested format — a single table name with no prose, headers, or extra commentary"
+          "Names BOTH `Electrode().heading.attributes` (or `.heading`) AND `Electrode.parents()` as the inspection path — heading shows the carried columns, parents shows the FK declarations that contributed them",
+          "Identifies the link as a `-> [nullable] Probe.Electrode` declaration (secondary FK to a part table, nullable) — does not claim Probe is a primary parent of Electrode",
+          "Explains nullable secondary FK semantics: the probe_* columns appear in Electrode's heading via FK inheritance, but Electrode rows are allowed to have NULL there (so a session without probe metadata still ingests)",
+          "Does not invent a primary `-> Probe` declaration on Electrode — the actual link is to the part table Probe.Electrode and is below the `---` divider"
         ],
         "expected_output_tables_exempt": [
-          "IntervalList"
+          "Probe.Electrode"
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `Session`.",
-        "Names Session as the single direct dependency; does not speculate about other dependencies",
-        "Does not name Nwbfile, Subject, or any ancestor-of-Session as the direct dependency — the only FK declared at IntervalList is `-> Session`",
-        "Response obeys the requested format — a single table name with no prose, headers, or extra commentary"
+        "Response contains substring `Electrode`.",
+        "Response contains substring `Probe`.",
+        "Response contains substring `.heading`.",
+        "Response contains substring `.parents`.",
+        "Names BOTH `Electrode().heading.attributes` (or `.heading`) AND `Electrode.parents()` as the inspection path — heading shows the carried columns, parents shows the FK declarations that contributed them",
+        "Identifies the link as a `-> [nullable] Probe.Electrode` declaration (secondary FK to a part table, nullable) — does not claim Probe is a primary parent of Electrode",
+        "Explains nullable secondary FK semantics: the probe_* columns appear in Electrode's heading via FK inheritance, but Electrode rows are allowed to have NULL there (so a session without probe metadata still ingests)",
+        "Does not invent a primary `-> Probe` declaration on Electrode — the actual link is to the part table Probe.Electrode and is below the `---` divider"
       ]
     },
     {
@@ -3244,8 +3247,8 @@
       "stage": "runtime-debugging",
       "tier": "resource-selection",
       "difficulty": "easy",
-      "prompt": "I ran `populate_all_common('j1620210710_.nwb')` and it completed without raising, but Electrode has no rows for this file. Before I touch any code — which file inside the skill should I open first, and is there a bundled script that helps here?",
-      "expected_output": "Open `populate_all_common_debugging.md` first — it's scoped specifically to silent skips from the `populate_all_common` driver, which catches per-table errors by default (`raise_err=False`) and writes only a short message to `common_usage.InsertError`. `runtime_debugging.md` is the wrong first stop because it covers in-the-traceback errors, not silent-completion symptoms. There is no bundled script that diagnoses populate silent skips — the two user-facing bundled scripts are `scrub_dj_config.py` (config redaction) and `verify_spyglass_env.py` (env/install check), neither of which is relevant here. The answer should name the file, explain the one-line reason (silent-skip has its own reference), and not invent a third-party diagnostic script.",
+      "prompt": "I ran `populate_all_common('j1620210710_.nwb')` and the call returned without raising a Python exception. Electrode has no rows for this file. I'm scrolling through my shell looking for clues — what should I look at first inside the skill, and is there anything I'd have missed in my own terminal output?",
+      "expected_output": "Two things to surface BEFORE opening any reference. (1) `populate_all_common` is not fully silent in current Spyglass — at the end of the run it emits a `logger.error(...)` naming the failed tables (`src/spyglass/common/populate_all_common.py:265-272`) and returns a list of failed `InsertError` keys. The user should scroll back through their shell for that line, OR re-run as `failed = populate_all_common('j1620210710_.nwb')` and inspect `failed`. (2) After capturing that signal, open `populate_all_common_debugging.md` — it's scoped specifically to per-table errors swallowed by the `populate_all_common` driver (default `raise_err=False`), with the per-table triage flow. `runtime_debugging.md` is the wrong first stop because it covers in-the-traceback errors, not silent-completion symptoms. The summary `logger.error` line names which tables failed; the actual stack-trace details live in `common_usage.InsertError` (queryable as `InsertError & {'nwb_file_name': 'j1620210710_.nwb'}`). There is no bundled script for populate diagnostics — the two user-facing bundled scripts are `scrub_dj_config.py` (config redaction) and `verify_spyglass_env.py` (env/install check), neither of which is relevant here. The answer should name the logger output AND the InsertError query, route to the debugging reference, and not invent a third-party diagnostic script.",
       "assertions": {
         "required_substrings": [
           "populate_all_common_debugging.md",
@@ -3260,9 +3263,11 @@
           "diagnose_populate.py"
         ],
         "behavioral_checks": [
-          "Names `populate_all_common_debugging.md` as the first reference to open",
-          "Explains in one line that silent completion (not an in-hand traceback) is what makes this reference correct over `runtime_debugging.md`",
-          "Identifies `common_usage.InsertError` as the table where the swallowed error message lives",
+          "Tells the user to scroll back through their shell for the `logger.error` summary line that current `populate_all_common` emits naming failed tables — does NOT treat the run as fully silent",
+          "Mentions that the function returns a list of failed `InsertError` keys, and suggests re-running with the return captured (`failed = populate_all_common(...)`) if the logger output was lost",
+          "Names `populate_all_common_debugging.md` as the reference to open after surfacing the logger / return-value signal",
+          "Explains in one line why `populate_all_common_debugging.md` beats `runtime_debugging.md` here — the symptom is per-table swallowed errors via the driver, not an in-hand traceback",
+          "Identifies `common_usage.InsertError` as the table where the per-table stack-trace details live",
           "Does not invent a bundled script for populate diagnostics; correctly notes only scrub_dj_config.py and verify_spyglass_env.py ship today (or that no populate-diagnostic script is bundled)"
         ]
       },
@@ -3273,9 +3278,11 @@
         "Response does not contain substring `runtime_debugging.md is the first`.",
         "Response does not contain substring `check_populate_status.py`.",
         "Response does not contain substring `diagnose_populate.py`.",
-        "Names `populate_all_common_debugging.md` as the first reference to open",
-        "Explains in one line that silent completion (not an in-hand traceback) is what makes this reference correct over `runtime_debugging.md`",
-        "Identifies `common_usage.InsertError` as the table where the swallowed error message lives",
+        "Tells the user to scroll back through their shell for the `logger.error` summary line that current `populate_all_common` emits naming failed tables — does NOT treat the run as fully silent",
+        "Mentions that the function returns a list of failed `InsertError` keys, and suggests re-running with the return captured (`failed = populate_all_common(...)`) if the logger output was lost",
+        "Names `populate_all_common_debugging.md` as the reference to open after surfacing the logger / return-value signal",
+        "Explains in one line why `populate_all_common_debugging.md` beats `runtime_debugging.md` here — the symptom is per-table swallowed errors via the driver, not an in-hand traceback",
+        "Identifies `common_usage.InsertError` as the table where the per-table stack-trace details live",
         "Does not invent a bundled script for populate diagnostics; correctly notes only scrub_dj_config.py and verify_spyglass_env.py ship today (or that no populate-diagnostic script is bundled)"
       ]
     },
