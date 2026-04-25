@@ -1960,6 +1960,62 @@ def _identifier_candidates(ident):
         yield ident.rsplit(".", 1)[-1]
 
 
+def _scan_citation_content_in_text(
+    text, location, src_root, bare_to_path, results,
+):
+    """Scan `text` for `file.py:N` citations and warn on identifier drift.
+
+    Shared body for `check_citation_content` (markdown files) and
+    `check_eval_citation_content` (evals.json prose) so the heuristic
+    stays in one place. `location` prefixes any emitted message — for
+    markdown that's the file name; for evals it's `evals.json[id=N]`.
+    """
+    for m in _CITATION_CONTENT_PATTERN.finditer(text):
+        path_s = m.group("path")
+        lines_s = m.group("lines")
+
+        if path_s.startswith("src/spyglass/"):
+            target = src_root.parent / (path_s + ".py")
+        else:
+            candidates = bare_to_path.get(path_s + ".py", [])
+            if len(candidates) != 1:
+                continue  # ambiguous or missing
+            target = candidates[0]
+
+        if not target.exists():
+            continue
+
+        ident = _find_preceding_identifier(text, m.start())
+        if not ident:
+            continue  # no verifiable identifier in context
+
+        # Parse endpoints (single int or `lo-hi`)
+        endpoints = re.split(r"\s*[-–]\s*", lines_s, maxsplit=1)
+        try:
+            lo = int(endpoints[0])
+            hi = int(endpoints[-1]) if len(endpoints) > 1 else lo
+        except ValueError:
+            continue
+
+        try:
+            all_lines = target.read_text().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        if _citation_matches_identifier(all_lines, lo, hi, ident):
+            results.ok(
+                f"cite-content: {location} "
+                f"{path_s}.py:{lines_s} matches `{ident}`"
+            )
+        else:
+            results.warn(
+                f"{location}: citation "
+                f"'{path_s}.py:{lines_s}' does not contain `{ident}` "
+                f"within ±8 lines or inside the enclosing def/class — "
+                f"citation may be stale"
+            )
+
+
 def check_citation_content(src_root, results: ValidationResult):
     """Warn when a `file.py:N` prose citation's cited line range doesn't
     contain the identifier mentioned in the preceding backticks.
@@ -1980,51 +2036,47 @@ def check_citation_content(src_root, results: ValidationResult):
 
     for md_file in collect_md_files():
         content = md_file.read_text()
+        # Per-citation md-line numbering: we recompute on the fly inside
+        # the helper-friendly variant by re-locating the match offset.
         for m in _CITATION_CONTENT_PATTERN.finditer(content):
-            path_s = m.group("path")
-            lines_s = m.group("lines")
-
-            if path_s.startswith("src/spyglass/"):
-                target = src_root.parent / (path_s + ".py")
-            else:
-                candidates = bare_to_path.get(path_s + ".py", [])
-                if len(candidates) != 1:
-                    continue  # ambiguous or missing
-                target = candidates[0]
-
-            if not target.exists():
-                continue
-
-            ident = _find_preceding_identifier(content, m.start())
-            if not ident:
-                continue  # no verifiable identifier in context
-
-            # Parse endpoints (single int or `lo-hi`)
-            endpoints = re.split(r"\s*[-–]\s*", lines_s, maxsplit=1)
-            try:
-                lo = int(endpoints[0])
-                hi = int(endpoints[-1]) if len(endpoints) > 1 else lo
-            except ValueError:
-                continue
-
-            try:
-                all_lines = target.read_text().splitlines()
-            except (OSError, UnicodeDecodeError):
-                continue
-
             md_line_num = content[:m.start()].count("\n") + 1
-            if _citation_matches_identifier(all_lines, lo, hi, ident):
-                results.ok(
-                    f"cite-content: {md_file.name}:{md_line_num} "
-                    f"{path_s}.py:{lines_s} matches `{ident}`"
-                )
-            else:
-                results.warn(
-                    f"{md_file.name}:{md_line_num}: citation "
-                    f"'{path_s}.py:{lines_s}' does not contain `{ident}` "
-                    f"within ±8 lines or inside the enclosing def/class — "
-                    f"citation may be stale"
-                )
+            location = f"{md_file.name}:{md_line_num}"
+            # Run the shared helper on a single-citation slice. The helper
+            # re-finds the citation, but that's cheap and keeps the call
+            # path uniform with the eval entry point below.
+            _scan_citation_content_in_text(
+                content[max(0, m.start() - 200):m.end() + 1],
+                location, src_root, bare_to_path, results,
+            )
+
+
+def check_eval_citation_content(src_root, results: ValidationResult):
+    """Same drift check as check_citation_content, but over evals.json
+    expected_output and behavioral_checks.
+
+    The reference-only scope of check_citation_content was missing
+    eval-prose citations like 'position_merge.py:16 (registers ...)'
+    where the named identifier sits at line 15, not 16 — caught by code
+    review instead of CI.
+    """
+    bare_to_path = {}
+    for p in src_root.rglob("*.py"):
+        bare_to_path.setdefault(p.name, []).append(p)
+
+    for eval_entry in _load_evals_for_check(results):
+        eval_id = eval_entry.get("id", "?")
+        location = f"evals.json[id={eval_id}]"
+        # Concatenate the prose fields with separators so the helper's
+        # 120-char preceding-identifier window doesn't accidentally cross
+        # a field boundary. Citations live in expected_output and
+        # behavioral_checks; required/forbidden substrings are wrong-by-
+        # design or substring-only and don't carry citations.
+        parts = [eval_entry.get("expected_output", "") or ""]
+        parts.extend(eval_entry.get("assertions", {}).get("behavioral_checks", []) or [])
+        text = "\n\n".join(p for p in parts if isinstance(p, str))
+        _scan_citation_content_in_text(
+            text, location, src_root, bare_to_path, results,
+        )
 
 
 def _citation_matches_identifier(all_lines, lo, hi, ident):
@@ -3105,6 +3157,7 @@ def main():
 
     print("[18/23] Verifying citation lines contain cited identifiers...")
     check_citation_content(src_root, results)
+    check_eval_citation_content(src_root, results)
 
     print("[19/23] Detecting duplicated code blocks across references...")
     check_duplicated_blocks(results)
