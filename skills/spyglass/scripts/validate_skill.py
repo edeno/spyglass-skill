@@ -160,7 +160,8 @@ SKIP_METHODS = {
     # DataJoint builtins — always valid on any table, no point checking
     "fetch", "fetch1", "fetch_nwb", "fetch_pynapple",
     "proj", "aggr", "describe", "heading",
-    "parents", "children", "insert", "insert1",
+    "parents", "children", "ancestors", "descendants",
+    "insert", "insert1",
     "populate", "delete", "drop", "alter",
     # Note: insert_selection is a Spyglass convention (not DataJoint) and IS
     # validated when called on known classes — it's deliberately absent here.
