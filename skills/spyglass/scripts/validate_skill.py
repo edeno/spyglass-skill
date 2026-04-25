@@ -1628,6 +1628,20 @@ def _strip_fenced_blocks(content):
 PR_CITATION_PATTERN = re.compile(r"\bPR\s+#\d+\b")
 
 
+def _scan_pr_citations_in_text(text, location, results):
+    """Shared body: warn on PR #nnn citations in `text`. Used by both
+    the markdown variant (check_no_pr_citations) and the evals variant
+    (check_eval_no_pr_citations)."""
+    for m in PR_CITATION_PATTERN.finditer(text):
+        results.warn(
+            f"{location}: avoid `{m.group(0)}` in prose — "
+            f"cite current source state (e.g. 'current pyproject.toml pins "
+            f"X, earlier releases pinned Y') rather than PR history; PR "
+            f"numbers are frozen in time and prior audits twice reversed "
+            f"the direction of a PR narrative"
+        )
+
+
 def check_no_pr_citations(results: ValidationResult):
     """Warn on `PR #nnn` citations in reference prose.
 
@@ -1639,13 +1653,28 @@ def check_no_pr_citations(results: ValidationResult):
         prose = _strip_fenced_blocks(content)
         for m in PR_CITATION_PATTERN.finditer(prose):
             line_num = prose[: m.start()].count("\n") + 1
-            results.warn(
-                f"{md_file.name}:{line_num}: avoid `{m.group(0)}` in prose — "
-                f"cite current source state (e.g. 'current pyproject.toml pins "
-                f"X, earlier releases pinned Y') rather than PR history; PR "
-                f"numbers are frozen in time and prior audits twice reversed "
-                f"the direction of a PR narrative"
-            )
+            location = f"{md_file.name}:{line_num}"
+            # Single-citation slice keeps the message format consistent
+            _scan_pr_citations_in_text(m.group(0), location, results)
+
+
+def check_eval_no_pr_citations(results: ValidationResult):
+    """Warn on `PR #nnn` citations in evals.json prose.
+
+    Same rationale as check_no_pr_citations — reference current source
+    state instead of in-flight PR numbers. The round-3 plan caught 5
+    of these in evals.json by hand (`Step 13`); this check makes the
+    sweep automatic.
+    """
+    for eval_entry in _load_evals_for_check(results):
+        eval_id = eval_entry.get("id", "?")
+        location = f"evals.json[id={eval_id}]"
+        parts = [eval_entry.get("expected_output", "") or ""]
+        parts.extend(
+            eval_entry.get("assertions", {}).get("behavioral_checks", []) or []
+        )
+        text = "\n\n".join(p for p in parts if isinstance(p, str))
+        _scan_pr_citations_in_text(text, location, results)
 
 
 # Duplication detector: 5-line rolling window over stripped, non-import,
@@ -2184,6 +2213,32 @@ PROSE_PATH_PATTERN = re.compile(
 )
 
 
+def _scan_prose_paths_in_text(text, location_prefix, src_root, results, seen):
+    """Shared body: scan `text` for `src/spyglass/...` paths and verify
+    each exists under the Spyglass repo. `seen` is the dedup set
+    (location_prefix, path) shared across the calling loop. Used by both
+    the markdown variant (check_prose_paths) and evals variant
+    (check_eval_prose_paths)."""
+    repo_root = src_root.parent
+    for m in PROSE_PATH_PATTERN.finditer(text):
+        raw = m.group("p")
+        path = raw.rstrip(".,:;)")
+        key = (location_prefix, path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if "*" in path:
+            continue
+        target = repo_root / path
+        if target.exists():
+            results.ok(f"path: {location_prefix} -> {path} exists")
+        else:
+            results.fail(
+                f"{location_prefix}: referenced path '{path}' does not "
+                f"exist under {repo_root}"
+            )
+
+
 def check_prose_paths(src_root, results: ValidationResult):
     """Verify that repo paths mentioned in prose actually exist.
 
@@ -2192,33 +2247,39 @@ def check_prose_paths(src_root, results: ValidationResult):
     looks like a pointer to truth. We check paths under the spyglass repo
     root (one level above --spyglass-src).
     """
-    repo_root = src_root.parent
-    seen = set()  # (file, path) to avoid double-reporting
+    seen = set()
     for md_file in collect_md_files():
         content = md_file.read_text()
+        # Per-match line numbering: scan the same regex here to compute
+        # md_line_num for the location prefix, then hand each citation
+        # to the helper as a single-match slice.
         for m in PROSE_PATH_PATTERN.finditer(content):
-            raw = m.group("p")
-            # Strip trailing punctuation that often follows inline paths
-            path = raw.rstrip(".,:;)")
-            key = (md_file.name, path)
-            if key in seen:
-                continue
-            seen.add(key)
-            # Skip glob patterns — `src/spyglass/**/*.py` is valid prose but
-            # won't resolve via Path.exists()
-            if "*" in path:
-                continue
-            # Find line number for reporting
             line_num = content[: m.start()].count("\n") + 1
             location = f"{md_file.name}:{line_num}"
-            target = repo_root / path
-            if target.exists():
-                results.ok(f"path: {location} -> {path} exists")
-            else:
-                results.fail(
-                    f"{location}: referenced path '{path}' does not "
-                    f"exist under {repo_root}"
-                )
+            _scan_prose_paths_in_text(
+                content[m.start():m.end() + 1],
+                location, src_root, results, seen,
+            )
+
+
+def check_eval_prose_paths(src_root, results: ValidationResult):
+    """Verify that repo paths mentioned in evals.json prose actually
+    exist under the Spyglass repo. Same rationale as check_prose_paths.
+
+    Evals carry many `src/spyglass/...` citations alongside the eval's
+    expected_output — a path that has rotted away upstream points the
+    grader's response at fiction. Catch the rot at validation time.
+    """
+    seen = set()
+    for eval_entry in _load_evals_for_check(results):
+        eval_id = eval_entry.get("id", "?")
+        location = f"evals.json[id={eval_id}]"
+        parts = [eval_entry.get("expected_output", "") or ""]
+        parts.extend(
+            eval_entry.get("assertions", {}).get("behavioral_checks", []) or []
+        )
+        text = "\n\n".join(p for p in parts if isinstance(p, str))
+        _scan_prose_paths_in_text(text, location, src_root, results, seen)
 
 
 # Notebook filename pattern: `NN_Word_Word.py`. The prefix number and
@@ -2262,6 +2323,35 @@ def _parse_cited_lines(expr):
     return out
 
 
+def _scan_citation_lines_in_text(text, location, src_root, results):
+    """Shared body: verify each `file.py:N` citation in `text` points
+    at a line that exists in the cited file. Used by both the markdown
+    variant (check_citation_lines) and the evals variant
+    (check_eval_citation_lines)."""
+    for m in PROSE_CITATION_PATTERN.finditer(text):
+        path = m.group("path")
+        lines_str = m.group("lines")
+        target = src_root.parent / path
+        if not target.exists():
+            continue  # check_prose_paths / check_eval_prose_paths handles missing files
+        try:
+            line_count = len(target.read_text().splitlines())
+        except (OSError, UnicodeDecodeError):
+            continue
+        cited = _parse_cited_lines(lines_str)
+        out_of_range = [n for n in cited if n < 1 or n > line_count]
+        if out_of_range:
+            results.fail(
+                f"{location}: citation '{path}:{lines_str}' — "
+                f"line(s) {out_of_range} out of range "
+                f"(file has {line_count} lines)"
+            )
+        else:
+            results.ok(
+                f"{location}: citation '{path}:{lines_str}' in range"
+            )
+
+
 def check_citation_lines(src_root, results: ValidationResult):
     """Verify that `file.py:N[, M][, A-B]` citations in prose point at real lines.
 
@@ -2276,29 +2366,34 @@ def check_citation_lines(src_root, results: ValidationResult):
     for md_file in collect_md_files():
         content = md_file.read_text()
         for m in PROSE_CITATION_PATTERN.finditer(content):
-            path = m.group("path")
-            lines_str = m.group("lines")
-            target = src_root.parent / path
-            if not target.exists():
-                continue  # check_prose_paths handles missing files
-            try:
-                line_count = len(target.read_text().splitlines())
-            except (OSError, UnicodeDecodeError):
-                continue
             md_line_num = content[: m.start()].count("\n") + 1
             location = f"{md_file.name}:{md_line_num}"
-            cited = _parse_cited_lines(lines_str)
-            out_of_range = [n for n in cited if n < 1 or n > line_count]
-            if out_of_range:
-                results.fail(
-                    f"{location}: citation '{path}:{lines_str}' — "
-                    f"line(s) {out_of_range} out of range "
-                    f"(file has {line_count} lines)"
-                )
-            else:
-                results.ok(
-                    f"{location}: citation '{path}:{lines_str}' in range"
-                )
+            # Hand the helper a single-match slice so it scans only this
+            # citation and emits with the right md location label.
+            _scan_citation_lines_in_text(
+                content[m.start():m.end() + 1],
+                location, src_root, results,
+            )
+
+
+def check_eval_citation_lines(src_root, results: ValidationResult):
+    """Verify that `file.py:N` citations in evals.json prose point at
+    real lines. Same rationale as check_citation_lines but scoped to
+    eval expected_output / behavioral_checks.
+
+    Out-of-range citations are a `fail` (not a warn) because they
+    name a line that physically does not exist in the file — the grader
+    response would be pointing at fiction.
+    """
+    for eval_entry in _load_evals_for_check(results):
+        eval_id = eval_entry.get("id", "?")
+        location = f"evals.json[id={eval_id}]"
+        parts = [eval_entry.get("expected_output", "") or ""]
+        parts.extend(
+            eval_entry.get("assertions", {}).get("behavioral_checks", []) or []
+        )
+        text = "\n\n".join(p for p in parts if isinstance(p, str))
+        _scan_citation_lines_in_text(text, location, src_root, results)
 
 
 # Pattern matches `ClassName.method(` or `ClassName().method(` appearing in
@@ -3127,6 +3222,7 @@ def main():
 
     print("[8/23] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
+    check_eval_prose_paths(src_root, results)
 
     print("[9/23] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
@@ -3142,12 +3238,14 @@ def main():
 
     print("[13/23] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
+    check_eval_citation_lines(src_root, results)
 
     print("[14/23] Scanning evals.json for hallucinated class/method refs...")
     check_evals_content(src_root, results, registry=registry)
 
     print("[15/23] Scanning prose for banned PR-number citations...")
     check_no_pr_citations(results)
+    check_eval_no_pr_citations(results)
 
     print("[16/23] Enforcing reference-file and section size budgets...")
     check_section_budgets(results)

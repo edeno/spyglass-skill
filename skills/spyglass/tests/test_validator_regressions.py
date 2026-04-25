@@ -587,6 +587,131 @@ def fixture_eval_hallucinated_method(src_root):
     return False
 
 
+def fixture_eval_citation_lines_out_of_range(src_root):
+    """Eval prose with `file.py:NNN` citing a line past EOF should fail.
+    Mirrors check_citation_lines (markdown) onto evals.json."""
+    import json
+    import tempfile
+    from pathlib import Path as P
+    tmp = P(tempfile.mkdtemp())
+    (tmp / "evals").mkdir()
+    (tmp / "evals" / "evals.json").write_text(json.dumps({
+        "evals": [{
+            "id": 999,
+            "eval_name": "synthetic-citation-out-of-range",
+            "expected_output": (
+                "See `src/spyglass/common/common_nwbfile.py:9999999` "
+                "(this is wrong on purpose — past EOF)."
+            ),
+            "assertions": {
+                "required_substrings": [],
+                "forbidden_substrings": [],
+                "behavioral_checks": [],
+            },
+        }],
+    }))
+    original = v.SKILL_DIR
+    v.SKILL_DIR = tmp
+    try:
+        results = v.ValidationResult()
+        v.check_eval_citation_lines(src_root, results)
+    finally:
+        v.SKILL_DIR = original
+    hits = [
+        m for m in results.failed
+        if "evals.json[id=999]" in m and "out of range" in m
+    ]
+    if hits:
+        print("  [ok] evals: out-of-range citation in eval prose caught")
+        return True
+    print("  [FAIL] expected out-of-range citation fail")
+    print(f"         failed: {results.failed}")
+    return False
+
+
+def fixture_eval_pr_citation_warns(src_root):
+    """Eval prose with `PR #nnn` should warn — same rule as markdown.
+    Mirrors check_no_pr_citations onto evals.json."""
+    import json
+    import tempfile
+    from pathlib import Path as P
+    tmp = P(tempfile.mkdtemp())
+    (tmp / "evals").mkdir()
+    (tmp / "evals" / "evals.json").write_text(json.dumps({
+        "evals": [{
+            "id": 999,
+            "eval_name": "synthetic-pr-citation",
+            "expected_output": (
+                "Fixed in PR #1234 — this prose mention should warn."
+            ),
+            "assertions": {
+                "required_substrings": [],
+                "forbidden_substrings": [],
+                "behavioral_checks": [],
+            },
+        }],
+    }))
+    original = v.SKILL_DIR
+    v.SKILL_DIR = tmp
+    try:
+        results = v.ValidationResult()
+        v.check_eval_no_pr_citations(results)
+    finally:
+        v.SKILL_DIR = original
+    hits = [
+        m for m in results.warnings
+        if "evals.json[id=999]" in m and "PR #1234" in m
+    ]
+    if hits:
+        print("  [ok] evals: PR-number citation in eval prose caught")
+        return True
+    print("  [FAIL] expected PR-citation warning")
+    print(f"         warnings: {results.warnings}")
+    return False
+
+
+def fixture_eval_prose_path_missing(src_root):
+    """Eval prose with `src/spyglass/...` pointing at a non-existent
+    path should fail. Mirrors check_prose_paths onto evals.json."""
+    import json
+    import tempfile
+    from pathlib import Path as P
+    tmp = P(tempfile.mkdtemp())
+    (tmp / "evals").mkdir()
+    (tmp / "evals" / "evals.json").write_text(json.dumps({
+        "evals": [{
+            "id": 999,
+            "eval_name": "synthetic-stale-path",
+            "expected_output": (
+                "See `src/spyglass/zzz_no_such_module/imaginary.py` "
+                "(this path does not exist in the repo)."
+            ),
+            "assertions": {
+                "required_substrings": [],
+                "forbidden_substrings": [],
+                "behavioral_checks": [],
+            },
+        }],
+    }))
+    original = v.SKILL_DIR
+    v.SKILL_DIR = tmp
+    try:
+        results = v.ValidationResult()
+        v.check_eval_prose_paths(src_root, results)
+    finally:
+        v.SKILL_DIR = original
+    hits = [
+        m for m in results.failed
+        if "evals.json[id=999]" in m and "does not exist" in m
+    ]
+    if hits:
+        print("  [ok] evals: stale src/spyglass path in eval prose caught")
+        return True
+    print("  [FAIL] expected stale-path fail")
+    print(f"         failed: {results.failed}")
+    return False
+
+
 def fixture_eval_citation_content_drift_warns(src_root):
     """Eval prose with a `file.py:N` citation whose line doesn't contain
     the named backticked identifier within ±8 lines should warn.
@@ -1894,6 +2019,9 @@ FIXTURES = [
     fixture_merge_restriction_not_false_positive,
     fixture_eval_hallucinated_method,
     fixture_eval_citation_content_drift_warns,
+    fixture_eval_citation_lines_out_of_range,
+    fixture_eval_pr_citation_warns,
+    fixture_eval_prose_path_missing,
     fixture_bogus_citation_line,
     fixture_valid_citation_passes,
     fixture_multi_line_citation,
