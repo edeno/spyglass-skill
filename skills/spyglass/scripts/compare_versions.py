@@ -85,10 +85,22 @@ What this script does NOT catch (load these out of the source instead):
      to include them. Even with the flag, the seven categories above
      remain blind spots.
 
-  9. Re-exports / aliases (theoretical today). If a future v2 imports
-     a v1 class via ``from .v1 import X``, the set math will report X
-     as "only in v1" because the v2 file has no ``ClassDef`` node for
-     it. Verify with the source if a "only in v_N" hit looks suspicious.
+  9. Same-named classes that are actually unrelated. The script's
+     ``ast.walk`` collects every ``ClassDef`` named X — top-level AND
+     nested Parts — under one dict key, then unions their method sets.
+     If v1 has a top-level ``BodyPart(dj.Manual)`` and a nested
+     ``BodyPart(dj.Part)`` inside ``DLCProject``, while v2 has a
+     top-level ``BodyPart(dj.Lookup)`` and a nested ``BodyPart(dj.Part)``
+     inside ``Skeleton``, the script reports "shared class with method
+     differences" — but the four classes are semantically unrelated.
+     The script now annotates "(defined in N files)" when the union
+     spans multiple files in one version; treat that annotation as a
+     "verify by reading both definitions" signal.
+
+  10. Re-exports / aliases (theoretical today). If a future v2 imports
+      a v1 class via ``from .v1 import X``, the set math will report X
+      as "only in v1" because the v2 file has no ``ClassDef`` node for
+      it. Verify with the source if a "only in v_N" hit looks suspicious.
 
 For the categories above, the script's silence is not a guarantee of
 symmetry — it's a guarantee that *one specific shape* of asymmetry is
@@ -244,9 +256,19 @@ def _diff_versions(
     shared = sorted(set(ca) & set(cb))
     differing = []
     identical_count = 0
+    multi_file_warnings = []
     for name in shared:
         ma = ca[name]["methods"]
         mb = cb[name]["methods"]
+        # If the same class name appears in multiple files within one
+        # version directory, the method-set union is across all of them
+        # (typically a top-level class plus a nested Part with the same
+        # name in different parents). Surface this so a reader doesn't
+        # take the diff at face value.
+        files_a = ca[name]["files"]
+        files_b = cb[name]["files"]
+        if len(files_a) > 1 or len(files_b) > 1:
+            multi_file_warnings.append((name, files_a, files_b))
         if ma == mb:
             identical_count += 1
             continue
@@ -266,6 +288,19 @@ def _diff_versions(
         f"\nIdentical class signatures (no methods differ): {identical_count} "
         f"of {len(shared)} shared classes"
     )
+
+    if multi_file_warnings:
+        print(
+            "\nNOTE: same class name appears in multiple files in one or both "
+            "versions (top-level + nested Part, or two unrelated classes "
+            "sharing a name). The diff above unions method sets across all "
+            "definitions — verify by reading the source if the shared name "
+            "represents semantically different things:"
+        )
+        for name, fa, fb in multi_file_warnings:
+            fa_str = ", ".join(fa) if fa else "(none)"
+            fb_str = ", ".join(fb) if fb else "(none)"
+            print(f"  {name}: {va}=[{fa_str}], {vb}=[{fb_str}]")
 
 
 def main() -> int:

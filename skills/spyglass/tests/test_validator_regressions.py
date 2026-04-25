@@ -754,6 +754,59 @@ def fixture_compare_versions_sorts_versions_numerically(src_root):
     return True
 
 
+def fixture_compare_versions_warns_on_multi_file_class_name(src_root):
+    """compare_versions.py must surface a NOTE when the same class name
+    appears in multiple files within one version directory — the script
+    silently unions method sets across all of them, which can be
+    actively misleading when the classes are semantically unrelated
+    (e.g., a top-level dj.Manual + a nested dj.Part with the same name
+    in different parents — confirmed live in real spyglass position v1
+    where 'BodyPart' is defined in 6 different files).
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        pkg = tmp / "spyglass" / "fakepipe"
+        (pkg / "v0").mkdir(parents=True)
+        (pkg / "v1").mkdir(parents=True)
+        # v0 defines Shared in two different files (top-level + nested-in-other)
+        (pkg / "v0" / "a.py").write_text(textwrap.dedent("""
+            class Shared:
+                def m_a(self): pass
+        """))
+        (pkg / "v0" / "b.py").write_text(textwrap.dedent("""
+            class Parent:
+                class Shared:
+                    def m_b(self): pass
+        """))
+        # v1 defines Shared just once
+        (pkg / "v1" / "a.py").write_text(textwrap.dedent("""
+            class Shared:
+                def m_a(self): pass
+        """))
+
+        rc, out, err = _run_compare_versions(
+            ["fakepipe", "v0", "v1", "--src", str(tmp)]
+        )
+        if rc != 0:
+            print(f"  [FAIL] compare_versions exited {rc}; stderr: {err!r}")
+            return False
+        if "NOTE: same class name appears in multiple files" not in out:
+            print("  [FAIL] compare_versions did not surface multi-file NOTE")
+            print(f"         output: {out}")
+            return False
+        if "Shared:" not in out.split("NOTE:", 1)[-1]:
+            print("  [FAIL] multi-file NOTE did not name the offending class")
+            print(f"         output: {out}")
+            return False
+
+    print("  [ok] compare_versions: multi-file class-name surfaces NOTE")
+    return True
+
+
 def fixture_compare_versions_focus_mode_prints_clean_path(src_root):
     """compare_versions.py --class focus mode must print the file path
     as a clean string, not the raw Python list repr. A previous draft
@@ -2231,6 +2284,7 @@ FIXTURES = [
     fixture_compare_versions_diffs_classes_and_methods,
     fixture_compare_versions_skips_empty_version_dirs,
     fixture_compare_versions_sorts_versions_numerically,
+    fixture_compare_versions_warns_on_multi_file_class_name,
     fixture_compare_versions_focus_mode_prints_clean_path,
     fixture_eval_citation_content_drift_warns,
     fixture_eval_citation_lines_out_of_range,
