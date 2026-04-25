@@ -3788,7 +3788,7 @@
         "required_substrings": [
           "target_sampling_rate",
           "Nyquist",
-          "1000",
+          "1000 Hz",
           "FirFilterParameters"
         ],
         "forbidden_substrings": [],
@@ -3809,7 +3809,7 @@
       "expectations": [
         "Response contains substring `target_sampling_rate`.",
         "Response contains substring `Nyquist`.",
-        "Response contains substring `1000`.",
+        "Response contains substring `1000 Hz`.",
         "Response contains substring `FirFilterParameters`.",
         "Names 1000 Hz as the canonical target_sampling_rate for ripple-band downstream work, not an arbitrary value",
         "Connects the choice to Nyquist (rate must be > 2x highest band frequency, so > 500 Hz for a 250 Hz ripple ceiling)",
