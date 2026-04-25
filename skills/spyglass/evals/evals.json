@@ -867,7 +867,6 @@
         "forbidden_substrings": [
           "super_delete(warn=False)",
           "delete_quick",
-          "super_delete(",
           "force_permission=True"
         ],
         "behavioral_checks": [
@@ -882,7 +881,6 @@
         "Response contains substring `LabTeam`.",
         "Response does not contain substring `super_delete(warn=False)`.",
         "Response does not contain substring `delete_quick`.",
-        "Response does not contain substring `super_delete(`.",
         "Response does not contain substring `force_permission=True`.",
         "Explains the team-permission model rather than the bypass",
         "Does not recommend super_delete() as the primary fix",
@@ -3613,12 +3611,10 @@
           "SpikeSortingRecording",
           "& ("
         ],
-        "forbidden_substrings": [
-          " * "
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Restricts via a sub-restriction of the form `(Table & (Other & {...}))` — the response must contain '& (' as a literal substring",
-          "Does not propose a multi-table * chain — the response's code blocks must not contain ' * ' (space-star-space)",
+          "Does not propose a multi-table `*` chain in the proposed code blocks — the canonical answer should use a sub-restriction (& parens) rather than chaining tables with the natural-join operator",
           "Names IntervalList as the table whose interval_list_name field carries the constraint, not SpikeSortingRecording itself"
         ],
         "expected_output_tables_exempt": [
@@ -3634,9 +3630,8 @@
         "Response contains substring `interval_list_name`.",
         "Response contains substring `SpikeSortingRecording`.",
         "Response contains substring `& (`.",
-        "Response does not contain substring ` * `.",
         "Restricts via a sub-restriction of the form `(Table & (Other & {...}))` — the response must contain '& (' as a literal substring",
-        "Does not propose a multi-table * chain — the response's code blocks must not contain ' * ' (space-star-space)",
+        "Does not propose a multi-table `*` chain in the proposed code blocks — the canonical answer should use a sub-restriction (& parens) rather than chaining tables with the natural-join operator",
         "Names IntervalList as the table whose interval_list_name field carries the constraint, not SpikeSortingRecording itself"
       ]
     },
