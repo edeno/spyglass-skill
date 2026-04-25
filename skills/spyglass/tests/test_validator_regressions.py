@@ -1388,6 +1388,51 @@ def fixture_skip_methods_spyglass_subset_still_exists(src_root):
     return True
 
 
+def fixture_known_classes_eval_targets_registered(src_root):
+    """Eval-target classes added in round-3 must stay registered with the
+    correct source path. If KNOWN_CLASSES drifts (rename, removal, path
+    move) and an eval continues to call methods on these classes, the
+    method-existence check silently skips them — bugs slip through.
+
+    Pin the four classes the round-3 plan calls out, plus verify each
+    `file:line class` declaration still exists in Spyglass source so a
+    rename upstream surfaces here loudly.
+    """
+    import re as _re
+    expected = {
+        "UserEnvironment": "spyglass/common/common_user.py",
+        "IntervalPositionInfo": "spyglass/common/common_position.py",
+        "RippleParameters": "spyglass/ripple/v1/ripple.py",
+        "RippleLFPSelection": "spyglass/ripple/v1/ripple.py",
+    }
+    missing_or_wrong = []
+    for cls, want_path in expected.items():
+        got = v.KNOWN_CLASSES.get(cls)
+        if got != want_path:
+            missing_or_wrong.append((cls, want_path, got))
+    if missing_or_wrong:
+        print("  [FAIL] KNOWN_CLASSES drift on round-3 eval targets:")
+        for cls, want, got in missing_or_wrong:
+            print(f"         {cls}: want {want!r}, got {got!r}")
+        return False
+    not_in_source = []
+    for cls, rel_path in expected.items():
+        py_file = src_root / rel_path
+        if not py_file.exists():
+            not_in_source.append((cls, str(py_file), "file missing"))
+            continue
+        pattern = _re.compile(rf"^class\s+{_re.escape(cls)}\b", _re.MULTILINE)
+        if not pattern.search(py_file.read_text()):
+            not_in_source.append((cls, str(py_file), "class decl missing"))
+    if not_in_source:
+        print("  [FAIL] KNOWN_CLASSES path no longer matches source:")
+        for cls, path, reason in not_in_source:
+            print(f"         {cls} @ {path}: {reason}")
+        return False
+    print("  [ok] KNOWN_CLASSES: round-3 eval-target classes still registered")
+    return True
+
+
 def fixture_link_landing_negative(src_root):
     """Link whose text content words don't appear in the target must warn.
 
@@ -1816,6 +1861,7 @@ FIXTURES = [
     fixture_pr_citation_in_prose_warns,
     fixture_pr_citation_in_code_block_ok,
     fixture_skip_methods_spyglass_subset_still_exists,
+    fixture_known_classes_eval_targets_registered,
     fixture_merge_registry_baseline_passes,
     fixture_merge_registry_source_addition_caught,
     fixture_merge_registry_md_misclassification_caught,
