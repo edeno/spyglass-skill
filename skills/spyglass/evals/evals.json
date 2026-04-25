@@ -3597,6 +3597,284 @@
         "Recommends merge_delete with an explicit key (classmethod form) if the merge layer is chosen, and routes to destructive_operations.md for the inspect-before-destroy pattern",
         "Does not produce an unscoped `.delete()` command without asking or narrowing"
       ]
+    },
+    {
+      "id": 90,
+      "eval_name": "restrict-by-interval-name-no-star",
+      "stage": "pipeline-usage",
+      "tier": "joins",
+      "difficulty": "medium",
+      "prompt": "I want all sessions whose `SpikeSortingRecording` was populated for a specific interval (interval_list_name='02_r1') — how do I express that without a `*` join across the whole chain?",
+      "expected_output": "Use a sub-restriction, not a natural join. The shape: `SpikeSortingRecording & (IntervalList & {'interval_list_name': '02_r1', 'nwb_file_name': ...})` — DataJoint walks the FK chain to figure out how `IntervalList` constrains `SpikeSortingRecording` (via `SpikeSortingRecordingSelection`), and only the matching rows survive. Two reasons this beats `SpikeSortingRecording * IntervalList * SpikeSortingRecordingSelection ...`: (1) the multi-table `*` chain often raises `DataJointError: Cannot join query expressions on dependent attribute 'nwb_file_name'` because `nwb_file_name` is secondary on multiple sides; (2) even when the chain works, it can multiply rows you didn't want and force you to deduplicate. The sub-restriction `& (Other & {...})` keeps the LHS shape and just filters it. For multi-session restriction, drop the `nwb_file_name` from the inner dict: `SpikeSortingRecording & (IntervalList & {'interval_list_name': '02_r1'})`. Then `.fetch('nwb_file_name', as_dict=True)` to get the session list. Routes to datajoint_api.md (restriction semantics).",
+      "assertions": {
+        "required_substrings": [
+          "IntervalList",
+          "interval_list_name",
+          "SpikeSortingRecording",
+          "& ("
+        ],
+        "forbidden_substrings": [
+          " * "
+        ],
+        "behavioral_checks": [
+          "Restricts via a sub-restriction of the form `(Table & (Other & {...}))` — the response must contain '& (' as a literal substring",
+          "Does not propose a multi-table * chain — the response's code blocks must not contain ' * ' (space-star-space)",
+          "Names IntervalList as the table whose interval_list_name field carries the constraint, not SpikeSortingRecording itself"
+        ],
+        "expected_output_tables_exempt": [
+          "SpikeSortingRecordingSelection"
+        ],
+        "required_substrings_exempt": [
+          "& ("
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `IntervalList`.",
+        "Response contains substring `interval_list_name`.",
+        "Response contains substring `SpikeSortingRecording`.",
+        "Response contains substring `& (`.",
+        "Response does not contain substring ` * `.",
+        "Restricts via a sub-restriction of the form `(Table & (Other & {...}))` — the response must contain '& (' as a literal substring",
+        "Does not propose a multi-table * chain — the response's code blocks must not contain ' * ' (space-star-space)",
+        "Names IntervalList as the table whose interval_list_name field carries the constraint, not SpikeSortingRecording itself"
+      ]
+    },
+    {
+      "id": 91,
+      "eval_name": "usage-after-lfpselection",
+      "stage": "pipeline-usage",
+      "tier": "table-usage",
+      "difficulty": "easy",
+      "prompt": "I have an `LFPSelection` row in front of me — I just inserted it. What's the next thing I'd do with it?",
+      "expected_output": "Call `LFPV1.populate(key)` with the same key (or a restriction that resolves to that selection row). LFPSelection is the Manual selection table; `LFPV1` is the paired Computed table whose `make()` consumes the selection key and writes the band-filtered LFP plus the AnalysisNwbfile entry. Without the populate step the LFP signal doesn't exist; downstream tables (LFPBandSelection, LFPOutput merge) won't have anything to FK against. Names the operation by name (populate) and the specific table (LFPV1).",
+      "assertions": {
+        "required_substrings": [
+          "LFPV1.populate",
+          "LFPSelection"
+        ],
+        "forbidden_substrings": [
+          "LFPSelection.populate"
+        ],
+        "behavioral_checks": [
+          "Names the next-step operation as `LFPV1.populate(key)` — not just 'populate' or 'populate the table' generically",
+          "Identifies LFPV1 as the paired Computed table that consumes LFPSelection rows"
+        ],
+        "expected_output_tables_exempt": [
+          "AnalysisNwbfile",
+          "LFPBandSelection",
+          "LFPOutput"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `LFPV1.populate`.",
+        "Response contains substring `LFPSelection`.",
+        "Response does not contain substring `LFPSelection.populate`.",
+        "Names the next-step operation as `LFPV1.populate(key)` — not just 'populate' or 'populate the table' generically",
+        "Identifies LFPV1 as the paired Computed table that consumes LFPSelection rows"
+      ]
+    },
+    {
+      "id": 92,
+      "eval_name": "usage-after-trodes-pos-selection",
+      "stage": "pipeline-usage",
+      "tier": "table-usage",
+      "difficulty": "easy",
+      "prompt": "I just inserted a `TrodesPosSelection` row. What's the next thing I'd do with it?",
+      "expected_output": "Call `TrodesPosV1.populate(key)` to compute the position from the raw RawPosition data using the params named in the selection. The selection row alone doesn't produce position output — populate is what runs the computation and writes the AnalysisNwbfile. After that, the row lands in `PositionOutput.TrodesPosV1` (the merge part) automatically because the populate hook (`make()` on TrodesPosV1) does the merge insert.",
+      "assertions": {
+        "required_substrings": [
+          "TrodesPosV1.populate",
+          "TrodesPosSelection"
+        ],
+        "forbidden_substrings": [
+          "TrodesPosSelection.populate"
+        ],
+        "behavioral_checks": [
+          "Names the next-step operation as `TrodesPosV1.populate(key)` — not just 'populate the position pipeline'",
+          "Mentions that the populate step is what writes into `PositionOutput.TrodesPosV1` (merge auto-insert)"
+        ],
+        "expected_output_tables_exempt": [
+          "AnalysisNwbfile",
+          "PositionOutput",
+          "RawPosition"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `TrodesPosV1.populate`.",
+        "Response contains substring `TrodesPosSelection`.",
+        "Response does not contain substring `TrodesPosSelection.populate`.",
+        "Names the next-step operation as `TrodesPosV1.populate(key)` — not just 'populate the position pipeline'",
+        "Mentions that the populate step is what writes into `PositionOutput.TrodesPosV1` (merge auto-insert)"
+      ]
+    },
+    {
+      "id": 93,
+      "eval_name": "usage-after-positionoutput-row",
+      "stage": "pipeline-usage",
+      "tier": "table-usage",
+      "difficulty": "easy",
+      "prompt": "I have a `PositionOutput` merge entry (just a `merge_id`). What's the next thing I'd do with it to actually look at position data?",
+      "expected_output": "Two-step: first `PositionOutput.merge_get_part({'merge_id': <uuid>})` to find which part-table source produced the row (TrodesPosV1 or DLCPosV1), then `(PositionOutput & {'merge_id': <uuid>}).fetch1_dataframe()` to materialize the position DataFrame. The merge master itself doesn't carry the timeseries — the underlying Computed table (TrodesPosV1 / DLCPosV1) does, and `fetch1_dataframe()` on the merge master dispatches through to the right part. Verify cardinality before fetch1: a single merge_id is unique, so `len((PositionOutput & {'merge_id': ...})) == 1` should hold.",
+      "assertions": {
+        "required_substrings": [
+          "merge_get_part",
+          "fetch1_dataframe",
+          "PositionOutput"
+        ],
+        "forbidden_substrings": [
+          "PositionOutput.populate",
+          "PositionOutput.fetch1('position'"
+        ],
+        "behavioral_checks": [
+          "Names `merge_get_part` as the operation to find the source part table",
+          "Names `fetch1_dataframe()` on the restricted merge master as the way to materialize position data — does NOT suggest fetching a 'position' column directly off PositionOutput"
+        ],
+        "expected_output_tables_exempt": [
+          "DLCPosV1",
+          "TrodesPosV1"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `merge_get_part`.",
+        "Response contains substring `fetch1_dataframe`.",
+        "Response contains substring `PositionOutput`.",
+        "Response does not contain substring `PositionOutput.populate`.",
+        "Response does not contain substring `PositionOutput.fetch1('position'`.",
+        "Names `merge_get_part` as the operation to find the source part table",
+        "Names `fetch1_dataframe()` on the restricted merge master as the way to materialize position data — does NOT suggest fetching a 'position' column directly off PositionOutput"
+      ]
+    },
+    {
+      "id": 94,
+      "eval_name": "usage-after-lfpbandv1-row",
+      "stage": "pipeline-usage",
+      "tier": "table-usage",
+      "difficulty": "easy",
+      "prompt": "I have an `LFPBandV1` row populated for the theta band. What's the next thing I'd do with it?",
+      "expected_output": "Either `(LFPBandV1 & key).fetch1_dataframe()` to materialize the band-filtered timeseries as a pandas DataFrame, or `(LFPBandV1 & key).compute_signal_power(electrode_list=[...])` to get power as a DataFrame directly via Hilbert envelope (|analytic|²). Both are instance methods that take a restricted relation. Don't call them on the bare class. Cardinality check first: `len((LFPBandV1 & key)) == 1` — fetch1 raises if not.",
+      "assertions": {
+        "required_substrings": [
+          "fetch1_dataframe",
+          "LFPBandV1"
+        ],
+        "forbidden_substrings": [
+          "LFPBandV1.fetch1_dataframe(",
+          "LFPBandV1.compute_signal_power("
+        ],
+        "behavioral_checks": [
+          "Names `(LFPBandV1 & key).fetch1_dataframe()` OR `(LFPBandV1 & key).compute_signal_power(...)` as the next operation — not both as a vague 'either fetch or compute'",
+          "Calls the methods on a restricted relation `(LFPBandV1 & key).method(...)`, not on the bare class"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `fetch1_dataframe`.",
+        "Response contains substring `LFPBandV1`.",
+        "Response does not contain substring `LFPBandV1.fetch1_dataframe(`.",
+        "Response does not contain substring `LFPBandV1.compute_signal_power(`.",
+        "Names `(LFPBandV1 & key).fetch1_dataframe()` OR `(LFPBandV1 & key).compute_signal_power(...)` as the next operation — not both as a vague 'either fetch or compute'",
+        "Calls the methods on a restricted relation `(LFPBandV1 & key).method(...)`, not on the bare class"
+      ]
+    },
+    {
+      "id": 95,
+      "eval_name": "usage-pick-target-sampling-rate",
+      "stage": "pipeline-usage",
+      "tier": "table-usage",
+      "difficulty": "easy",
+      "prompt": "I'm setting up an `LFPSelection` and I plan to do ripple-band analysis (150-250 Hz) downstream. What `target_sampling_rate` should I pick, and how do I confirm the value will work for the band I want?",
+      "expected_output": "Pick at least 2x the highest band-frequency you care about — for a ripple band that goes to 250 Hz, that's > 500 Hz. The Spyglass canonical choice is **1000 Hz** (`target_sampling_rate` schema default in `src/spyglass/lfp/v1/lfp.py:40`), which leaves headroom for higher bands and matches the bundled FirFilterParameters entries. Going lower (e.g., 500 Hz exactly) is on the Nyquist edge and aliases the upper end of the ripple band. To confirm: after populating LFPV1 at the chosen rate, check `(LFPBandSelection & key).fetch1('lfp_band_sampling_rate')` — and verify a `FirFilterParameters` entry exists for the band at a `filter_sampling_rate` ≤ your `target_sampling_rate`. Don't pick a rate below ~600 Hz for ripple work, and don't assume any value works: the filter has to exist in `FirFilterParameters` for the chosen rate.",
+      "assertions": {
+        "required_substrings": [
+          "target_sampling_rate",
+          "Nyquist",
+          "1000",
+          "FirFilterParameters"
+        ],
+        "forbidden_substrings": [],
+        "behavioral_checks": [
+          "Names 1000 Hz as the canonical target_sampling_rate for ripple-band downstream work, not an arbitrary value",
+          "Connects the choice to Nyquist (rate must be > 2x highest band frequency, so > 500 Hz for a 250 Hz ripple ceiling)",
+          "Names the FirFilterParameters lookup as the verification step — not just 'should be fine'"
+        ],
+        "required_substrings_exempt": [
+          "Nyquist"
+        ],
+        "expected_output_tables_exempt": [
+          "LFPBandSelection",
+          "LFPV1"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `target_sampling_rate`.",
+        "Response contains substring `Nyquist`.",
+        "Response contains substring `1000`.",
+        "Response contains substring `FirFilterParameters`.",
+        "Names 1000 Hz as the canonical target_sampling_rate for ripple-band downstream work, not an arbitrary value",
+        "Connects the choice to Nyquist (rate must be > 2x highest band frequency, so > 500 Hz for a 250 Hz ripple ceiling)",
+        "Names the FirFilterParameters lookup as the verification step — not just 'should be fine'"
+      ]
+    },
+    {
+      "id": 96,
+      "eval_name": "join-dependent-attr-refusal",
+      "stage": "pipeline-usage",
+      "tier": "joins",
+      "difficulty": "hard",
+      "prompt": "I'm trying to join `SpikeSortingSelection` with `SpikeSortingRecordingSelection` to get `sort_group_id` for a given `sorting_id`. I tried `(SpikeSortingSelection & {'sorting_id': sid}) * SpikeSortingRecordingSelection * SortGroup.SortGroupElectrode` and got `DataJointError: Cannot join query expressions on dependent attribute 'nwb_file_name'`. What does that error mean, and how do I fix it?",
+      "expected_output": "DataJoint refuses to join two tables on an attribute that is *secondary* on both sides — that's the 'dependent attribute' rule. `nwb_file_name` is on `SpikeSortingSelection` only as a secondary attribute via its `-> IntervalList` FK (IntervalList's PK is `(nwb_file_name, interval_list_name)`); it's similarly secondary on `SpikeSortingRecordingSelection` via `-> Raw` (Raw's PK is `nwb_file_name`). DataJoint's `*` operator joins on shared *primary* keys; secondary attrs that happen to share a name on both sides trigger the refusal because the join semantics would be ambiguous (you might mean 'rows where both happen to point at the same nwb_file' rather than a true PK match).\\n\\nA related rule, useful to know alongside this one: FK declarations propagate the *primary* key of the referenced table, not its secondary attributes. So `recording_id` (a secondary FK on `SpikeSortingSelection` via `-> SpikeSortingRecording`, declared below the `---` divider) does NOT reach further-downstream tables like `CurationV1`, even though the chain looks continuous on paper.\\n\\nTwo correct fixes for the original join:\\n\\n**(a) Two-restriction chain:**\\n```python\\nrecording_id = (SpikeSortingSelection & {'sorting_id': sid}).fetch1('recording_id')\\n(SpikeSortingRecordingSelection * SortGroup.SortGroupElectrode & {'recording_id': recording_id}).fetch('sort_group_id')\\n```\\n\\n**(b) Project to drop the colliding secondary attrs before the join:**\\n```python\\n((SpikeSortingSelection & {'sorting_id': sid}).proj('recording_id') * SpikeSortingRecordingSelection * SortGroup.SortGroupElectrode).fetch('sort_group_id')\\n```\\n\\nThe `.proj('recording_id')` keeps only the PK + the named secondary, so the join surface no longer carries the conflicting `nwb_file_name`. Routes to datajoint_api.md.\\n\\nNot a fix: wrapping with `set()` or `np.unique()`. The join is *rejected* by DataJoint, not multiplied — the error fires before any rows materialize.",
+      "assertions": {
+        "required_substrings": [
+          "dependent attribute",
+          "secondary",
+          "primary key",
+          ".proj(",
+          "recording_id",
+          "SpikeSortingSelection",
+          "SpikeSortingRecordingSelection"
+        ],
+        "forbidden_substrings": [
+          "wrap with set()",
+          "use np.unique"
+        ],
+        "behavioral_checks": [
+          "Distinguishes primary-key inheritance (FK declarations propagate the parent's PK) from secondary-attribute inheritance (a secondary FK below the `---` divider contributes secondary attrs, which do NOT propagate further downstream)",
+          "Names `nwb_file_name` as the colliding secondary attribute on both SpikeSortingSelection (via -> IntervalList) and SpikeSortingRecordingSelection (via -> Raw)",
+          "Demonstrates BOTH fixes — two-restriction chain via fetch1('recording_id'), AND .proj('recording_id') on the LHS to drop the colliding secondary",
+          "Does not suggest set() or np.unique() — the failure is a join refusal, not a multiplied join"
+        ],
+        "expected_output_tables_exempt": [
+          "SortGroup",
+          "IntervalList",
+          "Raw",
+          "CurationV1"
+        ],
+        "required_substrings_exempt": [
+          "secondary",
+          ".proj("
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `dependent attribute`.",
+        "Response contains substring `secondary`.",
+        "Response contains substring `primary key`.",
+        "Response contains substring `.proj(`.",
+        "Response contains substring `recording_id`.",
+        "Response contains substring `SpikeSortingSelection`.",
+        "Response contains substring `SpikeSortingRecordingSelection`.",
+        "Response does not contain substring `wrap with set()`.",
+        "Response does not contain substring `use np.unique`.",
+        "Distinguishes primary-key inheritance (FK declarations propagate the parent's PK) from secondary-attribute inheritance (a secondary FK below the `---` divider contributes secondary attrs, which do NOT propagate further downstream)",
+        "Names `nwb_file_name` as the colliding secondary attribute on both SpikeSortingSelection (via -> IntervalList) and SpikeSortingRecordingSelection (via -> Raw)",
+        "Demonstrates BOTH fixes — two-restriction chain via fetch1('recording_id'), AND .proj('recording_id') on the LHS to drop the colliding secondary",
+        "Does not suggest set() or np.unique() — the failure is a join refusal, not a multiplied join"
+      ]
     }
   ]
 }
