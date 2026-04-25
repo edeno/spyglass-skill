@@ -587,6 +587,24 @@ def fixture_eval_hallucinated_method(src_root):
     return False
 
 
+def _compare_versions_script_path():
+    """Absolute path to the compare_versions.py script under test."""
+    from pathlib import Path as P
+    return P(__file__).resolve().parent.parent / "scripts" / "compare_versions.py"
+
+
+def _run_compare_versions(args):
+    """Run compare_versions.py with `args`, return (returncode, stdout, stderr)."""
+    import subprocess
+    proc = subprocess.run(
+        ["python3", str(_compare_versions_script_path()), *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.returncode, proc.stdout, proc.stderr
+
+
 def fixture_compare_versions_diffs_classes_and_methods(src_root):
     """compare_versions.py output contract: must label class-only-in-A vs
     class-only-in-B sections AND list per-class method diffs for shared
@@ -597,71 +615,185 @@ def fixture_compare_versions_diffs_classes_and_methods(src_root):
     ``fakepipe/v1/foo.py``, runs the script via subprocess, and asserts
     the diff contains the expected markers.
     """
-    import subprocess
     import tempfile
     import textwrap
     from pathlib import Path as P
 
-    tmp = P(tempfile.mkdtemp())
-    pkg = tmp / "spyglass" / "fakepipe"
-    (pkg / "v0").mkdir(parents=True)
-    (pkg / "v1").mkdir(parents=True)
-    (pkg / "v0" / "foo.py").write_text(textwrap.dedent("""
-        class A:
-            def m_shared(self): pass
-            def m_v0_only(self): pass
-        class OnlyV0:
-            pass
-    """))
-    (pkg / "v1" / "foo.py").write_text(textwrap.dedent("""
-        class A:
-            def m_shared(self): pass
-            def m_v1_only(self): pass
-        class OnlyV1:
-            pass
-    """))
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        pkg = tmp / "spyglass" / "fakepipe"
+        (pkg / "v0").mkdir(parents=True)
+        (pkg / "v1").mkdir(parents=True)
+        (pkg / "v0" / "foo.py").write_text(textwrap.dedent("""
+            class A:
+                def m_shared(self): pass
+                def m_v0_only(self): pass
+            class OnlyV0:
+                pass
+        """))
+        (pkg / "v1" / "foo.py").write_text(textwrap.dedent("""
+            class A:
+                def m_shared(self): pass
+                def m_v1_only(self): pass
+            class OnlyV1:
+                pass
+        """))
 
-    script = (
-        P(__file__).resolve().parent.parent
-        / "scripts"
-        / "compare_versions.py"
-    )
-    proc = subprocess.run(
-        ["python3", str(script), "fakepipe", "v0", "v1", "--src", str(tmp)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+        rc, out, err = _run_compare_versions(
+            ["fakepipe", "v0", "v1", "--src", str(tmp)]
+        )
 
-    out = proc.stdout
-    if proc.returncode != 0:
-        print(f"  [FAIL] compare_versions exited {proc.returncode}; stderr: {proc.stderr!r}")
-        return False
+        if rc != 0:
+            print(f"  [FAIL] compare_versions exited {rc}; stderr: {err!r}")
+            return False
 
-    expectations = [
-        "=== fakepipe v0 vs v1 ===",
-        "Classes only in v0:",
-        "OnlyV0",
-        "Classes only in v1:",
-        "OnlyV1",
-        "Class methods that differ",
-        "m_v0_only",
-        "m_v1_only",
-    ]
-    missing = [e for e in expectations if e not in out]
-    if missing:
-        print(f"  [FAIL] compare_versions output missing markers: {missing}")
-        print(f"         output: {out}")
-        return False
+        expectations = [
+            "=== fakepipe v0 vs v1 ===",
+            "Classes only in v0:",
+            "OnlyV0",
+            "Classes only in v1:",
+            "OnlyV1",
+            "Class methods that differ",
+            "m_v0_only",
+            "m_v1_only",
+        ]
+        missing = [e for e in expectations if e not in out]
+        if missing:
+            print(f"  [FAIL] compare_versions output missing markers: {missing}")
+            print(f"         output: {out}")
+            return False
 
-    # m_shared must NOT appear under "only in" — it's identical across versions.
-    diff_section = out.split("Class methods that differ", 1)[-1]
-    if "m_shared" in diff_section:
-        print("  [FAIL] m_shared (identical method) appeared in the differs section")
-        print(f"         section: {diff_section}")
-        return False
+        # m_shared must NOT appear under "only in" — it's identical across versions.
+        diff_section = out.split("Class methods that differ", 1)[-1]
+        if "m_shared" in diff_section:
+            print("  [FAIL] m_shared (identical method) appeared in the differs section")
+            print(f"         section: {diff_section}")
+            return False
 
     print("  [ok] compare_versions: class+method diff sections labeled correctly")
+    return True
+
+
+def fixture_compare_versions_skips_empty_version_dirs(src_root):
+    """compare_versions.py must surface a NOTICE and skip a version
+    directory that has no parseable .py files (e.g. ``position/v2/``
+    which contains only stale ``__pycache__/*.pyc`` in real Spyglass).
+    A naive scan would silently report every class as "only in v1",
+    which is misleading.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        pkg = tmp / "spyglass" / "fakepipe"
+        (pkg / "v1").mkdir(parents=True)
+        (pkg / "v2").mkdir(parents=True)  # empty — no .py files
+        (pkg / "v1" / "foo.py").write_text(textwrap.dedent("""
+            class A:
+                def m(self): pass
+        """))
+
+        rc, out, err = _run_compare_versions(
+            ["fakepipe", "v1", "v2", "--src", str(tmp)]
+        )
+
+        if rc != 0:
+            print(f"  [FAIL] compare_versions exited {rc}; stderr: {err!r}")
+            return False
+        if "NOTICE" not in out or "v2" not in out:
+            print("  [FAIL] compare_versions did not surface NOTICE for empty v2 dir")
+            print(f"         output: {out}")
+            return False
+        if "No comparison possible" not in out:
+            print("  [FAIL] compare_versions did not skip the empty-pair diff")
+            print(f"         output: {out}")
+            return False
+
+    print("  [ok] compare_versions: empty version dir surfaces NOTICE and skips diff")
+    return True
+
+
+def fixture_compare_versions_sorts_versions_numerically(src_root):
+    """compare_versions.py must sort discovered versions numerically by
+    the integer after 'v', not lexicographically. ``sorted()`` would
+    place v10 before v9; the auto-discovery order then drives which
+    consecutive pair gets diffed, so a wrong sort silently picks the
+    wrong comparison.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        pkg = tmp / "spyglass" / "fakepipe"
+        for v in ("v1", "v2", "v9", "v10"):
+            (pkg / v).mkdir(parents=True)
+            (pkg / v / "foo.py").write_text(textwrap.dedent(f"""
+                class A:
+                    def m_{v}_only(self): pass
+            """))
+
+        rc, out, err = _run_compare_versions(
+            ["fakepipe", "--src", str(tmp)]
+        )
+        if rc != 0:
+            print(f"  [FAIL] compare_versions exited {rc}; stderr: {err!r}")
+            return False
+        # Numeric sort -> v1, v2, v9, v10. Lexicographic would yield
+        # v1, v10, v2, v9, which would pair v10 with v2 (wrong).
+        i_v1 = out.find("v1, v2, v9, v10")
+        if i_v1 < 0:
+            print("  [FAIL] auto-discover order is not numeric (v1, v2, v9, v10)")
+            print(f"         output: {out}")
+            return False
+
+    print("  [ok] compare_versions: versions sorted numerically (v1 < v2 < v9 < v10)")
+    return True
+
+
+def fixture_compare_versions_focus_mode_prints_clean_path(src_root):
+    """compare_versions.py --class focus mode must print the file path
+    as a clean string, not the raw Python list repr. A previous draft
+    rendered ``(file: ['v0/foo.py'])`` which looks like a bug.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        pkg = tmp / "spyglass" / "fakepipe"
+        (pkg / "v0").mkdir(parents=True)
+        (pkg / "v1").mkdir(parents=True)
+        (pkg / "v0" / "foo.py").write_text(textwrap.dedent("""
+            class OnlyV0:
+                pass
+        """))
+        (pkg / "v1" / "foo.py").write_text(textwrap.dedent("""
+            class A:
+                pass
+        """))
+
+        rc, out, err = _run_compare_versions(
+            ["fakepipe", "v0", "v1", "--class", "OnlyV0", "--src", str(tmp)]
+        )
+        if rc != 0:
+            print(f"  [FAIL] compare_versions exited {rc}; stderr: {err!r}")
+            return False
+        # Should contain the clean path, NOT a list repr like ['v0/foo.py'].
+        if "['" in out or "']" in out:
+            print("  [FAIL] focus-mode printed raw list repr instead of joined path")
+            print(f"         output: {out}")
+            return False
+        if "v0/foo.py" not in out:
+            print("  [FAIL] focus-mode did not include the actual file path")
+            print(f"         output: {out}")
+            return False
+
+    print("  [ok] compare_versions: --class focus mode prints clean file paths")
     return True
 
 
@@ -2097,6 +2229,9 @@ FIXTURES = [
     fixture_merge_restriction_not_false_positive,
     fixture_eval_hallucinated_method,
     fixture_compare_versions_diffs_classes_and_methods,
+    fixture_compare_versions_skips_empty_version_dirs,
+    fixture_compare_versions_sorts_versions_numerically,
+    fixture_compare_versions_focus_mode_prints_clean_path,
     fixture_eval_citation_content_drift_warns,
     fixture_eval_citation_lines_out_of_range,
     fixture_eval_pr_citation_warns,
