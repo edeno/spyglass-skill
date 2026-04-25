@@ -158,11 +158,14 @@ KNOWN_CLASSES = {
 # Methods to skip — DataJoint builtins, mixin methods, etc.
 SKIP_METHODS = {
     # DataJoint builtins — always valid on any table, no point checking
-    "fetch", "fetch1", "fetch_nwb", "fetch_pynapple",
+    "fetch", "fetch1",
     "proj", "aggr", "describe", "heading",
     "parents", "children", "ancestors", "descendants",
     "insert", "insert1",
     "populate", "delete", "drop", "alter",
+    # SpyglassMixin extensions to fetch — defined on every Spyglass table
+    # via SpyglassMixin (utils/mixins/fetch.py), not DataJoint
+    "fetch_nwb", "fetch_pynapple",
     # Note: insert_selection is a Spyglass convention (not DataJoint) and IS
     # validated when called on known classes — it's deliberately absent here.
     "restrict", "restrict_by",
