@@ -62,7 +62,7 @@ For each new step in your analysis, pick the smallest option that fits:
 
 ## Non-Negotiables
 
-These are the rules most likely to cause mysterious failures if ignored:
+These are the rules most likely to cause mysterious failures if ignored. Behavior in DataJoint splits across two layers — *structural* (declared in `Table.definition` strings: FK shapes, projections, secondary attributes) and *runtime* (executed in `make()` or other methods). When debugging or describing a pipeline, attribute behavior to the layer where it's declared, not the layer where it surfaces. See [feedback_loops.md § Verify behavior, trust identity](feedback_loops.md#verify-behavior-trust-identity) for the full pattern with worked examples.
 
 1. **`SpyglassMixin` must be first in inheritance order**, before `dj.Manual`/`Lookup`/`Computed`/`Imported`/`Part`. From `docs/src/ForDevelopers/Classes.md`: "SpyglassMixin must be the first class inherited to ensure method overrides work correctly." Part tables use `SpyglassMixinPart` instead.
 2. **Choose the right tier**. `dj.Lookup` for params (contents baked into the class), `dj.Manual` for selection/grouping tables the user populates, `dj.Computed` with `make()` for analysis outputs, `dj.Imported` for tables populated by walking an NWB file. See the tier list in `TableTypes.md`.
