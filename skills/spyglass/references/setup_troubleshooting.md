@@ -286,9 +286,14 @@ on the source tree.
 
 ## `KeyError: '<column>' is not in the table heading` after `git pull`
 
-Between Spyglass releases, some table definitions change but the
-required `Table().alter()` is not always listed in release notes.
-Symptoms include:
+Between Spyglass releases, some table definitions change and the
+database needs `Table().alter()` calls run by an admin to catch
+up to the package. Recent releases (≥0.5.5) document each required
+alter call in the version's `CHANGELOG.md` section, including the
+import scope each alter needs. Older releases sometimes shipped
+schema changes without an explicit alter list, so `CHANGELOG.md`
+isn't a complete history — but for current versions it's the
+authoritative checklist. Symptoms include:
 
 - `KeyError: 'accessed'` on `AnalysisNwbfileLog.increment_access`
 - `KeyError: 'pipeline'` on `SpikeSortingRecording.populate`
@@ -304,8 +309,12 @@ dj.conn().query(f'SHOW CREATE TABLE `<schema>`.`<table>`').fetchall()  # DB-side
 
 Columns that only appear on one side are the drift.
 
-**Fix.** Run the altered table's `.alter()` as a user with ALTER
-privilege:
+**Fix.** Read the `CHANGELOG.md` section for the version you just
+pulled to. The release notes list every `Table().alter()` an admin
+needs to run (with the right import-scope so foreign-key references
+resolve). On shared databases, the alter calls require ALTER
+privilege the average user does not have — coordinate with an admin
+rather than running them yourself. The canonical alter shape is:
 
 ```python
 from spyglass.common import *   # pull every FK-referenced class into scope;
