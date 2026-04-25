@@ -1226,7 +1226,7 @@
       "tier": "post-ingest-validation",
       "difficulty": "hard",
       "prompt": "ingest ran cleanly on j1620210710.nwb, but now `SpikeSortingRecording.populate(key)` crashes with `AssertionError: ChannelSliceRecording: channel ids are not all in parents`. The NWB came out of a standard trodes_to_nwb conversion. Is this a spyglass bug or is something wrong in my NWB?",
-      "expected_output": "Routes to ingestion.md 'Probe / electrode conflicts from the NWB'. Root cause is at the NWB level: the electrodes table has a `channel_name` column, and SpikeInterface >=0.99 reads that column instead of `electrode_id`, which breaks the `ChannelSliceRecording` parent check. Diagnostic: `import pynwb; with pynwb.NWBHDF5IO(path, 'r') as io: nwb = io.read(); print(nwb.electrodes.colnames)` — look for `channel_name`. Fix: run on a Spyglass version that handles this (post-PR #1310 — `spikesorting/v1/recording.py` translates via `channel_name` when the column is present), OR rewrite the NWB to drop the `channel_name` column.",
+      "expected_output": "Routes to ingestion.md 'Probe / electrode conflicts from the NWB'. Root cause is at the NWB level: the electrodes table has a `channel_name` column, and SpikeInterface >=0.99 reads that column instead of `electrode_id`, which breaks the `ChannelSliceRecording` parent check. Diagnostic: `import pynwb; with pynwb.NWBHDF5IO(path, 'r') as io: nwb = io.read(); print(nwb.electrodes.colnames)` — look for `channel_name`. Fix: run on a Spyglass version that handles this (Spyglass ≥ 0.5.5 — `spikesorting/v1/recording.py` translates via `channel_name` when the column is present), OR rewrite the NWB to drop the `channel_name` column.",
       "assertions": {
         "required_substrings": [
           "channel_name",
@@ -1240,7 +1240,7 @@
         "behavioral_checks": [
           "Identifies the NWB electrodes table's channel_name column as the root cause",
           "Shows the concrete pynwb diagnostic (`nwb.electrodes.colnames`)",
-          "Points at the version fix (post-PR #1310) or the NWB-side rewrite as remediation",
+          "Points at the version fix (Spyglass ≥ 0.5.5) or the NWB-side rewrite as remediation",
           "Does not frame this as a spyglass bug"
         ],
         "required_substrings_exempt": [
@@ -1257,7 +1257,7 @@
         "Response does not contain substring `this is a spyglass bug`.",
         "Identifies the NWB electrodes table's channel_name column as the root cause",
         "Shows the concrete pynwb diagnostic (`nwb.electrodes.colnames`)",
-        "Points at the version fix (post-PR #1310) or the NWB-side rewrite as remediation",
+        "Points at the version fix (Spyglass ≥ 0.5.5) or the NWB-side rewrite as remediation",
         "Does not frame this as a spyglass bug"
       ]
     },
@@ -1268,7 +1268,7 @@
       "tier": "post-ingest-validation",
       "difficulty": "medium",
       "prompt": "My NWB has 8 behavioral epochs — I confirmed via `NWBHDF5IO` that `nwb.epochs` has 8 rows. But after `insert_sessions('j1620210710.nwb')` only 2 rows landed in `TaskEpoch`. insert_sessions didn't raise anything. Are the other 6 getting silently dropped?",
-      "expected_output": "Routes to ingestion.md 'TaskEpoch silently drops epochs on tag-format mismatch'. Yes, silently dropped — `TaskEpoch._process_task_epochs` matches each `task_epochs` entry to an `IntervalList` row via `get_epoch_interval_name`, which tries exact/2-digit/3-digit numeric matching (post-PR #1459 the matcher is flexible — `'1'` vs `'01'` both work, so zero-padding isn't the usual culprit today). The real silent-drop is non-numeric tags or a `task_epochs` list whose length doesn't match the NWB epoch count. Diagnostic: `print([list(e) for e in nwb.epochs.tags[:]])` and `print(nwb.processing['tasks'].task_table.to_dataframe())`. Fix: rewrite the NWB so `epochs.tags` are numeric and `task_table.task_epochs` rows line up with the epoch count, then re-ingest with `reinsert=True` (the supported re-run kwarg on `insert_sessions`).",
+      "expected_output": "Routes to ingestion.md 'TaskEpoch silently drops epochs on tag-format mismatch'. Yes, silently dropped — `TaskEpoch._process_task_epochs` matches each `task_epochs` entry to an `IntervalList` row via `get_epoch_interval_name`, which tries exact/2-digit/3-digit numeric matching (Spyglass ≥ 0.5.6 the matcher is flexible — `'1'` vs `'01'` both work, so zero-padding isn't the usual culprit today). The real silent-drop is non-numeric tags or a `task_epochs` list whose length doesn't match the NWB epoch count. Diagnostic: `print([list(e) for e in nwb.epochs.tags[:]])` and `print(nwb.processing['tasks'].task_table.to_dataframe())`. Fix: rewrite the NWB so `epochs.tags` are numeric and `task_table.task_epochs` rows line up with the epoch count, then re-ingest with `reinsert=True` (the supported re-run kwarg on `insert_sessions`).",
       "assertions": {
         "required_substrings": [
           "epochs.tags",
@@ -1435,7 +1435,7 @@
       "tier": "runtime-errors",
       "difficulty": "hard",
       "prompt": "First time running DLC on a fresh session. `DLCPosV1.populate(key)` dies with `IndexError: index 0 is out of bounds for axis 0 with size 0` somewhere deep in the position pipeline — the traceback bottoms out in spyglass code I haven't touched. Am I missing an upstream populate step? I thought I set up `DLCPosSelection` correctly.",
-      "expected_output": "Routes to position_pipeline.md DLC gotchas (empty PositionIntervalMap). Root cause: the session has no `PositionIntervalMap` rows mapping task epochs to position intervals. Fix: for each `TaskEpoch`, run:\\n\\n```python\\nfrom spyglass.common import convert_epoch_interval_name_to_position_interval_name\\nconvert_epoch_interval_name_to_position_interval_name(\\n    {'nwb_file_name': nwb_file, 'epoch': epoch_id},\\n    populate_missing=True,\\n)\\n```\\n\\nThe `populate_missing=True` kwarg creates the map rows. DLC-only sessions (no Trodes-derived position) have a second failure mode — no `'pos N valid times'` IntervalList exists to match against. In that case: insert `RawPosition` / `PositionSource` rows first, or upgrade past PR #1208 (`Fix missing pos interval map entry in pose estimation`).",
+      "expected_output": "Routes to position_pipeline.md DLC gotchas (empty PositionIntervalMap). Root cause: the session has no `PositionIntervalMap` rows mapping task epochs to position intervals. Fix: for each `TaskEpoch`, run:\\n\\n```python\\nfrom spyglass.common import convert_epoch_interval_name_to_position_interval_name\\nconvert_epoch_interval_name_to_position_interval_name(\\n    {'nwb_file_name': nwb_file, 'epoch': epoch_id},\\n    populate_missing=True,\\n)\\n```\\n\\nThe `populate_missing=True` kwarg creates the map rows. DLC-only sessions (no Trodes-derived position) have a second failure mode — no `'pos N valid times'` IntervalList exists to match against. In that case: insert `RawPosition` / `PositionSource` rows first, or upgrade past Spyglass ≥ 0.5.5 (the 'Fix missing pos interval map entry in pose estimation' fix).",
       "assertions": {
         "required_substrings": [
           "PositionIntervalMap",
