@@ -6,6 +6,7 @@ This reference owns the canonical paired shapes for every destructive helper in 
 
 - [Required workflow](#required-workflow)
 - [Helpers this file covers](#helpers-this-file-covers)
+- [When a user explicitly asks to bypass](#when-a-user-explicitly-asks-to-bypass)
 - [Paired shapes](#paired-shapes)
   - [Row deletion](#row-deletion)
   - [Merge-table delete helpers](#merge-table-delete-helpers)
@@ -43,7 +44,7 @@ Do not proceed on silence, hedging, or implicit approval. Clear go-signals: "yes
 
 ### Phase 4 — Execute
 
-Make the call. For bypass variants (`super_delete()`, `.delete(force_permission=True)`, `merge_delete_parent()`) use `dry_run=True` first when the helper supports it.
+Make the call. If the user explicitly asked for a bypass call (`super_delete`, `force_permission=True`, `merge_delete_parent`), the bypass subsection below has the additional preconditions.
 
 ### Phase 5 — Verify (partial deletes)
 
@@ -83,22 +84,9 @@ Any helper that removes rows or files goes through this file's patterns.
 # -> Talk to jsmith, not to super_delete().
 ```
 
-**The two bypass mechanisms and when they are appropriate.**
+**Default response to a `PermissionError`: coordinate, don't bypass.** The error names the experimenter who owns the blocking session(s) — talk to them. If the experimenter is no longer reachable (left the lab, on extended leave), contact a lab admin. The bypass mechanisms exist but are not the first response — they live in [When a user explicitly asks to bypass](#when-a-user-explicitly-asks-to-bypass) below.
 
-- **`super_delete(warn=True)`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` by default; `warn=False` suppresses both the warning and the log, so the audit trail depends on the default. Appropriate only when you are the data owner OR have explicit written permission from the owner AND there is a specific reason the team check is misfiring.
-- **`.delete(force_permission=True)`** — skips the check and logs. Same guidance.
-
-**`super_delete` does NOT run Spyglass's file cleanup.** Because it
-aliases straight to `datajoint.Table.delete`, the analysis / raw NWB
-files stay on disk — `Nwbfile.cleanup(delete_files=True)` is never
-called. Users reach for `super_delete` most often when
-`cautious_delete` errors with
-`Could not find name for datajoint user <name> in LabMember.LabMemberInfo`;
-the correct fix is to add the user to `LabMember` (see
-`setup_troubleshooting.md` "AccessError / PermissionError"), not to
-bypass.
-
-Both exist for legitimate edge cases (admin cleanup after a lab member leaves, fixing a misconfigured experimenter). Neither is a fallback for "the PermissionError is annoying." Treat either call as if it had a social cost — because it does.
+If the error message is `Could not find name for datajoint user <name> in LabMember.LabMemberInfo`, the user just needs to be added to `LabMember` (see `setup_troubleshooting.md` "AccessError / PermissionError"). That is a setup gap, not a permission denial — fix the gap, no bypass needed.
 
 **Coverage gaps where the team check does NOT fire (know these — they let data through):**
 
@@ -107,6 +95,18 @@ Both exist for legitimate edge cases (admin cleanup after a lab member leaves, f
 - **Sessions with no `Session.Experimenter` row** raise `PermissionError` with a different message. Fix by populating `Session.Experimenter`, not by bypassing.
 - **`merge_delete()`** (the merge-master classmethod) dispatches to `(cls() & uuids).delete(**kwargs)` at `dj_merge_tables.py:444-465`, which routes through the merge master's `delete()` → each part table's `.delete()` → `cautious_delete`. Team check DOES apply.
 - **`merge_delete_parent()` BYPASSES the team check** (`dj_merge_tables.py:499, 505`). Both the master delete and the part-parent deletes call `super().delete(...)` directly — jumping to `datajoint.Table.delete` without routing through `cautious_delete`. A user who can't `.delete()` a Session due to team-permissions CAN still `merge_delete_parent()` the same Session's pipeline outputs. Treat `merge_delete_parent()` as the merge-table equivalent of `super_delete()`: use only when you're the data owner or have explicit permission, and always preview with `dry_run=True` first.
+
+### When a user explicitly asks to bypass
+
+Only enter this subsection when the user has explicitly named one of `super_delete`, `force_permission=True`, or `merge_delete_parent` and asked to use it. A `PermissionError` from `cautious_delete` is not by itself a request to bypass — the default response is in the section above (coordinate, don't bypass).
+
+Appropriate scenarios are narrow: admin cleanup after a lab member leaves, fixing a misconfigured experimenter row, or the data owner deleting their own data when the team check is misfiring for a known reason. In every case, run the bypass with `dry_run=True` first when the helper supports it, and report the preview before the actual call.
+
+- **`(Table & key).super_delete(warn=True)`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` by default; `warn=False` suppresses both the warning and the log, so the audit trail depends on the default. **`super_delete` does NOT run Spyglass's file cleanup** — analysis / raw NWB files stay on disk because `Nwbfile.cleanup(delete_files=True)` is never called. After a `super_delete`, run the cleanup helpers explicitly (see [File cleanup](#file-cleanup) below).
+- **`(Table & key).delete(force_permission=True)`** — skips the team check and logs. Same disk-cleanup gap as `super_delete`.
+- **`MergeMaster.merge_delete_parent(key, dry_run=True)`** — bypasses the team check structurally (see Coverage gaps above). The classmethod form is required; the restricted form `(MergeMaster & key).merge_delete_parent()` silently drops the restriction and would delete every parent.
+
+After a bypass call, treat the next message as a verification step: fetch the post-state, confirm only the intended rows are gone, and run `Nwbfile.cleanup(delete_files=True)` and any pipeline-scoped `cleanup()` helpers to reclaim the disk space `cautious_delete` would have handled.
 
 ## Paired shapes
 
@@ -190,12 +190,10 @@ Nwbfile.cleanup()                    # entries only; files stay on disk
 
 ### Session-wide cleanup
 
-There is no single "delete everything downstream of this session" helper in current Spyglass. The Spyglass-specific `delete_downstream_parts`/`delete_downstream_merge` helpers were removed in the mixin split refactor (`src/spyglass/utils/mixins/` reorganization). What remains:
+Current Spyglass has no single "delete everything downstream of this session" helper. Compose two steps:
 
 - `(Nwbfile & {"nwb_file_name": f}).delete()` — DataJoint's cascade removes rows from tables with a foreign-key path to `Nwbfile`, routed through `cautious_delete` for the team check. Preview with `.fetch(as_dict=True)` on the restricted relation first.
-- For each merge table whose part entries reference the session, call `SomeMergeOutput.merge_delete_parent({"nwb_file_name": f}, dry_run=True)` explicitly. Run `dry_run=True` first, inspect, then `dry_run=False`. `merge_delete_parent` bypasses the team check (see the protection section above), so treat every call as if the data owner were watching.
-
-Do not look for a current method that wraps both steps. If you see `delete_downstream_parts` in an older notebook (`04_Merge_Tables.ipynb`, `02_Insert_Data.ipynb`) or a stale wrapper, treat it as removed — the notebook examples need updating, not replicating.
+- For each merge table whose part entries reference the session, call `SomeMergeOutput.merge_delete_parent({"nwb_file_name": f}, dry_run=True)` explicitly. Run `dry_run=True` first, inspect, then `dry_run=False`. `merge_delete_parent` bypasses the team check (see [When a user explicitly asks to bypass](#when-a-user-explicitly-asks-to-bypass)), so treat every call as if the data owner were watching.
 
 ## Cross-references
 
