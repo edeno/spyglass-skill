@@ -587,6 +587,61 @@ def fixture_eval_hallucinated_method(src_root):
     return False
 
 
+def fixture_eval_citation_content_drift_warns(src_root):
+    """Eval prose with a `file.py:N` citation whose line doesn't contain
+    the named backticked identifier within ±8 lines should warn.
+
+    This generalizes check_citation_content (markdown-only) to evals.json,
+    closing the gap that let the round-3 'position_merge.py:16 (registers
+    IntervalPositionInfo)' off-by-one ship — actual entry was line 15.
+    """
+    import json
+    import tempfile
+    from pathlib import Path as P
+    tmp = P(tempfile.mkdtemp())
+    evals_dir = tmp / "evals"
+    evals_dir.mkdir()
+    evals_file = evals_dir / "evals.json"
+    # Cite common_session.py:1 (top of file: imports / module docstring),
+    # then back-tick a class name from far below it. The real Session class
+    # in spyglass starts well below line 9; line 1 is import area, so the
+    # ±8 window can't see it and the warn must fire.
+    evals_file.write_text(json.dumps({
+        "evals": [{
+            "id": 999,
+            "eval_name": "synthetic-citation-drift",
+            "expected_output": (
+                "The `Session` table is fully described at "
+                "`src/spyglass/common/common_session.py:1` (this is wrong on "
+                "purpose — line 1 is imports, not the class)."
+            ),
+            "assertions": {
+                "required_substrings": [],
+                "forbidden_substrings": [],
+                "behavioral_checks": [],
+            },
+        }],
+    }))
+    original = v.SKILL_DIR
+    v.SKILL_DIR = tmp
+    try:
+        results = v.ValidationResult()
+        v.check_eval_citation_content(src_root, results)
+    finally:
+        v.SKILL_DIR = original
+
+    drift_hits = [
+        m for m in results.warnings
+        if "evals.json[id=999]" in m and "citation may be stale" in m
+    ]
+    if drift_hits:
+        print("  [ok] evals: citation-content drift caught in eval prose")
+        return True
+    print("  [FAIL] expected eval-prose citation-drift warning")
+    print(f"         warnings: {results.warnings}")
+    return False
+
+
 def fixture_bogus_citation_line(src_root):
     """Line number in `file.py:NNN` must actually exist in the file."""
     md = _write_md(
@@ -1838,6 +1893,7 @@ FIXTURES = [
     fixture_correct_field_name_no_warn,
     fixture_merge_restriction_not_false_positive,
     fixture_eval_hallucinated_method,
+    fixture_eval_citation_content_drift_warns,
     fixture_bogus_citation_line,
     fixture_valid_citation_passes,
     fixture_multi_line_citation,
