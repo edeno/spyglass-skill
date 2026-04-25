@@ -87,12 +87,13 @@ Repo paths (source, docs) are listed in each reference file — this table route
 | Installing Spyglass | [setup_install.md](references/setup_install.md) | `QUICKSTART.md` + `scripts/install.py`; `00_Setup.ipynb` fallback |
 | Configuring the database / directories / env vars | [setup_config.md](references/setup_config.md) | `00_Setup.ipynb` |
 | Setup errors and troubleshooting | [setup_troubleshooting.md](references/setup_troubleshooting.md) | — |
-| Runtime debugging — populate/make failures, fetch1 cardinality, ambiguous-truth, join multiplicity, one-key-fails | [runtime_debugging.md](references/runtime_debugging.md) | — |
+| Runtime debugging — populate/make failures, fetch1 cardinality, join multiplicity, one-key-fails | [runtime_debugging.md](references/runtime_debugging.md) | — |
 | `populate_all_common` silently skipped tables | [populate_all_common_debugging.md](references/populate_all_common_debugging.md) | — |
-| Destructive operations — deletes, cleanup, inspect-before-destroy patterns | [destructive_operations.md](references/destructive_operations.md) | — |
+| Destructive operations — deletes, cleanup, inspect-before-destroy | [destructive_operations.md](references/destructive_operations.md) | — |
 | Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) | — |
-| Expanded prose on the most common Spyglass footguns (8 entries) | [common_mistakes.md](references/common_mistakes.md) | — |
+| Common Spyglass footguns | [common_mistakes.md](references/common_mistakes.md) | — |
 | Merge tables (`_Merge` methods) or SpyglassMixin helpers (`fetch_nwb`, `cautious_delete`, `<<`/`>>`) | [merge_methods.md](references/merge_methods.md), [spyglassmixin_methods.md](references/spyglassmixin_methods.md) | `01_Concepts.ipynb`, `04_Merge_Tables.ipynb` |
+| Group tables (`*Group`, `create_group()`) | [group_tables.md](references/group_tables.md) | — |
 | NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.ipynb` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — |
 | Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | — |
@@ -105,7 +106,7 @@ Repo paths (source, docs) are listed in each reference file — this table route
 | Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) | `40_Extracting_Clusterless_Waveform_Features.ipynb`, `41_Decoding_Clusterless.ipynb`, `42_Decoding_SortedSpikes.ipynb` |
 | MUA detection | [mua_pipeline.md](references/mua_pipeline.md) | `50_MUA_Detection.ipynb` |
 | Behavior / MoSeq | [behavior_pipeline.md](references/behavior_pipeline.md) | `60_MoSeq.ipynb` |
-| Cross-table exploration / troubleshooting | [workflows.md](references/workflows.md) | — |
+| Cross-table exploration | [workflows.md](references/workflows.md) | — |
 | Export for papers / reproducible snapshots | [export.md](references/export.md) | `05_Export.ipynb` |
 | Syncing / sharing with collaborators (Kachery) | [setup_config.md](references/setup_config.md) — "Data Sharing Tables (Kachery)" | `03_Data_Sync.ipynb` |
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) | — |
