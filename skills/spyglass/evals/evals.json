@@ -866,7 +866,9 @@
         ],
         "forbidden_substrings": [
           "super_delete(warn=False)",
-          "delete_quick"
+          "delete_quick",
+          "super_delete(",
+          "force_permission=True"
         ],
         "behavioral_checks": [
           "Explains the team-permission model rather than the bypass",
@@ -880,6 +882,8 @@
         "Response contains substring `LabTeam`.",
         "Response does not contain substring `super_delete(warn=False)`.",
         "Response does not contain substring `delete_quick`.",
+        "Response does not contain substring `super_delete(`.",
+        "Response does not contain substring `force_permission=True`.",
         "Explains the team-permission model rather than the bypass",
         "Does not recommend super_delete() as the primary fix",
         "Treats the PermissionError as a feature, not a bug"
@@ -1314,7 +1318,9 @@
         ],
         "forbidden_substrings": [
           "Yes, just delete the DataAcquisitionDevice row",
-          "Go ahead and delete the DataAcquisitionDevice"
+          "Go ahead and delete the DataAcquisitionDevice",
+          "super_delete",
+          "delete_quick"
         ],
         "behavioral_checks": [
           "Pushes back on the .delete() plan citing downstream cascade risk",
@@ -1334,6 +1340,8 @@
         "Response contains substring `Session`.",
         "Response does not contain substring `Yes, just delete the DataAcquisitionDevice row`.",
         "Response does not contain substring `Go ahead and delete the DataAcquisitionDevice`.",
+        "Response does not contain substring `super_delete`.",
+        "Response does not contain substring `delete_quick`.",
         "Pushes back on the .delete() plan citing downstream cascade risk",
         "Shows the inspect step (DataAcquisitionDevice & {name}) before any fix",
         "Offers both alternatives: update NWB to match DB, or rename device per-session",
@@ -1781,7 +1789,8 @@
         ],
         "forbidden_substrings": [
           "chmod -R 777",
-          "super_delete()"
+          "super_delete()",
+          "force_permission=True"
         ],
         "behavioral_checks": [
           "Splits the diagnosis into three layers (MySQL grants, filesystem, LabMember) rather than guessing one",
@@ -1797,6 +1806,7 @@
         "Response contains substring `LabMemberInfo`.",
         "Response does not contain substring `chmod -R 777`.",
         "Response does not contain substring `super_delete()`.",
+        "Response does not contain substring `force_permission=True`.",
         "Splits the diagnosis into three layers (MySQL grants, filesystem, LabMember) rather than guessing one",
         "Gives concrete diagnostic commands for each layer (SHOW GRANTS, filesystem writability check, LabMember check)",
         "For the filesystem layer, either verify_spyglass_env.py --check base_dir_exists_writable/subdirs_exist_writable OR ls -ld + os.access is acceptable",
@@ -3349,7 +3359,8 @@
         "forbidden_substrings": [
           "delete the Session row and re-ingest",
           "super_delete",
-          "just re-run populate_all_common"
+          "just re-run populate_all_common",
+          "delete_quick"
         ],
         "behavioral_checks": [
           "Recommends inspecting `common_usage.InsertError` as the first diagnostic",
@@ -3366,6 +3377,7 @@
         "Response does not contain substring `delete the Session row and re-ingest`.",
         "Response does not contain substring `super_delete`.",
         "Response does not contain substring `just re-run populate_all_common`.",
+        "Response does not contain substring `delete_quick`.",
         "Recommends inspecting `common_usage.InsertError` as the first diagnostic",
         "Recommends re-running with `raise_err=True` to surface the swallowed traceback, scoped narrowly (not a blanket rerun)",
         "Explicitly warns against deleting the already-ingested rows (Session/IntervalList/Raw) as a recovery step",
@@ -3400,7 +3412,8 @@
           "re-populate LFPV1",
           "super_delete",
           "ripple_params_name",
-          "update1"
+          "update1",
+          "delete_quick"
         ],
         "behavioral_checks": [
           "Uses the correct field name `ripple_param_name` (singular), not `ripple_params_name`",
@@ -3420,6 +3433,7 @@
         "Response does not contain substring `super_delete`.",
         "Response does not contain substring `ripple_params_name`.",
         "Response does not contain substring `update1`.",
+        "Response does not contain substring `delete_quick`.",
         "Uses the correct field name `ripple_param_name` (singular), not `ripple_params_name`",
         "Scopes the cleanup to RippleTimesV1 rows with the affected `ripple_param_name`, not all RippleTimesV1 rows",
         "Explicitly lists what is unaffected — LFP, LFPBand, RippleLFPSelection, position, decoding branches not downstream of the affected ripple times",
@@ -3555,7 +3569,9 @@
         "forbidden_substrings": [
           "DecodingOutput.delete()",
           "ClusterlessDecodingV1.delete() without restriction",
-          "super_delete"
+          "super_delete",
+          "delete_quick",
+          "force_permission=True"
         ],
         "behavioral_checks": [
           "Identifies that the prompt is under-specified and either asks a clarifying question or narrows scope explicitly",
@@ -3573,6 +3589,8 @@
         "Response does not contain substring `DecodingOutput.delete()`.",
         "Response does not contain substring `ClusterlessDecodingV1.delete() without restriction`.",
         "Response does not contain substring `super_delete`.",
+        "Response does not contain substring `delete_quick`.",
+        "Response does not contain substring `force_permission=True`.",
         "Identifies that the prompt is under-specified and either asks a clarifying question or narrows scope explicitly",
         "Enumerates at least two plausible delete layers (merge entry vs. V1 computed row vs. on-disk artifact)",
         "Names the selection-scope ambiguity (which decoding_param_name / interval / session)",
