@@ -261,9 +261,14 @@ sure Spyglass is on a version that handles it (confirm by searching
 
 **Required NWB shape.**
 
-- `nwbfile.epochs.tags` — numeric strings, zero-padded to the
-  convention used elsewhere in the file (e.g. `'01'`, `'02'`, not
-  `'1'`, `'2'`).
+- `nwbfile.epochs.tags` — numeric strings. Spyglass ≥0.5.6
+  (`get_epoch_interval_name` in `src/spyglass/common/common_task.py`)
+  matches flexibly: it tries exact, 2-digit zero-padded, and 3-digit
+  zero-padded forms in turn, so `'1'`, `'01'`, and `'001'` all match
+  an interval named `'01'` (or `'001'`). Zero-padding is a *convention*
+  in modern Spyglass, not a hard requirement; the older Spyglass
+  versions did require strict zero-padding, so if the user is on an
+  older release this is still the typical fix.
 - `nwbfile.processing['tasks'].task_table.task_epochs` — numeric
   values, with row count matching the epoch count.
 
