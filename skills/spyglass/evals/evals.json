@@ -187,7 +187,7 @@
       "tier": "baseline",
       "difficulty": "medium",
       "prompt": "I've already ingested j1620210710_.nwb and I want to run the LFP pipeline on the 'sleep' interval for tetrodes 4, 5, and 12 using the default filter. Once that's done I want the band-filtered signal out as a dataframe so I can look at theta power. Walk me through the full flow.",
-      "expected_output": "Routes to lfp_pipeline.md. The response MUST cover BOTH the wideband LFP pipeline AND the LFPBand pipeline — asking for 'theta power' means LFPV1 alone is insufficient. Full flow: (1) `LFPElectrodeGroup.create_lfp_electrode_group(...)` with the three tetrodes' electrode ids, (2) insert `LFPSelection` with `filter_name='LFP 0-400 Hz'` and `target_interval_list_name='sleep'`, (3) `LFPV1.populate(key)` to produce the wideband LFP, (4) resolve the LFP merge UUID via `LFPOutput.merge_get_part(key).fetch1('merge_id')` — this is a scalar UUID, not the full KEY dict, (5) `LFPBandSelection().set_lfp_band_electrodes(nwb_file_name=..., lfp_merge_id=<uuid from step 4>, electrode_list=[...], filter_name='Theta 5-11 Hz', interval_list_name='sleep', reference_electrode_list=-1, lfp_band_sampling_rate=...)` — `interval_list_name` is REQUIRED (no default), `reference_electrode_list` (note the exact kwarg name, with `_list`) takes -1 for no reference or a per-electrode list, (6) `LFPBandV1.populate(band_key)`, (7) either `(LFPBandV1 & band_key).fetch1_dataframe()` to get the theta-band time series, or `(LFPBandV1 & band_key).compute_signal_power(electrode_list=[...])` to get theta power directly as a DataFrame (Hilbert analytic signal → |.|²); note `compute_signal_power` is an instance method, so it must be called on a restricted relation, not the bare class. Flags that the theta filter must exist in `FirFilterParameters` for the session's raw sampling rate — if not, the user inserts one first.",
+      "expected_output": "Routes to lfp_pipeline.md. The response MUST cover BOTH the wideband LFP pipeline AND the LFPBand pipeline — asking for 'theta power' means LFPV1 alone is insufficient. Full flow: (1) Identify the electrode ids of the three tetrodes from the `Electrode` / `ElectrodeGroup` tables in `spyglass.common`, (2) `LFPElectrodeGroup.create_lfp_electrode_group(...)` with those electrode ids, (3) insert `LFPSelection` with `filter_name='LFP 0-400 Hz'` and `target_interval_list_name='sleep'`, (4) `LFPV1.populate(key)` to produce the wideband LFP, (5) resolve the LFP merge UUID via `LFPOutput.merge_get_part(key).fetch1('merge_id')` — this is a scalar UUID, not the full KEY dict, (6) `LFPBandSelection().set_lfp_band_electrodes(nwb_file_name=..., lfp_merge_id=<uuid from step 5>, electrode_list=[...], filter_name='Theta 5-11 Hz', interval_list_name='sleep', reference_electrode_list=-1, lfp_band_sampling_rate=...)` — `interval_list_name` is REQUIRED (no default), `reference_electrode_list` (note the exact kwarg name, with `_list`) takes -1 for no reference or a per-electrode list, (7) `LFPBandV1.populate(band_key)`, (8) either `(LFPBandV1 & band_key).fetch1_dataframe()` to get the theta-band time series, or `(LFPBandV1 & band_key).compute_signal_power(electrode_list=[...])` to get theta power directly as a DataFrame (Hilbert analytic signal → |.|²); note `compute_signal_power` is an instance method, so it must be called on a restricted relation, not the bare class. Flags that the theta filter must exist in `FirFilterParameters` for the session's raw sampling rate — if not, the user inserts one first. The wideband LFPSelection MUST use the wideband filter (`LFP 0-400 Hz`); the theta filter belongs in the LFPBandSelection step, not in LFPSelection.",
       "assertions": {
         "required_substrings": [
           "LFPSelection",
@@ -212,7 +212,8 @@
           "Includes `interval_list_name` in the set_lfp_band_electrodes call — it is required with no default",
           "Uses the exact kwarg name `reference_electrode_list` (with `_list`), not `reference_electrodes` or `reference_electrode`",
           "Either shows LFPBandV1.fetch1_dataframe() for the band-filtered signal, or compute_signal_power() for theta power directly",
-          "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)"
+          "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)",
+          "Does not apply the Theta 5-11 Hz filter in the LFPSelection step — that step is for wideband LFP selection; band filtering happens in the LFPBandSelection / LFPBandV1 steps"
         ]
       },
       "files": [],
@@ -235,7 +236,8 @@
         "Includes `interval_list_name` in the set_lfp_band_electrodes call — it is required with no default",
         "Uses the exact kwarg name `reference_electrode_list` (with `_list`), not `reference_electrodes` or `reference_electrode`",
         "Either shows LFPBandV1.fetch1_dataframe() for the band-filtered signal, or compute_signal_power() for theta power directly",
-        "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)"
+        "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)",
+        "Does not apply the Theta 5-11 Hz filter in the LFPSelection step — that step is for wideband LFP selection; band filtering happens in the LFPBandSelection / LFPBandV1 steps"
       ]
     },
     {
@@ -572,12 +574,13 @@
       "tier": "merge-key-discovery",
       "difficulty": "medium",
       "prompt": "For session j1620210710_, encoding_interval='02_r1', decoding_interval='02_r1', and whatever the lab's standard clusterless params are called — what's the DecodingOutput merge_id?",
-      "expected_output": "Two-phase: (1) discover the param name from `DecodingParameters` — a single dj.Lookup table that holds both clusterless and sorted-spikes parameter sets, distinguished only by naming suffix (`*_clusterless_*` vs `*_sorted_*`). Call `DecodingParameters.fetch('decoding_param_name')` (optionally filtering by the clusterless substring) to see what's registered in this lab's copy. (2) Pick a clusterless entry and restrict: `DecodingOutput.merge_get_part({...}).fetch1('KEY')`. If the skill answer supplies a made-up params name like `'default_clusterless'`, that's a failure — the discovery step must come first because param names are lab-specific and not in the skill registry. Answers that imply a separate \"clusterless decoding parameters\" table are also wrong: there is no such table; the distinction is purely by name.",
+      "expected_output": "Two-phase: (1) discover the param name from `DecodingParameters` — a single dj.Lookup table that holds both clusterless and sorted-spikes parameter sets, distinguished only by naming suffix (`*_clusterless_*` vs `*_sorted_*`). Call `DecodingParameters.fetch('decoding_param_name')` (optionally filtering by the clusterless substring) to see what's registered in this lab's copy. (2) Pick a clusterless entry and restrict: `DecodingOutput.merge_get_part({...}).fetch1('KEY')`. (3) If `merge_get_part` returns no matching entry for the chosen param name, fall back to displaying the candidate part rows directly: `DecodingOutput.ClusterlessDecodingV1 & {'nwb_file_name': ...}` — the user can pick the row whose interval / params actually match what they meant. If the skill answer supplies a made-up params name like `'default_clusterless'`, that's a failure — the discovery step must come first because param names are lab-specific and not in the skill registry. Answers that imply a separate \"clusterless decoding parameters\" table are also wrong: there is no such table; the distinction is purely by name.",
       "assertions": {
         "required_substrings": [
           "DecodingOutput",
           "merge_get_part",
-          "DecodingParameters"
+          "DecodingParameters",
+          "ClusterlessDecodingV1"
         ],
         "forbidden_substrings": [
           "default_clusterless"
@@ -593,6 +596,7 @@
         "Response contains substring `DecodingOutput`.",
         "Response contains substring `merge_get_part`.",
         "Response contains substring `DecodingParameters`.",
+        "Response contains substring `ClusterlessDecodingV1`.",
         "Response does not contain substring `default_clusterless`.",
         "Includes a discovery step (fetch existing param names from DecodingParameters and select the clusterless variant by its naming suffix) before naming one",
         "Does not invent a specific params name without checking",
@@ -606,7 +610,7 @@
       "tier": "joins",
       "difficulty": "medium",
       "prompt": "List all sessions that have both `RippleTimesV1` populated AND `ClusterlessDecodingV1` populated.",
-      "expected_output": "`(RippleTimesV1 * ClusterlessDecodingV1).fetch('nwb_file_name', as_dict=True)` or similar. DataJoint's `*` is a natural join — it joins on ALL shared attribute names, not just direct primary-key fields. Neither RippleTimesV1 nor ClusterlessDecodingV1 declares `nwb_file_name` in its own `definition`, but both inherit it (and many other Session-derived attributes) via FK chains back to `Session`, so `*` intersects on them and produces only sessions that have both populated. Uses `set()` / distinct if the join multiplies rows (which it will — ripple has interval parts; decoding has encoding/decoding intervals).",
+      "expected_output": "`set((RippleTimesV1 * ClusterlessDecodingV1).fetch('nwb_file_name'))` or similar. DataJoint's `*` is a natural join — it joins on ALL shared attribute names, not just direct primary-key fields. Neither RippleTimesV1 nor ClusterlessDecodingV1 declares `nwb_file_name` in its own `definition`, but both inherit it (and many other Session-derived attributes) via FK chains back to `Session`, so `*` intersects on them and produces only sessions that have both populated. Uses `set()` / distinct if the join multiplies rows (which it will — ripple has interval parts; decoding has encoding/decoding intervals).",
       "assertions": {
         "required_substrings": [
           "nwb_file_name",
@@ -732,7 +736,8 @@
           "insert_sessions",
           "SpyglassMixin",
           "dj.Computed",
-          "Session.insert"
+          "Session.insert",
+          "fetch_nwb"
         ],
         "behavioral_checks": [
           "Does not introduce Spyglass concepts (tables, mixins, merge, populate)",
@@ -749,6 +754,7 @@
         "Response does not contain substring `SpyglassMixin`.",
         "Response does not contain substring `dj.Computed`.",
         "Response does not contain substring `Session.insert`.",
+        "Response does not contain substring `fetch_nwb`.",
         "Does not introduce Spyglass concepts (tables, mixins, merge, populate)",
         "Answers the pynwb question or defers to the nwb skill"
       ]
@@ -862,7 +868,8 @@
           "LabTeam"
         ],
         "forbidden_substrings": [
-          "super_delete(warn=False)"
+          "super_delete(warn=False)",
+          "delete_quick"
         ],
         "behavioral_checks": [
           "Explains the team-permission model rather than the bypass",
@@ -875,6 +882,7 @@
         "Response contains substring `team_name`.",
         "Response contains substring `LabTeam`.",
         "Response does not contain substring `super_delete(warn=False)`.",
+        "Response does not contain substring `delete_quick`.",
         "Explains the team-permission model rather than the bypass",
         "Does not recommend super_delete() as the primary fix",
         "Treats the PermissionError as a feature, not a bug"
@@ -1397,7 +1405,7 @@
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
       "difficulty": "easy",
-      "prompt": "I ran `SpikeSorting.populate({'nwb_file_name': 'j1620210710_.nwb', 'sorter': 'mountainsort4'})` and after a while it died with `Exception: The sorter kilosort2 is not installed`. But I clearly passed mountainsort4 — is spyglass ignoring my sorter kwarg?",
+      "prompt": "I ran `SpikeSorting.populate({'nwb_file_name': 'j1620210710_.nwb', 'sorter': 'mountainsort4'})` in the v1 pipeline and after a while it died with `Exception: The sorter kilosort2 is not installed`. But I clearly passed mountainsort4 — is spyglass ignoring my sorter kwarg?",
       "expected_output": "Routes to runtime_debugging.md 'populate(key) with a non-PK dict iterates the whole Selection'. Unlike `fetch1`, `populate(key)` does NOT raise on a loose dict. Mechanism: `populate(restrictions)` restricts against `key_source`, which defaults to each parent table projected to its **primary key only** (DataJoint `autopopulate.py` `key_source` property: `else table.proj()`). For `SpikeSorting`, `key_source = SpikeSortingSelection.proj()` — heading is just `{sorting_id}`. DataJoint's `&` silently drops dict keys not in the heading, so `{'nwb_file_name': ..., 'sorter': 'mountainsort4'}` is fully discarded and the restriction degenerates to a no-op. `populate()` then walks every unprocessed row in the Selection, and one of them has `sorter='kilosort2'` — the spikeinterface sorter dispatch raises the error the user saw. Fix: restrict against the full Selection table (whose heading DOES include secondary attrs like `sorter` and `nwb_file_name`), then project to a PK-only key before passing to populate:\n\n```python\nsel_key = (SpikeSortingSelection & {'nwb_file_name': ..., 'sorter': 'mountainsort4'}).fetch1('KEY')\nSpikeSorting.populate(sel_key)\n```\n\nOr for multi-row populates: `SpikeSorting.populate((SpikeSortingSelection & key).proj())`. Generalizes to every `*V1.populate(...)` entry point — the key_source-PK-only behavior is the `dj.Computed` default, not Spyglass-specific.",
       "assertions": {
         "required_substrings": [
@@ -1602,12 +1610,13 @@
       "tier": "config-troubleshooting",
       "difficulty": "medium",
       "prompt": "just did `git pull` on spyglass/master and now `SpikeSortingRecording.populate` raises `KeyError: 'pipeline'`. Worked yesterday. Is this schema drift between my local code and the db, and if so which side is ahead?",
-      "expected_output": "Routes to setup_troubleshooting.md '`KeyError: '<column>' is not in the table heading' after `git pull`'. Yes — schema drift with code ahead of DB. The Python-side definition got a new `pipeline` column that the DB-side table doesn't have yet. Confirm the drift direction: `SpikeSortingRecording().describe()` (Python-side) vs `dj.conn().query('SHOW CREATE TABLE `<schema>`.`spike_sorting_recording`').fetchall()` (DB-side) — columns only on one side are the drift. Fix: run the table's `.alter()` as a user with ALTER privilege:\\n\\n```python\\nfrom spyglass.common import *   # pulls FK-referenced classes into scope\\nSpikeSortingRecording().alter()\\n```\\n\\nThe `from ... import *` is important — without it, `.alter()` raises `Foreign key reference <X> could not be resolved`. On shared DBs, coordinate with an admin if you don't have ALTER privilege; don't drop-and-recreate unless the table is empty.",
+      "expected_output": "Routes to setup_troubleshooting.md '`KeyError: '<column>' is not in the table heading' after `git pull`'. Yes — schema drift with code ahead of DB. The Python-side definition got a new `pipeline` column that the DB-side table doesn't have yet. Confirm the drift direction: `SpikeSortingRecording().describe()` (Python-side) vs `dj.conn().query('SHOW CREATE TABLE `<schema>`.`spike_sorting_recording`').fetchall()` (DB-side) — columns only on one side are the drift. Fix: read `CHANGELOG.md` for the release that introduced the new column — recent versions list every required `Table().alter()` call in the release-notes section so an admin can run the migration with the right ordering and scope. On shared DBs, the user should coordinate with an admin (the alter calls require ALTER privilege the average user does not have); don't drop-and-recreate unless the table is empty. The `from spyglass.common import *` import is needed inside the admin's alter session so DataJoint can resolve every FK-referenced class.",
       "assertions": {
         "required_substrings": [
-          "SpikeSortingRecording().alter()",
           "SHOW CREATE TABLE",
-          "from spyglass.common import *"
+          "from spyglass.common import *",
+          "CHANGELOG.md",
+          "SpikeSortingRecording"
         ],
         "forbidden_substrings": [
           "git checkout",
@@ -1616,20 +1625,21 @@
         "behavioral_checks": [
           "Identifies the drift direction: code ahead of DB",
           "Shows both sides of the diagnostic (Python describe() vs DB SHOW CREATE TABLE)",
-          "Uses .alter() with `from spyglass.common import *` to pull FK scope",
+          "Directs the user to CHANGELOG.md, which documents the per-release Table().alter() calls an admin needs to run so the database catches up to the package",
           "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables"
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `SpikeSortingRecording().alter()`.",
         "Response contains substring `SHOW CREATE TABLE`.",
         "Response contains substring `from spyglass.common import *`.",
+        "Response contains substring `CHANGELOG.md`.",
+        "Response contains substring `SpikeSortingRecording`.",
         "Response does not contain substring `git checkout`.",
         "Response does not contain substring `downgrade spyglass`.",
         "Identifies the drift direction: code ahead of DB",
         "Shows both sides of the diagnostic (Python describe() vs DB SHOW CREATE TABLE)",
-        "Uses .alter() with `from spyglass.common import *` to pull FK scope",
+        "Directs the user to CHANGELOG.md, which documents the per-release Table().alter() calls an admin needs to run so the database catches up to the package",
         "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables"
       ]
     },
@@ -3384,7 +3394,8 @@
           "delete all RippleTimesV1 rows",
           "re-populate LFPV1",
           "super_delete",
-          "ripple_params_name"
+          "ripple_params_name",
+          "update1"
         ],
         "behavioral_checks": [
           "Uses the correct field name `ripple_param_name` (singular), not `ripple_params_name`",
@@ -3403,6 +3414,7 @@
         "Response does not contain substring `re-populate LFPV1`.",
         "Response does not contain substring `super_delete`.",
         "Response does not contain substring `ripple_params_name`.",
+        "Response does not contain substring `update1`.",
         "Uses the correct field name `ripple_param_name` (singular), not `ripple_params_name`",
         "Scopes the cleanup to RippleTimesV1 rows with the affected `ripple_param_name`, not all RippleTimesV1 rows",
         "Explicitly lists what is unaffected — LFP, LFPBand, RippleLFPSelection, position, decoding branches not downstream of the affected ripple times",
