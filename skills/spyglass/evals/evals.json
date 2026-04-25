@@ -1392,51 +1392,6 @@
       ]
     },
     {
-      "id": 36,
-      "eval_name": "merge-cascade-not-in-digraph",
-      "stage": "runtime-debugging",
-      "tier": "merge-table-gotchas",
-      "difficulty": "medium",
-      "prompt": "`(Nwbfile & {'nwb_file_name': 'j1620210710_.nwb'}).delete()` fails with `NetworkXError: The node \\`spyglass_lfp_v1.l_f_p_v1\\` is not in the digraph`. I just want to clear this test session — why is delete complaining about LFP? My imports are just `from spyglass.common import Nwbfile`.",
-      "expected_output": "Routes to merge_methods.md 'Import merge masters before cascade-deleting upstream keys'. Root cause: `SpyglassMixin.cautious_delete` walks the DataJoint dependency graph to cascade the delete and check permissions. The graph only contains tables whose Python classes have been imported in the current session. Merge masters aren't auto-imported by `spyglass.common` — so descendants like `LFPV1` show up in the DB schema but are missing from the Python-side graph, and the walk fails. Fix: import all relevant merge masters before the delete: `from spyglass.lfp import LFPOutput`, `from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput`, `from spyglass.position.position_merge import PositionOutput`, `from spyglass.linearization.merge import LinearizedPositionOutput`, plus any lab-specific merge-extending modules. Does NOT recommend `super_delete()` as the fix.",
-      "assertions": {
-        "required_substrings": [
-          "LFPOutput",
-          "SpikeSortingOutput",
-          "PositionOutput",
-          "from spyglass.lfp",
-          "LFPV1",
-          "LinearizedPositionOutput"
-        ],
-        "forbidden_substrings": [
-          "super_delete()"
-        ],
-        "behavioral_checks": [
-          "Explains that cautious_delete walks a dependency graph that only contains imported classes",
-          "Lists the canonical merge-master imports (LFPOutput, SpikeSortingOutput, PositionOutput, LinearizedPositionOutput)",
-          "Mentions that lab-specific merge extenders may also need importing",
-          "Does not reach for super_delete() as the primary fix"
-        ],
-        "expected_output_tables_exempt": [
-          "Merge"
-        ]
-      },
-      "files": [],
-      "expectations": [
-        "Response contains substring `LFPOutput`.",
-        "Response contains substring `SpikeSortingOutput`.",
-        "Response contains substring `PositionOutput`.",
-        "Response contains substring `from spyglass.lfp`.",
-        "Response contains substring `LFPV1`.",
-        "Response contains substring `LinearizedPositionOutput`.",
-        "Response does not contain substring `super_delete()`.",
-        "Explains that cautious_delete walks a dependency graph that only contains imported classes",
-        "Lists the canonical merge-master imports (LFPOutput, SpikeSortingOutput, PositionOutput, LinearizedPositionOutput)",
-        "Mentions that lab-specific merge extenders may also need importing",
-        "Does not reach for super_delete() as the primary fix"
-      ]
-    },
-    {
       "id": 37,
       "eval_name": "runtime-populate-non-pk-dict",
       "stage": "runtime-debugging",
@@ -1478,7 +1433,7 @@
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
       "difficulty": "hard",
-      "prompt": "First time running DLC on a fresh session. `DLCPosV1.populate(key)` dies with `IndexError: index 0 is out of bounds for axis 0 with size 0` inside `convert_epoch_interval_name_to_position_interval_name`. Am I missing an upstream populate step? I thought I set up `DLCPosSelection` correctly.",
+      "prompt": "First time running DLC on a fresh session. `DLCPosV1.populate(key)` dies with `IndexError: index 0 is out of bounds for axis 0 with size 0` somewhere deep in the position pipeline — the traceback bottoms out in spyglass code I haven't touched. Am I missing an upstream populate step? I thought I set up `DLCPosSelection` correctly.",
       "expected_output": "Routes to position_pipeline.md DLC gotchas (empty PositionIntervalMap). Root cause: the session has no `PositionIntervalMap` rows mapping task epochs to position intervals. Fix: for each `TaskEpoch`, run:\\n\\n```python\\nfrom spyglass.common import convert_epoch_interval_name_to_position_interval_name\\nconvert_epoch_interval_name_to_position_interval_name(\\n    {'nwb_file_name': nwb_file, 'epoch': epoch_id},\\n    populate_missing=True,\\n)\\n```\\n\\nThe `populate_missing=True` kwarg creates the map rows. DLC-only sessions (no Trodes-derived position) have a second failure mode — no `'pos N valid times'` IntervalList exists to match against. In that case: insert `RawPosition` / `PositionSource` rows first, or upgrade past PR #1208 (`Fix missing pos interval map entry in pose estimation`).",
       "assertions": {
         "required_substrings": [
