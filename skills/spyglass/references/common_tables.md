@@ -18,6 +18,8 @@ Tables in the `spyglass.common` schema. These are the root tables all pipelines 
 
 **Important**: Always verify table structure with `Table.describe()` or `Table.heading` before writing queries that depend on specific column names. This reference provides an overview of table purposes and relationships, not an exhaustive schema copy.
 
+**Adjacent concepts.** Group tables (`SortedSpikesGroup`, `PositionGroup`, `UnitSelectionParams`) live in pipeline-specific schemas, not in `common`, but the shape recurs across pipelines — see [group_tables.md](group_tables.md). Merge tables similarly live in pipeline schemas — see [merge_methods.md](merge_methods.md).
+
 ```python
 from spyglass.common import (
     Session, Nwbfile, AnalysisNwbfile, IntervalList,
