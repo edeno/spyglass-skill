@@ -587,6 +587,84 @@ def fixture_eval_hallucinated_method(src_root):
     return False
 
 
+def fixture_compare_versions_diffs_classes_and_methods(src_root):
+    """compare_versions.py output contract: must label class-only-in-A vs
+    class-only-in-B sections AND list per-class method diffs for shared
+    classes. Lock both behaviors so a refactor of the script's output
+    format breaks the gate, not silently the user-facing answer.
+
+    Synthesizes a fake spyglass tree with ``fakepipe/v0/foo.py`` and
+    ``fakepipe/v1/foo.py``, runs the script via subprocess, and asserts
+    the diff contains the expected markers.
+    """
+    import subprocess
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    tmp = P(tempfile.mkdtemp())
+    pkg = tmp / "spyglass" / "fakepipe"
+    (pkg / "v0").mkdir(parents=True)
+    (pkg / "v1").mkdir(parents=True)
+    (pkg / "v0" / "foo.py").write_text(textwrap.dedent("""
+        class A:
+            def m_shared(self): pass
+            def m_v0_only(self): pass
+        class OnlyV0:
+            pass
+    """))
+    (pkg / "v1" / "foo.py").write_text(textwrap.dedent("""
+        class A:
+            def m_shared(self): pass
+            def m_v1_only(self): pass
+        class OnlyV1:
+            pass
+    """))
+
+    script = (
+        P(__file__).resolve().parent.parent
+        / "scripts"
+        / "compare_versions.py"
+    )
+    proc = subprocess.run(
+        ["python3", str(script), "fakepipe", "v0", "v1", "--src", str(tmp)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    out = proc.stdout
+    if proc.returncode != 0:
+        print(f"  [FAIL] compare_versions exited {proc.returncode}; stderr: {proc.stderr!r}")
+        return False
+
+    expectations = [
+        "=== fakepipe v0 vs v1 ===",
+        "Classes only in v0:",
+        "OnlyV0",
+        "Classes only in v1:",
+        "OnlyV1",
+        "Class methods that differ",
+        "m_v0_only",
+        "m_v1_only",
+    ]
+    missing = [e for e in expectations if e not in out]
+    if missing:
+        print(f"  [FAIL] compare_versions output missing markers: {missing}")
+        print(f"         output: {out}")
+        return False
+
+    # m_shared must NOT appear under "only in" — it's identical across versions.
+    diff_section = out.split("Class methods that differ", 1)[-1]
+    if "m_shared" in diff_section:
+        print("  [FAIL] m_shared (identical method) appeared in the differs section")
+        print(f"         section: {diff_section}")
+        return False
+
+    print("  [ok] compare_versions: class+method diff sections labeled correctly")
+    return True
+
+
 def fixture_eval_citation_lines_out_of_range(src_root):
     """Eval prose with `file.py:NNN` citing a line past EOF should fail.
     Mirrors check_citation_lines (markdown) onto evals.json."""
@@ -2018,6 +2096,7 @@ FIXTURES = [
     fixture_correct_field_name_no_warn,
     fixture_merge_restriction_not_false_positive,
     fixture_eval_hallucinated_method,
+    fixture_compare_versions_diffs_classes_and_methods,
     fixture_eval_citation_content_drift_warns,
     fixture_eval_citation_lines_out_of_range,
     fixture_eval_pr_citation_warns,

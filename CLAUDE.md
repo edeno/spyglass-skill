@@ -86,6 +86,7 @@ cap — the caps exist because context bloat hurts triggering quality.
 - **Citing line numbers (`file.py:123`)**: the validator checks these resolve in the Spyglass source. Update or remove them when Spyglass is bumped.
 - **Linking to other skill files**: the validator checks link landing content overlaps with the linking context. Vague links warn.
 - **Frontmatter description changes**: re-run skill-creator's description optimization before shipping — triggering accuracy drifts quickly.
+- **Editing v0/v1/v2 differences for any pipeline**: run `python skills/spyglass/scripts/compare_versions.py <pipeline>` (e.g. `spikesorting`, `decoding`, `position`) before naming methods or asserting symmetry — don't enumerate the differences from memory. The script AST-parses each version directory under `$SPYGLASS_SRC` and prints which classes/methods exist in one version but not the other; it generalizes to any pipeline and any future v2/v3 the moment the directory exists.
 
 ## What not to do
 
