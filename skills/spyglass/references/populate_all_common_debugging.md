@@ -14,7 +14,12 @@ Triage failures from the common-ingest driver `spyglass.common.populate_all_comm
 
 `populate_all_common` is the common-ingest driver that calls each common-module table in sequence. By default (`raise_err=False`) it catches exceptions per-table and writes only a short message to `common_usage.InsertError` — the full traceback is lost. This is the single most common cause of "fresh ingest completed but my common tables are missing rows."
 
-The failure is silent from the caller's perspective: no exception, no log line, just missing data downstream. Every other debugging path in [runtime_debugging.md](runtime_debugging.md) assumes you have a traceback to work with. Here you don't — you have to force one.
+The failure is *quieter* than a normal Python exception, but not fully silent — current Spyglass emits two recoverable signals before returning:
+
+- A summary `logger.error(...)` line at the end of the run naming the failed tables (`src/spyglass/common/populate_all_common.py:265-272`). It looks like `Errors occurred during population for {nwb_file_name}: Failed tables [...]. See common_usage.InsertError for more details`.
+- A return value: a list of `InsertError` keys for the tables that failed. If the user captured the call (`failed = populate_all_common(...)`), that list is the per-table inventory.
+
+Both signals are easy to miss — the logger.error is one line in a long ingest log, and most users discard the return value. Every other debugging path in [runtime_debugging.md](runtime_debugging.md) assumes you have a full traceback to work with. Here you have a name and an `InsertError` row, not a stack trace, so the first move is to force the traceback (next section) once you've used the cheaper signals to confirm which tables actually failed.
 
 ## Primary fix — pass `raise_err=True`
 
