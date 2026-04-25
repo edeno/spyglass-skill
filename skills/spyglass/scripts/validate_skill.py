@@ -77,6 +77,7 @@ KNOWN_CLASSES = {
     "FirFilterParameters": "spyglass/common/common_filter.py",
     "BrainRegion": "spyglass/common/common_region.py",
     "Subject": "spyglass/common/common_subject.py",
+    "UserEnvironment": "spyglass/common/common_user.py",
     "PositionSource": "spyglass/common/common_behav.py",
     "IntervalPositionInfoSelection": "spyglass/common/common_position.py",
     "IntervalPositionInfo": "spyglass/common/common_position.py",
