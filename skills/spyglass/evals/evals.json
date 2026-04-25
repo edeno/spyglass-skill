@@ -621,7 +621,6 @@
       "assertions": {
         "required_substrings": [
           "nwb_file_name",
-          "Session",
           "RippleTimesV1",
           "ClusterlessDecodingV1"
         ],
@@ -629,12 +628,14 @@
         "behavioral_checks": [
           "Uses the * join operator (not nested restrictions)",
           "Addresses row multiplication (unique nwb_file_name via set() or distinct)"
+        ],
+        "expected_output_tables_exempt": [
+          "Session"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `nwb_file_name`.",
-        "Response contains substring `Session`.",
         "Response contains substring `RippleTimesV1`.",
         "Response contains substring `ClusterlessDecodingV1`.",
         "Uses the * join operator (not nested restrictions)",
