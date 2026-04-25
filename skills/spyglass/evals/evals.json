@@ -691,11 +691,9 @@
       "tier": "joins",
       "difficulty": "easy",
       "prompt": "For each session from subject aj80, how many tetrodes were recorded?",
-      "expected_output": "(Session & {'subject_id': 'aj80'}).aggr(Electrode, n_tetrodes='count(distinct electrode_group_name)')",
+      "expected_output": "Routes to datajoint_api.md (aggregation patterns). The canonical answer uses `.aggr()`: `(Session & {'subject_id': 'aj80'}).aggr(Electrode, n_tetrodes='count(distinct electrode_group_name)')` — one row per session with the count. An equivalent shape without `.aggr()` works too: project Session and Electrode to disambiguate, join, then deduplicate on (session, electrode_group_name) before counting in pandas — for instance, fetching `(Session & {'subject_id': 'aj80'}) * Electrode.proj('electrode_group_name')` to a DataFrame and grouping. Either path is correct as long as the final count is per-session-per-distinct-electrode-group-name. Does not count raw Electrode rows as tetrodes (each tetrode has 4 electrodes).",
       "assertions": {
         "required_substrings": [
-          ".aggr(",
-          "count(",
           "electrode_group_name",
           "subject_id",
           "Session",
@@ -703,28 +701,20 @@
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Uses Session on the left side of .aggr() so the result is one row per session",
           "Restricts to subject aj80",
-          "Counts distinct electrode_group_name values per session",
-          "Does not count raw Electrode rows as tetrodes"
-        ],
-        "required_substrings_exempt": [
-          ".aggr(",
-          "count("
+          "Counts distinct electrode_group_name values per session — does not count raw Electrode rows as tetrodes (each tetrode has 4 electrodes)",
+          "Names .aggr() OR an equivalent (Session.proj * Electrode.proj | unique-on-electrode-group) approach; does not require .aggr() as the only valid answer."
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `.aggr(`.",
-        "Response contains substring `count(`.",
         "Response contains substring `electrode_group_name`.",
         "Response contains substring `subject_id`.",
         "Response contains substring `Session`.",
         "Response contains substring `Electrode`.",
-        "Uses Session on the left side of .aggr() so the result is one row per session",
         "Restricts to subject aj80",
-        "Counts distinct electrode_group_name values per session",
-        "Does not count raw Electrode rows as tetrodes"
+        "Counts distinct electrode_group_name values per session — does not count raw Electrode rows as tetrodes (each tetrode has 4 electrodes)",
+        "Names .aggr() OR an equivalent (Session.proj * Electrode.proj | unique-on-electrode-group) approach; does not require .aggr() as the only valid answer."
       ]
     },
     {
@@ -1752,7 +1742,7 @@
         "behavioral_checks": [
           "Leads with `populate_all_common(nwb_file_name, raise_err=True)` as the primary fix — the function's built-in kwarg",
           "Identifies the default `raise_err=False` behavior as the silent-failure root cause",
-          "Mentions `common_usage.InsertError` as the place to find the short-message log",
+          "Names InsertError as the inspection table for failed inserts (`common_usage.InsertError & {'nwb_file_name': ...}` returns the short-message log per failed table)",
           "Shows the per-table populate loop as an alternative, not the primary fix",
           "Does not recommend editing populate_all_common.py source or re-running insert_sessions"
         ]
@@ -1771,7 +1761,7 @@
         "Response does not contain substring `edit populate_all_common.py`.",
         "Leads with `populate_all_common(nwb_file_name, raise_err=True)` as the primary fix — the function's built-in kwarg",
         "Identifies the default `raise_err=False` behavior as the silent-failure root cause",
-        "Mentions `common_usage.InsertError` as the place to find the short-message log",
+        "Names InsertError as the inspection table for failed inserts (`common_usage.InsertError & {'nwb_file_name': ...}` returns the short-message log per failed table)",
         "Shows the per-table populate loop as an alternative, not the primary fix",
         "Does not recommend editing populate_all_common.py source or re-running insert_sessions"
       ]
@@ -2051,7 +2041,7 @@
           "Identifies MuaEventsV1 as `dj.Computed`, not a merge master (rejects the 'spyglass bug' framing)",
           "Names the five actual merge masters (SpikeSortingOutput, LFPOutput, PositionOutput, LinearizedPositionOutput, DecodingOutput)",
           "Shows the correct direct-restriction form for MuaEventsV1 (`& {...}` with actual PK fields) — NOT a `merge_*` method",
-          "Mentions that the `*V1` / `*Output` suffixes are not a reliable merge signal",
+          "States that *V1 / *Output suffixes are conventions, not enforced. Names at least one lookalike from this allowed set: MuaEventsV1, CurationV1, LFPV1, TrodesPosV1, DLCPosV1, RippleTimesV1, IntervalLinearizedPosition, or any *Selection table.",
           "Offers the isinstance(table(), Merge) check OR equivalent as a programmatic check"
         ],
         "expected_output_tables_exempt": [
@@ -2078,7 +2068,7 @@
         "Identifies MuaEventsV1 as `dj.Computed`, not a merge master (rejects the 'spyglass bug' framing)",
         "Names the five actual merge masters (SpikeSortingOutput, LFPOutput, PositionOutput, LinearizedPositionOutput, DecodingOutput)",
         "Shows the correct direct-restriction form for MuaEventsV1 (`& {...}` with actual PK fields) — NOT a `merge_*` method",
-        "Mentions that the `*V1` / `*Output` suffixes are not a reliable merge signal",
+        "States that *V1 / *Output suffixes are conventions, not enforced. Names at least one lookalike from this allowed set: MuaEventsV1, CurationV1, LFPV1, TrodesPosV1, DLCPosV1, RippleTimesV1, IntervalLinearizedPosition, or any *Selection table.",
         "Offers the isinstance(table(), Merge) check OR equivalent as a programmatic check"
       ]
     },
@@ -2675,17 +2665,19 @@
       "tier": "counterfactual",
       "difficulty": "hard",
       "prompt": "A labmate and I both ran the same selection + populate on `j1620210710_.nwb`. My `fetch_results` returns data, theirs returns empty. What differs between our pipeline states to explain this?",
-      "expected_output": "Lists at least three plausible state differences without committing to one cause: (1) different params_name on the selection — same prompt-level 'parameters' but different named entry in the params table; (2) one user's selection row hasn't been populated yet — fetch_results returns empty when the downstream Computed row simply doesn't exist; (3) different upstream restriction — the selection key resolved to different upstream rows for each user (e.g., different DLCPosV1 merge_id implicit in PositionGroup, different SpikeSortingRecording UUID); (4) environment / package version drift causing different populate behavior or different output shapes per user. Recommends inspecting both users' (Selection & key).fetch() output side-by-side as the first diagnostic. Does not claim the pipeline state is identical when the symptoms prove otherwise. Note: cautious_delete only gates DELETES, not writes or populate, so it is not a plausible cause of empty fetch_results.",
+      "expected_output": "Lists at least three plausible state differences without committing to one cause: (1) different params_name on the selection — same prompt-level 'parameters' but different named entry in the params table; (2) one user's selection row hasn't been populated yet — fetch_results returns empty when the downstream Computed row simply doesn't exist; (3) different upstream restriction — the selection key resolved to different upstream rows for each user (e.g., different DLCPosV1 merge_id implicit in PositionGroup, different SpikeSortingRecording UUID); (4) environment / package version drift causing different populate behavior or different output shapes per user — Spyglass actually records this in `common.UserEnvironment` (`src/spyglass/common/common_user.py:28`); fetch the `env` blob for each user's `env_id` and diff against the user's currently-running env (e.g., `conda env export` / `pip freeze` / `sys.version`) to nail this down quickly instead of generic-suggesting 'check your env'. Recommends inspecting both users' (Selection & key).fetch() output side-by-side as the first diagnostic. Does not claim the pipeline state is identical when the symptoms prove otherwise. Note: cautious_delete only gates DELETES, not writes or populate, so it is not a plausible cause of empty fetch_results.",
       "assertions": {
         "required_substrings": [
           "params_name",
           "Selection & key",
-          "upstream restriction"
+          "upstream restriction",
+          "UserEnvironment"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Lists at least three plausible state differences (different params name, missing populate, different upstream restriction, env / version drift) without committing to one cause",
           "Recommends a concrete first diagnostic (e.g., inspecting (Selection & key).fetch() output side-by-side)",
+          "Fetches from UserEnvironment and compares against the user's running env (sys.version, package versions); does not generic-suggest 'check your env'.",
           "Does not claim the pipeline state must be identical when the symptoms prove otherwise",
           "Does not misframe cautious_delete as a write/populate gate — cautious_delete blocks deletes only"
         ],
@@ -2700,8 +2692,10 @@
         "Response contains substring `params_name`.",
         "Response contains substring `Selection & key`.",
         "Response contains substring `upstream restriction`.",
+        "Response contains substring `UserEnvironment`.",
         "Lists at least three plausible state differences (different params name, missing populate, different upstream restriction, env / version drift) without committing to one cause",
         "Recommends a concrete first diagnostic (e.g., inspecting (Selection & key).fetch() output side-by-side)",
+        "Fetches from UserEnvironment and compares against the user's running env (sys.version, package versions); does not generic-suggest 'check your env'.",
         "Does not claim the pipeline state must be identical when the symptoms prove otherwise",
         "Does not misframe cautious_delete as a write/populate gate — cautious_delete blocks deletes only"
       ]
@@ -2902,19 +2896,20 @@
       "stage": "framework-concepts",
       "tier": "schema-introspection",
       "difficulty": "easy",
-      "prompt": "What is the primary key of the `Electrode` table? Return only the field names as a comma-separated list, nothing else.",
-      "expected_output": "Routes to common_tables.md (Electrode entry). Lists exactly the three PK fields: nwb_file_name, electrode_group_name, electrode_id (in any order). Notes the inheritance: Electrode -> ElectrodeGroup contributes nwb_file_name + electrode_group_name; Electrode adds its own electrode_id. Does not include region_id (which is a secondary FK to BrainRegion, not a PK).",
+      "prompt": "What is the primary key of the `Electrode` table? Show me the one-liner you'd run to verify, and list the field names.",
+      "expected_output": "Routes to common_tables.md (Electrode entry) + datajoint_api.md (schema introspection). Run `Electrode.primary_key` — DataJoint returns the PK fields as a list. Output is exactly the three PK fields: `nwb_file_name`, `electrode_group_name`, `electrode_id` (order set by inheritance). Inheritance: `Electrode -> ElectrodeGroup` contributes `nwb_file_name` + `electrode_group_name`; `Electrode` adds its own `electrode_id`. Does not include `region_id` (which is a secondary FK to BrainRegion, not a PK).",
       "assertions": {
         "required_substrings": [
           "nwb_file_name",
           "electrode_group_name",
-          "electrode_id"
+          "electrode_id",
+          "Electrode.primary_key"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id) in any order, with no extra fields",
-          "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key",
-          "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
+          "Calls Table.primary_key in the response (with the correct receiver — `Electrode.primary_key`), not just a textual description of 'the primary key'.",
+          "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id), with no extra fields",
+          "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key"
         ],
         "expected_output_tables_exempt": [
           "BrainRegion",
@@ -2927,9 +2922,10 @@
         "Response contains substring `nwb_file_name`.",
         "Response contains substring `electrode_group_name`.",
         "Response contains substring `electrode_id`.",
-        "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id) in any order, with no extra fields",
-        "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key",
-        "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
+        "Response contains substring `Electrode.primary_key`.",
+        "Calls Table.primary_key in the response (with the correct receiver — `Electrode.primary_key`), not just a textual description of 'the primary key'.",
+        "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id), with no extra fields",
+        "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key"
       ]
     },
     {
@@ -3035,25 +3031,27 @@
       "stage": "framework-concepts",
       "tier": "schema-introspection",
       "difficulty": "easy",
-      "prompt": "What are the part tables of `Probe`? Return only the part table names as a comma-separated list.",
-      "expected_output": "Routes to common_tables.md (Probe entry). Lists both part tables in Master.Part notation: Probe.Shank, Probe.Electrode. Does not list non-existent parts.",
+      "prompt": "What are the part tables of `Probe`? Show me the one-liner you'd run to enumerate them, then list the names.",
+      "expected_output": "Routes to common_tables.md (Probe entry) + datajoint_api.md (schema introspection). Run `Probe.parts()` — DataJoint returns the part-table classes attached to `Probe`. The two parts in Master.Part notation: `Probe.Shank`, `Probe.Electrode`. Does not invent additional Probe.* parts.",
       "assertions": {
         "required_substrings": [
           "Probe.Shank",
-          "Probe.Electrode"
+          "Probe.Electrode",
+          "Probe.parts"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist",
-          "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
+          "Calls Probe.parts() in the response to enumerate part tables.",
+          "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `Probe.Shank`.",
         "Response contains substring `Probe.Electrode`.",
-        "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist",
-        "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
+        "Response contains substring `Probe.parts`.",
+        "Calls Probe.parts() in the response to enumerate part tables.",
+        "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist"
       ]
     },
     {
@@ -3477,13 +3475,14 @@
       "stage": "pipeline-usage",
       "tier": "counterfactual",
       "difficulty": "hard",
-      "prompt": "If I change `trodes_pos_params_name` on my `TrodesPosSelection` from `default` to `default_decoding` and re-populate `TrodesPosV1`, which downstream tables would produce different entries, and which would be completely unaffected if every other selection is the same?",
-      "expected_output": "A change to `trodes_pos_params_name` on `TrodesPosSelection` produces a new row in `TrodesPosV1` keyed by the new params name — the old row is still there (same `nwb_file_name`, `interval_list_name`, different `trodes_pos_params_name`). Inserting that new `TrodesPosV1` row into `PositionOutput.TrodesPosV1` issues a new `merge_id` on `PositionOutput`. Downstream that diverges — anything consuming the new PositionOutput merge_id: `LinearizedPositionV1` (if re-inserted keyed on the new merge_id), clusterless/sorted decoding selections that reference the new `PositionGroup` (if the group is updated to include the new merge_id), ripple detection if `RippleLFPSelection` is paired with the new PositionOutput merge via `RippleTimesV1`'s `pos_merge_id` FK. Unchanged: everything not downstream of `PositionOutput` — `LFPV1`, `LFPBandV1`, `SpikeSorting`, `SpikeSortingRecording`, `CurationV1`, the Session/Electrode/IntervalList common tables, raw ephys. The old position entry and its downstream consumers stay valid; divergence threads through the new merge_id. Routes to position_pipeline.md and decoding_pipeline.md. Does not claim spike sorting or LFP are affected (they don't consume position).",
+      "prompt": "If I change `trodes_pos_params_name` on my `TrodesPosSelection` from `default` to `default_decoding` and re-populate `TrodesPosV1`, which downstream tables would produce different entries, and which would be completely unaffected if every other selection is the same? Show me the DataJoint one-liner you'd run to enumerate the downstream tables before reasoning through them.",
+      "expected_output": "Run `PositionOutput.descendants()` (or `TrodesPosV1.descendants()`) to enumerate every table whose key derives from PositionOutput / TrodesPosV1 — that's the candidate set for divergence. Then reason through which of those actually consume the new params: a change to `trodes_pos_params_name` on `TrodesPosSelection` produces a new row in `TrodesPosV1` keyed by the new params name — the old row is still there (same `nwb_file_name`, `interval_list_name`, different `trodes_pos_params_name`). Inserting that new `TrodesPosV1` row into `PositionOutput.TrodesPosV1` issues a new `merge_id` on `PositionOutput`. Downstream that diverges — anything consuming the new PositionOutput merge_id: `LinearizedPositionV1` (if re-inserted keyed on the new merge_id), clusterless/sorted decoding selections that reference the new `PositionGroup` (if the group is updated to include the new merge_id), ripple detection if `RippleLFPSelection` is paired with the new PositionOutput merge via `RippleTimesV1`'s `pos_merge_id` FK. Unchanged: everything not downstream of `PositionOutput` — `LFPV1`, `LFPBandV1`, `SpikeSorting`, `SpikeSortingRecording`, `CurationV1`, the Session/Electrode/IntervalList common tables, raw ephys. The old position entry and its downstream consumers stay valid; divergence threads through the new merge_id. Routes to position_pipeline.md and decoding_pipeline.md. Does not claim spike sorting or LFP are affected (they don't consume position).",
       "assertions": {
         "required_substrings": [
           "PositionOutput",
           "TrodesPosV1",
-          "position_pipeline.md"
+          "position_pipeline.md",
+          ".descendants"
         ],
         "expected_output_tables_exempt": [
           "TrodesPosSelection",
@@ -3508,6 +3507,7 @@
           "SpikeSortingV1"
         ],
         "behavioral_checks": [
+          "Calls Table.descendants() (or .ancestors() if upstream-direction) — names the actual DataJoint method, not 'walk the graph'.",
           "Identifies that a new `TrodesPosV1` row (new params_name) is produced, not an in-place update",
           "Identifies that inserting into `PositionOutput.TrodesPosV1` issues a new merge_id on `PositionOutput`",
           "Lists at least two downstream tables that would diverge (linearization, decoding via PositionGroup, ripple via pos_merge_id)",
@@ -3520,10 +3520,12 @@
         "Response contains substring `PositionOutput`.",
         "Response contains substring `TrodesPosV1`.",
         "Response contains substring `position_pipeline.md`.",
+        "Response contains substring `.descendants`.",
         "Response does not contain substring `LFPV1 would need to be re-populated`.",
         "Response does not contain substring `SpikeSorting depends on position`.",
         "Response does not contain substring `CurationV1 would change`.",
         "Response does not contain substring `SpikeSortingV1`.",
+        "Calls Table.descendants() (or .ancestors() if upstream-direction) — names the actual DataJoint method, not 'walk the graph'.",
         "Identifies that a new `TrodesPosV1` row (new params_name) is produced, not an in-place update",
         "Identifies that inserting into `PositionOutput.TrodesPosV1` issues a new merge_id on `PositionOutput`",
         "Lists at least two downstream tables that would diverge (linearization, decoding via PositionGroup, ripple via pos_merge_id)",
