@@ -10,6 +10,7 @@ Quality-critical Spyglass operations have a **validator → fix → proceed** sh
 - [Pre-`fetch1()` cardinality check](#pre-fetch1-cardinality-check)
 - [Post-`populate()` verification](#post-populate-verification)
 - [Inspect-before-destroy](#inspect-before-destroy)
+- [Verify behavior, trust identity](#verify-behavior-trust-identity)
 
 ## Post-ingestion verification
 
@@ -127,3 +128,19 @@ target.fetch(as_dict=True)   # inspect scope; cascade preview for .delete()
 # Get explicit user confirmation here
 target.delete()              # only after confirmation
 ```
+
+## Verify behavior, trust identity
+
+Identity claims about Spyglass are well-handled by the existing toolchain — `Table.heading`, `Table.parents()`, `KNOWN_CLASSES`, `Table.describe()`, and an `AttributeError` at runtime if a method is named wrong. *Behavior* claims aren't. Field names follow conventions; pipeline order does not. v1 is mostly a refactor of v0, but the helpers are not symmetric. A merge master sits between the Computed table and its downstream consumers, but it's easy to elide it in a chain because the user-facing names suggest a direct link.
+
+**Open the source before asserting any of the four claim shapes below.** Read the relevant `definition` string or `make()` body — don't reason from naming conventions or table tiers. For routine identity questions ("does this class exist," "what's its PK," "what tier is it"), the introspection primitives are sufficient and a source open isn't needed.
+
+**Pipeline-internal call order.** When the answer hinges on whether X happens before or after Y inside a `make()` body — e.g., "does smoothing happen before velocity is computed?" — open the file and read the function. Naming alone is unreliable. Worked example: in `src/spyglass/common/common_position.py:407-481`, per-LED speeds are computed first but only used for outlier rejection; position is then smoothed via `position_smoothing_duration`; the *final* velocity and speed are computed from the smoothed centroid. Field-name-only reasoning ("speed is computed first because the field is called `speed_smoothing_std_dev`") gets the call order backwards.
+
+**Cascade chains across merge tables.** When describing how a delete or a populate cascades, every Output-named master is a *hop* in the chain — write it explicitly. Worked example: `LFPV1` is not directly upstream of `LFPBandV1`. The actual chain is `LFPV1 → LFPOutput.LFPV1 → LFPBandSelection (lfp_merge_id) → LFPBandV1`. The merge hop is declared on `LFPBandSelection` at `src/spyglass/lfp/analysis/v1/lfp_band.py:26` (`-> LFPOutput.proj(lfp_merge_id='merge_id')`); `LFPBandV1` then FKs `LFPBandSelection`. Eliding the merge hop produces a chain that looks plausible but doesn't match `Table.descendants()`. Same shape for any pipeline whose name ends in `Output` (`SpikeSortingOutput`, `PositionOutput`, `LinearizedPositionOutput`, `DecodingOutput`).
+
+**Structural vs. runtime attribution.** Spyglass behavior splits across two layers: *structural* (declared in `Table.definition` strings — FK shapes, projections, secondary attributes) and *runtime* (executed in `make()` or other methods). Footguns living in `definition` surface when the table populates, but they don't *originate* there. Worked example: the cohort-name projection footgun in `src/spyglass/position/v1/position_dlc_selection.py:33-34` (`-> DLCCentroid.proj(dlc_si_cohort_centroid='dlc_si_cohort_selection_name', ...)`) lives in `DLCPosSelection.definition`. Calling it a "`DLCPosV1.populate` footgun" gets the layer wrong even though that's when the user notices it.
+
+**v0 / v1 method symmetry.** v1 is a partial refactor of v0; helper methods that exist on the v0 version of a table do *not* always have a v1 counterpart, even when the table name is the same. Confirm by reading the v1 class definition before naming a method. Concrete examples: `set_group_by_electrode_group` exists on v0 `SortGroup` (`src/spyglass/spikesorting/v0/spikesorting_recording.py:94`) but **not** on v1 `SortGroup`, which exposes only `set_group_by_shank` (`src/spyglass/spikesorting/v1/recording.py:51`). Similarly, `LFPSelection.set_lfp_electrodes` is v0 (`src/spyglass/common/common_ephys.py`); the v1 equivalent is `LFPElectrodeGroup.create_lfp_electrode_group`, on a different class. Asymmetry shows up most often around helpers that pre-date the v1 split — when in doubt, `grep -rn "def MethodName" src/spyglass/spikesorting/v1/` (or `lfp/v1/`, etc.) before claiming the helper exists.
+
+**Why a separate loop:** the validator and `KNOWN_CLASSES` catch identity errors at gate time. They cannot catch a behavior claim that names real classes and real methods but describes their interaction wrong. The `AttributeError` you'd normally rely on doesn't fire — the call works, just not the way the answer says it does. Source verification is the only check.

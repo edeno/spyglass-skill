@@ -146,6 +146,8 @@ If you are uncertain whether a method is a classmethod, read the source or err o
 
 ## Import merge masters before cascade-deleting upstream keys
 
+When describing a cascade chain that traverses a merge master, write the merge hop explicitly — `LFPV1 → LFPOutput.LFPV1 → LFPBandSelection → LFPBandV1`, not `LFPV1 → LFPBandV1`. The Output-named master sits between the Computed table and its downstream consumers; eliding it produces a chain that looks plausible but doesn't match `Table.descendants()`. See [feedback_loops.md § Verify behavior, trust identity](feedback_loops.md#verify-behavior-trust-identity) for the full pattern.
+
 `SpyglassMixin.cautious_delete` walks the DataJoint dependency graph to
 cascade deletes and check permissions. The graph only contains tables
 whose Python classes have been **imported in the current session**.
