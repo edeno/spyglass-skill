@@ -15,7 +15,7 @@
       "tier": "baseline",
       "difficulty": "medium",
       "prompt": "ok so I just joined the example lab at example institution — they run spyglass and the lab has a mysql db at db.example.test port 3306 and my db user is testuser. This is my personal macbook (m1 pro), and I haven't installed spyglass or miniforge yet. Can you walk me through getting spyglass installed and pointed at the lab db?",
-      "expected_output": "Routes to setup_install.md (and setup_config.md for env vars). Recommends `python scripts/install.py --remote --db-host db.example.test --db-user testuser`. Notes the m1 pro is supported (no Rosetta needed). Points out that the installer writes the global DataJoint config at `~/.datajoint_config.json`, and mentions that DataJoint prefers a local `dj_local_conf.json` in the cwd if one exists (per-project override — installer doesn't create this one, users can copy/edit if needed). Asks which `SPYGLASS_BASE_DIR` to set.",
+      "expected_output": "Routes to setup_install.md (and setup_config.md for env vars). Recommends `python scripts/install.py --remote --db-host db.example.test --db-user testuser`. On Apple Silicon (m1/m2/m3), the preferred install path is **native ARM via Miniforge** — Rosetta is *not* the first-line route. Notes that Rosetta may still be needed as a fallback for a small number of upstream packages that lack ARM wheels (see `TROUBLESHOOTING.md` § Apple Silicon for the current list); flag that as a per-package fallback if the user hits a wheel-not-found error during install. Points out that the installer writes the global DataJoint config at `~/.datajoint_config.json`, and mentions that DataJoint prefers a local `dj_local_conf.json` in the cwd if one exists (per-project override — installer doesn't create this one, users can copy/edit if needed). Asks which `SPYGLASS_BASE_DIR` to set.",
       "assertions": {
         "required_substrings": [
           "scripts/install.py",
@@ -247,7 +247,7 @@
         "required_substrings": [
           "fetch_nwb",
           "01_Concepts",
-          "naming convention",
+          "Spyglass convention",
           "PositionOutput",
           "TrodesPosV1",
           "DLCPosV1"
@@ -266,7 +266,7 @@
       "expectations": [
         "Response contains substring `fetch_nwb`.",
         "Response contains substring `01_Concepts`.",
-        "Response contains substring `naming convention`.",
+        "Response contains substring `Spyglass convention`.",
         "Response contains substring `PositionOutput`.",
         "Response contains substring `TrodesPosV1`.",
         "Response contains substring `DLCPosV1`.",
@@ -282,7 +282,7 @@
       "tier": "baseline",
       "difficulty": "hard",
       "prompt": "I want to build a custom analysis pipeline that computes per-interval theta/gamma power ratios. Each interval + LFP entry should produce one row with mean power in theta (6-10 Hz), mean power in gamma (30-50 Hz), and their ratio. Give me a schema sketch — what's the right upstream table to FK on (LFPOutput? LFPBandV1?), which DataJoint tiers for the parameters vs selection vs computed tables, and what goes in `make()`. I want this in a new schema called `testuser_theta_gamma`. Also: should the computed table inherit SpyglassMixin?",
-      "expected_output": "Routes to custom_pipeline_authoring.md (+ `docs/src/ForDevelopers/Schema.md` under the hood). The right upstream table is `LFPBandV1` (one row per band per session/interval), NOT `LFPOutput` (which is wideband). The band filtering already happens upstream — the custom `make()` reads the band-filtered signal and computes power, instead of taking wideband LFP and re-filtering inside `make()`. To use `LFPBandV1`, the user first populates two band selections (one for theta, one for gamma) with `LFPBandSelection().set_lfp_band_electrodes(filter_name='Theta 6-10 Hz', ...)` and a second `LFPBandSelection().set_lfp_band_electrodes(filter_name='Gamma 30-50 Hz', ...)` call, then `LFPBandV1.populate(...)` for both. The custom Selection table FKs `LFPBandV1` twice (or carries two `lfp_band_filter_name` references via projection) so each Computed row points at one theta-band entry and one gamma-band entry. Proposes the canonical 3-tier layout: `ThetaGammaParams` (dj.Lookup or dj.Manual — power-window params, e.g., 'Hilbert envelope vs FFT'), `ThetaGammaSelection` (dj.Manual — joins two LFPBandV1 keys + params + interval), `ThetaGamma` (dj.Computed, inherits SpyglassMixin). STRONGLY flags that the Computed table MUST inherit SpyglassMixin **first** in the MRO (a validator regression fixture in tests/test_validator_regressions.py pins this exact mistake). For referencing `LFPBandV1`: foreign-key with projection to disambiguate the two bands, e.g., `-> LFPBandV1.proj(theta_band_key='lfp_band_filter_name')` and `-> LFPBandV1.proj(gamma_band_key='lfp_band_filter_name')`. NEVER foreign-key a part-table column directly. (If the user genuinely needed wideband LFP for some independent reason — say, a broadband spectral analysis — `LFPOutput` would be the right upstream, but for theta/gamma specifically the band filtering belongs upstream.) Shows a `make()` skeleton that: (1) fetches the theta-band dataframe via `(LFPBandV1 & theta_key).fetch1_dataframe()`, (2) fetches the gamma-band dataframe via `(LFPBandV1 & gamma_key).fetch1_dataframe()`, (3) computes mean power and ratio, (4) inserts the result row. Schema naming: personal/team schemas use `<database_user>_<suffix>` (enforced by MySQL GRANT permissions, see `spyglass/utils/database_settings.py` and `docs/src/ForDevelopers/Schema.md`). The user's proposed `testuser_theta_gamma` is **correct as-is** — do NOT prefix with `spyglass_`. The `spyglass_` prefix is reserved for the framework's own schemas.",
+      "expected_output": "Routes to custom_pipeline_authoring.md (+ `docs/src/ForDevelopers/Schema.md` under the hood). The right upstream table is `LFPBandV1` (one row per band per session/interval), NOT `LFPOutput` (which is wideband). The band filtering already happens upstream — the custom `make()` reads the band-filtered signal and computes power, instead of taking wideband LFP and re-filtering inside `make()`. To use `LFPBandV1`, the user first populates two band selections (one for theta, one for gamma) with `LFPBandSelection().set_lfp_band_electrodes(filter_name='Theta 6-10 Hz', ...)` and a second `LFPBandSelection().set_lfp_band_electrodes(filter_name='Gamma 30-50 Hz', ...)` call, then `LFPBandV1.populate(...)` for both. The custom Selection table FKs `LFPBandV1` twice (or carries two `filter_name` references via projection) so each Computed row points at one theta-band entry and one gamma-band entry. Proposes the canonical 3-tier layout: `ThetaGammaParams` (dj.Lookup or dj.Manual — power-window params, e.g., 'Hilbert envelope vs FFT'), `ThetaGammaSelection` (dj.Manual — joins two LFPBandV1 keys + params + interval), `ThetaGamma` (dj.Computed, inherits SpyglassMixin). STRONGLY flags that the Computed table MUST inherit SpyglassMixin **first** in the MRO (a validator regression fixture in tests/test_validator_regressions.py pins this exact mistake). For referencing `LFPBandV1`: foreign-key with projection to disambiguate the two bands, e.g., `-> LFPBandV1.proj(theta_band_key='filter_name')` and `-> LFPBandV1.proj(gamma_band_key='filter_name')`. NEVER foreign-key a part-table column directly. (If the user genuinely needed wideband LFP for some independent reason — say, a broadband spectral analysis — `LFPOutput` would be the right upstream, but for theta/gamma specifically the band filtering belongs upstream.) Shows a `make()` skeleton that: (1) fetches the theta-band dataframe via `(LFPBandV1 & theta_key).fetch1_dataframe()`, (2) fetches the gamma-band dataframe via `(LFPBandV1 & gamma_key).fetch1_dataframe()`, (3) computes mean power and ratio, (4) inserts the result row. Schema naming: personal/team schemas use `<database_user>_<suffix>` (enforced by MySQL GRANT permissions, see `spyglass/utils/database_settings.py` and `docs/src/ForDevelopers/Schema.md`). The user's proposed `testuser_theta_gamma` is **correct as-is** — do NOT prefix with `spyglass_`. The `spyglass_` prefix is reserved for the framework's own schemas.",
       "assertions": {
         "required_substrings": [
           "SpyglassMixin",
@@ -301,7 +301,7 @@
         "behavioral_checks": [
           "Routes the custom pipeline to LFPBandV1 (or LFPBandSelection) as the upstream FK — does NOT take LFPOutput (wideband) as upstream and re-filter inside the custom make()",
           "Places SpyglassMixin as the FIRST base class in the Computed table (MRO order: `class X(SpyglassMixin, dj.Computed):`)",
-          "Foreign-keys on LFPBandV1 master, projecting `lfp_band_filter_name` (or equivalent) to disambiguate when both theta and gamma rows are referenced. NEVER foreign-keys a part-table column directly.",
+          "Foreign-keys on LFPBandV1 master, projecting `filter_name` (or equivalent) to disambiguate when both theta and gamma rows are referenced. NEVER foreign-keys a part-table column directly.",
           "Separates Params / Selection / Computed into three tiers",
           "Does NOT prefix the schema name with `spyglass_` — personal/team schemas use `<database_user>_<suffix>`, so `testuser_theta_gamma` as the user proposed is correct, not `spyglass_testuser_theta_gamma`"
         ]
@@ -317,7 +317,7 @@
         "Response does not contain substring `spyglass_testuser_theta_gamma`.",
         "Routes the custom pipeline to LFPBandV1 (or LFPBandSelection) as the upstream FK — does NOT take LFPOutput (wideband) as upstream and re-filter inside the custom make()",
         "Places SpyglassMixin as the FIRST base class in the Computed table (MRO order: `class X(SpyglassMixin, dj.Computed):`)",
-        "Foreign-keys on LFPBandV1 master, projecting `lfp_band_filter_name` (or equivalent) to disambiguate when both theta and gamma rows are referenced. NEVER foreign-keys a part-table column directly.",
+        "Foreign-keys on LFPBandV1 master, projecting `filter_name` (or equivalent) to disambiguate when both theta and gamma rows are referenced. NEVER foreign-keys a part-table column directly.",
         "Separates Params / Selection / Computed into three tiers",
         "Does NOT prefix the schema name with `spyglass_` — personal/team schemas use `<database_user>_<suffix>`, so `testuser_theta_gamma` as the user proposed is correct, not `spyglass_testuser_theta_gamma`"
       ]
