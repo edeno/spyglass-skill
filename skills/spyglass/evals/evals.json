@@ -4910,9 +4910,9 @@
           "analysis_dir"
         ],
         "forbidden_substrings": [
-          "chmod -R 777 /stelmo",
-          "use chmod -R 777",
-          "blanket chmod 777"
+          "fix it with chmod -R 777",
+          "run chmod -R 777",
+          "the answer is chmod -R 777"
         ],
         "behavioral_checks": [
           "Identifies the failure as filesystem / group-permission layer (not a Spyglass code bug); names that the path is derived from `SPYGLASS_BASE_DIR` so the fix is upstream of the Python call",
@@ -4937,9 +4937,9 @@
         "Response contains substring `umask`.",
         "Response contains substring `group`.",
         "Response contains substring `analysis_dir`.",
-        "Response does not contain substring `chmod -R 777 /stelmo`.",
-        "Response does not contain substring `use chmod -R 777`.",
-        "Response does not contain substring `blanket chmod 777`.",
+        "Response does not contain substring `fix it with chmod -R 777`.",
+        "Response does not contain substring `run chmod -R 777`.",
+        "Response does not contain substring `the answer is chmod -R 777`.",
         "Identifies the failure as filesystem / group-permission layer (not a Spyglass code bug); names that the path is derived from `SPYGLASS_BASE_DIR` so the fix is upstream of the Python call",
         "Diagnoses in three layers — group membership (`id`, `ls -ld`), group-write bit + setgid on the directory (`drwxrws---`, `chmod 2775`), and `umask 002` on the user's shell — rather than guessing one cause",
         "Does NOT recommend `chmod -R 777` as the fix — that removes the permission gate entirely; the targeted group + setgid + umask fixes are correct",
@@ -4953,7 +4953,7 @@
       "tier": "runtime-errors",
       "difficulty": "medium",
       "prompt": "it's taking a really long time to fetch my ripple parameters. like 2 minutes and still hasn't returned. what's happening?",
-      "expected_output": "Almost certainly **DB lock contention**, not slow compute. `RippleParameters` is a `dj.Lookup` keyed on `ripple_param_name` with a small `ripple_param_dict` blob — there's nothing to fetch slowly. A 2-minute idle hang on a params table looks identical to lock contention from another worker / abandoned transaction holding a row-level lock the user's `&` / `.fetch()` is waiting on.\n\n**Diagnose with `check_threads(detailed=True)`** (`src/spyglass/utils/mixins/helpers.py:206`) — every `SpyglassMixin` table carries this method; it queries MySQL's `performance_schema` for live threads, including any blocking lock relationships:\n\n```python\nfrom spyglass.ripple.v1.ripple import RippleParameters\nRippleParameters().check_threads(detailed=True)\n```\n\nThe DataFrame surfaces the threads currently holding locks (`OBJECT_NAME`, `LOCK_TYPE`, `LOCK_STATUS`, plus blocker → waiter chains when `detailed=True`). If the user's session shows a thread waiting on another (often labelled `WAITING FOR ANOTHER TRANSACTION` or similar), that's the proof.\n\n**Distinguish from slow-compute.** A `.fetch()` that pulls a large blob spends time on disk + network and shows CPU activity in the kernel; an *idle* hang (no CPU, no progress) is the lock-contention signature. Params tables are never the slow-compute case — the row is small. So for a 2-minute hang on `RippleParameters`, jump straight to `check_threads(detailed=True)`; don't restart the kernel without a diagnostic first.\n\n**Resolution.** The blocker is usually an abandoned transaction from another worker (an interrupted populate that didn't commit, an open transaction in another notebook). Coordinate with the lab — kill the blocker only with awareness, don't unilaterally `KILL` someone else's transaction.\n\nRoutes to runtime_debugging.md (lock contention section) and spyglassmixin_methods.md.",
+      "expected_output": "Almost certainly **DB lock contention**, not slow compute. `RippleParameters` is a `dj.Lookup` keyed on `ripple_param_name` with a small `ripple_param_dict` blob — there's nothing to fetch slowly. A 2-minute idle hang on a params table looks identical to lock contention from another worker / abandoned transaction holding a row-level lock the user's `&` / `.fetch()` is waiting on.\n\n**Diagnose with `check_threads(detailed=True)`** (`src/spyglass/utils/mixins/helpers.py:206`) — every `SpyglassMixin` table carries this method; it queries MySQL's `performance_schema` (joining `metadata_locks` with `threads`) and returns the live lock rows, the owning thread's process state, and the running query — what the user needs to identify which session is holding the lock the fetch is waiting on:\n\n```python\nfrom spyglass.ripple.v1.ripple import RippleParameters\nRippleParameters().check_threads(detailed=True)\n```\n\nThe DataFrame surfaces the threads currently holding locks (`OBJECT_NAME`, `LOCK_TYPE`, `LOCK_STATUS`, `PROCESSLIST_STATE`, and the running query when `detailed=True`). The output is **lock rows + thread state**, not an explicit blocker→waiter graph; the user reads the `LOCK_STATUS` and `PROCESSLIST_STATE` columns to identify which session holds the lock and what it's doing. If the user's own thread shows a `WAITING` lock_status while another thread holds a `GRANTED` lock on the same object, that's the proof — inspect both rows and the holding thread's running query to decide next steps.\n\n**Distinguish from slow-compute.** A `.fetch()` that pulls a large blob spends time on disk + network and shows CPU activity in the kernel; an *idle* hang (no CPU, no progress) is the lock-contention signature. Params tables are never the slow-compute case — the row is small. So for a 2-minute hang on `RippleParameters`, jump straight to `check_threads(detailed=True)`; don't restart the kernel without a diagnostic first.\n\n**Resolution.** The blocker is usually an abandoned transaction from another worker (an interrupted populate that didn't commit, an open transaction in another notebook). Coordinate with the lab — kill the blocker only with awareness, don't unilaterally `KILL` someone else's transaction.\n\nRoutes to runtime_debugging.md (lock contention section) and spyglassmixin_methods.md.",
       "assertions": {
         "required_substrings": [
           "check_threads",
@@ -4968,7 +4968,7 @@
         "behavioral_checks": [
           "Routes to `check_threads(detailed=True)` (helpers.py:206) BEFORE suggesting a kernel restart or reconnect — it's the diagnostic primitive that distinguishes lock contention from slow compute",
           "Distinguishes *idle* hang (no CPU, no progress -> lock contention) from slow-compute (fetch pulling a large blob -> CPU activity in the kernel); picks lock contention as the likely cause for a small params table",
-          "Names `performance_schema` as the underlying mechanism `check_threads` queries, with blocker -> waiter chains surfaced when `detailed=True`",
+          "Names `performance_schema.metadata_locks` (joined with `threads`) as the underlying source `check_threads` queries; the returned DataFrame surfaces lock rows + thread state + running query, NOT an explicit blocker->waiter graph — the user reads `LOCK_STATUS` and `PROCESSLIST_STATE` to identify the holder vs waiter",
           "Recommends coordinating with the lab before killing another transaction — does not unilaterally KILL another worker's transaction"
         ],
         "required_substrings_exempt": [
@@ -4985,7 +4985,7 @@
         "Response does not contain substring `the fix is to restart the kernel`.",
         "Routes to `check_threads(detailed=True)` (helpers.py:206) BEFORE suggesting a kernel restart or reconnect — it's the diagnostic primitive that distinguishes lock contention from slow compute",
         "Distinguishes *idle* hang (no CPU, no progress -> lock contention) from slow-compute (fetch pulling a large blob -> CPU activity in the kernel); picks lock contention as the likely cause for a small params table",
-        "Names `performance_schema` as the underlying mechanism `check_threads` queries, with blocker -> waiter chains surfaced when `detailed=True`",
+        "Names `performance_schema.metadata_locks` (joined with `threads`) as the underlying source `check_threads` queries; the returned DataFrame surfaces lock rows + thread state + running query, NOT an explicit blocker->waiter graph — the user reads `LOCK_STATUS` and `PROCESSLIST_STATE` to identify the holder vs waiter",
         "Recommends coordinating with the lab before killing another transaction — does not unilaterally KILL another worker's transaction"
       ]
     },
@@ -5085,7 +5085,7 @@
       "expected_output": "**No such top-level function exists** in either `spyglass` or `dj`. Verify with `dir(spyglass)` / `dir(dj)`. The user is reaching for the wrong abstraction — orphan cleanup in Spyglass lives on individual tables, not as a global function.\n\n**Real cleanup primitives:**\n\n**(1) `Table().delete_orphans(dry_run=True)`** — generic SpyglassMixin method (`src/spyglass/utils/mixins/helpers.py:167`). Returns the rows with no child-table entries; `dry_run=True` is the **default**, so a bare call previews what would be removed. Set `dry_run=False` only after reviewing the preview:\n\n```python\nfrom spyglass.lfp.v1.lfp import LFPV1\norphans = LFPV1().delete_orphans()              # dry_run=True by default\nprint(orphans)                                  # inspect first\nLFPV1().delete_orphans(dry_run=False)           # actually delete after review\n```\n\n**(2) `AnalysisNwbfile().cleanup(dry_run=False)`** — analysis-file-tree cleanup at `src/spyglass/common/common_nwbfile.py:754`. Removes orphaned `.nwb` files on disk that no `AnalysisNwbfile` row references. Run `dry_run=True` first (the default differs from `delete_orphans` — confirm by running once before destructive cleanup) and review the file list:\n\n```python\nfrom spyglass.common.common_nwbfile import AnalysisNwbfile\nAnalysisNwbfile().cleanup(dry_run=True)         # preview\nAnalysisNwbfile().cleanup(dry_run=False)        # delete files after review\n```\n\nTogether they cover both senses of 'orphans': `delete_orphans` removes DataJoint rows with no children; `AnalysisNwbfile.cleanup` removes files on disk with no DJ row pointing at them.\n\n**Always run with `dry_run=True` first** for either primitive. Spyglass-skill's destructive-operations Core Directive applies (inspect before destroy); orphan cleanup deletes files / rows in bulk and is very hard to recover from if the wrong scope is selected.\n\nRoutes to destructive_operations.md and spyglassmixin_methods.md.",
       "assertions": {
         "required_substrings": [
-          "no such function",
+          "no such top-level function",
           "delete_orphans",
           "AnalysisNwbfile",
           "dry_run"
@@ -5107,7 +5107,7 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `no such function`.",
+        "Response contains substring `no such top-level function`.",
         "Response contains substring `delete_orphans`.",
         "Response contains substring `AnalysisNwbfile`.",
         "Response contains substring `dry_run`.",
