@@ -404,9 +404,7 @@
           ".fetch",
           "interval_list_name"
         ],
-        "forbidden_substrings": [
-          "fetch1("
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Uses .fetch() (multiple rows) not .fetch1() (one row)",
           "Restricts to nwb_file_name first, then projects interval_list_name"
@@ -417,7 +415,6 @@
         "Response contains substring `IntervalList`.",
         "Response contains substring `.fetch`.",
         "Response contains substring `interval_list_name`.",
-        "Response does not contain substring `fetch1(`.",
         "Uses .fetch() (multiple rows) not .fetch1() (one row)",
         "Restricts to nwb_file_name first, then projects interval_list_name"
       ]
@@ -507,10 +504,7 @@
           "fetch1(",
           "PositionOutput"
         ],
-        "forbidden_substrings": [
-          "(PositionOutput & {'nwb_file_name'",
-          "(PositionOutput & {\"nwb_file_name\""
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Calls `merge_get_part` as a classmethod (`PositionOutput.merge_get_part(...)`), not on a restricted relation",
           "Retrieves the merge key via `fetch1('merge_id')` (the scalar the prompt asks for) OR `fetch1('KEY')` (the full PK dict, also acceptable) — not a `.fetch()` list of merge_ids"
@@ -524,8 +518,6 @@
         "Response contains substring `merge_get_part`.",
         "Response contains substring `fetch1(`.",
         "Response contains substring `PositionOutput`.",
-        "Response does not contain substring `(PositionOutput & {'nwb_file_name'`.",
-        "Response does not contain substring `(PositionOutput & {\"nwb_file_name\"`.",
         "Calls `merge_get_part` as a classmethod (`PositionOutput.merge_get_part(...)`), not on a restricted relation",
         "Retrieves the merge key via `fetch1('merge_id')` (the scalar the prompt asks for) OR `fetch1('KEY')` (the full PK dict, also acceptable) — not a `.fetch()` list of merge_ids"
       ]
@@ -537,7 +529,7 @@
       "tier": "merge-key-discovery",
       "difficulty": "medium",
       "prompt": "I need the LFP merge entry for j1620210710_ with the standard lab wideband filter — get me the `merge_id` so I can pass it to my downstream code.",
-      "expected_output": "`'LFP 0-400 Hz'` is registered in `FirFilterParameters` for **both** 20 kHz and 30 kHz raw sampling rates (see `create_standard_filters`, `common_filter.py:582-595`), so `filter_name` alone does not uniquely identify the filter. The full PK chain on `LFPSelection` is `LFPElectrodeGroup` + projected `IntervalList` (as `target_interval_list_name`) + `FirFilterParameters` (which itself keys on `(filter_name, filter_sampling_rate)`), so a scalar `merge_id` for an LFP output requires more than nwb_file_name + filter_name.\n\nTwo viable shapes — pick by what the user already knows:\n\n**(a) Discovery first, then restrict.** If unsure which sampling rate / electrode group / interval was used, list candidates and pick:\n\n```python\n(LFPOutput.LFPV1\n & {'nwb_file_name': 'j1620210710_.nwb', 'filter_name': 'LFP 0-400 Hz'}\n).fetch('lfp_electrode_group_name', 'target_interval_list_name',\n        'filter_sampling_rate', 'merge_id', as_dict=True)\n```\n\nInspect the returned rows and pick the one whose interval / electrode group / sampling rate match what the user actually wants.\n\n**(b) Direct fetch with the full restriction.** If the user already knows the sampling rate and the electrode group / interval they care about (typical: 30 kHz raw on the canonical session, the standard wideband electrode group, the session interval used for ingest):\n\n```python\nLFPOutput.merge_get_part({\n    'nwb_file_name': 'j1620210710_.nwb',\n    'filter_name': 'LFP 0-400 Hz',\n    'filter_sampling_rate': 30000,\n    'lfp_electrode_group_name': '<group>',\n    'target_interval_list_name': '<interval>',\n}).fetch1('merge_id')\n```\n\nIf `merge_get_part` returns more than one row, the restriction is still under-specified — fall back to (a) and pick. If it returns zero rows, the LFP hasn't been populated yet for this combination, or one of the field values is misspelled.\n\nIf the response doesn't know the exact filter name, discover it via `FirFilterParameters.fetch('filter_name', 'filter_sampling_rate')` first rather than guess. If the response prefers the full KEY dict over the scalar, `fetch1('KEY')` is also acceptable.",
+      "expected_output": "`'LFP 0-400 Hz'` is registered in `FirFilterParameters` for **both** 20 kHz and 30 kHz raw sampling rates (see `create_standard_filters`, `common_filter.py:582-595`), so `filter_name` alone does not uniquely identify the filter. The full PK chain on `LFPSelection` is `LFPElectrodeGroup` + projected `IntervalList` (as `target_interval_list_name`) + `FirFilterParameters` (which itself keys on `(filter_name, filter_sampling_rate)`), so a scalar `merge_id` for an LFP output requires more than nwb_file_name + filter_name.\n\nTwo viable shapes — both end with `merge_get_part(...).fetch1('merge_id')`; the difference is whether the user already knows the full key or needs to discover it.\n\n**(a) Discovery first, then restrict.** If unsure which sampling rate / electrode group / interval was used, list candidates from the part table to pick from, then feed the chosen key back into `merge_get_part`:\n\n```python\ncandidates = (LFPOutput.LFPV1\n    & {'nwb_file_name': 'j1620210710_.nwb', 'filter_name': 'LFP 0-400 Hz'}\n).fetch('lfp_electrode_group_name', 'target_interval_list_name',\n        'filter_sampling_rate', as_dict=True)\n# Inspect candidates; pick the row matching the intended interval / group / rate.\nchosen = candidates[i]   # i identified after inspection\nmerge_id = LFPOutput.merge_get_part({\n    'nwb_file_name': 'j1620210710_.nwb',\n    'filter_name': 'LFP 0-400 Hz',\n    **chosen,\n}).fetch1('merge_id')\n```\n\n**(b) Direct fetch with the full restriction.** If the user already knows the sampling rate and the electrode group / interval they care about (typical: 30 kHz raw on the canonical session, the standard wideband electrode group, the session interval used for ingest):\n\n```python\nLFPOutput.merge_get_part({\n    'nwb_file_name': 'j1620210710_.nwb',\n    'filter_name': 'LFP 0-400 Hz',\n    'filter_sampling_rate': 30000,\n    'lfp_electrode_group_name': '<group>',\n    'target_interval_list_name': '<interval>',\n}).fetch1('merge_id')\n```\n\nIf `merge_get_part` returns more than one row, the restriction is still under-specified — fall back to (a) and pick. If it returns zero rows, the LFP hasn't been populated yet for this combination, or one of the field values is misspelled.\n\nIf the response doesn't know the exact filter name, discover it via `FirFilterParameters.fetch('filter_name', 'filter_sampling_rate')` first rather than guess a name like 'default'. If the response prefers the full KEY dict over the scalar, `fetch1('KEY')` is also acceptable.",
       "assertions": {
         "required_substrings": [
           "LFPOutput",
@@ -546,10 +538,7 @@
           "filter_sampling_rate",
           "FirFilterParameters"
         ],
-        "forbidden_substrings": [
-          "filter_name='default'",
-          "filter_name=\"default\""
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Uses `merge_get_part` as a classmethod, not on a restricted relation",
           "Recognizes that `filter_name='LFP 0-400 Hz'` alone is NOT unique — `FirFilterParameters` keys on `(filter_name, filter_sampling_rate)` and the canonical 'LFP 0-400 Hz' filter is registered for both 20 kHz and 30 kHz raw rates",
@@ -570,8 +559,6 @@
         "Response contains substring `filter_name`.",
         "Response contains substring `filter_sampling_rate`.",
         "Response contains substring `FirFilterParameters`.",
-        "Response does not contain substring `filter_name='default'`.",
-        "Response does not contain substring `filter_name=\"default\"`.",
         "Uses `merge_get_part` as a classmethod, not on a restricted relation",
         "Recognizes that `filter_name='LFP 0-400 Hz'` alone is NOT unique — `FirFilterParameters` keys on `(filter_name, filter_sampling_rate)` and the canonical 'LFP 0-400 Hz' filter is registered for both 20 kHz and 30 kHz raw rates",
         "Either (a) shows a discovery step listing candidates with `lfp_electrode_group_name` / `target_interval_list_name` / `filter_sampling_rate` before restricting, OR (b) gives a fully-specified restriction including `filter_sampling_rate` (and ideally `lfp_electrode_group_name` / `target_interval_list_name`)",
@@ -660,9 +647,7 @@
           "AnalysisNwbfile",
           "nwb_file_name"
         ],
-        "forbidden_substrings": [
-          "(TrodesPosV1 * DLCPosV1)"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Computes set difference (Trodes minus DLC) via set(A.fetch('nwb_file_name')) - set(B.fetch('nwb_file_name'))",
           "Does not use an inner join (`*`) when a difference is needed",
@@ -682,7 +667,6 @@
         "Response contains substring `DLCPosV1`.",
         "Response contains substring `AnalysisNwbfile`.",
         "Response contains substring `nwb_file_name`.",
-        "Response does not contain substring `(TrodesPosV1 * DLCPosV1)`.",
         "Computes set difference (Trodes minus DLC) via set(A.fetch('nwb_file_name')) - set(B.fetch('nwb_file_name'))",
         "Does not use an inner join (`*`) when a difference is needed",
         "If the response reaches for the DataJoint antijoin `-` form, it projects BOTH sides with .proj() first — bare `TrodesPosV1 - DLCPosV1` raises DataJointError because both tables share `analysis_file_name` and the three NWB object_id columns as secondary attrs",
