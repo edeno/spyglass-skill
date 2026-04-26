@@ -2347,7 +2347,7 @@
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Names `speed_smoothing_std_dev` (Gaussian sigma) as the field that controls speed-trace noise",
-          "Distinguishes `speed_smoothing_std_dev` from `position_smoothing_duration` — the latter is a moving-average applied to position AFTER speed is computed, so it does not directly affect the speed column",
+          "Distinguishes `speed_smoothing_std_dev` (Gaussian sigma applied at the velocity stage inside `get_velocity`, common_position.py:475) from `position_smoothing_duration` (moving-average applied to the LED positions BEFORE centroid / velocity / speed are computed, common_position.py:431-435). Both affect the returned `speed` column — they just enter the pipeline at different stages — and shrinking either produces a noisier speed trace. Does NOT claim either field is decoupled from `speed`, and does NOT claim `position_smoothing_duration` is applied after speed is computed.",
           "Predicts: shrinking / disabling `speed_smoothing_std_dev` gives a noisier speed trace, causing spurious crossings of downstream thresholds",
           "Recommends inspecting `TrodesPosParams.describe()` / `.heading` for exact field names rather than guessing"
         ]
@@ -2358,7 +2358,7 @@
         "Response contains substring `position_smoothing_duration`.",
         "Response contains substring `TrodesPosParams.describe`.",
         "Names `speed_smoothing_std_dev` (Gaussian sigma) as the field that controls speed-trace noise",
-        "Distinguishes `speed_smoothing_std_dev` from `position_smoothing_duration` — the latter is a moving-average applied to position AFTER speed is computed, so it does not directly affect the speed column",
+        "Distinguishes `speed_smoothing_std_dev` (Gaussian sigma applied at the velocity stage inside `get_velocity`, common_position.py:475) from `position_smoothing_duration` (moving-average applied to the LED positions BEFORE centroid / velocity / speed are computed, common_position.py:431-435). Both affect the returned `speed` column — they just enter the pipeline at different stages — and shrinking either produces a noisier speed trace. Does NOT claim either field is decoupled from `speed`, and does NOT claim `position_smoothing_duration` is applied after speed is computed.",
         "Predicts: shrinking / disabling `speed_smoothing_std_dev` gives a noisier speed trace, causing spurious crossings of downstream thresholds",
         "Recommends inspecting `TrodesPosParams.describe()` / `.heading` for exact field names rather than guessing"
       ]
@@ -2445,7 +2445,7 @@
       "tier": "disambiguation",
       "difficulty": "medium",
       "prompt": "What's the difference between `LFPElectrodeGroup` and `LFPSelection`? I see both in the flow and I don't know which to insert into first.",
-      "expected_output": "Routes to lfp_pipeline.md (Step 1: Define Electrode Groups, then Step 2: Filter Raw Data). Establishes the order: LFPElectrodeGroup is created first (typically via the helper LFPElectrodeGroup.create_lfp_electrode_group, which writes both the master and its part LFPElectrodeGroup.LFPElectrode); LFPSelection is inserted second and references that group plus an interval and a filter for one populate run. The group is a reusable electrode bundle (one per intended LFP analysis); the selection is per-populate. Does not say the two are interchangeable.",
+      "expected_output": "Routes to lfp_pipeline.md (Step 1: Define Electrode Groups, then Step 2: Filter Raw Data). Establishes the order: LFPElectrodeGroup is created first (typically via the helper LFPElectrodeGroup.create_lfp_electrode_group, which writes both the master and its part LFPElectrodeGroup.LFPElectrode); `LFPSelection.insert1(...)` is the second step and references that group plus an interval and a filter for one populate run. The group is a reusable electrode bundle (one per intended LFP analysis); the selection is per-populate. Does not say the two are interchangeable.",
       "assertions": {
         "required_substrings": [
           "create_lfp_electrode_group",
@@ -2477,7 +2477,7 @@
       "tier": "disambiguation",
       "difficulty": "easy",
       "prompt": "I see both `spyglass.spikesorting.v0` and `spyglass.spikesorting.v1` imports in old lab code. Which should I use for a fresh session today and why?",
-      "expected_output": "Routes to spikesorting_pipeline.md (v1 flow) and spikesorting_v0_legacy.md (read-only access to pre-v1 sortings). Recommends v1 for all new work; identifies v0 as legacy — do not populate v0 tables for new sessions, and query existing v0 sortings through the merge wrapper `SpikeSortingOutput.CuratedSpikeSorting` rather than the v0 tables directly. Names `SpikeSortingOutput` as the merge table surfacing both v0 (CuratedSpikeSorting part) and v1 (CurationV1 part) sortings uniformly for downstream consumers.",
+      "expected_output": "Routes to spikesorting_pipeline.md (v1 flow) and spikesorting_v0_legacy.md (read-only access to pre-v1 sortings). Recommends v1 for all new work; identifies v0 as legacy — do not populate v0 tables for new sessions, and query existing v0 sortings through the merge wrapper `SpikeSortingOutput.CuratedSpikeSorting` rather than the v0 tables directly. Names `SpikeSortingOutput` as the merge table surfacing both v0 (CuratedSpikeSorting part) and v1 (`SpikeSortingOutput.CurationV1` part) sortings uniformly for downstream consumers.",
       "assertions": {
         "required_substrings": [
           "SpikeSortingOutput",
