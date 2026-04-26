@@ -79,6 +79,13 @@ KNOWN_CLASSES = {
     "Subject": "spyglass/common/common_subject.py",
     "UserEnvironment": "spyglass/common/common_user.py",
     "PositionSource": "spyglass/common/common_behav.py",
+    "DataAcquisitionDevice": "spyglass/common/common_device.py",
+    "Probe": "spyglass/common/common_device.py",
+    "ProbeType": "spyglass/common/common_device.py",
+    "CameraDevice": "spyglass/common/common_device.py",
+    "LabMember": "spyglass/common/common_lab.py",
+    "LabTeam": "spyglass/common/common_lab.py",
+    "Institution": "spyglass/common/common_lab.py",
     "IntervalPositionInfoSelection": "spyglass/common/common_position.py",
     "IntervalPositionInfo": "spyglass/common/common_position.py",
     "SortedSpikesGroup": "spyglass/spikesorting/analysis/v1/group.py",
@@ -161,7 +168,7 @@ SKIP_METHODS = {
     "fetch", "fetch1",
     "proj", "aggr", "describe", "heading",
     "parents", "children", "ancestors", "descendants",
-    "insert", "insert1",
+    "insert", "insert1", "update1",
     "populate", "delete", "drop", "alter",
     # SpyglassMixin extensions to fetch — defined on every Spyglass table
     # via SpyglassMixin (utils/mixins/fetch.py), not DataJoint

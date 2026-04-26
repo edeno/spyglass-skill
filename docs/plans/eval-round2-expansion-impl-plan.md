@@ -1,8 +1,20 @@
 # Implementation plan — round-2 eval expansion (`skills/spyglass/evals/evals.json`)
 
-**Date:** 2026-04-24
-**Status:** Planned. No code changes yet. Next: pre-req commit, then Phase 1.
-**Scope:** Add **30 new evals (IDs 90–119)** covering topology / dependency reasoning, session-metadata lookups, cross-pipeline compounds, group tables + custom analysis tables, new runtime-debugging failure modes, four new adversarial pushback shapes, and broader coverage in the five categories the maintainer flagged as thin (reference-correctness, parameter-understanding, counterfactual-parameter, hidden-prerequisite, recovery-planning). Land small reference-file and `validate_skill.py` pre-reqs before Phase 1 so new evals don't trip the validator on missing-class warnings. Reuse the existing three-axis taxonomy (stage × tier × difficulty) — no new vocabulary this round.
+**Date:** 2026-04-24 (re-anchored 2026-04-25 after round-3 burned IDs 90–96)
+**Status:** **Executed 2026-04-25/04-26.** All 8 batches landed on
+`feature/eval-round2-expansion`: pre-reqs (`361c6ba`), Batch A
+(`6b9baae` + 3 reviewer rounds), Batch B (`fd80f6d`), Batch C
+(`51918fe`), Batch D (`6d66561`), Batch E (`a7141c1`), Batch F
+(`e75a3a0`), Batch G (selective: `121` + `123` only — `120` and
+`122` deferred per priority), Batch H (`bd022be`). Plus six
+multi-batch reviewer-driven correction rounds covering source-
+correctness, denial-sensitive forbidden_substrings, grader-hygiene
+mismatches, and stale citations across both new and pre-existing
+evals. Final eval count: **123** (was 95 → 123, +28; IDs `36`,
+`120`, `122` are intentional gaps). Validator clean at
+`--baseline-warnings 3`; ruff clean; expectations re-flattened on
+every change. Branch is fast-forward mergeable to master.
+**Scope:** Add **30 new evals (IDs 97–126)** — was IDs 90–119 in original draft; re-anchored after round-3 expansion (`20d50d0`) consumed 90–96. ID-by-ID remap below; semantic content unchanged. Add **30 new evals (IDs 97–126)** covering topology / dependency reasoning, session-metadata lookups, cross-pipeline compounds, group tables + custom analysis tables, new runtime-debugging failure modes, four new adversarial pushback shapes, and broader coverage in the five categories the maintainer flagged as thin (reference-correctness, parameter-understanding, counterfactual-parameter, hidden-prerequisite, recovery-planning). Land small reference-file and `validate_skill.py` pre-reqs before Phase 1 so new evals don't trip the validator on missing-class warnings. Reuse the existing three-axis taxonomy (stage × tier × difficulty) — no new vocabulary this round.
 
 ## Goals and non-goals
 
@@ -96,7 +108,22 @@ No reference currently pushes back on "edit the installed Spyglass tables direct
 
 Each eval's spec below gives enough to author it directly: target `tier` / `stage` / `difficulty`, the canonical route-to reference, the 1–3 discriminating `required_substrings`, the `forbidden_substrings` that pin the wrong answer, and 1–3 sentence-form `behavioral_checks`. Prompts are written as sketches in realistic user voice (final author should tighten). Apply the existing [substring hygiene](../../skills/spyglass/evals/README.md#substring-hygiene) rules.
 
-### Batch A — topology / dependency reasoning (IDs 90–95)
+**ID re-anchor map (2026-04-25).** Round-3 (`20d50d0`) added new evals at 90–96, so round-2's batches shift downstream:
+
+| Batch | Original IDs | Anchored IDs |
+| --- | --- | --- |
+| A — topology / dependency / workflow-position / workflow-recovery | 90–95 | 97–102 |
+| B — session metadata lookups | 96–99 | 103–106 |
+| C — cross-pipeline compound | 100–101 | 107–108 |
+| D — group tables & custom analysis | 102–105 | 109–112 |
+| E — runtime debugging additions | 106–108 | 113–115 |
+| F — adversarial pushback | 109–112 | 116–119 |
+| G — hallucination / reference-correctness | 113–116 | 120–123 |
+| H — counterfactual parameter | 117–119 | 124–126 |
+
+The batch specs below still use the original IDs; treat each as the anchored ID per this map. (Re-numbering inline would churn cross-references; the map is canonical.)
+
+### Batch A — topology / dependency reasoning (IDs 90–95 → 97–102)
 
 Addresses the maintainer asks: *"What custom tables use data from DecodingOutput?"*, *"Where does tableName get its data from?"*, and the hidden-prerequisite category.
 

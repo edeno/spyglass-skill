@@ -281,6 +281,10 @@ Table.heading.secondary_attributes
 Table.parents()
 Table.children()
 
+# Full transitive walk (every upstream prerequisite / downstream consumer)
+Table.ancestors()    # all tables this one depends on, recursively
+Table.descendants()  # all tables that depend on this one, recursively
+
 # Find common keys between tables
 set(Table1.heading.names) & set(Table2.heading.names)
 

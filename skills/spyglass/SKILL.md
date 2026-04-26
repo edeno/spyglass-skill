@@ -26,10 +26,11 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 - **NEVER delete or drop without explicit confirmation.** The database holds irreplaceable neuroscience data. Any destructive helper (`delete`, `drop`, `cleanup`, `merge_delete`, etc.) must be paired with an inspect step and user confirmation first. `.delete()` on SpyglassMixin tables aliases to `cautious_delete` — it enforces team-based permissions so you can't accidentally delete another lab member's sessions. Paired shapes + protection model: [destructive_operations.md](references/destructive_operations.md).
 - **Do not invent identifiers.** Plausible method, kwarg, field, and table names are this skill's most common hallucination shape — they fail with `AttributeError`, `TypeError`, or `DataJointError: unknown attribute`. Verify before asserting: grep the source, `inspect.signature`, or `Table.heading`. If unverifiable, flag as unconfirmed. Real examples: Common Mistake #8 in [common_mistakes.md](references/common_mistakes.md).
 - **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
-- **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** — on any table, including well-known ones. Use `print(len(rel))`; if >1, inspect with `rel.fetch(as_dict=True)` or `merge_restrict` to see which PK fields still need narrowing. `Table.describe()`/`Table.heading` show schema, not row count. See Common Mistake #2.
+- **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** when the restriction is partial. `print(len(rel))`; if >1, `rel.fetch(as_dict=True)` to find missing PK fields. `Table.describe()` shows schema, not count. Carveout: a full-PK restriction is unique — `fetch1()` skips the `len()`. See Common Mistake #2.
 - **Environment**: detect the user's setup (local Docker, local data, remote lab) — don't assume Jupyter or remote NWB.
-- **Reading DataJoint config files**: `dj_local_conf.json` / `~/.datajoint_config.json` hold plaintext `database.password`; `Read`/`cat` puts it in Claude's context. Run `python skills/spyglass/scripts/scrub_dj_config.py` (masks secret leaves). Details: [setup_config.md](references/setup_config.md).
-- **Source of truth**: when the skill and repo disagree, trust the repo. Cited paths use the GitHub layout (`src/spyglass/...`); in pip installs, drop `src/` — locate via `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`. Tutorials at `notebooks/*.ipynb` (cite the `.ipynb`, not the `py_scripts/` jupytext mirror). Tutorials drift; when a cell fails on a missing parameter, table, or column, treat it as stale and check the source tree.
+- **DataJoint config files**: `dj_local_conf.json` / `~/.datajoint_config.json` hold plaintext `database.password`. Don't `Read`/`cat`; run `python skills/spyglass/scripts/scrub_dj_config.py` (masks secret leaves). Details: [setup_config.md](references/setup_config.md).
+- **Source of truth**: when the skill and repo disagree, trust the repo. Cited paths use `src/spyglass/...` (drop `src/` for pip installs; locate via `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`). Tutorials at `notebooks/*.ipynb` drift — cite the `.ipynb` (not the `py_scripts/` mirror), and when a cell fails on a missing parameter/table/column, check the source tree.
+- **Do not edit the installed Spyglass package.** Edits to `src/spyglass/...` desync the in-DB schema from what other labs run, and `pip install -e .` silently reverts them. Push back if the user insists.
 
 ## Common Mistakes
 
@@ -44,7 +45,7 @@ Top 6 highest-frequency bugs. Flag any of these shapes before answering. Expande
 
 ## Feedback Loops
 
-Quality-critical operations use a validator → fix → proceed shape. Four loops cover the highest-friction points: post-ingestion verification, pre-`fetch1` cardinality check, post-`populate` verification, and inspect-before-destroy. Full patterns with code: [feedback_loops.md](references/feedback_loops.md).
+Quality-critical ops use validator → fix → proceed. Four loops: post-ingestion verification, pre-`fetch1` cardinality, post-`populate` verification, inspect-before-destroy. Full patterns: [feedback_loops.md](references/feedback_loops.md).
 
 ## Classify the User's Stage
 
@@ -78,9 +79,7 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 
 ## Reference Routing
 
-**Load one reference at a time.** Pick the single most relevant row. Only open a second reference if the first doesn't cover the question. Don't pre-load several "to be safe" — it wastes context.
-
-Repo paths (source, docs) are listed in each reference file — this table routes by topic, not by path.
+**Load one reference at a time.** Pick the single most relevant row; open a second only if the first doesn't cover the question. Don't pre-load several "to be safe" — wastes context. This table routes by topic, not by path; repo paths live in each reference file.
 
 | User question is about... | Load this reference | Canonical notebook |
 | ------------------------- | ------------------- | ------------------ |

@@ -119,16 +119,37 @@ DataJoint "stores" tell the database where externally stored files (raw data, an
 }
 ```
 
-**Cross-machine mount drift.** `dj.config['stores']` is machine-local
-and persisted in `dj_local_conf.json`. Changing `SPYGLASS_BASE_DIR`
-does NOT update it. If stores were written on a workstation where the
-shared drive is mounted at one path (e.g. `/data/shared/nwb/...`) and
-you connect from another machine mounting the same drive at a
-different path (e.g. `/mnt/shared/nwb/...`), fetches fail with
-`FileNotFoundError: Inaccessible local directory ...`.
+**Cross-machine mount drift.** The resolved `dj.config['stores']` is
+machine-local — it carries absolute filesystem paths (`location`)
+that point at where the data is mounted on *this* machine. When
+`SpyglassConfig.load_config()` runs, `_set_dj_config_stores()`
+(`src/spyglass/settings.py:268, 316`) refreshes the **in-memory**
+`dj.config['stores']` from the resolved dirs, applying this
+precedence (`settings.py:133`):
 
-Fix: regenerate config on each workstation, or edit `dj.config['stores']`
-in-place and `dj.config.save_local()`. A useful check at session start:
+1. explicit `SpyglassConfig(base_dir=...)`
+2. `dj.config['custom']['spyglass_dirs']`
+3. env vars (`SPYGLASS_*_DIR`)
+4. resolved `<base>/<X>`
+
+But the *persisted* config file does NOT auto-regenerate when env
+vars change. If the persisted stores block was written for one
+machine's mount point and you connect from another machine where
+the same shared drive is mounted at a different path
+(`/data/shared/...` vs `/mnt/shared/...`), and `SpyglassConfig`
+hasn't been imported / loaded on the new machine to refresh
+`dj.config['stores']` from local env vars, fetches fail with
+`FileNotFoundError: Inaccessible local directory ...`. Two configs
+are persisted by default: `~/.datajoint_config.json` (global —
+`dj.config.save_global()` and `SpyglassConfig.save_dj_config()`'s
+default) and `dj_local_conf.json` in the cwd (local — only with
+`save_method='local'` or `dj.config.save_local()`).
+
+Fix: confirm the resolved `dj.config['stores']['raw']['location']`
+matches `SPYGLASS_BASE_DIR` on the current machine, then save the
+per-machine config — `SpyglassConfig().save_dj_config(...)` (writes
+global by default) or `dj.config.save_local()` if you want a
+project-scoped override. A useful check at session start:
 
 ```python
 import datajoint as dj, os

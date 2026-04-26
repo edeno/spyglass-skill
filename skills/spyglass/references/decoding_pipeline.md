@@ -136,7 +136,7 @@ decoding_kwargs  = NULL : LONGBLOB      # additional keyword arguments
 **`decoding_params` and `decoding_kwargs` are SIBLING top-level attributes**, not nested inside one another. This matters when inserting a custom param set — a common mistake is to nest `decoding_kwargs` inside `decoding_params`, which silently discards the runtime kwargs.
 
 - `decoding_params` — classifier constructor kwargs (model architecture, state bins, transitions). Consumed as `ClusterlessDetector(**decoding_params)` inside `make_compute`.
-- `decoding_kwargs` — runtime kwargs passed through to the classifier call. In the `estimate_decoding_params=False` branch (the default) they're split by `get_valid_kwargs` into fit and predict kwargs; in the `True` branch they're passed to `estimate_parameters`. Both branches accept the same keyword names (e.g., `n_chunks`, `cache_likelihood`) in `non_local_detector` 0.6.x.
+- `decoding_kwargs` — runtime kwargs passed through to the classifier call. In the `estimate_decoding_params=False` branch (the default) they're split by `get_valid_kwargs` into fit and predict kwargs; in the `True` branch they're passed to `estimate_parameters`. Spyglass passes the dict through; the specific keyword names the installed `non_local_detector` recognizes (commonly `n_chunks`, `cache_likelihood`) are documented in that package — verify against the installed signatures if a kwarg appears to be ignored or rejected.
 
 Canonical insert shape for an OOM-conscious clusterless variant:
 
@@ -174,12 +174,7 @@ from spyglass.decoding import PositionGroup
 
 **Gotcha — `position_variables` must match the upstream DataFrame's
 column names.** `PositionGroup.create_group` defaults
-`position_variables=['position_x','position_y']`. DLC-derived positions
-expose columns named after the tracked body part
-(`'head_position_x'`, `'head_position_y'`, etc.). With default
-variables on a DLC source, `fetch_position_info` returns empty frames
-and downstream decoding raises
-`ValueError: No objects to concatenate`.
+`position_variables=['position_x', 'position_y']`. Both `TrodesPosV1.fetch1_dataframe()` and `DLCPosV1.fetch1_dataframe()` emit columns literally named `position_x` and `position_y` (see `src/spyglass/position/v1/position_dlc_selection.py:184-186` for DLC), so the **defaults match both upstream sources without modification**. Overriding `position_variables` with body-part-prefixed names like `['head_position_x', 'head_position_y']` is the typical mistake — those columns don't exist on the merge-fetched DataFrame, so when `upsample_rate` is non-NaN the `_upsample` helper raises `KeyError: 'head_position_x'` while iterating the requested variable names (`src/spyglass/decoding/v1/core.py:289-291`). When `upsample_rate` is NaN, the `KeyError` instead fires later, downstream of `fetch_position_info`, when the decoding `make()` body slices the returned DataFrame by `position_variable_names`. Distinct from `ValueError: No objects to concatenate`, which means the `PositionGroup.Position` part is empty for the key (no `pos_merge_id`s in the loop) — a different problem.
 
 Check:
 
@@ -357,7 +352,7 @@ bytes` from JAX during `ClusterlessDecodingV1.populate` /
 `(n_time, n_state_bins)` (e.g. `(3384862, 1926)` = 24 GiB) on an 80 GB
 A100.
 
-**Tuning knobs** (set on `DecodingParameters`). Use the canonical insert shape from [§ DecodingParameters (Lookup)](#decodingparameters-lookup) — `decoding_params` and `decoding_kwargs` as sibling top-level attrs. For the OOM case, populate `decoding_kwargs` with `{'n_chunks': 10, 'cache_likelihood': False}` (both are `predict()` kwargs in `non_local_detector` 0.6.x, reached via the default `estimate_decoding_params=False` branch).
+**Tuning knobs** (set on `DecodingParameters`). Use the canonical insert shape from [§ DecodingParameters (Lookup)](#decodingparameters-lookup) — `decoding_params` and `decoding_kwargs` as sibling top-level attrs. For the OOM case, populate `decoding_kwargs` with `{'n_chunks': 10, 'cache_likelihood': False}` — these are the intended OOM knobs reached via the default `estimate_decoding_params=False` branch; the installed `non_local_detector` is what ultimately consumes them, so verify against its signatures if either is ignored.
 
 Also set the JAX memory fraction at the top of the populate script:
 
@@ -368,8 +363,19 @@ os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.99'
 
 **Workaround for `n_chunks` being ignored when
 `estimate_decoding_params=False`:** set `estimate_decoding_params=True`
-on the selection row; the kwarg reaches the decoder that way.
-Tracked with `non_local_detector 0.6.9`.
+on the selection row; the kwarg reaches the decoder that way. **Caveat:**
+the `True` branch calls `classifier.estimate_parameters(...)` (see
+`src/spyglass/decoding/v1/clusterless.py:320`), which **re-runs EM
+parameter estimation** — that is *not* the normal inference path the
+user wants for routine decoding. Use this workaround only when you
+genuinely need the parameter-estimation pass too (or as a one-off to
+get past OOM); otherwise prefer fixing the kwarg-pass-through in the
+`False` branch (e.g. by upgrading `non_local_detector` to a version
+whose `predict()` accepts `n_chunks`). This behavior depends on the
+installed `non_local_detector` version — if both branches accept
+`n_chunks` in your installed copy, the workaround is unnecessary.
+Verify with `inspect.signature` on the relevant classifier method to
+confirm.
 
 ## Storage
 

@@ -85,12 +85,12 @@ and breaks otherwise-working installs. Symptoms include:
 - `pkg_resources` errors after `setuptools>=82`
 - `RuntimeError: Undefined plan with nthreads` from `pyfftw 0.13.0`
 
-**Fix.** Recreate the env from the current `environment.yml`:
+**Fix.** Recreate the env from the current env file under `environments/` — `environments/environment_min.yml` is the recommended default per [§ conda (from environment file)](#conda-from-environment-file); `environments/environment.yml` is the heavier full install:
 
 ```bash
-mamba env update --file environment.yml --prune
+mamba env update --file environments/environment_min.yml --prune
 # OR for a clean rebuild:
-mamba env remove -n spyglass && mamba env create -f environment.yml
+mamba env remove -n spyglass && mamba env create -f environments/environment_min.yml
 ```
 
 Do NOT `pip install <pkg>` piecemeal into a working env — the next `pip
