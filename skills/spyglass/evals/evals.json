@@ -3883,7 +3883,7 @@
       "expected_output": "Use `DecodingOutput.descendants()` to enumerate every downstream table — every direct child plus every transitive descendant — in one call. `DecodingOutput.children()` only returns the *one-hop* children (the tables that FK directly to `DecodingOutput`); custom analysis tables that FK to one of those children, or to a child-of-a-child, are missed. `descendants()` walks the full transitive closure, which is what you want for 'every table that takes data from DecodingOutput' — that includes tables several layers downstream that you might not have authored yourself.\n\n```python\nfrom spyglass.decoding.decoding_merge import DecodingOutput\nfor t in DecodingOutput.descendants():\n    print(t)\n```\n\nOne subtlety: `DecodingOutput` is a **merge master**. Downstream consumers FK to the merge master (`DecodingOutput`), not to the part tables (`DecodingOutput.ClusterlessDecodingV1`, `DecodingOutput.SortedSpikesDecodingV1`). So `DecodingOutput.descendants()` is the right call — calling `.descendants()` on the part tables would only enumerate things FK'd to *that specific part*, missing anything FK'd to the merge.\n\nIf you want to filter to just tables defined in your own schema (vs. tables Spyglass ships), check `t.full_table_name.startswith('`your_schema`.')` per row. Routes to spyglassmixin_methods.md (descendants/ancestors note) and datajoint_api.md.",
       "assertions": {
         "required_substrings": [
-          "DecodingOutput",
+          "DecodingOutput.descendants(",
           "descendants(",
           "children(",
           "merge master"
@@ -3897,8 +3897,9 @@
           "Notes that `DecodingOutput` is a merge master, so downstream consumers FK to the master itself, not to its part tables (e.g. ClusterlessDecodingV1)"
         ],
         "required_substrings_exempt": [
-          "descendants(",
-          "children("
+          "DecodingOutput.descendants(",
+          "children(",
+          "descendants("
         ],
         "expected_output_tables_exempt": [
           "ClusterlessDecodingV1",
@@ -3907,7 +3908,7 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `DecodingOutput`.",
+        "Response contains substring `DecodingOutput.descendants(`.",
         "Response contains substring `descendants(`.",
         "Response contains substring `children(`.",
         "Response contains substring `merge master`.",
@@ -3931,10 +3932,7 @@
           "ancestors(",
           ".describe()"
         ],
-        "forbidden_substrings": [
-          "use children()",
-          "use descendants()"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Distinguishes `parents()` (one hop) from `ancestors()` (transitive walk) and gives a use case for each",
           "Mentions `.describe()` as the schema-level companion that shows FK declarations inline in the table's definition string"
@@ -3960,8 +3958,6 @@
         "Response contains substring `parents(`.",
         "Response contains substring `ancestors(`.",
         "Response contains substring `.describe()`.",
-        "Response does not contain substring `use children()`.",
-        "Response does not contain substring `use descendants()`.",
         "Distinguishes `parents()` (one hop) from `ancestors()` (transitive walk) and gives a use case for each",
         "Mentions `.describe()` as the schema-level companion that shows FK declarations inline in the table's definition string"
       ]
@@ -4014,23 +4010,24 @@
       "stage": "pipeline-usage",
       "tier": "dependency-tracing",
       "difficulty": "hard",
-      "prompt": "Before I can run `ClusterlessDecodingV1.populate()` on a new session, what rows must already exist? I keep hitting `DataJointError: Unknown attribute` and I can't tell what I'm missing.",
-      "expected_output": "`Unknown attribute` errors during `populate()` almost always mean **a row in an FK target table is missing for the key you passed** — not a schema bug. DataJoint can't resolve the attribute because the upstream row doesn't exist, so the join surface is empty.\n\n`ClusterlessDecodingV1` FKs to `ClusterlessDecodingSelection`, which itself has four upstreams that must all have rows for your session:\n\n1. **`UnitWaveformFeaturesGroup`** — bundles the per-merge-id waveform features into one group. You create it via `UnitWaveformFeaturesGroup().create_group(...)`, which inserts the master row plus part rows pointing at every `UnitWaveformFeatures` merge entry you want included.\n2. **`PositionGroup`** — bundles the position sources used for decoding. Created via `PositionGroup().create_group(...)`, which FKs to `PositionOutput.merge_id`. Position must already be populated upstream.\n3. **`DecodingParameters`** — the parameter blob (named `decoding_param_name`).\n4. **`IntervalList`** — referenced *twice*: once as `encoding_interval` and once as `decoding_interval`. Both must exist as rows for the session, even if they point at the same time interval.\n\nAnd of course `ClusterlessDecodingSelection` itself needs an explicit `insert1(...)` row tying these four together.\n\nWorking backwards: `UnitWaveformFeaturesGroup` requires populated `UnitWaveformFeatures` rows, which require `WaveformFeaturesParams` + `UnitWaveformFeaturesSelection` rows + curated spike sorting in `SpikeSortingOutput`. `PositionGroup` requires populated `PositionOutput` (Trodes or DLC, whichever).\n\nDiagnostic: when `Unknown attribute` fires, run `(ClusterlessDecodingSelection & key)` to see if your selection row exists, then walk `ClusterlessDecodingSelection.parents()` and check `(parent & key)` for each — the empty one is your missing FK target. `ClusterlessDecodingV1.describe()` shows the FK declarations to confirm the chain.\n\nRoutes to decoding_pipeline.md and runtime_debugging.md.",
+      "prompt": "I'm trying to run `ClusterlessDecodingV1.populate(key)` on a new session, but the call returns immediately with no work — `(ClusterlessDecodingV1.key_source & key)` is empty. What rows must already exist for populate to find work to do, and how do I figure out which upstream is missing?",
+      "expected_output": "An empty `key_source` means at least one of `ClusterlessDecodingV1`'s upstream FK targets has no row matching your key — `populate()` joins all parents to find candidate keys, and a missing row in any parent collapses the join to zero rows.\n\n`ClusterlessDecodingV1` FKs to `ClusterlessDecodingSelection`, which itself has four upstreams that must all have rows for your session:\n\n1. **`UnitWaveformFeaturesGroup`** — bundles the per-merge-id waveform features into one group. You create it via `UnitWaveformFeaturesGroup().create_group(...)`, which inserts the master row plus part rows pointing at every `UnitWaveformFeatures` merge entry you want included.\n2. **`PositionGroup`** — bundles the position sources used for decoding. Created via `PositionGroup().create_group(...)`, which FKs to `PositionOutput.merge_id`. Position must already be populated upstream.\n3. **`DecodingParameters`** — the parameter blob (named `decoding_param_name`).\n4. **`IntervalList`** — referenced *twice*: once as `encoding_interval` and once as `decoding_interval`. Both must exist as rows for the session, even if they point at the same time interval.\n\nAnd of course `ClusterlessDecodingSelection` itself needs an explicit `insert1(...)` row tying these four together.\n\nWorking backwards: `UnitWaveformFeaturesGroup` requires populated `UnitWaveformFeatures` rows, which require `WaveformFeaturesParams` + `UnitWaveformFeaturesSelection` rows + curated spike sorting in `SpikeSortingOutput`. `PositionGroup` requires populated `PositionOutput` (Trodes or DLC, whichever).\n\n**Diagnostic — find the empty parent:**\n\n```python\nfor parent in ClusterlessDecodingSelection.parents(as_objects=True):\n    sub = {k: key[k] for k in parent.primary_key if k in key}\n    n = len(parent & sub) if sub else len(parent)\n    print(f'{parent.table_name}: {n} rows for this key')\n```\n\nThe parent with `0 rows` is your missing upstream. Insert it (and walk *its* parents the same way if it's also empty), then re-run `populate()`. `ClusterlessDecodingV1.describe()` shows the FK declarations to confirm the chain.\n\nRoutes to decoding_pipeline.md and runtime_debugging.md.",
       "assertions": {
         "required_substrings": [
           "UnitWaveformFeaturesGroup",
           "PositionGroup",
           "DecodingParameters",
           "ClusterlessDecodingSelection",
-          "IntervalList"
+          "IntervalList",
+          "key_source"
         ],
         "forbidden_substrings": [
-          "populate_all_common",
-          "schema bug"
+          "populate_all_common(",
+          "edit the ClusterlessDecodingV1 schema"
         ],
         "behavioral_checks": [
           "Enumerates upstream group tables (PositionGroup AND UnitWaveformFeaturesGroup) alongside the parameter table and the selection table",
-          "Notes that `Unknown attribute` errors during populate almost always mean a missing FK target row, not a schema or definition bug"
+          "Recommends walking `ClusterlessDecodingSelection.parents()` and checking `(parent & key)` for each — the parent that returns zero rows is the missing upstream"
         ],
         "expected_output_tables_exempt": [
           "WaveformFeaturesParams",
@@ -4039,6 +4036,9 @@
           "PositionOutput",
           "UnitWaveformFeaturesSelection",
           "ClusterlessDecodingV1"
+        ],
+        "required_substrings_exempt": [
+          "key_source"
         ]
       },
       "files": [],
@@ -4048,10 +4048,11 @@
         "Response contains substring `DecodingParameters`.",
         "Response contains substring `ClusterlessDecodingSelection`.",
         "Response contains substring `IntervalList`.",
-        "Response does not contain substring `populate_all_common`.",
-        "Response does not contain substring `schema bug`.",
+        "Response contains substring `key_source`.",
+        "Response does not contain substring `populate_all_common(`.",
+        "Response does not contain substring `edit the ClusterlessDecodingV1 schema`.",
         "Enumerates upstream group tables (PositionGroup AND UnitWaveformFeaturesGroup) alongside the parameter table and the selection table",
-        "Notes that `Unknown attribute` errors during populate almost always mean a missing FK target row, not a schema or definition bug"
+        "Recommends walking `ClusterlessDecodingSelection.parents()` and checking `(parent & key)` for each — the parent that returns zero rows is the missing upstream"
       ]
     },
     {
