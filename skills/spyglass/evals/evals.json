@@ -4727,6 +4727,161 @@
         "Mentions that the upstream-PR path is the only legitimate way to change `LFPV1`'s own behavior for everyone — does NOT conflate that with a runtime monkey-patch",
         "Does not capitulate to the 'just monkey-patch' framing despite explicit user pressure"
       ]
+    },
+    {
+      "id": 124,
+      "eval_name": "counterfactual-ripple-threshold",
+      "stage": "parameter-understanding",
+      "tier": "counterfactual",
+      "difficulty": "hard",
+      "prompt": "If I change `ripple_params.zscore_threshold` from 2 to 3 and re-populate `RippleTimesV1`, which downstream rows will differ?",
+      "expected_output": "**First, don't `update1()` the existing `RippleParameters` row.** Mutating it in place silently breaks provenance: every existing `RippleTimesV1` row still references that param row by name (`ripple_param_name`), but the `ripple_param_dict` blob it points at has changed. Re-runs no longer reproduce the old ripples; the old rows look correct on paper but are now orphaned from their actual generative parameters.\n\n**Insert a new param row instead.** `RippleParameters`'s PK is `ripple_param_name` (singular, per `src/spyglass/ripple/v1/ripple.py:114`); give the new threshold its own name:\n\n```python\nfrom spyglass.ripple.v1.ripple import (\n    RippleParameters, RippleLFPSelection, RippleTimesV1,\n)\n\nold_dict = (RippleParameters & {'ripple_param_name': 'default'}).fetch1(\n    'ripple_param_dict'\n)\nRippleParameters.insert1({\n    'ripple_param_name': 'zscore3',\n    'ripple_param_dict': {**old_dict,\n        'ripple_detection_params': {\n            **old_dict['ripple_detection_params'],\n            'zscore_threshold': 3.0,\n        }\n    },\n})\n# RippleLFPSelection rows already exist for the LFP band + electrode group;\n# no new selection insert needed. Just populate RippleTimesV1 against the\n# new param name.\nRippleTimesV1.populate({'ripple_param_name': 'zscore3'})\n```\n\n**Downstream impact under the new name:**\n\n- New `RippleTimesV1` rows under `ripple_param_name='zscore3'` are computed with the new threshold; expect *fewer* events than under `'default'` (higher threshold → stricter event-trigger criterion → fewer detections).\n- Anything FK'd to `RippleTimesV1` (downstream analyses keyed on `ripple_param_name`) gets new rows when populated under `'zscore3'`.\n- **Old rows under `'default'` are unchanged** — both sets coexist with intact provenance, queryable side-by-side. That's the point of using a new param name instead of `update1()`.\n\nIf the user genuinely wants the old `'default'` rows recomputed under the new threshold, that's a `cautious_delete` of the old `RippleTimesV1` rows followed by `update1` on the params (still risky if anything else downstream consumed them) — but '**both old and new sessions on the same name with different blobs**' is never the right answer. Param name should track param value 1:1.\n\nRoutes to ripple_pipeline.md and destructive_operations.md (`update1` on params with downstream rows).",
+      "assertions": {
+        "required_substrings": [
+          "RippleTimesV1",
+          "RippleLFPSelection",
+          "new ripple_param_name",
+          "ripple_param_dict",
+          "provenance"
+        ],
+        "forbidden_substrings": [
+          "call update1 on the existing row",
+          "yes, just update1 the row"
+        ],
+        "behavioral_checks": [
+          "Recommends inserting a NEW `RippleParameters` row (e.g. `ripple_param_name='zscore3'`) and populating `RippleTimesV1` against the new name — does NOT recommend mutating the existing `'default'` row via `update1()`",
+          "Frames the issue as **provenance**: existing `RippleTimesV1` rows still reference the old param name but the blob would have changed, breaking reproducibility",
+          "Predicts the qualitative direction correctly: raising `zscore_threshold` from 2 to 3 yields FEWER detected ripple events (higher threshold = stricter trigger)",
+          "Notes that no new `RippleLFPSelection` row is needed — selection rows already exist for the LFP band + electrode group; just populate `RippleTimesV1` for the new param name",
+          "Notes that old rows under `'default'` are unchanged (intact provenance) and the two sets coexist queryable side-by-side — that's the value of the new-name shape"
+        ],
+        "required_substrings_exempt": [
+          "provenance"
+        ],
+        "expected_output_tables_exempt": [
+          "RippleParameters"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `RippleTimesV1`.",
+        "Response contains substring `RippleLFPSelection`.",
+        "Response contains substring `new ripple_param_name`.",
+        "Response contains substring `ripple_param_dict`.",
+        "Response contains substring `provenance`.",
+        "Response does not contain substring `call update1 on the existing row`.",
+        "Response does not contain substring `yes, just update1 the row`.",
+        "Recommends inserting a NEW `RippleParameters` row (e.g. `ripple_param_name='zscore3'`) and populating `RippleTimesV1` against the new name — does NOT recommend mutating the existing `'default'` row via `update1()`",
+        "Frames the issue as **provenance**: existing `RippleTimesV1` rows still reference the old param name but the blob would have changed, breaking reproducibility",
+        "Predicts the qualitative direction correctly: raising `zscore_threshold` from 2 to 3 yields FEWER detected ripple events (higher threshold = stricter trigger)",
+        "Notes that no new `RippleLFPSelection` row is needed — selection rows already exist for the LFP band + electrode group; just populate `RippleTimesV1` for the new param name",
+        "Notes that old rows under `'default'` are unchanged (intact provenance) and the two sets coexist queryable side-by-side — that's the value of the new-name shape"
+      ]
+    },
+    {
+      "id": 125,
+      "eval_name": "counterfactual-sort-interval-change",
+      "stage": "parameter-understanding",
+      "tier": "counterfactual",
+      "difficulty": "hard",
+      "prompt": "If I shorten the `sort_interval` on one `SpikeSortingRecordingSelection` row to half its original length, which downstream rows change? Can the old curation still be reused?",
+      "expected_output": "Old curation **cannot transfer** to the new interval. The reason is the shape of `SpikeSortingRecordingSelection`'s primary key:\n\n```\n# src/spyglass/spikesorting/v1/recording.py:147-157\nSpikeSortingRecordingSelection:\n    recording_id: uuid                                  # PK — generated by insert_selection\n    ---\n    -> Raw\n    -> SortGroup\n    -> IntervalList                                     # carries the sort_interval\n    -> SpikeSortingPreprocessingParameters\n    -> LabTeam\n```\n\n`recording_id` is a uuid generated by `SpikeSortingRecordingSelection.insert_selection(...)` (recording.py:178-184; the uuid is generated and assigned to `recording_id` inside `insert_selection`) from the input key — Raw, SortGroup, **IntervalList** (which carries the sort interval / valid_times), preprocessing params, and team. Change the interval, and you have a different input key → a **different `recording_id`** → a different row.\n\n**Downstream cascade — NOT a re-population of existing rows:**\n\n- `SpikeSortingRecording` FKs to `SpikeSortingRecordingSelection` by `recording_id`. The new selection row (new `recording_id`) needs a fresh `SpikeSortingRecording.populate()`.\n- `SpikeSortingSelection` then needs a fresh row for the new `recording_id` (it FKs to `SpikeSortingRecording` and propagates `recording_id` as a secondary attr).\n- `SpikeSorting.populate()` produces fresh sorted spikes for the new `SpikeSortingSelection` row (a different `sorting_id`).\n- `CurationV1` rows are keyed on `(sorting_id, curation_id)` (`spikesorting/v1/curation.py`) and reference the spike data of a specific sorting. **The old `CurationV1` rows belong to the old `sorting_id`, which is anchored to the old `recording_id`** — they cannot be applied to the new sorting because the spike sets, indices, and waveforms are different. Curation labels (good/MUA/noise) are keyed on per-sort indices that don't transfer.\n\n**The right shape — insert as a NEW selection row, don't edit the existing one:**\n\n```python\n# Build a new IntervalList row carrying the shortened interval, OR pick\n# an existing one with that valid_times shape:\nnew_key = {\n    'nwb_file_name': nwb_file,\n    'sort_group_id': sort_group_id,\n    'interval_list_name': new_interval_name,\n    'preproc_param_name': preproc_param_name,\n    'team_name': team_name,\n}\nSpikeSortingRecordingSelection.insert_selection(new_key)\n# Then SpikeSortingRecording / SpikeSortingSelection / SpikeSorting / CurationV1\n# repopulate against the new recording_id.\n```\n\n**Don't mutate the existing row** — `update1()` on a `SpikeSortingRecordingSelection` row that already has populated downstream is the same provenance trap as the `update1` adversarial in eval 117: old downstream rows would still pin the old `recording_id` while the input key they reference has changed.\n\nRoutes to spikesorting_pipeline.md.",
+      "assertions": {
+        "required_substrings": [
+          "SpikeSortingRecording",
+          "SpikeSorting",
+          "CurationV1",
+          "new recording_id",
+          "insert_selection"
+        ],
+        "forbidden_substrings": [
+          "yes, the old curation still applies",
+          "old curation transfers"
+        ],
+        "behavioral_checks": [
+          "Recognizes that changing the sort interval (via `IntervalList`) changes the input key to `SpikeSortingRecordingSelection.insert_selection`, producing a NEW `recording_id` (the PK is a uuid generated from the inputs at recording.py:180), NOT a mutation of the existing row",
+          "Cascades the consequence through SpikeSortingRecording -> SpikeSortingSelection -> SpikeSorting -> CurationV1 — each downstream layer needs a fresh row keyed off the new recording_id / new sorting_id; the old chain stays anchored to the old recording_id",
+          "Explains explicitly that `CurationV1` rows CANNOT transfer — curation labels are keyed on per-sort indices that don't survive a re-sort against different input data; sets, indices, and waveforms differ",
+          "Recommends `SpikeSortingRecordingSelection.insert_selection(new_key)` (a new row) rather than `update1()` on the existing row — the latter is the same provenance trap as eval 117"
+        ],
+        "expected_output_tables_exempt": [
+          "Raw",
+          "SortGroup",
+          "IntervalList",
+          "SpikeSortingPreprocessingParameters",
+          "LabTeam",
+          "SpikeSortingRecordingSelection",
+          "SpikeSortingSelection"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `SpikeSortingRecording`.",
+        "Response contains substring `SpikeSorting`.",
+        "Response contains substring `CurationV1`.",
+        "Response contains substring `new recording_id`.",
+        "Response contains substring `insert_selection`.",
+        "Response does not contain substring `yes, the old curation still applies`.",
+        "Response does not contain substring `old curation transfers`.",
+        "Recognizes that changing the sort interval (via `IntervalList`) changes the input key to `SpikeSortingRecordingSelection.insert_selection`, producing a NEW `recording_id` (the PK is a uuid generated from the inputs at recording.py:180), NOT a mutation of the existing row",
+        "Cascades the consequence through SpikeSortingRecording -> SpikeSortingSelection -> SpikeSorting -> CurationV1 — each downstream layer needs a fresh row keyed off the new recording_id / new sorting_id; the old chain stays anchored to the old recording_id",
+        "Explains explicitly that `CurationV1` rows CANNOT transfer — curation labels are keyed on per-sort indices that don't survive a re-sort against different input data; sets, indices, and waveforms differ",
+        "Recommends `SpikeSortingRecordingSelection.insert_selection(new_key)` (a new row) rather than `update1()` on the existing row — the latter is the same provenance trap as eval 117"
+      ]
+    },
+    {
+      "id": 126,
+      "eval_name": "counterfactual-decoding-bin-size",
+      "stage": "parameter-understanding",
+      "tier": "counterfactual",
+      "difficulty": "hard",
+      "prompt": "If I change `DecodingParameters.position_bin_size` from 2 cm to 5 cm, what downstream rows change? I only care about the decoding posterior, not upstream.",
+      "expected_output": "**Only the decoding output changes.** Spike sorting and position upstream are unaffected — they don't depend on `DecodingParameters` at all.\n\nRouting through the schema (per `src/spyglass/decoding/v1/core.py:24-37`):\n\n- `DecodingParameters` is a `dj.Lookup` keyed on `decoding_param_name`; the `decoding_params` blob carries the model-init kwargs, including the environment / `position_bin_size` used by `classifier.initialize_environments` (consumed inside the decoding `make_compute` body, `clusterless.py:475-514`).\n- `DecodingParameters` is **upstream of the decoding selections** (`ClusterlessDecodingSelection`, `SortedSpikesDecodingSelection`), which are upstream of `ClusterlessDecodingV1` / `SortedSpikesDecodingV1`.\n- Spike sorting (`SpikeSorting`, `SpikeSortingOutput`, `CurationV1`, `UnitWaveformFeaturesGroup`) and position (`PositionOutput`, `PositionGroup`) are upstream of the decoding selection but DO NOT FK to `DecodingParameters`. Changing `decoding_params` doesn't propagate backwards through their chains.\n\n**Right shape — insert a new param row, don't `update1()` the existing one:**\n\n```python\nfrom spyglass.decoding.v1.core import DecodingParameters\nfrom spyglass.decoding.v1.clusterless import (\n    ClusterlessDecodingSelection, ClusterlessDecodingV1,\n)\n\nold_dict = (DecodingParameters\n            & {'decoding_param_name': 'default'}).fetch1('decoding_params')\nnew_dict = {**old_dict}\n# update the bin-size key in whichever nested location it lives — typically\n# under environments[0].place_bin_size; consult the decoding_params shape\n# the user is already using and modify in place:\nnew_dict['environments'][0]['place_bin_size'] = 5  # cm\n\nDecodingParameters.insert1({\n    'decoding_param_name': 'bin5cm',\n    'decoding_params': new_dict,\n    'decoding_kwargs': {},\n})\nClusterlessDecodingSelection.insert1({**existing_keys,\n                                     'decoding_param_name': 'bin5cm'})\nClusterlessDecodingV1.populate({'decoding_param_name': 'bin5cm'})\n```\n\n**What changes / what doesn't:**\n\n- `ClusterlessDecodingV1` (or `SortedSpikesDecodingV1`) gets a new row under `decoding_param_name='bin5cm'`, with a different posterior (coarser spatial bins → fewer state bins → faster, lower spatial resolution).\n- Old rows under `'default'` remain intact and queryable.\n- Spike sorting and position pipeline rows: **untouched**. They aren't downstream of `DecodingParameters`.\n- The `UnitWaveformFeaturesGroup` and `PositionGroup` rows referenced by the selection: **untouched**. They're FK'd by the *selection*, not by `DecodingParameters` directly, and don't change because of a param-blob change.\n\nIf the user wants to know whether the answer fits the working model, comparing the two posteriors side-by-side via `(ClusterlessDecodingV1 & {decoding_param_name: 'default'}).fetch1_dataframe()` vs `... & {decoding_param_name: 'bin5cm'}` is the cleanest A/B — both rows still exist after the new populate.\n\nRoutes to decoding_pipeline.md.",
+      "assertions": {
+        "required_substrings": [
+          "DecodingParameters",
+          "ClusterlessDecodingV1",
+          "new decoding_param_name",
+          "ClusterlessDecodingSelection"
+        ],
+        "forbidden_substrings": [
+          "spike sorting re-runs",
+          "LFP re-runs",
+          "position re-runs",
+          "yes, just call update1 on DecodingParameters"
+        ],
+        "behavioral_checks": [
+          "Correctly identifies that ONLY the decoding output (`ClusterlessDecodingV1` / `SortedSpikesDecodingV1`) changes — spike sorting and position upstream are unaffected because they don't FK to `DecodingParameters`",
+          "Recommends inserting a NEW `DecodingParameters` row with a different `decoding_param_name` (e.g. `'bin5cm'`) and a fresh `ClusterlessDecodingSelection` + populate, rather than `update1()` on the existing row",
+          "Names the qualitative direction (coarser bins = fewer state bins = faster, lower spatial resolution) without misattributing the change to upstream pipelines",
+          "Notes that `UnitWaveformFeaturesGroup` and `PositionGroup` (referenced by the selection) are untouched — they're FK'd by the SELECTION, not by `DecodingParameters` directly"
+        ],
+        "expected_output_tables_exempt": [
+          "CurationV1",
+          "PositionGroup",
+          "PositionOutput",
+          "SortedSpikesDecodingSelection",
+          "SortedSpikesDecodingV1",
+          "SpikeSorting",
+          "SpikeSortingOutput",
+          "UnitWaveformFeaturesGroup"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `DecodingParameters`.",
+        "Response contains substring `ClusterlessDecodingV1`.",
+        "Response contains substring `new decoding_param_name`.",
+        "Response contains substring `ClusterlessDecodingSelection`.",
+        "Response does not contain substring `spike sorting re-runs`.",
+        "Response does not contain substring `LFP re-runs`.",
+        "Response does not contain substring `position re-runs`.",
+        "Response does not contain substring `yes, just call update1 on DecodingParameters`.",
+        "Correctly identifies that ONLY the decoding output (`ClusterlessDecodingV1` / `SortedSpikesDecodingV1`) changes — spike sorting and position upstream are unaffected because they don't FK to `DecodingParameters`",
+        "Recommends inserting a NEW `DecodingParameters` row with a different `decoding_param_name` (e.g. `'bin5cm'`) and a fresh `ClusterlessDecodingSelection` + populate, rather than `update1()` on the existing row",
+        "Names the qualitative direction (coarser bins = fewer state bins = faster, lower spatial resolution) without misattributing the change to upstream pipelines",
+        "Notes that `UnitWaveformFeaturesGroup` and `PositionGroup` (referenced by the selection) are untouched — they're FK'd by the SELECTION, not by `DecodingParameters` directly"
+      ]
     }
   ]
 }
