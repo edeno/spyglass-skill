@@ -174,12 +174,7 @@ from spyglass.decoding import PositionGroup
 
 **Gotcha — `position_variables` must match the upstream DataFrame's
 column names.** `PositionGroup.create_group` defaults
-`position_variables=['position_x','position_y']`. DLC-derived positions
-expose columns named after the tracked body part
-(`'head_position_x'`, `'head_position_y'`, etc.). With default
-variables on a DLC source, `fetch_position_info` returns empty frames
-and downstream decoding raises
-`ValueError: No objects to concatenate`.
+`position_variables=['position_x', 'position_y']`. Both `TrodesPosV1.fetch1_dataframe()` and `DLCPosV1.fetch1_dataframe()` emit columns literally named `position_x` and `position_y` (see `src/spyglass/position/v1/position_dlc_selection.py:184-186` for DLC), so the **defaults match both upstream sources without modification**. Overriding `position_variables` with body-part-prefixed names like `['head_position_x', 'head_position_y']` is the typical mistake — those columns don't exist on the merge-fetched DataFrame, so when `upsample_rate` is non-NaN the `_upsample` helper raises `KeyError: 'head_position_x'` while iterating the requested variable names (`src/spyglass/decoding/v1/core.py:289-291`). When `upsample_rate` is NaN, the `KeyError` instead fires later, downstream of `fetch_position_info`, when the decoding `make()` body slices the returned DataFrame by `position_variable_names`. Distinct from `ValueError: No objects to concatenate`, which means the `PositionGroup.Position` part is empty for the key (no `pos_merge_id`s in the loop) — a different problem.
 
 Check:
 

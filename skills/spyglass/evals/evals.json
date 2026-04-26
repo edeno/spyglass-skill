@@ -1528,7 +1528,6 @@
         "required_substrings": [
           "dj.config['stores']",
           "save_local",
-          "['raw']",
           "SpyglassConfig"
         ],
         "forbidden_substrings": [
@@ -1539,21 +1538,22 @@
           "Explains that dj.config['stores'] is machine-local and SPYGLASS_BASE_DIR does NOT propagate into it",
           "Offers both fixes: regenerate config per machine OR edit in-place + save_local",
           "Shows the session-start assertion (stores.raw.location prefix matches SPYGLASS_BASE_DIR)",
-          "Does not recommend remounting the share as the primary fix"
+          "Does not recommend remounting the share as the primary fix",
+          "Names the `stores['raw']` (or equivalent `stores[\"raw\"]` / prose 'the raw store') entry as the location key whose `location` value must match `SPYGLASS_BASE_DIR` on the current machine — quote style is irrelevant"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `dj.config['stores']`.",
         "Response contains substring `save_local`.",
-        "Response contains substring `['raw']`.",
         "Response contains substring `SpyglassConfig`.",
         "Response does not contain substring `SPYGLASS_BASE_DIR is all you need`.",
         "Response does not contain substring `mount it at the same path on both machines`.",
         "Explains that dj.config['stores'] is machine-local and SPYGLASS_BASE_DIR does NOT propagate into it",
         "Offers both fixes: regenerate config per machine OR edit in-place + save_local",
         "Shows the session-start assertion (stores.raw.location prefix matches SPYGLASS_BASE_DIR)",
-        "Does not recommend remounting the share as the primary fix"
+        "Does not recommend remounting the share as the primary fix",
+        "Names the `stores['raw']` (or equivalent `stores[\"raw\"]` / prose 'the raw store') entry as the location key whose `location` value must match `SPYGLASS_BASE_DIR` on the current machine — quote style is irrelevant"
       ]
     },
     {
@@ -1607,9 +1607,9 @@
       "assertions": {
         "required_substrings": [
           "AnalysisNwbfile()",
-          "cleanup step",
           "dry_run",
-          "LabMemberInfo"
+          "LabMemberInfo",
+          "cleanup("
         ],
         "forbidden_substrings": [
           "just use super_delete next time",
@@ -1620,14 +1620,17 @@
           "Shows AnalysisNwbfile().cleanup(dry_run=True) first, then dry_run=False",
           "Pushes back on super_delete as the pattern for LabMember errors — root-cause fix is to add the user to LabMember.LabMemberInfo",
           "Does not treat 'the PermissionError is annoying' as sufficient justification for super_delete"
+        ],
+        "required_substrings_exempt": [
+          "cleanup("
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `AnalysisNwbfile()`.",
-        "Response contains substring `cleanup step`.",
         "Response contains substring `dry_run`.",
         "Response contains substring `LabMemberInfo`.",
+        "Response contains substring `cleanup(`.",
         "Response does not contain substring `just use super_delete next time`.",
         "Response does not contain substring `super_delete is fine here`.",
         "Confirms super_delete bypasses Spyglass's file cleanup (aliases to datajoint.Table.delete)",
@@ -1656,8 +1659,7 @@
           "SpikeSortingRecordingSelection"
         ],
         "forbidden_substrings": [
-          "must be a typo in the key",
-          "spyglass bug"
+          "must be a typo in the key"
         ],
         "behavioral_checks": [
           "Uses find_insert_fail(key) as the primary diagnostic, not guessing the missing parent",
@@ -1677,7 +1679,6 @@
         "Response contains substring `SpikeSortingPreprocessingParameters`.",
         "Response contains substring `SpikeSortingRecordingSelection`.",
         "Response does not contain substring `must be a typo in the key`.",
-        "Response does not contain substring `spyglass bug`.",
         "Uses find_insert_fail(key) as the primary diagnostic, not guessing the missing parent",
         "Names the concrete FK parents (Raw, SortGroup, IntervalList, SpikeSortingPreprocessingParameters, LabTeam)",
         "Identifies 'sort_02_r1' as a likely missing IntervalList row, but frames it as a hypothesis to confirm via the diagnostic",
@@ -1747,27 +1748,24 @@
           "SHOW GRANTS",
           "LabMemberInfo"
         ],
-        "forbidden_substrings": [
-          "force_permission=True"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Splits the diagnosis into three layers (MySQL grants, filesystem, LabMember) rather than guessing one",
           "Gives concrete diagnostic commands for each layer (SHOW GRANTS, filesystem writability check, LabMember check)",
           "For the filesystem layer, either verify_spyglass_env.py --check base_dir_exists_writable/subdirs_exist_writable OR ls -ld + os.access is acceptable",
           "Runs SHOW GRANTS and LabMember check before assuming filesystem",
-          "Does not recommend chmod -R 777 or super_delete() as the fix"
+          "Does not recommend chmod -R 777, super_delete(), or force_permission=True as the fix — these are bypasses for legitimate edge cases, not first-line responses to a permission-denied error"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `SHOW GRANTS`.",
         "Response contains substring `LabMemberInfo`.",
-        "Response does not contain substring `force_permission=True`.",
         "Splits the diagnosis into three layers (MySQL grants, filesystem, LabMember) rather than guessing one",
         "Gives concrete diagnostic commands for each layer (SHOW GRANTS, filesystem writability check, LabMember check)",
         "For the filesystem layer, either verify_spyglass_env.py --check base_dir_exists_writable/subdirs_exist_writable OR ls -ld + os.access is acceptable",
         "Runs SHOW GRANTS and LabMember check before assuming filesystem",
-        "Does not recommend chmod -R 777 or super_delete() as the fix"
+        "Does not recommend chmod -R 777, super_delete(), or force_permission=True as the fix — these are bypasses for legitimate edge cases, not first-line responses to a permission-denied error"
       ]
     },
     {
@@ -1776,7 +1774,7 @@
       "stage": "setup",
       "tier": "environment-triage",
       "difficulty": "medium",
-      "prompt": "Just did `git pull` on my spyglass checkout at `~/spyglass/` — new commit landed, I can see the changes in the source tree. But when I `import spyglass` in Jupyter, I hit `AttributeError: module 'spyglass.spikesorting.v1' has no attribute 'MetricCurationV2'` (that's the new class that got added). Tracebacks point at `/opt/miniforge/envs/spyglass/lib/python3.11/site-packages/spyglass/spikesorting/v1/...`. What's going on?",
+      "prompt": "Just did `git pull` on my spyglass checkout at `~/spyglass/` — new commit landed, I can see a class `NewlyAddedThing` in `src/spyglass/spikesorting/v1/` that wasn't there before. But when I `import spyglass` in Jupyter, I hit `AttributeError: module 'spyglass.spikesorting.v1' has no attribute 'NewlyAddedThing'`. Tracebacks point at `/opt/miniforge/envs/spyglass/lib/python3.11/site-packages/spyglass/spikesorting/v1/...`. What's going on?",
       "expected_output": "Routes to setup_troubleshooting.md '`ImportError` / symbol-moved errors after `git pull` — editable-install drift'. Python is loading the pip-installed spyglass from `site-packages`, not your source checkout — that's why the new class isn't visible. Confirm with `import spyglass; print(spyglass.__file__)` — it should point at `~/spyglass/src/spyglass/__init__.py`, not `.../site-packages/spyglass/...`. Fix:\\n\\n```bash\\nconda activate spyglass\\ncd ~/spyglass\\ngit pull\\npip install -e .\\n```\\n\\nThen RESTART the Jupyter kernel — the old import is cached. If you originally installed via `pip install spyglass-neuro`, that wheel is still in site-packages and shadows the source install: `pip uninstall spyglass-neuro` first, then `pip install -e .` on the source tree.",
       "assertions": {
         "required_substrings": [
@@ -1815,10 +1813,10 @@
       "tier": "environment-triage",
       "difficulty": "medium",
       "prompt": "`import spyglass.common` now fails with `AttributeError: module 'cv2' has no attribute 'gapi'`. Worked yesterday. I pip installed `opencv-python-headless` for another project into the same conda env last night — is that related? How do I get back to working?",
-      "expected_output": "Routes to setup_install.md 'Env drift and upstream breakages'. Yes — `pip install <onepkg>` into an existing Spyglass env silently upgrades transitive deps (numpy, setuptools, pydot, networkx, opencv) and breaks otherwise-working installs. The `cv2.gapi` AttributeError is one of several canonical drift symptoms; others include `\\\"ndx-franklab-novela is not a namespace\\\"`, `dj.Diagram(...)._repr_svg_ → \\\"Node names and attributes should not contain ':'\\\"`, `pkg_resources` errors after `setuptools>=82`, and `RuntimeError: Undefined plan with nthreads` from `pyfftw 0.13.0`.\\n\\nFix — recreate the env from the current `environment.yml`:\\n\\n```bash\\nmamba env update --file environment.yml --prune\\n# OR for a clean rebuild:\\nmamba env remove -n spyglass && mamba env create -f environment.yml\\n```\\n\\nGoing forward: don't `pip install <pkg>` piecemeal into a working Spyglass env — the next pip install will almost certainly overwrite a pinned version Spyglass relies on. If you must, `pip install --dry-run <pkg>` first and check which transitive deps pip wants to move.",
+      "expected_output": "Routes to setup_install.md 'Env drift and upstream breakages'. Yes — `pip install <onepkg>` into an existing Spyglass env silently upgrades transitive deps (numpy, setuptools, pydot, networkx, opencv) and breaks otherwise-working installs. The `cv2.gapi` AttributeError is one of several canonical drift symptoms; others include `\\\"ndx-franklab-novela is not a namespace\\\"`, `dj.Diagram(...)._repr_svg_ → \\\"Node names and attributes should not contain ':'\\\"`, `pkg_resources` errors after `setuptools>=82`, and `RuntimeError: Undefined plan with nthreads` from `pyfftw 0.13.0`.\\n\\nFix — recreate the env from the current `environments/environment_min.yml`:\\n\\n```bash\\nmamba env update --file environments/environment_min.yml --prune\\n# OR for a clean rebuild:\\nmamba env remove -n spyglass && mamba env create -f environments/environment_min.yml\\n```\\n\\nGoing forward: don't `pip install <pkg>` piecemeal into a working Spyglass env — the next pip install will almost certainly overwrite a pinned version Spyglass relies on. If you must, `pip install --dry-run <pkg>` first and check which transitive deps pip wants to move.",
       "assertions": {
         "required_substrings": [
-          "environment.yml",
+          "environments/environment_min.yml",
           "--dry-run"
         ],
         "forbidden_substrings": [
@@ -1827,19 +1825,19 @@
         ],
         "behavioral_checks": [
           "Identifies the pip-install-broke-conda-env pattern (not a spyglass code issue)",
-          "Recommends recreating the env from environment.yml using either `mamba env update --prune` or `conda env update --prune` (either tool is acceptable — labs use both)",
+          "Recommends recreating the env from `environments/environment_min.yml` (the default minimal file per setup_install.md) or `environments/environment.yml` (full install) using either `mamba env update --prune` or `conda env update --prune` (either tool is acceptable — labs use both)",
           "Mentions `pip install --dry-run` as a future safeguard",
           "Does not recommend pinning a specific cv2 version or installing another package on top"
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `environment.yml`.",
+        "Response contains substring `environments/environment_min.yml`.",
         "Response contains substring `--dry-run`.",
         "Response does not contain substring `pip install opencv-python`.",
         "Response does not contain substring `pin cv2 to`.",
         "Identifies the pip-install-broke-conda-env pattern (not a spyglass code issue)",
-        "Recommends recreating the env from environment.yml using either `mamba env update --prune` or `conda env update --prune` (either tool is acceptable — labs use both)",
+        "Recommends recreating the env from `environments/environment_min.yml` (the default minimal file per setup_install.md) or `environments/environment.yml` (full install) using either `mamba env update --prune` or `conda env update --prune` (either tool is acceptable — labs use both)",
         "Mentions `pip install --dry-run` as a future safeguard",
         "Does not recommend pinning a specific cv2 version or installing another package on top"
       ]
@@ -1850,8 +1848,8 @@
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
       "difficulty": "hard",
-      "prompt": "clusterless decoding populate failed with `ValueError: No objects to concatenate` inside `fetch_position_info`. My `PositionGroup` points at a DLC source (a `PositionOutput.DLCPosV1` merge entry). I set `position_variables=['head_position_x', 'head_position_y']` on the group (the default name didn't look like it matched DLC). Is my DLC output empty?",
-      "expected_output": "Routes to decoding_pipeline.md PositionGroup Gotcha. Almost certainly NOT that DLC output is empty — it's a variable-name mismatch in the OTHER direction. `DLCPosV1.fetch1_dataframe()` emits columns literally named `position_x` and `position_y` (see `src/spyglass/position/v1/position_dlc_selection.py`), which happens to match `PositionGroup.create_group`'s default `position_variables=['position_x', 'position_y']`. The custom `['head_position_x', 'head_position_y']` doesn't exist on DLCPosV1 output, so `fetch_position_info` slices empty frames and downstream decoding hits `ValueError: No objects to concatenate`.\\n\\nConfirm and fix:\\n\\n```python\\ncols = list((DLCPosV1 & key).fetch1_dataframe().columns)\\n# Pick the actual column names (for DLCPosV1 this is usually position_x, position_y):\\nPositionGroup().create_group(..., position_variables=cols[:2])\\n```\\n\\nFor DLCPosV1 the default `['position_x', 'position_y']` is usually correct — drop the custom override. Then re-insert the ClusterlessDecodingSelection row pointing at the corrected PositionGroup and re-populate.",
+      "prompt": "clusterless decoding populate failed with `KeyError: 'head_position_x'` inside `_upsample` / `fetch_position_info`. My `PositionGroup` points at a DLC source (a `PositionOutput.DLCPosV1` merge entry). I set `position_variables=['head_position_x', 'head_position_y']` on the group (the default name didn't look like it matched DLC). Is the DLC output missing the head-position columns?",
+      "expected_output": "Routes to decoding_pipeline.md `PositionGroup` Gotcha. The `KeyError` is the right shape but the diagnosis is wrong: the DLC output is **not** missing the head position columns — `DLCPosV1.fetch1_dataframe()` literally emits columns named `position_x` and `position_y` (`src/spyglass/position/v1/position_dlc_selection.py:184-186`), the same names Trodes positions emit. `PositionGroup.create_group`'s default `position_variables=['position_x', 'position_y']` already matches both Trodes and DLC sources without modification.\n\nThe custom `['head_position_x', 'head_position_y']` doesn't exist on `DLCPosV1`'s fetched DataFrame, so `_upsample` raises `KeyError` while iterating the requested variable names inside `_upsample` (`src/spyglass/decoding/v1/core.py`). The fix is to drop the override:\n\n```python\ncols = list((DLCPosV1 & key).fetch1_dataframe().columns)\n# DLCPosV1 typically emits position_x, position_y (alongside orientation,\n# velocity_x, velocity_y, speed, video_frame_ind).\nPositionGroup().create_group(\n    nwb_file_name='...',\n    group_name='...',\n    keys=[...],\n    position_variables=['position_x', 'position_y'],   # the default\n)\n```\n\nThen re-insert the `ClusterlessDecodingSelection` row pointing at the corrected `PositionGroup` and re-populate. (If `(DLCPosV1 & key).fetch1_dataframe()` itself returned a DataFrame missing the position columns, *that* would be a real DLC output problem — but the columns at fetch time should exist; the column-listing diagnostic above confirms it.)",
       "assertions": {
         "required_substrings": [
           "position_variables",
@@ -1861,10 +1859,11 @@
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Identifies the variable-name mismatch (not empty DLC output) as the root cause",
-          "Shows `(DLCPosV1 & key).fetch1_dataframe().columns` as the concrete diagnostic",
-          "Recognizes that DLCPosV1 emits `position_x`/`position_y` and the default `PositionGroup` variables match — the custom override is the bug",
-          "Does not recommend re-running DLC populate as the fix"
+          "Identifies the variable-name mismatch (NOT empty DLC output) as the root cause — DLC's `fetch1_dataframe()` already emits `position_x` / `position_y`, matching `PositionGroup`'s default `position_variables`",
+          "Shows `(DLCPosV1 & key).fetch1_dataframe().columns` as the concrete diagnostic to confirm the actual column names on the fetched DataFrame",
+          "Recognizes that the default `position_variables=['position_x', 'position_y']` matches DLC; the user's custom `['head_position_x', 'head_position_y']` override is the bug",
+          "Names `_upsample` (or the downstream `make()` slice) as the line that raises `KeyError` when `position_variables` references columns that don't exist on the fetched DataFrame",
+          "Does not recommend re-running DLC populate as the fix — the DLC output already has the expected columns"
         ]
       },
       "files": [],
@@ -1873,10 +1872,11 @@
         "Response contains substring `(DLCPosV1 & key).fetch1_dataframe`.",
         "Response contains substring `ClusterlessDecodingSelection`.",
         "Response contains substring `PositionGroup`.",
-        "Identifies the variable-name mismatch (not empty DLC output) as the root cause",
-        "Shows `(DLCPosV1 & key).fetch1_dataframe().columns` as the concrete diagnostic",
-        "Recognizes that DLCPosV1 emits `position_x`/`position_y` and the default `PositionGroup` variables match — the custom override is the bug",
-        "Does not recommend re-running DLC populate as the fix"
+        "Identifies the variable-name mismatch (NOT empty DLC output) as the root cause — DLC's `fetch1_dataframe()` already emits `position_x` / `position_y`, matching `PositionGroup`'s default `position_variables`",
+        "Shows `(DLCPosV1 & key).fetch1_dataframe().columns` as the concrete diagnostic to confirm the actual column names on the fetched DataFrame",
+        "Recognizes that the default `position_variables=['position_x', 'position_y']` matches DLC; the user's custom `['head_position_x', 'head_position_y']` override is the bug",
+        "Names `_upsample` (or the downstream `make()` slice) as the line that raises `KeyError` when `position_variables` references columns that don't exist on the fetched DataFrame",
+        "Does not recommend re-running DLC populate as the fix — the DLC output already has the expected columns"
       ]
     },
     {
@@ -1896,8 +1896,7 @@
         ],
         "forbidden_substrings": [
           "DB really is that full",
-          "your DB has 2735",
-          "DecodingOutput & [{'nwb_file_name': f} for f in files]"
+          "your DB has 2735"
         ],
         "behavioral_checks": [
           "Identifies that the 2735 is the full table — not the sessions, not a bug in the count",
@@ -1921,7 +1920,6 @@
         "Response contains substring `DecodingOutput`.",
         "Response does not contain substring `DB really is that full`.",
         "Response does not contain substring `your DB has 2735`.",
-        "Response does not contain substring `DecodingOutput & [{'nwb_file_name': f} for f in files]`.",
         "Identifies that the 2735 is the full table — not the sessions, not a bug in the count",
         "Explains the silent no-op: nwb_file_name is not on the merge master's heading, DataJoint drops it",
         "Shows `merge_restrict` per-file as the correct shape (NOT `merge_get_part`, since the question is about counting not loading)",
