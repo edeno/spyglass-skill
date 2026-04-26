@@ -3540,19 +3540,22 @@
       "tier": "joins",
       "difficulty": "medium",
       "prompt": "I want all sessions whose `SpikeSortingRecording` was populated for a specific interval (interval_list_name='02_r1') — how do I express that without a `*` join across the whole chain?",
-      "expected_output": "Use a sub-restriction, not a natural join. The shape: `SpikeSortingRecording & (IntervalList & {'interval_list_name': '02_r1', 'nwb_file_name': ...})` — DataJoint walks the FK chain to figure out how `IntervalList` constrains `SpikeSortingRecording` (via `SpikeSortingRecordingSelection`), and only the matching rows survive. Two reasons this beats `SpikeSortingRecording * IntervalList * SpikeSortingRecordingSelection ...`: (1) the multi-table `*` chain often raises `DataJointError: Cannot join query expressions on dependent attribute 'nwb_file_name'` because `nwb_file_name` is secondary on multiple sides; (2) even when the chain works, it can multiply rows you didn't want and force you to deduplicate. The sub-restriction `& (Other & {...})` keeps the LHS shape and just filters it. For multi-session restriction, drop the `nwb_file_name` from the inner dict: `SpikeSortingRecording & (IntervalList & {'interval_list_name': '02_r1'})`. Then `.fetch('nwb_file_name', as_dict=True)` to get the session list. Routes to datajoint_api.md (restriction semantics).",
+      "expected_output": "Use a sub-restriction through `SpikeSortingRecordingSelection`, not a natural join across the chain. The key fact: `SpikeSortingRecording`'s only PK is `recording_id` (`src/spyglass/spikesorting/v1/recording.py:185-191`) — interval fields like `interval_list_name` and `nwb_file_name` live on `SpikeSortingRecordingSelection`, not on `SpikeSortingRecording` itself (`recording.py:147-156`). So restricting `SpikeSortingRecording` directly by `(IntervalList & {...})` shares no attributes with `SpikeSortingRecording`'s heading and silently does the wrong thing — same shape as the merge-master silent-no-op trap (eval 50 / common_mistakes.md).\n\nCorrect shape — restrict `SpikeSortingRecording` by a restricted `SpikeSortingRecordingSelection`, which IS where `(nwb_file_name, interval_list_name)` live (as secondary attrs via `-> IntervalList`):\n\n```python\nssrs_restricted = (\n    SpikeSortingRecordingSelection\n    & (IntervalList & {'interval_list_name': '02_r1'})\n)\nssr_restricted = SpikeSortingRecording & ssrs_restricted\n# Sessions: fetch from the restricted SELECTION, not from\n# SpikeSortingRecording (which has no nwb_file_name in its heading).\nsessions = ssrs_restricted.fetch('nwb_file_name', as_dict=True)\n```\n\nWhy this beats `SpikeSortingRecording * IntervalList * SpikeSortingRecordingSelection ...`: the multi-table `*` chain often raises `DataJointError: Cannot join query expressions on dependent attribute 'nwb_file_name'` because `nwb_file_name` is secondary on multiple sides (see eval 96 / common_mistakes.md § 9). The sub-restriction shape `& (Other & {...})` keeps each LHS shape and just filters it, with no Cartesian products to deduplicate.\n\nRoutes to datajoint_api.md (restriction semantics) and common_mistakes.md.",
       "assertions": {
         "required_substrings": [
           "IntervalList",
           "interval_list_name",
           "SpikeSortingRecording",
+          "SpikeSortingRecordingSelection",
           "& ("
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Restricts via a sub-restriction of the form `(Table & (Other & {...}))` — the response must contain '& (' as a literal substring",
-          "Does not propose a multi-table `*` chain in the proposed code blocks — the canonical answer should use a sub-restriction (& parens) rather than chaining tables with the natural-join operator",
-          "Names IntervalList as the table whose interval_list_name field carries the constraint, not SpikeSortingRecording itself"
+          "Routes the IntervalList restriction through `SpikeSortingRecordingSelection` (where `nwb_file_name` / `interval_list_name` actually live as secondary attrs via `-> IntervalList`), NOT directly through `SpikeSortingRecording` (which only carries `recording_id` in its heading per recording.py:185-191)",
+          "Does not propose a multi-table `*` chain in the proposed code blocks — the canonical answer should use a sub-restriction (`& (...)` parens) rather than chaining tables with the natural-join operator",
+          "Fetches `nwb_file_name` from the restricted `SpikeSortingRecordingSelection` (or via a deliberate join/proj), NOT from `SpikeSortingRecording` itself — the latter has no `nwb_file_name` in its heading",
+          "Does not claim DataJoint 'walks the FK chain' from `SpikeSortingRecording` to `IntervalList` automatically — the restriction works only because both `SpikeSortingRecordingSelection` and the restricted `IntervalList` share `(nwb_file_name, interval_list_name)` in their headings"
         ],
         "expected_output_tables_exempt": [
           "SpikeSortingRecordingSelection"
@@ -3566,10 +3569,13 @@
         "Response contains substring `IntervalList`.",
         "Response contains substring `interval_list_name`.",
         "Response contains substring `SpikeSortingRecording`.",
+        "Response contains substring `SpikeSortingRecordingSelection`.",
         "Response contains substring `& (`.",
         "Restricts via a sub-restriction of the form `(Table & (Other & {...}))` — the response must contain '& (' as a literal substring",
-        "Does not propose a multi-table `*` chain in the proposed code blocks — the canonical answer should use a sub-restriction (& parens) rather than chaining tables with the natural-join operator",
-        "Names IntervalList as the table whose interval_list_name field carries the constraint, not SpikeSortingRecording itself"
+        "Routes the IntervalList restriction through `SpikeSortingRecordingSelection` (where `nwb_file_name` / `interval_list_name` actually live as secondary attrs via `-> IntervalList`), NOT directly through `SpikeSortingRecording` (which only carries `recording_id` in its heading per recording.py:185-191)",
+        "Does not propose a multi-table `*` chain in the proposed code blocks — the canonical answer should use a sub-restriction (`& (...)` parens) rather than chaining tables with the natural-join operator",
+        "Fetches `nwb_file_name` from the restricted `SpikeSortingRecordingSelection` (or via a deliberate join/proj), NOT from `SpikeSortingRecording` itself — the latter has no `nwb_file_name` in its heading",
+        "Does not claim DataJoint 'walks the FK chain' from `SpikeSortingRecording` to `IntervalList` automatically — the restriction works only because both `SpikeSortingRecordingSelection` and the restricted `IntervalList` share `(nwb_file_name, interval_list_name)` in their headings"
       ]
     },
     {
