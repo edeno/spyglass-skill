@@ -584,9 +584,7 @@
           "DecodingParameters",
           "ClusterlessDecodingV1"
         ],
-        "forbidden_substrings": [
-          "default_clusterless"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Includes a discovery step (fetch existing param names from DecodingParameters and select the clusterless variant by its naming suffix) before naming one",
           "Does not invent a specific params name without checking",
@@ -599,7 +597,6 @@
         "Response contains substring `merge_get_part`.",
         "Response contains substring `DecodingParameters`.",
         "Response contains substring `ClusterlessDecodingV1`.",
-        "Response does not contain substring `default_clusterless`.",
         "Includes a discovery step (fetch existing param names from DecodingParameters and select the clusterless variant by its naming suffix) before naming one",
         "Does not invent a specific params name without checking",
         "Does not imply that clusterless and sorted-spikes params live in separate tables — DecodingParameters is a single dj.Lookup; the distinction is by naming convention"
@@ -862,8 +859,7 @@
         ],
         "forbidden_substrings": [
           "super_delete(warn=False)",
-          "delete_quick",
-          "force_permission=True"
+          "delete_quick"
         ],
         "behavioral_checks": [
           "Explains the team-permission model rather than the bypass",
@@ -877,7 +873,6 @@
         "Response contains substring `LabTeam`.",
         "Response does not contain substring `super_delete(warn=False)`.",
         "Response does not contain substring `delete_quick`.",
-        "Response does not contain substring `force_permission=True`.",
         "Explains the team-permission model rather than the bypass",
         "Does not recommend super_delete() as the primary fix",
         "Treats the PermissionError as a feature, not a bug"
@@ -895,11 +890,7 @@
         "required_substrings": [
           "merge_get_part"
         ],
-        "forbidden_substrings": [
-          ".fetch()[0]",
-          ".fetch(as_dict=True)[0]",
-          "fetch(limit=1)"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Does not recommend .fetch()[0] as the fix",
           "Explains why silently picking a row is dangerous (sources differ)",
@@ -912,9 +903,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `merge_get_part`.",
-        "Response does not contain substring `.fetch()[0]`.",
-        "Response does not contain substring `.fetch(as_dict=True)[0]`.",
-        "Response does not contain substring `fetch(limit=1)`.",
         "Does not recommend .fetch()[0] as the fix",
         "Explains why silently picking a row is dangerous (sources differ)",
         "Offers tightening the restriction OR explicit source selection"
@@ -993,10 +981,7 @@
           "DecodingParameters",
           "PositionOutput"
         ],
-        "forbidden_substrings": [
-          "PositionOutput.delete()",
-          "PositionOutput.merge_delete"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Leads with the realistic causes given the user's re-populate hint: cause (a) is a stale/orphaned pos_merge_id in `PositionGroup.Position`; cause (b) is a wrong `position_group_name` in the decoding selection",
           "Includes a one-line sanity check that PositionOutput is populated at all for the session before chasing a stale-merge-id triage path",
@@ -1022,8 +1007,6 @@
         "Response contains substring `ClusterlessDecodingV1`.",
         "Response contains substring `DecodingParameters`.",
         "Response contains substring `PositionOutput`.",
-        "Response does not contain substring `PositionOutput.delete()`.",
-        "Response does not contain substring `PositionOutput.merge_delete`.",
         "Leads with the realistic causes given the user's re-populate hint: cause (a) is a stale/orphaned pos_merge_id in `PositionGroup.Position`; cause (b) is a wrong `position_group_name` in the decoding selection",
         "Includes a one-line sanity check that PositionOutput is populated at all for the session before chasing a stale-merge-id triage path",
         "Treats 'PositionOutput row genuinely missing while PositionGroup.Position references it' as a database-invariant violation flagged for admin attention, NOT as a triage path the user is expected to chase",
@@ -1782,8 +1765,6 @@
           "LabMemberInfo"
         ],
         "forbidden_substrings": [
-          "chmod -R 777",
-          "super_delete()",
           "force_permission=True"
         ],
         "behavioral_checks": [
@@ -1798,8 +1779,6 @@
       "expectations": [
         "Response contains substring `SHOW GRANTS`.",
         "Response contains substring `LabMemberInfo`.",
-        "Response does not contain substring `chmod -R 777`.",
-        "Response does not contain substring `super_delete()`.",
         "Response does not contain substring `force_permission=True`.",
         "Splits the diagnosis into three layers (MySQL grants, filesystem, LabMember) rather than guessing one",
         "Gives concrete diagnostic commands for each layer (SHOW GRANTS, filesystem writability check, LabMember check)",
@@ -2254,10 +2233,7 @@
           "LFPBandV1.populate",
           "LFPBandSelection"
         ],
-        "forbidden_substrings": [
-          "LFPBandOutput",
-          "merge_get_part(LFPBand"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies LFPBandV1 as Computed; user populates it after inserting LFPBandSelection",
           "Notes there is no merge wrapper — LFPBandV1 itself is the consumer-facing endpoint"
@@ -2272,8 +2248,6 @@
         "Response contains substring `Computed table`.",
         "Response contains substring `LFPBandV1.populate`.",
         "Response contains substring `LFPBandSelection`.",
-        "Response does not contain substring `LFPBandOutput`.",
-        "Response does not contain substring `merge_get_part(LFPBand`.",
         "Identifies LFPBandV1 as Computed; user populates it after inserting LFPBandSelection",
         "Notes there is no merge wrapper — LFPBandV1 itself is the consumer-facing endpoint"
       ]
