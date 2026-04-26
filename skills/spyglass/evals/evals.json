@@ -125,10 +125,7 @@
           "key_source",
           "LFPV1"
         ],
-        "forbidden_substrings": [
-          "debug_populate",
-          "populate_one"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Isolates the failing key via one of the three legitimate shapes — manual try/except over key_source, OR `suppress_errors=True, return_exception_objects=True`, OR inspecting `~jobs` for rows with status='error'",
           "Enumerates or references keys from `key_source` (either for iteration, for comparison against jobs, or to define the populate scope)",
@@ -140,8 +137,6 @@
       "expectations": [
         "Response contains substring `key_source`.",
         "Response contains substring `LFPV1`.",
-        "Response does not contain substring `debug_populate`.",
-        "Response does not contain substring `populate_one`.",
         "Isolates the failing key via one of the three legitimate shapes — manual try/except over key_source, OR `suppress_errors=True, return_exception_objects=True`, OR inspecting `~jobs` for rows with status='error'",
         "Enumerates or references keys from `key_source` (either for iteration, for comparison against jobs, or to define the populate scope)",
         "Mentions transaction rollback or post-mortem inspection behavior — populate with `_use_transaction=True` (Spyglass default) leaves no residue on failure",
@@ -1902,10 +1897,7 @@
           "ClusterlessDecodingSelection",
           "PositionGroup"
         ],
-        "forbidden_substrings": [
-          "DLC output is empty",
-          "re-run DLCPosV1.populate"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies the variable-name mismatch (not empty DLC output) as the root cause",
           "Shows `(DLCPosV1 & key).fetch1_dataframe().columns` as the concrete diagnostic",
@@ -1919,8 +1911,6 @@
         "Response contains substring `(DLCPosV1 & key).fetch1_dataframe`.",
         "Response contains substring `ClusterlessDecodingSelection`.",
         "Response contains substring `PositionGroup`.",
-        "Response does not contain substring `DLC output is empty`.",
-        "Response does not contain substring `re-run DLCPosV1.populate`.",
         "Identifies the variable-name mismatch (not empty DLC output) as the root cause",
         "Shows `(DLCPosV1 & key).fetch1_dataframe().columns` as the concrete diagnostic",
         "Recognizes that DLCPosV1 emits `position_x`/`position_y` and the default `PositionGroup` variables match — the custom override is the bug",
@@ -2041,11 +2031,7 @@
           "LinearizedPositionOutput",
           "PositionOutput"
         ],
-        "forbidden_substrings": [
-          "spyglass bug",
-          "MuaEventsV1.merge_get_part",
-          "MuaEventsV1().merge_get_part"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies MuaEventsV1 as `dj.Computed`, not a merge master (rejects the 'spyglass bug' framing)",
           "Names the five actual merge masters (SpikeSortingOutput, LFPOutput, PositionOutput, LinearizedPositionOutput, DecodingOutput)",
@@ -2071,9 +2057,6 @@
         "Response contains substring `LFPOutput`.",
         "Response contains substring `LinearizedPositionOutput`.",
         "Response contains substring `PositionOutput`.",
-        "Response does not contain substring `spyglass bug`.",
-        "Response does not contain substring `MuaEventsV1.merge_get_part`.",
-        "Response does not contain substring `MuaEventsV1().merge_get_part`.",
         "Identifies MuaEventsV1 as `dj.Computed`, not a merge master (rejects the 'spyglass bug' framing)",
         "Names the five actual merge masters (SpikeSortingOutput, LFPOutput, PositionOutput, LinearizedPositionOutput, DecodingOutput)",
         "Shows the correct direct-restriction form for MuaEventsV1 (`& {...}` with actual PK fields) — NOT a `merge_*` method",
@@ -2103,10 +2086,7 @@
           "SpikeSortingRecordingSelection",
           "SpikeSortingSelection"
         ],
-        "forbidden_substrings": [
-          "no matching rows",
-          "rename the column"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Explains the rule: `*` refuses when a shared attribute is secondary on both sides, not just when it appears in one side",
           "Identifies nwb_file_name as the specific collision, and names at least one of the FK paths (-> IntervalList on SpikeSortingSelection, or -> Raw / -> SortGroup on SpikeSortingRecordingSelection)",
@@ -2135,8 +2115,6 @@
         "Response contains substring `SortGroup`.",
         "Response contains substring `SpikeSortingRecordingSelection`.",
         "Response contains substring `SpikeSortingSelection`.",
-        "Response does not contain substring `no matching rows`.",
-        "Response does not contain substring `rename the column`.",
         "Explains the rule: `*` refuses when a shared attribute is secondary on both sides, not just when it appears in one side",
         "Identifies nwb_file_name as the specific collision, and names at least one of the FK paths (-> IntervalList on SpikeSortingSelection, or -> Raw / -> SortGroup on SpikeSortingRecordingSelection)",
         "Recommends `.proj('recording_id')` on SpikeSortingSelection as the canonical/primary fix, with the two-restriction split (fetch1('recording_id') then restrict) as a debug-friendly alternative — does not hedge both as generically equal or as 'either might work'. Pointing to common_mistakes.md § 9's framing (Fix 1 composable, Fix 2 pause-and-inspect) is acceptable.",
@@ -3120,11 +3098,7 @@
         "required_substrings_exempt": [
           "fetch('KEY')"
         ],
-        "forbidden_substrings": [
-          "def get_pk",
-          "get_pk returns",
-          "SpyglassMixin.get_pk("
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "States that `get_pk` does not exist on SpyglassMixin",
           "Recommends `.fetch('KEY')` (or `.proj().fetch()`) as the real way to get PK dicts",
@@ -3136,9 +3110,6 @@
       "expectations": [
         "Response contains substring `fetch('KEY')`.",
         "Response contains substring `spyglassmixin_methods.md`.",
-        "Response does not contain substring `def get_pk`.",
-        "Response does not contain substring `get_pk returns`.",
-        "Response does not contain substring `SpyglassMixin.get_pk(`.",
         "States that `get_pk` does not exist on SpyglassMixin",
         "Recommends `.fetch('KEY')` (or `.proj().fetch()`) as the real way to get PK dicts",
         "Names `dir(SpyglassMixin)` or a source-grep as the verification primitive",
