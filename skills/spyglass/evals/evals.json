@@ -3884,7 +3884,6 @@
       "assertions": {
         "required_substrings": [
           "DecodingOutput.descendants(",
-          "descendants(",
           "children(",
           "merge master"
         ],
@@ -3898,8 +3897,7 @@
         ],
         "required_substrings_exempt": [
           "DecodingOutput.descendants(",
-          "children(",
-          "descendants("
+          "children("
         ],
         "expected_output_tables_exempt": [
           "ClusterlessDecodingV1",
@@ -3909,7 +3907,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `DecodingOutput.descendants(`.",
-        "Response contains substring `descendants(`.",
         "Response contains substring `children(`.",
         "Response contains substring `merge master`.",
         "Response does not contain substring `DecodingOutput.parents(`.",
@@ -4011,7 +4008,7 @@
       "tier": "dependency-tracing",
       "difficulty": "hard",
       "prompt": "I'm trying to run `ClusterlessDecodingV1.populate(key)` on a new session, but the call returns immediately with no work — `(ClusterlessDecodingV1.key_source & key)` is empty. What rows must already exist for populate to find work to do, and how do I figure out which upstream is missing?",
-      "expected_output": "An empty `key_source` means at least one of `ClusterlessDecodingV1`'s upstream FK targets has no row matching your key — `populate()` joins all parents to find candidate keys, and a missing row in any parent collapses the join to zero rows.\n\n`ClusterlessDecodingV1` FKs to `ClusterlessDecodingSelection`, which itself has four upstreams that must all have rows for your session:\n\n1. **`UnitWaveformFeaturesGroup`** — bundles the per-merge-id waveform features into one group. You create it via `UnitWaveformFeaturesGroup().create_group(...)`, which inserts the master row plus part rows pointing at every `UnitWaveformFeatures` merge entry you want included.\n2. **`PositionGroup`** — bundles the position sources used for decoding. Created via `PositionGroup().create_group(...)`, which FKs to `PositionOutput.merge_id`. Position must already be populated upstream.\n3. **`DecodingParameters`** — the parameter blob (named `decoding_param_name`).\n4. **`IntervalList`** — referenced *twice*: once as `encoding_interval` and once as `decoding_interval`. Both must exist as rows for the session, even if they point at the same time interval.\n\nAnd of course `ClusterlessDecodingSelection` itself needs an explicit `insert1(...)` row tying these four together.\n\nWorking backwards: `UnitWaveformFeaturesGroup` requires populated `UnitWaveformFeatures` rows, which require `WaveformFeaturesParams` + `UnitWaveformFeaturesSelection` rows + curated spike sorting in `SpikeSortingOutput`. `PositionGroup` requires populated `PositionOutput` (Trodes or DLC, whichever).\n\n**Diagnostic — find the empty parent:**\n\n```python\nfor parent in ClusterlessDecodingSelection.parents(as_objects=True):\n    sub = {k: key[k] for k in parent.primary_key if k in key}\n    n = len(parent & sub) if sub else len(parent)\n    print(f'{parent.table_name}: {n} rows for this key')\n```\n\nThe parent with `0 rows` is your missing upstream. Insert it (and walk *its* parents the same way if it's also empty), then re-run `populate()`. `ClusterlessDecodingV1.describe()` shows the FK declarations to confirm the chain.\n\nRoutes to decoding_pipeline.md and runtime_debugging.md.",
+      "expected_output": "An empty `key_source` for `ClusterlessDecodingV1` means the join over its parents collapses to zero rows. `ClusterlessDecodingV1` has exactly one direct parent — `ClusterlessDecodingSelection` — so the **first thing to check is whether the selection row itself exists for your key**:\n\n```python\nlen(ClusterlessDecodingSelection & key)   # zero -> selection row missing\n(ClusterlessDecodingSelection & key).fetch(as_dict=True)  # inspect the match\n```\n\nIf that returns `0`, you haven't inserted into `ClusterlessDecodingSelection` yet (or your `key` doesn't match any row). Insert it. If `len()` returns `1` and `populate()` still does no work, your `key` restriction has a typo or extra field that excludes the row — re-check field names and values.\n\nIf the selection insert itself is blocked (DataJoint raises `IntegrityError: Cannot add or update a child row` on `ClusterlessDecodingSelection.insert1(...)`), then one of `ClusterlessDecodingSelection`'s parent FKs has no matching row. The four upstreams of the selection are:\n\n1. **`UnitWaveformFeaturesGroup`** — bundles the per-merge-id waveform features into one group. Created via `UnitWaveformFeaturesGroup().create_group(...)`, which inserts the master row plus part rows pointing at every `UnitWaveformFeatures` merge entry you want included.\n2. **`PositionGroup`** — bundles the position sources used for decoding. Created via `PositionGroup().create_group(...)`, which FKs to `PositionOutput.merge_id`. Position must already be populated upstream.\n3. **`DecodingParameters`** — the parameter blob (named `decoding_param_name`).\n4. **`IntervalList`** — referenced *twice*: once as `encoding_interval` and once as `decoding_interval`. Both must exist as rows for the session, even if they point at the same time interval.\n\n**Diagnostic — find the empty selection-parent:**\n\n```python\nfor parent in ClusterlessDecodingSelection.parents(as_objects=True):\n    sub = {k: key[k] for k in parent.primary_key if k in key}\n    n = len(parent & sub) if sub else len(parent)\n    print(f'{parent.table_name}: {n} rows for this key')\n```\n\nWorking backwards: `UnitWaveformFeaturesGroup` requires populated `UnitWaveformFeatures` rows (via `WaveformFeaturesParams` + `UnitWaveformFeaturesSelection` and curated spike sorting in `SpikeSortingOutput`). `PositionGroup` requires populated `PositionOutput`.\n\n`ClusterlessDecodingV1.describe()` shows the FK declarations to confirm the chain.\n\nRoutes to decoding_pipeline.md and runtime_debugging.md.",
       "assertions": {
         "required_substrings": [
           "UnitWaveformFeaturesGroup",
@@ -4026,8 +4023,8 @@
           "edit the ClusterlessDecodingV1 schema"
         ],
         "behavioral_checks": [
-          "Enumerates upstream group tables (PositionGroup AND UnitWaveformFeaturesGroup) alongside the parameter table and the selection table",
-          "Recommends walking `ClusterlessDecodingSelection.parents()` and checking `(parent & key)` for each — the parent that returns zero rows is the missing upstream"
+          "First diagnostic step is `len(ClusterlessDecodingSelection & key)` (or equivalent inspection of the selection key) — because `ClusterlessDecodingV1`'s only direct parent is `ClusterlessDecodingSelection`, an empty key_source most directly means the selection row is missing or the restriction does not match",
+          "Walks `ClusterlessDecodingSelection.parents()` and checks `(parent & key)` for each *only* if building the selection or if the selection insert itself is blocked by a missing FK target — names UnitWaveformFeaturesGroup AND PositionGroup AND DecodingParameters AND IntervalList as those parents"
         ],
         "expected_output_tables_exempt": [
           "WaveformFeaturesParams",
@@ -4051,8 +4048,8 @@
         "Response contains substring `key_source`.",
         "Response does not contain substring `populate_all_common(`.",
         "Response does not contain substring `edit the ClusterlessDecodingV1 schema`.",
-        "Enumerates upstream group tables (PositionGroup AND UnitWaveformFeaturesGroup) alongside the parameter table and the selection table",
-        "Recommends walking `ClusterlessDecodingSelection.parents()` and checking `(parent & key)` for each — the parent that returns zero rows is the missing upstream"
+        "First diagnostic step is `len(ClusterlessDecodingSelection & key)` (or equivalent inspection of the selection key) — because `ClusterlessDecodingV1`'s only direct parent is `ClusterlessDecodingSelection`, an empty key_source most directly means the selection row is missing or the restriction does not match",
+        "Walks `ClusterlessDecodingSelection.parents()` and checks `(parent & key)` for each *only* if building the selection or if the selection insert itself is blocked by a missing FK target — names UnitWaveformFeaturesGroup AND PositionGroup AND DecodingParameters AND IntervalList as those parents"
       ]
     },
     {
