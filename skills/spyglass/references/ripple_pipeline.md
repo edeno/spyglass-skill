@@ -72,6 +72,7 @@ Source: [`src/spyglass/ripple/v1/ripple.py`](https://github.com/LorenFrankLab/sp
   ```
 
 - `RippleParameters().insert_default()` (ripple.py:144) inserts two presets: `"default"` (uses `head_speed`) and `"default_trodes"` (uses `speed`).
+- **Parameter semantics — `speed_threshold` (default 4.0 cm/s).** Movement-exclusion cutoff passed into `ripple_detection` (`ripple.py:146, 219`). Candidate ripple events are kept only when the animal's **immobility** condition holds at start AND end — i.e. `speed <= speed_threshold` at both bounds. **Direction:** raising the threshold (e.g. 4 → 10 cm/s) **loosens** the immobility filter and keeps **more** candidate events (those at speeds up to the new threshold are no longer rejected). Quality tradeoff: a higher threshold lets in more peri-movement events that may not be true sharp-wave ripples (looser immobility conditioning); to get **fewer / cleaner** SWRs, **lower** the threshold.
 
 **RippleTimesV1** (Computed) — outputs ripple start/end times.
 

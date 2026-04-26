@@ -1938,15 +1938,13 @@
           "LinearizedPositionOutput",
           "PositionOutput"
         ],
-        "forbidden_substrings": [
-          "PositionOutput().get_restricted_merge_ids",
-          "PositionOutput.get_restricted_merge_ids"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "States that get_restricted_merge_ids is SpikeSortingOutput-only (not on the _Merge base)",
           "Names the correct replacement methods for PositionOutput: merge_restrict and/or merge_get_part",
           "Explains that calling it on the wrong master raises AttributeError (not silent wrong data)",
-          "Does not recommend subclassing or monkeypatching PositionOutput"
+          "Does not recommend subclassing or monkeypatching PositionOutput",
+          "Does NOT recommend calling `get_restricted_merge_ids` on `PositionOutput` (or any non-`SpikeSortingOutput` master). Quoting the user's failed call to explain why it raises is fine; recommending it as the path forward is not."
         ]
       },
       "files": [],
@@ -1958,12 +1956,11 @@
         "Response contains substring `LFPOutput`.",
         "Response contains substring `LinearizedPositionOutput`.",
         "Response contains substring `PositionOutput`.",
-        "Response does not contain substring `PositionOutput().get_restricted_merge_ids`.",
-        "Response does not contain substring `PositionOutput.get_restricted_merge_ids`.",
         "States that get_restricted_merge_ids is SpikeSortingOutput-only (not on the _Merge base)",
         "Names the correct replacement methods for PositionOutput: merge_restrict and/or merge_get_part",
         "Explains that calling it on the wrong master raises AttributeError (not silent wrong data)",
-        "Does not recommend subclassing or monkeypatching PositionOutput"
+        "Does not recommend subclassing or monkeypatching PositionOutput",
+        "Does NOT recommend calling `get_restricted_merge_ids` on `PositionOutput` (or any non-`SpikeSortingOutput` master). Quoting the user's failed call to explain why it raises is fine; recommending it as the path forward is not."
       ]
     },
     {
@@ -2024,7 +2021,7 @@
       "tier": "runtime-errors",
       "difficulty": "medium",
       "prompt": "I'm trying to join two spike-sorting tables with `SpikeSortingSelection * SpikeSortingRecordingSelection & {'sorting_id': 'abc'}` and I keep getting `DataJointError: Cannot join query expressions on dependent attribute 'nwb_file_name'`. What does this mean and how do I fix it?",
-      "expected_output": "Routes to common_mistakes.md § 9 (+ datajoint_api.md Join section pointer). Explains the rule: `*` refuses when a shared attribute is secondary on *both* sides — because two like-named secondary columns reached the tables via different FK paths and DataJoint can't guarantee they mean the same thing. Names the specific cause: `nwb_file_name` is secondary on `SpikeSortingSelection` via its `-> IntervalList` FK, and secondary on `SpikeSortingRecordingSelection` via `-> Raw` / `-> SortGroup`. The rule fires at query-build time, not at fetch — so this is not a 'no matching rows' problem and restricting harder won't help.\n\n**Canonical fix**: project the left side down to the PK plus the one bridging secondary attribute — this drops the colliding `nwb_file_name` / `interval_list_name` secondaries before the `*`:\n\n```python\n((SpikeSortingSelection & {'sorting_id': 'abc'}).proj('recording_id')\n * SpikeSortingRecordingSelection\n * SortGroup.SortGroupElectrode * Electrode * BrainRegion\n).fetch('region_name')\n```\n\nThe remaining shared attribute is `recording_id` — secondary on the left (post-proj), primary on the right. One-sided-secondary joins are legal; the refusal only fires when an attr is secondary on both sides.\n\n**Debug-friendly alternative**: split into two restrictions so the two tables never appear in the same `*`:\n\n```python\nrecording_id = (SpikeSortingSelection & {'sorting_id': 'abc'}).fetch1('recording_id')\nregions = (SpikeSortingRecordingSelection * SortGroup.SortGroupElectrode * Electrode * BrainRegion\n           & {'recording_id': recording_id}).fetch('region_name')\n```\n\nPrefer `.proj()` for composability; use the two-restriction form when you want to pause and inspect `recording_id` mid-debug.\n\nDiagnostic habit: inspect `Table.heading.secondary_attributes` on each side before recommending a multi-table `*` chain; collisions on `nwb_file_name` or `interval_list_name` are the usual trigger.",
+      "expected_output": "Routes to common_mistakes.md § 9 (+ datajoint_api.md Join section pointer). Explains the rule (DataJoint calls this the **dependent attribute** refusal): `*` refuses when a shared attribute is secondary on *both* sides — because two like-named secondary columns reached the tables via different FK paths and DataJoint can't guarantee they mean the same thing. Names the specific cause: `nwb_file_name` is secondary on `SpikeSortingSelection` via its `-> IntervalList` FK, and secondary on `SpikeSortingRecordingSelection` via `-> Raw` / `-> SortGroup`. The rule fires at query-build time, not at fetch — so this is not a 'no matching rows' problem and restricting harder won't help.\n\n**Canonical fix**: project the left side down to the PK plus the one bridging secondary attribute — this drops the colliding `nwb_file_name` / `interval_list_name` secondaries before the `*`:\n\n```python\n((SpikeSortingSelection & {'sorting_id': 'abc'}).proj('recording_id')\n * SpikeSortingRecordingSelection\n * SortGroup.SortGroupElectrode * Electrode * BrainRegion\n).fetch('region_name')\n```\n\nThe remaining shared attribute is `recording_id` — secondary on the left (post-proj), primary on the right. One-sided-secondary joins are legal; the refusal only fires when an attr is secondary on both sides.\n\n**Debug-friendly alternative**: split into two restrictions so the two tables never appear in the same `*`:\n\n```python\nrecording_id = (SpikeSortingSelection & {'sorting_id': 'abc'}).fetch1('recording_id')\nregions = (SpikeSortingRecordingSelection * SortGroup.SortGroupElectrode * Electrode * BrainRegion\n           & {'recording_id': recording_id}).fetch('region_name')\n```\n\nPrefer `.proj()` for composability; use the two-restriction form when you want to pause and inspect `recording_id` mid-debug.\n\nDiagnostic habit: inspect `Table.heading.secondary_attributes` on each side before recommending a multi-table `*` chain; collisions on `nwb_file_name` or `interval_list_name` are the usual trigger.",
       "assertions": {
         "required_substrings": [
           "dependent attribute",
@@ -2128,7 +2125,7 @@
       "expected_output": "Routes to position_pipeline.md (Pipeline 1 — Tables block). Identifies TrodesPosParams as the parameter table (Manual tier — Spyglass uses Manual for many parameter tables by convention; the 'parameter table' label refers to the Spyglass role, not the DataJoint Lookup tier): a named, reusable parameter dictionary; insert once per parameter set via TrodesPosParams.insert1(). Identifies TrodesPosSelection as the selection table (Manual tier): picks one (session, interval, params-name) tuple per intended populate run. Names trodes_pos_params_name as the FK that joins selection back to params. Does not say the two tables are the same or interchangeable.",
       "assertions": {
         "required_substrings": [
-          "Manual table",
+          "Manual tier",
           "parameter table",
           "selection table",
           "insert1",
@@ -2145,7 +2142,7 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `Manual table`.",
+        "Response contains substring `Manual tier`.",
         "Response contains substring `parameter table`.",
         "Response contains substring `selection table`.",
         "Response contains substring `insert1`.",
@@ -2168,7 +2165,7 @@
       "assertions": {
         "required_substrings": [
           "merge table",
-          "part table",
+          "part row",
           "PositionOutput.TrodesPosV1",
           "PositionOutput.DLCPosV1"
         ],
@@ -2185,7 +2182,7 @@
       "files": [],
       "expectations": [
         "Response contains substring `merge table`.",
-        "Response contains substring `part table`.",
+        "Response contains substring `part row`.",
         "Response contains substring `PositionOutput.TrodesPosV1`.",
         "Response contains substring `PositionOutput.DLCPosV1`.",
         "Explains that rows enter PositionOutput via insert into a part table (PositionOutput.TrodesPosV1 or PositionOutput.DLCPosV1), not via populate()",
@@ -2312,9 +2309,9 @@
       "expected_output": "Routes to decoding_pipeline.md. Notes that both encoding_interval and decoding_interval are projected FKs to IntervalList — they pick existing interval rows by name, not raw time ranges. Explains that the encoding interval is where the place-field / receptive-field model is trained, while the decoding interval is where the trained model is applied. Yes, they can be the same interval (within-run reconstruction). Setting them differently is the standard pattern for replay analysis: train the model on a run interval, then apply it to a sleep or reward interval to decode replayed trajectories.",
       "assertions": {
         "required_substrings": [
-          "training the",
-          "applied to",
-          "replay during",
+          "model is trained",
+          "model is applied",
+          "replay analysis",
           "IntervalList"
         ],
         "forbidden_substrings": [],
@@ -2325,9 +2322,9 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `training the`.",
-        "Response contains substring `applied to`.",
-        "Response contains substring `replay during`.",
+        "Response contains substring `model is trained`.",
+        "Response contains substring `model is applied`.",
+        "Response contains substring `replay analysis`.",
         "Response contains substring `IntervalList`.",
         "Explains that encoding_interval trains the place-field / receptive-field model; decoding_interval is where the trained model is applied",
         "Gives a same-interval use (within-run reconstruction) and a different-interval use (train on run, decode replay during sleep / reward)"
