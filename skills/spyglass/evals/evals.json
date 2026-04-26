@@ -4091,6 +4091,164 @@
         "Inspects `common_usage.InsertError` first (with the session's nwb_file_name restriction) rather than re-running the ingest blindly",
         "Mentions that missing `Probe` rows often indicate an upstream `DataAcquisitionDevice` / `ProbeType` dependency that skipped silently \u2014 not a Probe-table-level fault"
       ]
+    },
+    {
+      "id": 103,
+      "eval_name": "session-recording-devices",
+      "stage": "pipeline-usage",
+      "tier": "joins",
+      "difficulty": "medium",
+      "prompt": "What ephys recording devices were used in `j1620210710_.nwb`?",
+      "expected_output": "Session links to its acquisition devices through a **part table**, not a direct column on `Session`. The part table is `Session.DataAcquisitionDevice` (`src/spyglass/common/common_session.py:56-61`), with `-> Session` + `-> DataAcquisitionDevice`. One session can have multiple devices (the docstring on `Session` at common_session.py:21 calls this out explicitly), so use `.fetch()` not `.fetch1()`.\n\n```python\nfrom spyglass.common.common_session import Session\nfrom spyglass.common.common_device import DataAcquisitionDevice\n\n(Session.DataAcquisitionDevice & {'nwb_file_name': 'j1620210710_.nwb'}) \\\n    * DataAcquisitionDevice\n```\n\nThe restriction lives on the part-table side (it has `nwb_file_name` in its PK via `-> Session`); the natural join `* DataAcquisitionDevice` then surfaces the device columns (`system`, `adc_circuit`, \u2026) for each linked device. To fetch just device names: append `.fetch('data_acquisition_device_name', as_dict=True)` (or any other column on `DataAcquisitionDevice`).\n\nRoutes to common_tables.md.",
+      "assertions": {
+        "required_substrings": [
+          "Session.DataAcquisitionDevice",
+          "DataAcquisitionDevice",
+          "nwb_file_name",
+          "part table"
+        ],
+        "forbidden_substrings": [
+          "Session.fetch1('device')",
+          "Session.fetch1(\"device\")"
+        ],
+        "behavioral_checks": [
+          "Joins through `Session.DataAcquisitionDevice` (part table) rather than expecting a `device` or `data_acquisition_device_name` column on `Session` directly",
+          "Recognizes that one session can have multiple devices, so the answer uses `.fetch()` (or a join that returns multiple rows), not `.fetch1()`",
+          "Restricts the part table by `nwb_file_name` (which it inherits via `-> Session`); does NOT restrict `DataAcquisitionDevice` by `nwb_file_name` (DataAcquisitionDevice is keyed by `data_acquisition_device_name` and has no session FK)"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Session.DataAcquisitionDevice`.",
+        "Response contains substring `DataAcquisitionDevice`.",
+        "Response contains substring `nwb_file_name`.",
+        "Response contains substring `part table`.",
+        "Response does not contain substring `Session.fetch1('device')`.",
+        "Response does not contain substring `Session.fetch1(\"device\")`.",
+        "Joins through `Session.DataAcquisitionDevice` (part table) rather than expecting a `device` or `data_acquisition_device_name` column on `Session` directly",
+        "Recognizes that one session can have multiple devices, so the answer uses `.fetch()` (or a join that returns multiple rows), not `.fetch1()`",
+        "Restricts the part table by `nwb_file_name` (which it inherits via `-> Session`); does NOT restrict `DataAcquisitionDevice` by `nwb_file_name` (DataAcquisitionDevice is keyed by `data_acquisition_device_name` and has no session FK)"
+      ]
+    },
+    {
+      "id": 104,
+      "eval_name": "session-subject-owner",
+      "stage": "pipeline-usage",
+      "tier": "joins",
+      "difficulty": "medium",
+      "prompt": "whose animal is wilbur? i need to figure out which lab member runs the sessions on this subject",
+      "expected_output": "Subjects don't carry an `owner` field. The path is via `Session` (which carries `subject_id` as a secondary attr through `-> [nullable] Subject` declared in `common_session.py`'s `Session` definition) and `Session.Experimenter` (part table linking each session to one or more `LabMember` rows, `common_session.py:75-80`).\n\n**Narrow to the subject first**, then join through:\n\n```python\nfrom spyglass.common.common_session import Session\nfrom spyglass.common.common_lab import LabMember\n\nsubject_sessions = (Session & {'subject_id': 'wilbur'})\nexperimenters = (\n    subject_sessions * Session.Experimenter * LabMember\n).fetch('lab_member_name', 'first_name', 'last_name', as_dict=True)\n```\n\nThe restriction `{'subject_id': 'wilbur'}` filters `Session` on the secondary attr propagated from `-> Subject` \u2014 DataJoint's `&` accepts secondary-attr restrictions on a single relation (the dependent-attribute refusal only fires on `*` joins where an attr is secondary on *both* sides; here we restrict before joining). Each session may have multiple experimenters (the docstring on `Session` at common_session.py:21 calls this out), so the result is one row per (session, experimenter) pair.\n\nIf the user wants a unique experimenter set across sessions, wrap with `set(row['lab_member_name'] for row in experimenters)`.\n\nRoutes to common_tables.md.",
+      "assertions": {
+        "required_substrings": [
+          "Subject",
+          "LabMember",
+          "Session.Experimenter",
+          "subject_id"
+        ],
+        "forbidden_substrings": [
+          "Subject.fetch1('owner')",
+          "Subject.fetch1('lab_member_name')"
+        ],
+        "behavioral_checks": [
+          "Goes via `Session` -> `Session.Experimenter` -> `LabMember` rather than assuming a direct `Subject -> owner` FK or column",
+          "Narrows to the specific `subject_id` BEFORE joining (`Session & {subject_id: 'wilbur'}`), so the join surface is bounded and the dependent-attribute refusal cannot fire",
+          "Recognizes that `subject_id` is a secondary attr on `Session` propagated via `-> [nullable] Subject`, queryable via `&` \u2014 does NOT claim `Subject` itself has an `owner` or `lab_member_name` column"
+        ],
+        "expected_output_tables_exempt": [
+          "Subject"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `Subject`.",
+        "Response contains substring `LabMember`.",
+        "Response contains substring `Session.Experimenter`.",
+        "Response contains substring `subject_id`.",
+        "Response does not contain substring `Subject.fetch1('owner')`.",
+        "Response does not contain substring `Subject.fetch1('lab_member_name')`.",
+        "Goes via `Session` -> `Session.Experimenter` -> `LabMember` rather than assuming a direct `Subject -> owner` FK or column",
+        "Narrows to the specific `subject_id` BEFORE joining (`Session & {subject_id: 'wilbur'}`), so the join surface is bounded and the dependent-attribute refusal cannot fire",
+        "Recognizes that `subject_id` is a secondary attr on `Session` propagated via `-> [nullable] Subject`, queryable via `&` \u2014 does NOT claim `Subject` itself has an `owner` or `lab_member_name` column"
+      ]
+    },
+    {
+      "id": 105,
+      "eval_name": "probe-per-electrode-group",
+      "stage": "pipeline-usage",
+      "tier": "atomic-read",
+      "difficulty": "easy",
+      "prompt": "For session `j1620210710_.nwb`, which probe model is each electrode group using?",
+      "expected_output": "**Schema scope matters here.** `ElectrodeGroup` is session-scoped \u2014 its PK is `(nwb_file_name, electrode_group_name)`, and it has a nullable FK `-> [nullable] Probe` (`src/spyglass/common/common_ephys.py:31-41`). `Probe` itself is **NOT session-scoped**: its PK is just `probe_id` (`src/spyglass/common/common_device.py:377-388`). So you restrict `ElectrodeGroup` by `nwb_file_name`, then join with `Probe` on the shared `probe_id` column \u2014 you do NOT (and cannot) restrict `Probe` by `nwb_file_name` directly.\n\n```python\nfrom spyglass.common.common_ephys import ElectrodeGroup\nfrom spyglass.common.common_device import Probe\n\n(\n    (ElectrodeGroup & {'nwb_file_name': 'j1620210710_.nwb'})\n    * Probe\n).fetch('electrode_group_name', 'probe_id', 'probe_type', as_dict=True)\n```\n\nIf some electrode groups come back without a `probe_type` (i.e. `probe_id` is `NULL`), that's expected behavior of the nullable FK \u2014 those groups didn't have a `Probe` link at ingest. To see those rows, drop the `* Probe` join and inspect `(ElectrodeGroup & {nwb_file_name: ...}).fetch('probe_id')` directly.\n\nRoutes to common_tables.md.",
+      "assertions": {
+        "required_substrings": [
+          "ElectrodeGroup",
+          "Probe",
+          "probe_id",
+          "nwb_file_name"
+        ],
+        "forbidden_substrings": [
+          "Probe & {'nwb_file_name'",
+          "Probe & {\"nwb_file_name\""
+        ],
+        "behavioral_checks": [
+          "Restricts ONLY `ElectrodeGroup` by `nwb_file_name` (which it has as a PK field) \u2014 does NOT restrict `Probe` by `nwb_file_name` (Probe is keyed by `probe_id` and has no session FK; the restriction would silently no-op)",
+          "Joins on the shared `probe_id` column (ElectrodeGroup's nullable FK to Probe) to surface `probe_type` / Probe-side fields",
+          "Mentions that `-> [nullable] Probe` means some electrode groups may have NULL `probe_id` and won't survive the inner join \u2014 handle via projection or a separate restriction if those rows matter"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `ElectrodeGroup`.",
+        "Response contains substring `Probe`.",
+        "Response contains substring `probe_id`.",
+        "Response contains substring `nwb_file_name`.",
+        "Response does not contain substring `Probe & {'nwb_file_name'`.",
+        "Response does not contain substring `Probe & {\"nwb_file_name\"`.",
+        "Restricts ONLY `ElectrodeGroup` by `nwb_file_name` (which it has as a PK field) \u2014 does NOT restrict `Probe` by `nwb_file_name` (Probe is keyed by `probe_id` and has no session FK; the restriction would silently no-op)",
+        "Joins on the shared `probe_id` column (ElectrodeGroup's nullable FK to Probe) to surface `probe_type` / Probe-side fields",
+        "Mentions that `-> [nullable] Probe` means some electrode groups may have NULL `probe_id` and won't survive the inner join \u2014 handle via projection or a separate restriction if those rows matter"
+      ]
+    },
+    {
+      "id": 106,
+      "eval_name": "camera-devices-lookup",
+      "stage": "pipeline-usage",
+      "tier": "atomic-read",
+      "difficulty": "easy",
+      "prompt": "What camera(s) recorded position for `j1620210710_.nwb`? I need the camera IDs for a DLC config.",
+      "expected_output": "The session\u2192camera mapping lives on `VideoFile`, **not** on `CameraDevice`. `VideoFile` is session-scoped (its PK propagates from `-> TaskEpoch`, which carries `nwb_file_name` and `epoch`, `src/spyglass/common/common_behav.py:452-471`). Importantly, `VideoFile` carries `camera_name` as a **secondary column** (declared below `---`) \u2014 it is **not** a declared `-> CameraDevice` FK. The link to `CameraDevice` is by name only, validated at ingest (`common_behav.py` _prepare_video_entry checks `(CameraDevice & {'camera_name': camera_name})` exists before insert).\n\nRouting through `VideoFile` is the right shape because `CameraDevice` alone (keyed by `camera_name` only, `common_device.py:291`) carries no session information \u2014 it's a global lookup.\n\n```python\nfrom spyglass.common.common_behav import VideoFile\nfrom spyglass.common.common_device import CameraDevice\n\ncameras = (\n    (VideoFile & {'nwb_file_name': 'j1620210710_.nwb'})\n    * CameraDevice\n).fetch('camera_name', 'camera_id', 'meters_per_pixel', as_dict=True)\n```\n\nThe `*` join works here because `camera_name` is secondary on `VideoFile` and primary on `CameraDevice` \u2014 that's a one-sided-secondary join, which is legal (the dependent-attribute refusal only fires when an attr is secondary on BOTH sides). One session can have multiple cameras (one per epoch / video file), so use `.fetch()` not `.fetch1()`.\n\nRoutes to common_tables.md and position_pipeline.md.",
+      "assertions": {
+        "required_substrings": [
+          "VideoFile",
+          "CameraDevice",
+          "camera_name",
+          "nwb_file_name"
+        ],
+        "forbidden_substrings": [
+          "CameraDevice & {'nwb_file_name'",
+          "CameraDevice & {\"nwb_file_name\""
+        ],
+        "behavioral_checks": [
+          "Routes through `VideoFile` (the per-session mapping) restricted by `nwb_file_name`, NOT through `CameraDevice` alone (which is a global name-keyed lookup with no session attr in its heading)",
+          "Recognizes that `camera_name` on `VideoFile` is a secondary column \u2014 NOT a declared `-> CameraDevice` FK \u2014 and the link is by name match (validated at ingest in `_prepare_video_entry`)",
+          "Restricts `VideoFile` by `nwb_file_name` (a PK field via `-> TaskEpoch`); does NOT attempt `CameraDevice & {nwb_file_name: ...}` (silent no-op, no such attr in CameraDevice's heading)"
+        ],
+        "expected_output_tables_exempt": [
+          "TaskEpoch"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `VideoFile`.",
+        "Response contains substring `CameraDevice`.",
+        "Response contains substring `camera_name`.",
+        "Response contains substring `nwb_file_name`.",
+        "Response does not contain substring `CameraDevice & {'nwb_file_name'`.",
+        "Response does not contain substring `CameraDevice & {\"nwb_file_name\"`.",
+        "Routes through `VideoFile` (the per-session mapping) restricted by `nwb_file_name`, NOT through `CameraDevice` alone (which is a global name-keyed lookup with no session attr in its heading)",
+        "Recognizes that `camera_name` on `VideoFile` is a secondary column \u2014 NOT a declared `-> CameraDevice` FK \u2014 and the link is by name match (validated at ingest in `_prepare_video_entry`)",
+        "Restricts `VideoFile` by `nwb_file_name` (a PK field via `-> TaskEpoch`); does NOT attempt `CameraDevice & {nwb_file_name: ...}` (silent no-op, no such attr in CameraDevice's heading)"
+      ]
     }
   ]
 }
