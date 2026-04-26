@@ -136,7 +136,7 @@ decoding_kwargs  = NULL : LONGBLOB      # additional keyword arguments
 **`decoding_params` and `decoding_kwargs` are SIBLING top-level attributes**, not nested inside one another. This matters when inserting a custom param set — a common mistake is to nest `decoding_kwargs` inside `decoding_params`, which silently discards the runtime kwargs.
 
 - `decoding_params` — classifier constructor kwargs (model architecture, state bins, transitions). Consumed as `ClusterlessDetector(**decoding_params)` inside `make_compute`.
-- `decoding_kwargs` — runtime kwargs passed through to the classifier call. In the `estimate_decoding_params=False` branch (the default) they're split by `get_valid_kwargs` into fit and predict kwargs; in the `True` branch they're passed to `estimate_parameters`. Both branches accept the same keyword names (e.g., `n_chunks`, `cache_likelihood`) in `non_local_detector` 0.6.x.
+- `decoding_kwargs` — runtime kwargs passed through to the classifier call. In the `estimate_decoding_params=False` branch (the default) they're split by `get_valid_kwargs` into fit and predict kwargs; in the `True` branch they're passed to `estimate_parameters`. Spyglass passes the dict through; the specific keyword names the installed `non_local_detector` recognizes (commonly `n_chunks`, `cache_likelihood`) are documented in that package — verify against the installed signatures if a kwarg appears to be ignored or rejected.
 
 Canonical insert shape for an OOM-conscious clusterless variant:
 
@@ -357,7 +357,7 @@ bytes` from JAX during `ClusterlessDecodingV1.populate` /
 `(n_time, n_state_bins)` (e.g. `(3384862, 1926)` = 24 GiB) on an 80 GB
 A100.
 
-**Tuning knobs** (set on `DecodingParameters`). Use the canonical insert shape from [§ DecodingParameters (Lookup)](#decodingparameters-lookup) — `decoding_params` and `decoding_kwargs` as sibling top-level attrs. For the OOM case, populate `decoding_kwargs` with `{'n_chunks': 10, 'cache_likelihood': False}` (both are `predict()` kwargs in `non_local_detector` 0.6.x, reached via the default `estimate_decoding_params=False` branch).
+**Tuning knobs** (set on `DecodingParameters`). Use the canonical insert shape from [§ DecodingParameters (Lookup)](#decodingparameters-lookup) — `decoding_params` and `decoding_kwargs` as sibling top-level attrs. For the OOM case, populate `decoding_kwargs` with `{'n_chunks': 10, 'cache_likelihood': False}` — these are the intended OOM knobs reached via the default `estimate_decoding_params=False` branch; the installed `non_local_detector` is what ultimately consumes them, so verify against its signatures if either is ignored.
 
 Also set the JAX memory fraction at the top of the populate script:
 
@@ -368,8 +368,11 @@ os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.99'
 
 **Workaround for `n_chunks` being ignored when
 `estimate_decoding_params=False`:** set `estimate_decoding_params=True`
-on the selection row; the kwarg reaches the decoder that way.
-Tracked with `non_local_detector 0.6.9`.
+on the selection row; the kwarg reaches the decoder that way. This
+behavior depends on the installed `non_local_detector` version — if
+both branches accept `n_chunks` in your installed copy, the workaround
+is unnecessary. Verify with `inspect.signature` on the relevant
+classifier method to confirm.
 
 ## Storage
 
