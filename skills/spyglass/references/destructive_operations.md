@@ -195,6 +195,48 @@ Current Spyglass has no single "delete everything downstream of this session" he
 - `(Nwbfile & {"nwb_file_name": f}).delete()` — DataJoint's cascade removes rows from tables with a foreign-key path to `Nwbfile`, routed through `cautious_delete` for the team check. Preview with `.fetch(as_dict=True)` on the restricted relation first.
 - For each merge table whose part entries reference the session, call `SomeMergeOutput.merge_delete_parent({"nwb_file_name": f}, dry_run=True)` explicitly. Run `dry_run=True` first, inspect, then `dry_run=False`. `merge_delete_parent` bypasses the team check (see [When a user explicitly asks to bypass](#when-a-user-explicitly-asks-to-bypass)), so treat every call as if the data owner were watching.
 
+## `update1` on params with downstream rows
+
+`update1()` silently mutates a row in place. On a parameter table (`RippleParameters`, `DecodingParameters`, `MetricParameters`, …) this is almost always wrong if anything downstream has already been populated against that key.
+
+Concrete shape:
+
+```python
+# WRONG — mutates the parameter row in place. Existing RippleTimesV1 rows
+# computed with the old threshold still reference this key by name, but
+# `ripple_param_name="default"` now points to a *different* parameter blob
+# than when those downstream rows were populated. Provenance is silently
+# corrupted.
+RippleParameters().update1({
+    "ripple_param_name": "default",
+    "ripple_param_dict": {"speed_threshold": 0.1},  # changed value
+})
+```
+
+Correct shape: insert a **new** parameter row with a different name, then populate downstream against the new name. Old rows stay intact and interpretable.
+
+```python
+RippleParameters().insert1({
+    "ripple_param_name": "tighter_thresh",
+    "ripple_param_dict": {"speed_threshold": 0.1},
+})
+# RippleLFPSelection rows already exist for the LFP band + group; no
+# new selection row needed. Just populate RippleTimesV1 against the
+# new ripple_param_name and the existing LFPBand / group rows.
+RippleTimesV1.populate({"ripple_param_name": "tighter_thresh"})
+```
+
+When `update1()` *is* fine: only when nothing downstream consumes the row yet. Verify explicitly before mutating — don't assume:
+
+```python
+# For each child of the param table, check no rows reference this key.
+for child in RippleParameters().descendants():
+    n = len(child() & {"ripple_param_name": "default"})
+    assert n == 0, f"{child.__name__} has {n} rows under this params name"
+```
+
+If any descendant has rows, do not `update1()` — insert a new params row instead.
+
 ## Cross-references
 
 - [merge_methods.md](merge_methods.md) — full classmethod-discard gotcha list and corrected call forms

@@ -154,6 +154,8 @@ View all columns as a heading object.
 ### `parents()` / `children()`
 View parent/child table relationships.
 
+For full transitive walks (every downstream consumer, every upstream prerequisite), use DataJoint's `descendants()` / `ancestors()` — defined on `dj.Table` and inherited by every `SpyglassMixin`. See [datajoint_api.md § Table Inspection Commands](datajoint_api.md#table-inspection-commands) for the full topology-commands block.
+
 ## Storage
 
 ### `get_table_storage_usage(human_readable=False, show_progress=False)`
