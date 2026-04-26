@@ -3872,6 +3872,284 @@
         "Demonstrates BOTH fixes — two-restriction chain via fetch1('recording_id'), AND .proj('recording_id') on the LHS to drop the colliding secondary",
         "Does not suggest set() or np.unique() — the failure is a join refusal, not a multiplied join"
       ]
+    },
+    {
+      "id": 97,
+      "eval_name": "dependency-downstream-decoding-output",
+      "stage": "framework-concepts",
+      "tier": "dependency-tracing",
+      "difficulty": "hard",
+      "prompt": "I want to find every custom analysis table in my DB that takes data from `DecodingOutput`. How do I enumerate them?",
+      "expected_output": "Use `DecodingOutput.descendants()` to enumerate every downstream table — every direct child plus every transitive descendant — in one call. `DecodingOutput.children()` only returns the *one-hop* children (the tables that FK directly to `DecodingOutput`); custom analysis tables that FK to one of those children, or to a child-of-a-child, are missed. `descendants()` walks the full transitive closure, which is what you want for 'every table that takes data from DecodingOutput' — that includes tables several layers downstream that you might not have authored yourself.\n\n```python\nfrom spyglass.decoding.decoding_merge import DecodingOutput\nfor t in DecodingOutput.descendants():\n    print(t)\n```\n\nOne subtlety: `DecodingOutput` is a **merge master**. Downstream consumers FK to the merge master (`DecodingOutput`), not to the part tables (`DecodingOutput.ClusterlessDecodingV1`, `DecodingOutput.SortedSpikesDecodingV1`). So `DecodingOutput.descendants()` is the right call — calling `.descendants()` on the part tables would only enumerate things FK'd to *that specific part*, missing anything FK'd to the merge.\n\nIf you want to filter to just tables defined in your own schema (vs. tables Spyglass ships), check `t.full_table_name.startswith('`your_schema`.')` per row. Routes to spyglassmixin_methods.md (descendants/ancestors note) and datajoint_api.md.",
+      "assertions": {
+        "required_substrings": [
+          "DecodingOutput",
+          "descendants(",
+          "children(",
+          "merge master"
+        ],
+        "forbidden_substrings": [
+          "DecodingOutput.parents(",
+          "fetch_nwb"
+        ],
+        "behavioral_checks": [
+          "Recommends `DecodingOutput.descendants()` (transitive walk) over `DecodingOutput.children()` (one-hop) and explains the distinction between the two",
+          "Notes that `DecodingOutput` is a merge master, so downstream consumers FK to the master itself, not to its part tables (e.g. ClusterlessDecodingV1)"
+        ],
+        "required_substrings_exempt": [
+          "descendants(",
+          "children("
+        ],
+        "expected_output_tables_exempt": [
+          "ClusterlessDecodingV1",
+          "SortedSpikesDecodingV1"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `DecodingOutput`.",
+        "Response contains substring `descendants(`.",
+        "Response contains substring `children(`.",
+        "Response contains substring `merge master`.",
+        "Response does not contain substring `DecodingOutput.parents(`.",
+        "Response does not contain substring `fetch_nwb`.",
+        "Recommends `DecodingOutput.descendants()` (transitive walk) over `DecodingOutput.children()` (one-hop) and explains the distinction between the two",
+        "Notes that `DecodingOutput` is a merge master, so downstream consumers FK to the master itself, not to its part tables (e.g. ClusterlessDecodingV1)"
+      ]
+    },
+    {
+      "id": 98,
+      "eval_name": "dependency-abstract-upstream",
+      "stage": "framework-concepts",
+      "tier": "dependency-tracing",
+      "difficulty": "medium",
+      "prompt": "How do I figure out where a Spyglass table gets its data from? Is there a general way to do this for any table?",
+      "expected_output": "Yes — every Spyglass (and DataJoint) table inherits two complementary methods for upstream traversal:\n\n- **`Table.parents()`** — the *one-hop* upstreams. Returns the tables `Table` directly FKs to. Quick check for 'what does this immediately depend on?'\n- **`Table.ancestors()`** — the *full transitive walk*. Returns every table reachable by following FKs upward, including grandparents and beyond. This is the answer to 'where does this table ultimately get its data from?'\n\n```python\nfrom spyglass.lfp.analysis.v1.lfp_band import LFPBandV1\nLFPBandV1.parents()    # one hop: LFPBandSelection, AnalysisNwbfile, ...\nLFPBandV1.ancestors()  # transitive: ...up to Session, Nwbfile, IntervalList, Electrode, FirFilterParameters\n```\n\nPair this with **`Table.describe()`** for the schema-level companion view: it prints the table's `definition` string, which shows the FK declarations (`-> ParentTable`) inline with the column list. `describe()` is the static schema view; `parents()` / `ancestors()` are the runtime graph walk. Use `describe()` when you want to read the FK arrows in source order; use `parents()` / `ancestors()` when you want a programmatic enumeration to iterate over.\n\nRoutes to spyglassmixin_methods.md and datajoint_api.md.",
+      "assertions": {
+        "required_substrings": [
+          "parents(",
+          "ancestors(",
+          ".describe()"
+        ],
+        "forbidden_substrings": [
+          "use children()",
+          "use descendants()"
+        ],
+        "behavioral_checks": [
+          "Distinguishes `parents()` (one hop) from `ancestors()` (transitive walk) and gives a use case for each",
+          "Mentions `.describe()` as the schema-level companion that shows FK declarations inline in the table's definition string"
+        ],
+        "required_substrings_exempt": [
+          "parents(",
+          "ancestors(",
+          ".describe()"
+        ],
+        "expected_output_tables_exempt": [
+          "LFPBandV1",
+          "LFPBandSelection",
+          "AnalysisNwbfile",
+          "Session",
+          "Nwbfile",
+          "IntervalList",
+          "Electrode",
+          "FirFilterParameters"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `parents(`.",
+        "Response contains substring `ancestors(`.",
+        "Response contains substring `.describe()`.",
+        "Response does not contain substring `use children()`.",
+        "Response does not contain substring `use descendants()`.",
+        "Distinguishes `parents()` (one hop) from `ancestors()` (transitive walk) and gives a use case for each",
+        "Mentions `.describe()` as the schema-level companion that shows FK declarations inline in the table's definition string"
+      ]
+    },
+    {
+      "id": 99,
+      "eval_name": "hidden-prereq-ripple-populate",
+      "stage": "pipeline-usage",
+      "tier": "dependency-tracing",
+      "difficulty": "medium",
+      "prompt": "I'm about to populate `RippleTimesV1` for the first time. What tables must already have entries for my key before `.populate()` will find work to do?",
+      "expected_output": "`RippleTimesV1.populate()` finds work via its `key_source` — the join of its FK parents — so an entry in *every* upstream table is required before populate has anything to do. The full list:\n\n1. **`RippleLFPSelection`** — the *selection* table. This is the row that says 'compute ripples for this LFP band + electrode group'. Easy to forget because users often think of `RippleParameters` as the entry point.\n2. **`LFPBandV1`** — `RippleLFPSelection` FKs to `LFPBandV1`, so the LFP band must already be populated. This in turn requires `LFPBandSelection`, `LFPV1`, `LFPSelection`, etc.\n3. **`RippleParameters`** — the parameter set (named `ripple_param_name`, e.g. `default` or `default_trodes`). Spyglass ships defaults; you don't usually need to insert your own.\n4. **`PositionOutput`** — `RippleTimesV1` has `-> PositionOutput.proj(pos_merge_id='merge_id')` in its definition. This is the **easy-to-miss FK**: ripple detection uses speed (from position) to gate candidate ripples, so a populated position merge entry is required. Users often have an LFP-only mental model and don't realize position must be done first.\n5. **`IntervalList`** — the time interval over which to detect ripples (referenced by name).\n\nUse `RippleTimesV1.parents()` to enumerate this list programmatically; `RippleTimesV1.describe()` shows the FK declarations inline. If `populate()` runs but does no work, run `(RippleTimesV1.key_source & key)` to see what the join surfaces — typically zero rows means one of these upstreams is missing for your key.\n\nRoutes to ripple_pipeline.md.",
+      "assertions": {
+        "required_substrings": [
+          "RippleLFPSelection",
+          "LFPBandV1",
+          "RippleParameters",
+          "IntervalList",
+          "PositionOutput"
+        ],
+        "forbidden_substrings": [
+          "populate_all_common",
+          "RippleTimesV1 has no upstream"
+        ],
+        "behavioral_checks": [
+          "Enumerates the *selection* tables (RippleLFPSelection in particular) alongside the parameter and output tables, not just the output tables",
+          "Identifies `PositionOutput` (via the `pos_merge_id` projection FK) as the hidden / easy-to-miss prerequisite — ripple detection uses position-derived speed"
+        ],
+        "expected_output_tables_exempt": [
+          "LFPBandSelection",
+          "LFPV1",
+          "RippleTimesV1",
+          "LFPSelection"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `RippleLFPSelection`.",
+        "Response contains substring `LFPBandV1`.",
+        "Response contains substring `RippleParameters`.",
+        "Response contains substring `IntervalList`.",
+        "Response contains substring `PositionOutput`.",
+        "Response does not contain substring `populate_all_common`.",
+        "Response does not contain substring `RippleTimesV1 has no upstream`.",
+        "Enumerates the *selection* tables (RippleLFPSelection in particular) alongside the parameter and output tables, not just the output tables",
+        "Identifies `PositionOutput` (via the `pos_merge_id` projection FK) as the hidden / easy-to-miss prerequisite — ripple detection uses position-derived speed"
+      ]
+    },
+    {
+      "id": 100,
+      "eval_name": "hidden-prereq-decoding-populate",
+      "stage": "pipeline-usage",
+      "tier": "dependency-tracing",
+      "difficulty": "hard",
+      "prompt": "Before I can run `ClusterlessDecodingV1.populate()` on a new session, what rows must already exist? I keep hitting `DataJointError: Unknown attribute` and I can't tell what I'm missing.",
+      "expected_output": "`Unknown attribute` errors during `populate()` almost always mean **a row in an FK target table is missing for the key you passed** — not a schema bug. DataJoint can't resolve the attribute because the upstream row doesn't exist, so the join surface is empty.\n\n`ClusterlessDecodingV1` FKs to `ClusterlessDecodingSelection`, which itself has four upstreams that must all have rows for your session:\n\n1. **`UnitWaveformFeaturesGroup`** — bundles the per-merge-id waveform features into one group. You create it via `UnitWaveformFeaturesGroup().create_group(...)`, which inserts the master row plus part rows pointing at every `UnitWaveformFeatures` merge entry you want included.\n2. **`PositionGroup`** — bundles the position sources used for decoding. Created via `PositionGroup().create_group(...)`, which FKs to `PositionOutput.merge_id`. Position must already be populated upstream.\n3. **`DecodingParameters`** — the parameter blob (named `decoding_param_name`).\n4. **`IntervalList`** — referenced *twice*: once as `encoding_interval` and once as `decoding_interval`. Both must exist as rows for the session, even if they point at the same time interval.\n\nAnd of course `ClusterlessDecodingSelection` itself needs an explicit `insert1(...)` row tying these four together.\n\nWorking backwards: `UnitWaveformFeaturesGroup` requires populated `UnitWaveformFeatures` rows, which require `WaveformFeaturesParams` + `UnitWaveformFeaturesSelection` rows + curated spike sorting in `SpikeSortingOutput`. `PositionGroup` requires populated `PositionOutput` (Trodes or DLC, whichever).\n\nDiagnostic: when `Unknown attribute` fires, run `(ClusterlessDecodingSelection & key)` to see if your selection row exists, then walk `ClusterlessDecodingSelection.parents()` and check `(parent & key)` for each — the empty one is your missing FK target. `ClusterlessDecodingV1.describe()` shows the FK declarations to confirm the chain.\n\nRoutes to decoding_pipeline.md and runtime_debugging.md.",
+      "assertions": {
+        "required_substrings": [
+          "UnitWaveformFeaturesGroup",
+          "PositionGroup",
+          "DecodingParameters",
+          "ClusterlessDecodingSelection",
+          "IntervalList"
+        ],
+        "forbidden_substrings": [
+          "populate_all_common",
+          "schema bug"
+        ],
+        "behavioral_checks": [
+          "Enumerates upstream group tables (PositionGroup AND UnitWaveformFeaturesGroup) alongside the parameter table and the selection table",
+          "Notes that `Unknown attribute` errors during populate almost always mean a missing FK target row, not a schema or definition bug"
+        ],
+        "expected_output_tables_exempt": [
+          "WaveformFeaturesParams",
+          "UnitWaveformFeatures",
+          "SpikeSortingOutput",
+          "PositionOutput",
+          "UnitWaveformFeaturesSelection",
+          "ClusterlessDecodingV1"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `UnitWaveformFeaturesGroup`.",
+        "Response contains substring `PositionGroup`.",
+        "Response contains substring `DecodingParameters`.",
+        "Response contains substring `ClusterlessDecodingSelection`.",
+        "Response contains substring `IntervalList`.",
+        "Response does not contain substring `populate_all_common`.",
+        "Response does not contain substring `schema bug`.",
+        "Enumerates upstream group tables (PositionGroup AND UnitWaveformFeaturesGroup) alongside the parameter table and the selection table",
+        "Notes that `Unknown attribute` errors during populate almost always mean a missing FK target row, not a schema or definition bug"
+      ]
+    },
+    {
+      "id": 101,
+      "eval_name": "workflow-position-post-sort-clusterless-decode",
+      "stage": "pipeline-usage",
+      "tier": "workflow-position",
+      "difficulty": "medium",
+      "prompt": "I just finished running the v1 spike sorting pipeline (`SpikeSorting.populate()` worked, no errors). What's next in the chain if I want clusterless decoding?",
+      "expected_output": "Spike sorting is done; clusterless decoding still needs four staged steps before `ClusterlessDecodingV1.populate()` will have work to do. In order:\n\n1. **`CurationV1.insert_curation(...)`** — create an initial curation handle on the spike sorting output. **Mandatory, not optional**: every downstream consumer FKs to a curation row, not directly to `SpikeSorting`. The first curation captures the unsorted starting point; further curation rows can be added later as the labels are refined.\n2. **Surface the curation in the merge wrapper.** Insert the curation key into `SpikeSortingOutput` (the merge master) via `SpikeSortingOutput.insert([curation_key], part_name='CurationV1')`. This is a **separate explicit step** — it does not happen automatically when you create the curation row. Without it, downstream tables that FK to `SpikeSortingOutput` (the merge) cannot see your sort.\n3. **Compute waveform features.** Insert a `WaveformFeaturesParams` row (Spyglass ships defaults), then `UnitWaveformFeaturesSelection.insert1(...)` for each merge entry, then `UnitWaveformFeatures.populate(...)`. This produces the per-spike feature vectors used in clusterless decoding.\n4. **Bundle features into a group.** `UnitWaveformFeaturesGroup().create_group(...)` collects the merge IDs you want to decode against into one group key. The group is what `ClusterlessDecodingSelection` FKs to, not the individual `UnitWaveformFeatures` rows.\n\nThen on the position side (which you can do in parallel): make sure `PositionOutput` has a populated row for your session (Trodes or DLC), and bundle it via `PositionGroup().create_group(...)`.\n\nFinally insert into `ClusterlessDecodingSelection` (FKs to `UnitWaveformFeaturesGroup` + `PositionGroup` + `DecodingParameters` + two `IntervalList` projections for encoding/decoding intervals) and run `ClusterlessDecodingV1.populate(key)`.\n\nRoutes to spikesorting_pipeline.md and decoding_pipeline.md.",
+      "assertions": {
+        "required_substrings": [
+          "CurationV1",
+          "SpikeSortingOutput",
+          "UnitWaveformFeaturesGroup",
+          "ClusterlessDecodingSelection",
+          "PositionGroup"
+        ],
+        "forbidden_substrings": [
+          "CurationV1 is optional",
+          "skip curation"
+        ],
+        "behavioral_checks": [
+          "Identifies `CurationV1` as the mandatory next step (initial curation, not optional) before anything downstream of spike sorting can be reached",
+          "Calls out the merge insert into `SpikeSortingOutput` (e.g. `insert([curation_key], part_name='CurationV1')`) as a separate explicit step that does not happen automatically"
+        ],
+        "expected_output_tables_exempt": [
+          "WaveformFeaturesParams",
+          "UnitWaveformFeatures",
+          "UnitWaveformFeaturesSelection",
+          "PositionOutput",
+          "DecodingParameters",
+          "IntervalList",
+          "ClusterlessDecodingV1",
+          "SpikeSorting"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `CurationV1`.",
+        "Response contains substring `SpikeSortingOutput`.",
+        "Response contains substring `UnitWaveformFeaturesGroup`.",
+        "Response contains substring `ClusterlessDecodingSelection`.",
+        "Response contains substring `PositionGroup`.",
+        "Response does not contain substring `CurationV1 is optional`.",
+        "Response does not contain substring `skip curation`.",
+        "Identifies `CurationV1` as the mandatory next step (initial curation, not optional) before anything downstream of spike sorting can be reached",
+        "Calls out the merge insert into `SpikeSortingOutput` (e.g. `insert([curation_key], part_name='CurationV1')`) as a separate explicit step that does not happen automatically"
+      ]
+    },
+    {
+      "id": 102,
+      "eval_name": "recovery-populate-partial-electrodes",
+      "stage": "runtime-debugging",
+      "tier": "workflow-recovery",
+      "difficulty": "hard",
+      "prompt": "I ran `populate_all_common('j1620210710_.nwb')`. `Session`, `IntervalList`, `Raw`, `Electrode` all populated. But `Probe` has zero rows for this session. The file has tetrode metadata — I checked in HDFView. What's the safe next step?",
+      "expected_output": "Don't re-run the ingest blindly. Inspect first.\n\n**Step 1 — read what populate_all_common already told you.** `populate_all_common` swallows per-table exceptions by default (`raise_err=False`) and writes a short message per silently-skipped table to `common_usage.InsertError`. Query it before doing anything else:\n\n```python\nfrom spyglass.common.common_usage import InsertError\n(InsertError & {'nwb_file_name': 'j1620210710_.nwb'}).fetch(as_dict=True)\n```\n\nThat tells you which table actually raised and what the message was. Almost always with a missing `Probe` row, the failure isn't on `Probe` itself — it's upstream. `Probe` depends on `ProbeType`, which is populated from a probe-type config; if your `DataAcquisitionDevice` ingestion didn't surface the right probe type (or your config doesn't list this tetrode geometry), `Probe` insertion silently skips and the cascade stops.\n\n**Step 2 — re-run only the affected tables with `raise_err=True`** so the real traceback surfaces:\n\n```python\nfrom spyglass.common import populate_all_common\npopulate_all_common('j1620210710_.nwb', raise_err=True)\n```\n\nOr call the affected table's `populate()` directly with the restriction, again with `raise_err=True`. Use a fresh kernel so any cached connection state is reset.\n\n**What NOT to do:**\n- Do **not** call `reinsert=True` on `insert_sessions` before you've read the InsertError message — you'll re-trigger the same silent skip and lose the diagnostic trail.\n- Do **not** `super_delete()` `Session` / `IntervalList` / `Raw` / `Electrode` rows that ingested correctly — they're fine, and deleting them cascades downstream.\n\nOnce the error is identified, the fix is usually small — add the missing `DataAcquisitionDevice` / `ProbeType` row, or fix the probe-type entry in your config — and then re-populate just the affected table.\n\nRoutes to populate_all_common_debugging.md and ingestion.md.",
+      "assertions": {
+        "required_substrings": [
+          "InsertError",
+          "raise_err=True",
+          "DataAcquisitionDevice"
+        ],
+        "forbidden_substrings": [
+          "reinsert=True before",
+          "super_delete",
+          "delete the Session"
+        ],
+        "behavioral_checks": [
+          "Inspects `common_usage.InsertError` first (with the session's nwb_file_name restriction) rather than re-running the ingest blindly",
+          "Mentions that missing `Probe` rows often indicate an upstream `DataAcquisitionDevice` / `ProbeType` dependency that skipped silently — not a Probe-table-level fault"
+        ],
+        "required_substrings_exempt": [
+          "raise_err=True"
+        ],
+        "expected_output_tables_exempt": [
+          "Session",
+          "IntervalList",
+          "Raw",
+          "Electrode",
+          "Probe",
+          "ProbeType"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `InsertError`.",
+        "Response contains substring `raise_err=True`.",
+        "Response contains substring `DataAcquisitionDevice`.",
+        "Response does not contain substring `reinsert=True before`.",
+        "Response does not contain substring `super_delete`.",
+        "Response does not contain substring `delete the Session`.",
+        "Inspects `common_usage.InsertError` first (with the session's nwb_file_name restriction) rather than re-running the ingest blindly",
+        "Mentions that missing `Probe` rows often indicate an upstream `DataAcquisitionDevice` / `ProbeType` dependency that skipped silently — not a Probe-table-level fault"
+      ]
     }
   ]
 }
