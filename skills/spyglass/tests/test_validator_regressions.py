@@ -1060,9 +1060,14 @@ def fixture_insert1_wrong_pk_field(src_root):
     Apr 21 bug: the example used the un-projected parent field `merge_id`.
     LinearizationSelection is defined with `-> PositionOutput.proj(
     pos_merge_id='merge_id')`, so the valid FK name is `pos_merge_id`.
+
+    Includes a `<!-- pipeline-version: v1 -->` marker so the multi-
+    version class resolves to v1's schema (the post-graph-resolution
+    fail-loud policy returns None for unmarked multi-version refs).
     """
     md = _write_md(
         """
+        <!-- pipeline-version: v1 -->
         # Test
 
         ```python
@@ -1089,6 +1094,7 @@ def fixture_insert1_extraneous_field(src_root):
     """`interval_list_name` isn't in LinearizationSelection's schema. Must warn."""
     md = _write_md(
         """
+        <!-- pipeline-version: v1 -->
         # Test
 
         ```python
@@ -1116,6 +1122,7 @@ def fixture_insert1_proj_renamed_ok(src_root):
     """Correct projected name `pos_merge_id` must NOT warn."""
     md = _write_md(
         """
+        <!-- pipeline-version: v1 -->
         # Test
 
         ```python
@@ -1147,6 +1154,7 @@ def fixture_insert1_spread_kwargs(src_root):
     """`.insert1({**something, ...})` must be skipped (can't verify spread)."""
     md = _write_md(
         """
+        <!-- pipeline-version: v1 -->
         # Test
 
         ```python
@@ -1190,34 +1198,61 @@ def fixture_insert1_diamond_projection(src_root):
     Spyglass having this exact shape — today it doesn't, which is why
     the bug stayed latent.
     """
-    schemas = {
-        "D": {
-            "pk": {"x"}, "attrs": set(),
-            "parents": [], "projections": [], "parent_projections": {},
-        },
-        "B": {
-            "pk": {"x_from_b"}, "attrs": set(),
-            "parents": ["D"], "projections": [("x_from_b", "x")],
-            "parent_projections": {"D": {"x": "x_from_b"}},
-        },
-        "C": {
-            "pk": {"x_from_c"}, "attrs": set(),
-            "parents": ["D"], "projections": [("x_from_c", "x")],
-            "parent_projections": {"D": {"x": "x_from_c"}},
-        },
-        "A": {
-            "pk": {"x_from_b", "x_from_c"}, "attrs": set(),
-            "parents": ["B", "C"], "projections": [],
-            "parent_projections": {},
-        },
-    }
-    fields = v.resolve_insert_fields("A", schemas)
-    expected = {"x_from_b", "x_from_c"}
-    if fields == expected:
-        print("  [ok] key-shape: diamond projection resolves both renames")
-        return True
-    print(f"  [FAIL] diamond projection returned {fields!r}, expected {expected!r}")
-    return False
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        files = {
+            "fakepipe/d.py": '''
+                class D:
+                    definition = """
+                    x: int
+                    ---
+                    """
+            ''',
+            "fakepipe/b.py": '''
+                class B:
+                    definition = """
+                    -> D.proj(x_from_b='x')
+                    ---
+                    """
+            ''',
+            "fakepipe/c.py": '''
+                class C:
+                    definition = """
+                    -> D.proj(x_from_c='x')
+                    ---
+                    """
+            ''',
+            "fakepipe/a.py": '''
+                class A:
+                    definition = """
+                    -> B
+                    -> C
+                    ---
+                    """
+            ''',
+        }
+        for rel, body in files.items():
+            path = tmp / "spyglass" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(body))
+
+        v.clear_caches()
+        try:
+            idx = v._index.scan(tmp)
+            fields = idx.insert_fields_for("A")
+        finally:
+            v.clear_caches()
+
+        expected = {"x_from_b", "x_from_c"}
+        if fields == expected:
+            print("  [ok] key-shape: diamond projection resolves both renames")
+            return True
+        print(f"  [FAIL] diamond projection returned {fields!r}, expected {expected!r}")
+        return False
 
 
 def fixture_insert1_unknown_class(src_root):
@@ -1569,32 +1604,32 @@ def fixture_skip_methods_spyglass_subset_still_exists(src_root):
 
 
 def fixture_known_classes_eval_targets_registered(src_root):
-    """Eval-target classes added in round-3 must stay registered with the
-    correct source path. If KNOWN_CLASSES drifts (rename, removal, path
-    move) and an eval continues to call methods on these classes, the
-    method-existence check silently skips them — bugs slip through.
-
-    Pin the four classes the round-3 plan calls out, plus verify each
-    `file:line class` declaration still exists in Spyglass source so a
-    rename upstream surfaces here loudly.
+    """Eval-target classes added in round-3 must remain resolvable via
+    `_index.scan`. If they're not, the method-existence check silently
+    skips them and bugs slip through. All four are singletons today;
+    pin the resolution path so a future Spyglass refactor that splits
+    one into multi-version surfaces here.
     """
-    import re as _re
     expected = {
         "UserEnvironment": "spyglass/common/common_user.py",
         "IntervalPositionInfo": "spyglass/common/common_position.py",
         "RippleParameters": "spyglass/ripple/v1/ripple.py",
         "RippleLFPSelection": "spyglass/ripple/v1/ripple.py",
     }
+    v.clear_caches()
+    index = v._index.scan(src_root)
     missing_or_wrong = []
     for cls, want_path in expected.items():
-        got = v.KNOWN_CLASSES.get(cls)
+        top_level = [r for r in index.get(cls, ()) if r.qualname == cls]
+        got = top_level[0].file if len(top_level) == 1 else None
         if got != want_path:
             missing_or_wrong.append((cls, want_path, got))
     if missing_or_wrong:
-        print("  [FAIL] KNOWN_CLASSES drift on round-3 eval targets:")
+        print("  [FAIL] auto-registry drift on round-3 eval targets:")
         for cls, want, got in missing_or_wrong:
             print(f"         {cls}: want {want!r}, got {got!r}")
         return False
+    import re as _re
     not_in_source = []
     for cls, rel_path in expected.items():
         py_file = src_root / rel_path
@@ -1605,11 +1640,11 @@ def fixture_known_classes_eval_targets_registered(src_root):
         if not pattern.search(py_file.read_text()):
             not_in_source.append((cls, str(py_file), "class decl missing"))
     if not_in_source:
-        print("  [FAIL] KNOWN_CLASSES path no longer matches source:")
+        print("  [FAIL] resolved path no longer matches source:")
         for cls, path, reason in not_in_source:
             print(f"         {cls} @ {path}: {reason}")
         return False
-    print("  [ok] KNOWN_CLASSES: round-3 eval-target classes still registered")
+    print("  [ok] auto-registry: round-3 eval-target classes still resolve")
     return True
 
 
@@ -1994,7 +2029,818 @@ def fixture_eval_completeness_exempt_silences_warning(src_root):
     return False
 
 
+def fixture_schema_resolution_fails_loud_on_ambiguity(src_root):
+    """`resolve_schema` returns None for ambiguous multi-version references
+    when no version is given; returns the matching record when version IS
+    given.
+
+    Pins the FAIL-LOUD contract: validator does NOT guess maintainer
+    intent. The caller surfaces ambiguity as a warning telling the
+    maintainer to rewrite prose to use a version-specific class name
+    (e.g. SpikeSortingV1) or rename the file with a `_v(N)_` segment.
+    Explicit prose fixes ambiguity at the source rather than at
+    validate-time guessing.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    if "_index" not in dir(v):
+        print("  [FAIL] validate_skill does not expose `_index`")
+        return False
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        for name, body in {
+            "fakepipe/v0/main.py": '''
+                class FakeMultiVerSel:
+                    definition = """
+                    sel_id: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v1/main.py": '''
+                class FakeMultiVerSel:
+                    definition = """
+                    sel_id: int
+                    ---
+                    """
+            ''',
+        }.items():
+            path = tmp / "spyglass" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(body))
+
+        v.clear_caches()
+        try:
+            idx = v._index.scan(tmp)
+            records = idx.schema_records("FakeMultiVerSel")
+            if len(records) != 2:
+                print(f"  [FAIL] expected 2 records, got: {records!r}")
+                return False
+            # No version → ambiguous → None.
+            if idx.resolve_record("FakeMultiVerSel") is not None:
+                print("  [FAIL] no-version multi-record should return None")
+                return False
+            if idx.resolve_record("FakeMultiVerSel", version=None) is not None:
+                print("  [FAIL] explicit None version should still return None")
+                return False
+            # version="v1" → the v1 record.
+            chosen_v1 = idx.resolve_record("FakeMultiVerSel", version="v1")
+            if chosen_v1 is None or "/v1/" not in chosen_v1.file:
+                print(f"  [FAIL] version='v1' should pick the v1 record: {chosen_v1!r}")
+                return False
+            # version="v0" → the v0 record.
+            chosen_v0 = idx.resolve_record("FakeMultiVerSel", version="v0")
+            if chosen_v0 is None or "/v0/" not in chosen_v0.file:
+                print(f"  [FAIL] version='v0' should pick the v0 record: {chosen_v0!r}")
+                return False
+        finally:
+            v.clear_caches()
+    print("  [ok] resolve_record: ambiguous→None; versioned→matching record")
+    return True
+
+
+def fixture_check_restriction_emits_ambiguity_warning(src_root):
+    """End-to-end: cross-cutting markdown (no version marker) restricting
+    a multi-version class triggers an ambiguity warning that names the
+    class and points at the marker as the fix.
+
+    Pins the integration path between ``resolve_schema``'s fail-loud
+    return value and the user-facing warning emitted by
+    ``check_restriction_fields`` / ``check_insert_key_shape``. A regression
+    that accidentally silences this warning (e.g. dropping the
+    ``len(records) > 1`` guard or skipping the ambiguity branch) would
+    pass ``fixture_schema_resolution_fails_loud_on_ambiguity`` (unit
+    contract) but fail this fixture (warning dispatch).
+    """
+    import tempfile
+    import textwrap as tw
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        for name, body in {
+            "fakepipe/v0/main.py": '''
+                class AmbigSel:
+                    definition = """
+                    sel_id: int
+                    ---
+                    other_v0_only: varchar(8)
+                    """
+            ''',
+            "fakepipe/v1/main.py": '''
+                class AmbigSel:
+                    definition = """
+                    sel_id: int
+                    ---
+                    other_v1_only: varchar(8)
+                    """
+            ''',
+        }.items():
+            path = tmp / "spyglass" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(tw.dedent(body))
+
+        v.clear_caches()
+
+        # Synthetic md file WITHOUT a marker — should warn ambiguous.
+        md = _write_md(
+            """
+            # Test (cross-cutting, no marker)
+
+            ```python
+            (AmbigSel & {"sel_id": 1})
+            AmbigSel.insert1({"sel_id": 2})
+            ```
+            """
+        )
+        try:
+            results = v.ValidationResult()
+            with _with_md_files(md):
+                v.check_restriction_fields(tmp, results)
+                v.check_insert_key_shape(tmp, results)
+        finally:
+            v.clear_caches()
+
+        warnings = [w for w in results.warnings if "AmbigSel" in w]
+        if not any("ambiguous multi-version reference" in w for w in warnings):
+            print(f"  [FAIL] no ambiguity warning emitted: {warnings!r}")
+            return False
+        if not any("pipeline-version" in w for w in warnings):
+            print(f"  [FAIL] warning doesn't mention marker fix: {warnings!r}")
+            return False
+
+    # Same synth dir + a marked md file → no ambiguity warning.
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        for name, body in {
+            "fakepipe/v0/main.py": '''
+                class AmbigSel:
+                    definition = """
+                    sel_id: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v1/main.py": '''
+                class AmbigSel:
+                    definition = """
+                    sel_id: int
+                    ---
+                    """
+            ''',
+        }.items():
+            path = tmp / "spyglass" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(tw.dedent(body))
+
+        v.clear_caches()
+
+        md = _write_md(
+            """
+            <!-- pipeline-version: v1 -->
+            # Test (marked)
+
+            ```python
+            (AmbigSel & {"sel_id": 1})
+            ```
+            """
+        )
+        try:
+            results = v.ValidationResult()
+            with _with_md_files(md):
+                v.check_restriction_fields(tmp, results)
+        finally:
+            v.clear_caches()
+
+        bad = [w for w in results.warnings if "ambiguous" in w.lower()]
+        if bad:
+            print(f"  [FAIL] marker present but ambiguity still warned: {bad!r}")
+            return False
+
+    print("  [ok] ambiguity warning fires on unmarked + suppressed by marker")
+    return True
+
+
+def fixture_resolve_table_fields_propagates_ambiguity_to_parents(src_root):
+    """Single-version child + multi-version transitive parent + no
+    version context → ``resolve_table_fields`` returns None (not a
+    partial field set). Otherwise ``check_restriction_fields`` would
+    emit false positives for inherited fields silently dropped from
+    the partial walk.
+
+    Pins the parent-chain ambiguity contract added in the post-review
+    fix-up. A regression that reverts to "skip None parents and union
+    siblings" would warn on legitimate inherited keys when the
+    child happens to be single-version but its parent is multi-version
+    in unmarked prose.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        files = {
+            "fakepipe/v1/child.py": '''
+                class ChildOnlyV1:
+                    definition = """
+                    -> ParentMultiVer
+                    child_id: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v0/parent.py": '''
+                class ParentMultiVer:
+                    definition = """
+                    parent_id_v0: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v1/parent.py": '''
+                class ParentMultiVer:
+                    definition = """
+                    parent_id_v1: int
+                    ---
+                    """
+            ''',
+        }
+        for rel, body in files.items():
+            path = tmp / "spyglass" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(body))
+
+        v.clear_caches()
+        try:
+            idx = v._index.scan(tmp)
+            # No version → parent ambiguous → None (not partial).
+            if idx.fields_for("ChildOnlyV1") is not None:
+                print("  [FAIL] expected None on ambiguous parent")
+                return False
+            # version="v1" → parent disambiguates → full set returned.
+            fields = idx.fields_for("ChildOnlyV1", version="v1")
+            if fields != {"child_id", "parent_id_v1"}:
+                print(f"  [FAIL] versioned walk wrong: {fields!r}")
+                return False
+            culprit, reason = idx.find_ambiguous_in_chain(
+                "ChildOnlyV1", version=None,
+            )
+            if culprit != "ParentMultiVer" or reason != "ambiguous":
+                print(
+                    "  [FAIL] expected (ParentMultiVer, 'ambiguous'), "
+                    f"got: {(culprit, reason)!r}"
+                )
+                return False
+        finally:
+            v.clear_caches()
+
+    print("  [ok] fields_for propagates ambiguity to indirect parents")
+    return True
+
+
+def fixture_index_scan_parses_projection_rename(src_root):
+    """`_index.scan` extracts projected FK rename pairs as
+    ``FKEdge.renames`` (a tuple of ``(new, old)`` pairs) and accepts a
+    field-name lookup via ``ClassIndex.fields_for`` that returns the
+    new name (post-projection) but not the old one.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    if "_index" not in dir(v):
+        print("  [FAIL] validate_skill does not expose `_index`")
+        return False
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        synth = tmp / "spyglass" / "merge_pipe" / "tables.py"
+        synth.parent.mkdir(parents=True, exist_ok=True)
+        synth.write_text(textwrap.dedent('''
+            class FakeMaster:
+                definition = """
+                merge_id: uuid
+                ---
+                source: varchar(32)
+                """
+
+            class FakeSelection:
+                definition = """
+                -> FakeMaster.proj(fake_merge_id='merge_id')
+                filter_name: varchar(80)
+                ---
+                """
+        '''))
+        v.clear_caches()
+        try:
+            idx = v._index.scan(tmp)
+            sel = idx.resolve_record("FakeSelection")
+            if sel is None:
+                print(f"  [FAIL] FakeSelection not resolved: {sorted(idx)!r}")
+                return False
+            # Exactly one FK edge with the rename.
+            if len(sel.fk_edges) != 1:
+                print(f"  [FAIL] expected 1 FK edge, got: {sel.fk_edges!r}")
+                return False
+            edge = sel.fk_edges[0]
+            if edge.parent != "FakeMaster":
+                print(f"  [FAIL] edge.parent wrong: {edge.parent!r}")
+                return False
+            if edge.renames_dict() != {"fake_merge_id": "merge_id"}:
+                print(f"  [FAIL] renames_dict wrong: {edge.renames_dict()!r}")
+                return False
+            # Insert-fields: new name accepted, old name dropped.
+            fields = idx.insert_fields_for("FakeSelection")
+            if fields is None or "fake_merge_id" not in fields:
+                print(f"  [FAIL] fake_merge_id missing from insert_fields: {fields!r}")
+                return False
+            if "merge_id" in fields:
+                print(f"  [FAIL] merge_id (old name) leaked into insert_fields: {fields!r}")
+                return False
+            if "filter_name" not in fields:
+                print(f"  [FAIL] filter_name missing from insert_fields: {fields!r}")
+                return False
+        finally:
+            v.clear_caches()
+    print("  [ok] _index.scan: projection rename surfaces via ClassIndex.insert_fields_for")
+    return True
+
+
+def fixture_class_registry_picks_version_by_filename(src_root):
+    """`_ClassRegistry.methods(name, location=...)` resolves multi-version
+    classes via location-driven policy:
+
+      * **Versioned location** (filename matches ``_v(\\d+)_``) →
+        STRICT to that version. A method that exists only on the other
+        version is treated as missing.
+      * **Unversioned location** → UNION across all version records.
+        A method valid on any version is valid in unversioned prose.
+
+    No version is preferred as a default. v0 isn't legacy-deprecated —
+    neuroscience analysis pipelines run for years, and a user who started
+    on v0 may still be using v0 today even though v1 exists. The skill
+    serves both audiences; the validator's semantics reflect that.
+
+    Synthetic spyglass tree has FakeMultiVerTable in both v0 and v1 with
+    different method sets:
+
+      * v0: set_group_by_electrode_group + make
+      * v1: set_group_by_shank + make
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    if "_index" not in dir(v):
+        print("  [FAIL] validate_skill does not expose `_index`")
+        return False
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        for name, body in {
+            "spikesorting/v0/recording.py": '''
+                class FakeMultiVerTable:
+                    def set_group_by_electrode_group(self): pass
+                    def make(self): pass
+            ''',
+            "spikesorting/v1/recording.py": '''
+                class FakeMultiVerTable:
+                    def set_group_by_shank(self): pass
+                    def make(self): pass
+            ''',
+        }.items():
+            path = tmp / "spyglass" / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(body))
+
+        v.clear_caches()
+        registry = v._ClassRegistry(tmp, v.ValidationResult())
+
+        # Unversioned location — union across versions. Both v0-only and
+        # v1-only methods should be accepted as available.
+        m_union = registry.methods("FakeMultiVerTable", location="common_mistakes.md:42")
+        if m_union is None:
+            print("  [FAIL] unversioned location: methods returned None")
+            return False
+        if "set_group_by_electrode_group" not in m_union:
+            print(
+                f"  [FAIL] unversioned location should union v0 methods: "
+                f"missing set_group_by_electrode_group: {set(m_union)!r}"
+            )
+            return False
+        if "set_group_by_shank" not in m_union:
+            print(
+                f"  [FAIL] unversioned location should union v1 methods: "
+                f"missing set_group_by_shank: {set(m_union)!r}"
+            )
+            return False
+
+        # v0-marked location — strict to v0. v1-only methods absent.
+        registry._cache.clear()
+        m_v0 = registry.methods(
+            "FakeMultiVerTable", location="spikesorting_v0_legacy.md:42"
+        )
+        if m_v0 is None:
+            print("  [FAIL] v0 location: methods returned None")
+            return False
+        if "set_group_by_electrode_group" not in m_v0:
+            print(
+                f"  [FAIL] v0 context should include v0 methods: "
+                f"{set(m_v0)!r}"
+            )
+            return False
+        if "set_group_by_shank" in m_v0:
+            print(
+                f"  [FAIL] v0 context must NOT include v1-only methods "
+                f"(set_group_by_shank): {set(m_v0)!r}"
+            )
+            return False
+
+        # No location — same as unversioned (union).
+        registry._cache.clear()
+        m_none = registry.methods("FakeMultiVerTable")
+        if "set_group_by_electrode_group" not in m_none:
+            print(
+                f"  [FAIL] no location should default to union: "
+                f"missing set_group_by_electrode_group: {set(m_none)!r}"
+            )
+            return False
+        if "set_group_by_shank" not in m_none:
+            print(
+                f"  [FAIL] no location should default to union: "
+                f"missing set_group_by_shank: {set(m_none)!r}"
+            )
+            return False
+
+        v.clear_caches()
+    print("  [ok] _ClassRegistry: versioned location strict; unversioned union")
+    return True
+
+
+def fixture_class_registry_uses_code_graph_index(src_root):
+    """Validator's `_ClassRegistry` consumes `_index.scan`. Pins the
+    integration so that a synth Spyglass tree resolves classes by name
+    and surfaces their body-level methods.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    if "_index" not in dir(v):
+        print("  [FAIL] validate_skill does not expose `_index` — integration missing")
+        return False
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        synth = tmp / "spyglass" / "synth_pipe" / "tables.py"
+        synth.parent.mkdir(parents=True, exist_ok=True)
+        synth.write_text(textwrap.dedent('''
+            class FreshlyMintedTable:
+                definition = """
+                fresh_id: int
+                ---
+                """
+                def helper(self, x): pass
+                def make(self, key): pass
+        '''))
+        v.clear_caches()
+        results = v.ValidationResult()
+        registry = v._ClassRegistry(tmp, results)
+        methods = registry.methods("FreshlyMintedTable")
+        if methods is None:
+            print(f"  [FAIL] _ClassRegistry could not resolve FreshlyMintedTable: {methods!r}")
+            return False
+        if "helper" not in methods or "make" not in methods:
+            print(f"  [FAIL] resolved methods missing helper/make: {set(methods)!r}")
+            return False
+        v.clear_caches()
+    print("  [ok] _ClassRegistry resolves classes via _index.scan")
+    return True
+
+
+def fixture_marker_hygiene_warnings(src_root):
+    """Pin the two marker-hygiene warnings in `_version_from_markdown_file`:
+
+    1. Filename-vs-marker disagreement (filename declares vN, body marker
+       declares vM).
+    2. Multiple distinct markers in one body (only the first takes effect;
+       silently ignoring the others would surprise the maintainer).
+
+    These warnings exist to keep the marker mechanism honest. A regression
+    that drops `results.warn(...)` on either branch would silently pass
+    everything green.
+    """
+    import tempfile
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        # Case 1: filename says v0, body marker says v1.
+        conflict = tmp / "fakepipe_v0_legacy.md"
+        conflict.write_text(
+            "<!-- pipeline-version: v1 -->\n# Test\n\nbody\n",
+        )
+        results = v.ValidationResult()
+        ver = v._version_from_markdown_file(conflict, results=results)
+        if ver != "v0":
+            print(f"  [FAIL] filename should win, got: {ver!r}")
+            return False
+        if not any(
+            "filename declares v0 but body marker declares v1" in w
+            for w in results.warnings
+        ):
+            print(
+                "  [FAIL] expected filename↔marker conflict warning, "
+                f"got: {results.warnings!r}"
+            )
+            return False
+
+        # Case 2: two distinct markers in one body (no versioned filename
+        # so the marker code path runs in full).
+        multi = tmp / "fakepipe_two_markers.md"
+        multi.write_text(
+            "<!-- pipeline-version: v0 -->\n# Test\n\n"
+            "<!-- pipeline-version: v1 -->\nbody\n",
+        )
+        results = v.ValidationResult()
+        ver = v._version_from_markdown_file(multi, results=results)
+        if ver != "v0":  # first marker wins
+            print(f"  [FAIL] first marker should win, got: {ver!r}")
+            return False
+        if not any(
+            "multiple distinct" in w and "v0" in w and "v1" in w
+            for w in results.warnings
+        ):
+            print(
+                "  [FAIL] expected multi-marker warning naming v0+v1, "
+                f"got: {results.warnings!r}"
+            )
+            return False
+
+        # Case 3: no warnings when filename and marker agree.
+        agree = tmp / "fakepipe_v1_canonical.md"
+        agree.write_text(
+            "<!-- pipeline-version: v1 -->\n# Test\n\nbody\n",
+        )
+        results = v.ValidationResult()
+        v._version_from_markdown_file(agree, results=results)
+        if results.warnings:
+            print(f"  [FAIL] agreement should not warn: {results.warnings!r}")
+            return False
+
+    print("  [ok] _version_from_markdown_file: filename↔marker + multi-marker warnings")
+    return True
+
+
+def fixture_resolve_insert_fields_propagates_version(src_root):
+    """`ClassIndex.insert_fields_for` propagates ``version`` through the
+    FK walk so a single-version child whose multi-version transitive
+    parent is unresolved returns None (not a partial union). Mirrors
+    `fixture_resolve_table_fields_propagates_ambiguity_to_parents` for
+    the insert-side resolver.
+
+    The two methods are 30 lines of nearly-parallel code; a copy-paste
+    regression that drops the `version` propagation arg in only one
+    would slip through if only the table-fields side were tested.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        files = {
+            "fakepipe/v1/child.py": '''
+                class ChildOnlyV1:
+                    definition = """
+                    -> ParentMultiVer
+                    child_id: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v0/parent.py": '''
+                class ParentMultiVer:
+                    definition = """
+                    parent_id_v0: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v1/parent.py": '''
+                class ParentMultiVer:
+                    definition = """
+                    parent_id_v1: int
+                    ---
+                    """
+            ''',
+        }
+        for rel, body in files.items():
+            path = tmp / "spyglass" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(body))
+
+        v.clear_caches()
+        try:
+            idx = v._index.scan(tmp)
+            if idx.insert_fields_for("ChildOnlyV1") is not None:
+                print("  [FAIL] expected None on ambiguous parent")
+                return False
+            fields = idx.insert_fields_for("ChildOnlyV1", version="v1")
+            if fields != {"child_id", "parent_id_v1"}:
+                print(f"  [FAIL] versioned insert walk wrong: {fields!r}")
+                return False
+        finally:
+            v.clear_caches()
+    print("  [ok] insert_fields_for propagates version through parent chain")
+    return True
+
+
+def fixture_find_ambiguous_chain_version_mismatch(src_root):
+    """`ClassIndex.find_ambiguous_in_chain` distinguishes two reasons for
+    ambiguity in unmarked or wrongly-marked prose:
+
+    * ``"ambiguous"``: multiple records, no version → add a marker.
+    * ``"version_mismatch"``: file declares vN but the named class
+      doesn't have a vN record → fix the marker or the prose.
+
+    Pre-fix, only the ambiguous case fired; a wrongly-marked file
+    would silently fail-open.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        files = {
+            "fakepipe/v0/main.py": '''
+                class MultiVer:
+                    definition = """
+                    x: int
+                    ---
+                    """
+                class OnlyV0:
+                    definition = """
+                    y: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v1/main.py": '''
+                class MultiVer:
+                    definition = """
+                    x: int
+                    ---
+                    """
+            ''',
+        }
+        for rel, body in files.items():
+            path = tmp / "spyglass" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(body))
+
+        v.clear_caches()
+        try:
+            idx = v._index.scan(tmp)
+            cases = [
+                (("MultiVer", None), ("MultiVer", "ambiguous")),
+                (("MultiVer", "v2"), ("MultiVer", "version_mismatch")),
+                (("OnlyV0", "v1"), ("OnlyV0", "version_mismatch")),
+                (("OnlyV0", "v0"), (None, None)),
+            ]
+            for (cls, ver), expected in cases:
+                got = idx.find_ambiguous_in_chain(cls, version=ver)
+                if got != expected:
+                    print(
+                        f"  [FAIL] {cls} @ version={ver}: "
+                        f"expected {expected!r}, got {got!r}"
+                    )
+                    return False
+        finally:
+            v.clear_caches()
+    print("  [ok] find_ambiguous_in_chain: ambiguous + version_mismatch reasons")
+    return True
+
+
+def fixture_placeholder_shadow_filtered(src_root):
+    """`ClassIndex.schema_records` filters out placeholder/shadow records
+    whose `definition` is a non-DataJoint sentinel string (e.g.
+    Spyglass's `common/custom_nwbfile.py` AnalysisNwbfile shadow with
+    `definition = "This definition is managed by SpyglassAnalysis"`).
+
+    Pins the content-based filter (sentinel substrings + structural
+    DataJoint tokens) — content rather than parser-output, so a
+    `parse_definition` regression that produces empty pk/attrs/fks for
+    a real class would NOT be silenced by the same filter.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        # File 1: real DataJoint class.
+        real = tmp / "spyglass" / "common" / "real_table.py"
+        real.parent.mkdir(parents=True, exist_ok=True)
+        real.write_text(textwrap.dedent('''
+            class ShadowTarget:
+                definition = """
+                target_id: int
+                ---
+                payload: varchar(80)
+                """
+        '''))
+        # File 2: placeholder shadow with the same name.
+        shadow = tmp / "spyglass" / "common" / "shadow_table.py"
+        shadow.write_text(textwrap.dedent('''
+            class ShadowTarget:
+                definition = """This definition is managed by SpyglassAnalysis"""
+        '''))
+
+        v.clear_caches()
+        try:
+            idx = v._index.scan(tmp)
+            records = idx.schema_records("ShadowTarget")
+            if len(records) != 1:
+                print(
+                    f"  [FAIL] expected 1 record (placeholder filtered), "
+                    f"got: {records!r}"
+                )
+                return False
+            if "real_table.py" not in records[0].file:
+                print(
+                    "  [FAIL] expected real_table.py to win, got: "
+                    f"{records[0].file!r}"
+                )
+                return False
+            # Singleton: resolve_record returns it without version
+            # filtering, so the field check would pass cleanly.
+            if idx.resolve_record("ShadowTarget") is None:
+                print("  [FAIL] resolve_record unexpectedly returned None")
+                return False
+        finally:
+            v.clear_caches()
+
+    print("  [ok] schema_records: placeholder shadow filtered by content")
+    return True
+
+
+def fixture_clear_caches_invalidates_index(src_root):
+    """`clear_caches()` drops `_index.scan`'s lru_cache. Pins the
+    contract — without the clear, a fresh scan against an updated
+    source tree would return the stale prior result.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        synth = tmp / "spyglass" / "fakepipe" / "main.py"
+        synth.parent.mkdir(parents=True, exist_ok=True)
+        synth.write_text(textwrap.dedent('''
+            class CacheTest:
+                definition = """
+                cache_id: int
+                ---
+                """
+        '''))
+        v.clear_caches()
+        index_a = v._index.scan(tmp)
+        if "CacheTest" not in index_a:
+            print("  [FAIL] CacheTest not in initial index")
+            return False
+        # Clear and rewrite the file with a new class name.
+        v.clear_caches()
+        synth.write_text(textwrap.dedent('''
+            class RenamedAfterClear:
+                definition = """
+                renamed_id: int
+                ---
+                """
+        '''))
+        index_b = v._index.scan(tmp)
+        if "CacheTest" in index_b:
+            print("  [FAIL] stale CacheTest survived clear_caches")
+            return False
+        if "RenamedAfterClear" not in index_b:
+            print("  [FAIL] new class missing after clear_caches + rescan")
+            return False
+        v.clear_caches()
+    print("  [ok] clear_caches: index invalidated; rescan returns updated content")
+    return True
+
+
 FIXTURES = [
+    fixture_class_registry_picks_version_by_filename,
+    fixture_class_registry_uses_code_graph_index,
+    fixture_marker_hygiene_warnings,
+    fixture_resolve_insert_fields_propagates_version,
+    fixture_find_ambiguous_chain_version_mismatch,
+    fixture_placeholder_shadow_filtered,
+    fixture_clear_caches_invalidates_index,
+    fixture_index_scan_parses_projection_rename,
+    fixture_schema_resolution_fails_loud_on_ambiguity,
+    fixture_check_restriction_emits_ambiguity_warning,
+    fixture_resolve_table_fields_propagates_ambiguity_to_parents,
     fixture_syntax_ellipsis_after_kwargs,
     fixture_trailing_underscore_nwb,
     fixture_skip_duplicates_raw_ingestion,

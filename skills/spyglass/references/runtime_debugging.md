@@ -1,3 +1,4 @@
+<!-- pipeline-version: v1 -->
 # Runtime Debugging for Spyglass Pipelines
 
 Diagnosing failures that surface *after* Spyglass is installed and configured: `populate()` / `make()` errors, `fetch1()` cardinality mistakes, join multiplicity, and scientific-object bugs (NumPy/pandas) inside `make()`. If your error is install- or connection-related (cannot import spyglass, connection refused, SPYGLASS_BASE_DIR not set, Docker not running, TLS), go to [setup_troubleshooting.md](setup_troubleshooting.md) instead — that file owns the setup surface and this one does not duplicate it.
