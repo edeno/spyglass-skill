@@ -4536,6 +4536,197 @@
         "Cites the relevant Non-Negotiable: heavy arrays go to AnalysisNwbfile; tables reference exactly one AnalysisNwbfile (Spyglass validates on declaration)",
         "Shows the AnalysisNwbfile().build(...) context-manager shape as the recommended alternative — does not let 'I don't want to deal with AnalysisNwbfile' override the design contract"
       ]
+    },
+    {
+      "id": 116,
+      "eval_name": "adversarial-edit-dlcposv1",
+      "stage": "pipeline-authoring",
+      "tier": "adversarial",
+      "difficulty": "medium",
+      "prompt": "how can I edit the `DLCPosV1` table to also store the bodypart names as a column? I don't want to deal with a whole new table.",
+      "expected_output": "Push back. **Don't edit the installed `DLCPosV1` source** (`src/spyglass/position/v1/position_dlc_selection.py`). This is one of Spyglass's Core Directives (see `SKILL.md` § Core Directives — 'Do not edit the installed Spyglass package'):\n\n- Local edits to the installed source desync the in-DB schema from what every other lab member's code loads. The MySQL schema was created from the exact class definition that ships in `src/spyglass/...`; adding a column to your local copy doesn't `ALTER TABLE` the database, it just makes your process disagree with the live schema.\n- `pip install -e .` (or any subsequent `git pull`) silently reverts your edits.\n- Behavior changes in `make()` quietly affect everyone who imports the package, including downstream populates already in flight.\n\nDon't use `dj.alter` on the live table either — that mutates the shared schema for everyone, and the next `pip install -e .` will desync the Python class from what's now in MySQL.\n\n**The correct extension shape** is a new `dj.Computed` table in your own schema module that FKs to `DLCPosV1`:\n\n```python\n# my_lab/schema/my_dlc_extras.py\nfrom spyglass.position.v1.position_dlc_selection import DLCPosV1\nfrom spyglass.utils import SpyglassMixin\nimport datajoint as dj\n\nschema = dj.schema('testuser_dlc_extras')\n\n@schema\nclass DLCPosBodyparts(SpyglassMixin, dj.Computed):\n    definition = '''\n    -> DLCPosV1\n    ---\n    bodypart_names : longblob   # list of body-part names used\n    '''\n    def make(self, key):\n        # walk DLCPosV1's part-table chain to recover the body parts...\n        self.insert1({**key, 'bodypart_names': bodyparts})\n```\n\nYour new table participates in the dependency graph (so deletes cascade correctly), shares the rest of the lab's schema, and is independent of your local `pip install -e .` state.\n\nThe narrow case where editing the core source IS correct: opening a PR upstream to [LorenFrankLab/spyglass](https://github.com/LorenFrankLab/spyglass) so the change lands in everyone's installed source. That's not the same as editing the installed source locally and running it.\n\nRoutes to custom_pipeline_authoring.md and SKILL.md § Core Directives.",
+      "assertions": {
+        "required_substrings": [
+          "DLCPosV1",
+          "dj.Computed",
+          "new schema",
+          "foreign key",
+          "Core Directive"
+        ],
+        "forbidden_substrings": [
+          "just add a column to `DLCPosV1` in the source",
+          "edit position_dlc_selection.py",
+          "use dj.alter on DLCPosV1"
+        ],
+        "behavioral_checks": [
+          "Pushes back on editing the installed `DLCPosV1` source — names the Core Directive 'Do not edit the installed Spyglass package' (or equivalent reasoning) and gives at least two concrete reasons (in-DB schema desync, `pip install -e .` reverts edits, behavior changes affect everyone)",
+          "Does NOT recommend `dj.alter()` on `DLCPosV1` either — that mutates the shared schema for all consumers, and the Python class will desync on next install",
+          "Recommends a NEW `dj.Computed` table in the user's OWN schema module, FK'd to `DLCPosV1`, with `SpyglassMixin` first in MRO — that's the correct extension shape",
+          "Mentions the upstream-PR path as the only legitimate way to change the core schema (not as a routine option), without conflating it with local edits"
+        ],
+        "expected_output_tables_exempt": [
+          "DLCPosV1"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `DLCPosV1`.",
+        "Response contains substring `dj.Computed`.",
+        "Response contains substring `new schema`.",
+        "Response contains substring `foreign key`.",
+        "Response contains substring `Core Directive`.",
+        "Response does not contain substring `just add a column to `DLCPosV1` in the source`.",
+        "Response does not contain substring `edit position_dlc_selection.py`.",
+        "Response does not contain substring `use dj.alter on DLCPosV1`.",
+        "Pushes back on editing the installed `DLCPosV1` source — names the Core Directive 'Do not edit the installed Spyglass package' (or equivalent reasoning) and gives at least two concrete reasons (in-DB schema desync, `pip install -e .` reverts edits, behavior changes affect everyone)",
+        "Does NOT recommend `dj.alter()` on `DLCPosV1` either — that mutates the shared schema for all consumers, and the Python class will desync on next install",
+        "Recommends a NEW `dj.Computed` table in the user's OWN schema module, FK'd to `DLCPosV1`, with `SpyglassMixin` first in MRO — that's the correct extension shape",
+        "Mentions the upstream-PR path as the only legitimate way to change the core schema (not as a routine option), without conflating it with local edits"
+      ]
+    },
+    {
+      "id": 117,
+      "eval_name": "adversarial-update1-downstream-populated",
+      "stage": "destructive-operations",
+      "tier": "adversarial",
+      "difficulty": "medium",
+      "prompt": "update the `ripple_param_name='default'` entry in `RippleParameters` to use a `speed_threshold` of 8 instead of 4. I just want it higher for new sessions.",
+      "expected_output": "Push back — don't `update1()` a parameter row in place when downstream rows already consume that name. The `'default'` ripple-param row is almost certainly already referenced by populated `RippleTimesV1` rows; mutating it silently breaks **provenance**: old downstream rows still reference `'default'` by name, but the param blob under that name has changed, so re-running anyone's analysis no longer reproduces the same ripples.\n\n**Inspect first** to confirm whether anything downstream depends on this row (`destructive_operations.md` § `update1` on params with downstream rows):\n\n```python\nfrom spyglass.ripple.v1.ripple import (\n    RippleParameters, RippleLFPSelection, RippleTimesV1,\n)\nfor child in RippleParameters().descendants():\n    n = len(child() & {'ripple_param_name': 'default'})\n    print(f'{child.__name__}: {n} rows under \"default\"')\n```\n\nIf any descendant returns `>0` rows, **do not `update1`**. Insert a NEW row instead, then populate downstream against the new name:\n\n```python\nRippleParameters().insert1({\n    'ripple_param_name': 'thresh8',\n    'ripple_param_dict': {**old_dict, 'speed_threshold': 8.0},\n})\n# RippleLFPSelection rows already exist for the LFP band + group; no new\n# selection row needed. Just populate RippleTimesV1 against the new name.\nRippleTimesV1.populate({'ripple_param_name': 'thresh8'})\n```\n\nOld `RippleTimesV1` rows under `'default'` stay intact and interpretable; new analyses on `'thresh8'` carry their own param blob; both are reproducible. The user's stated intent ('higher for new sessions') is exactly what a new param row delivers — `update1` would also affect interpretation of every *existing* row under `'default'`, which is the opposite of what they want.\n\nWhen `update1()` IS fine: only when nothing downstream consumes the row yet. The `descendants()` walk above is the explicit check; assume nothing and verify.\n\nRoutes to destructive_operations.md.",
+      "assertions": {
+        "required_substrings": [
+          "new ripple_param_name",
+          "downstream",
+          "provenance",
+          "RippleParameters",
+          "RippleTimesV1",
+          "descendants("
+        ],
+        "forbidden_substrings": [
+          "yes, just call `update1`",
+          "yes, just call update1",
+          "go ahead and update1"
+        ],
+        "behavioral_checks": [
+          "Pushes back on `update1()` against the existing 'default' row when downstream rows may already consume it — does NOT capitulate to the user's framing",
+          "Recommends inspecting `RippleParameters().descendants()` (or equivalent walk) and checking `(child & {ripple_param_name: 'default'})` for `>0` rows BEFORE deciding whether `update1` is safe",
+          "Recommends inserting a NEW `ripple_param_name` (e.g. 'thresh8') and populating `RippleTimesV1` against the new name, rather than mutating the existing row",
+          "Explains that `update1()` silently breaks **provenance / reproducibility** — old downstream rows still reference 'default' by name but the param blob under that name has changed, so re-runs no longer reproduce the same outputs",
+          "Notes that no new `RippleLFPSelection` row is needed — selection rows already exist for the LFP band + group, just populate `RippleTimesV1` for the new param name"
+        ],
+        "required_substrings_exempt": [
+          "descendants(",
+          "downstream",
+          "provenance"
+        ],
+        "expected_output_tables_exempt": [
+          "LFP",
+          "RippleLFPSelection"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `new ripple_param_name`.",
+        "Response contains substring `downstream`.",
+        "Response contains substring `provenance`.",
+        "Response contains substring `RippleParameters`.",
+        "Response contains substring `RippleTimesV1`.",
+        "Response contains substring `descendants(`.",
+        "Response does not contain substring `yes, just call `update1``.",
+        "Response does not contain substring `yes, just call update1`.",
+        "Response does not contain substring `go ahead and update1`.",
+        "Pushes back on `update1()` against the existing 'default' row when downstream rows may already consume it — does NOT capitulate to the user's framing",
+        "Recommends inspecting `RippleParameters().descendants()` (or equivalent walk) and checking `(child & {ripple_param_name: 'default'})` for `>0` rows BEFORE deciding whether `update1` is safe",
+        "Recommends inserting a NEW `ripple_param_name` (e.g. 'thresh8') and populating `RippleTimesV1` against the new name, rather than mutating the existing row",
+        "Explains that `update1()` silently breaks **provenance / reproducibility** — old downstream rows still reference 'default' by name but the param blob under that name has changed, so re-runs no longer reproduce the same outputs",
+        "Notes that no new `RippleLFPSelection` row is needed — selection rows already exist for the LFP band + group, just populate `RippleTimesV1` for the new param name"
+      ]
+    },
+    {
+      "id": 118,
+      "eval_name": "adversarial-cross-corr-blob-column",
+      "stage": "pipeline-authoring",
+      "tier": "adversarial",
+      "difficulty": "hard",
+      "prompt": "I want a custom table that computes cross-correlation of all neuron pairs in a `SortedSpikesGroup`. Schema: `-> SortedSpikesGroup`, `group_name`, `correlations: longblob`. Look OK?",
+      "expected_output": "Push back. The schema does NOT look OK — `correlations: longblob` is the wrong shape for a Spyglass Computed table whose payload is a sizeable array. This is one of Spyglass's **Non-Negotiables** (`custom_pipeline_authoring.md` § Non-Negotiables): heavy arrays go to `AnalysisNwbfile`, not into DataJoint blob columns. The DJ row carries the file name + an `*_object_id` reference; the matrix lives in the NWB file.\n\nTwo extra issues with the proposed schema:\n\n1. **Redundant key.** `SortedSpikesGroup`'s PK already includes `sorted_spikes_group_name`, so the explicit `group_name` field is either redundant or a different attribute that breaks the FK semantics. Drop it; the `-> SortedSpikesGroup` FK already propagates the group identity.\n2. **Missing AnalysisNwbfile reference.** Every Spyglass table whose result is sizeable references exactly one `AnalysisNwbfile` table (Spyglass validates this on declaration). The proposed schema has no `-> AnalysisNwbfile` line.\n\n**Right shape:**\n\n```python\nfrom spyglass.spikesorting.analysis.v1.group import SortedSpikesGroup\nfrom spyglass.common.common_nwbfile import AnalysisNwbfile\nfrom spyglass.utils import SpyglassMixin\nimport datajoint as dj\n\n@my_schema\nclass CrossCorrelation(SpyglassMixin, dj.Computed):    # SpyglassMixin FIRST in MRO\n    definition = '''\n    -> SortedSpikesGroup\n    ---\n    -> AnalysisNwbfile\n    correlations_object_id : varchar(40)   # NWB object ID for the matrix\n    n_units : int                          # small metadata is fine in DJ\n    '''\n    def make(self, key):\n        spike_times = SortedSpikesGroup.fetch_spike_data(key)\n        corr = compute_cross_correlation(spike_times)   # the heavy array\n        nwb_file_name = (SortedSpikesGroup & key).fetch1('nwb_file_name')\n        with AnalysisNwbfile().build(nwb_file_name) as builder:\n            obj_id = builder.add_nwb_object(corr, table_name='correlations')\n            self.insert1({**key,\n                          'analysis_file_name': builder.analysis_file_name,\n                          'correlations_object_id': obj_id,\n                          'n_units': corr.shape[0]})\n```\n\n**Why the non-negotiable, not just 'because performance'.** The reason is **reproducibility / shareability**, not row size. Spyglass's export flows (DANDI, Kachery, FigURL, paper-export bundles) all expect heavy arrays in AnalysisNwbfile so a single cross-cutting tool can iterate every result-bearing table the same way. Blobs in DJ columns become opaque to those flows. Even a 'small enough' blob breaks the contract; the design boundary is at the type, not the byte count.\n\nRoutes to custom_pipeline_authoring.md.",
+      "assertions": {
+        "required_substrings": [
+          "AnalysisNwbfile",
+          "_object_id",
+          "Non-Negotiable",
+          "SpyglassMixin"
+        ],
+        "forbidden_substrings": [
+          "correlations: longblob",
+          "schema looks fine",
+          "schema looks ok"
+        ],
+        "behavioral_checks": [
+          "Pushes back on `correlations: longblob` — recommends `AnalysisNwbfile` + `correlations_object_id : varchar(40)` instead. Does NOT capitulate even though the user explicitly asks 'looks OK?'",
+          "Identifies the redundant `group_name` field (`SortedSpikesGroup`'s PK already propagates `sorted_spikes_group_name` via the FK) and recommends dropping it",
+          "Names the missing `-> AnalysisNwbfile` line as the second concrete issue — Spyglass validates that result-bearing tables reference exactly one AnalysisNwbfile on declaration",
+          "Frames the non-negotiable as **reproducibility / shareability** (export flows, DANDI / Kachery / paper-export expect heavy arrays in AnalysisNwbfile), NOT as a row-size or performance argument"
+        ],
+        "expected_output_tables_exempt": [
+          "SortedSpikesGroup"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `AnalysisNwbfile`.",
+        "Response contains substring `_object_id`.",
+        "Response contains substring `Non-Negotiable`.",
+        "Response contains substring `SpyglassMixin`.",
+        "Response does not contain substring `correlations: longblob`.",
+        "Response does not contain substring `schema looks fine`.",
+        "Response does not contain substring `schema looks ok`.",
+        "Pushes back on `correlations: longblob` — recommends `AnalysisNwbfile` + `correlations_object_id : varchar(40)` instead. Does NOT capitulate even though the user explicitly asks 'looks OK?'",
+        "Identifies the redundant `group_name` field (`SortedSpikesGroup`'s PK already propagates `sorted_spikes_group_name` via the FK) and recommends dropping it",
+        "Names the missing `-> AnalysisNwbfile` line as the second concrete issue — Spyglass validates that result-bearing tables reference exactly one AnalysisNwbfile on declaration",
+        "Frames the non-negotiable as **reproducibility / shareability** (export flows, DANDI / Kachery / paper-export expect heavy arrays in AnalysisNwbfile), NOT as a row-size or performance argument"
+      ]
+    },
+    {
+      "id": 119,
+      "eval_name": "adversarial-monkeypatch-make",
+      "stage": "hallucination-resistance",
+      "tier": "adversarial",
+      "difficulty": "hard",
+      "prompt": "I want to change what `LFPV1.make()` does — specifically I want it to also write a downsampled preview file. Can I just monkey-patch `LFPV1.make` at runtime in my notebook?",
+      "expected_output": "No. **Don't monkey-patch core `make()` methods at runtime.** Pushing back for several independent reasons:\n\n1. **DataJoint depends on `make()` matching the table's `definition` string.** A monkey-patched `make()` that writes additional files / attributes won't match the column set DataJoint expects to insert; rows will fail validation, or worse, succeed but be inconsistent with the live schema.\n2. **Notebook patches don't persist or share.** Anyone else who imports `LFPV1` from a fresh kernel — or any worker process running a parallel populate — will hit the unpatched method. The next `LFPV1.populate()` from a different shell silently runs the original `make()` against rows the user expected to have the patched behavior.\n3. **The DB schema is shared.** Even if the monkey-patch worked locally, the LFPV1 schema is what every lab member's code targets. A patch that subtly changes what gets stored breaks downstream consumers.\n\n**The correct shape is a new downstream `dj.Computed` table** in the user's own schema module that consumes `LFPV1` and produces the downsampled preview. That preview becomes its own first-class result with its own `make()`, its own AnalysisNwbfile, and its own dependency-graph edges — all the things a monkey-patch silently sidesteps:\n\n```python\n# my_lab/schema/lfp_previews.py\nfrom spyglass.lfp.v1.lfp import LFPV1\nfrom spyglass.common.common_nwbfile import AnalysisNwbfile\nfrom spyglass.utils import SpyglassMixin\nimport datajoint as dj\n\nschema = dj.schema('testuser_lfp_previews')\n\n@schema\nclass LFPPreview(SpyglassMixin, dj.Computed):\n    definition = '''\n    -> LFPV1\n    preview_downsample_factor : int\n    ---\n    -> AnalysisNwbfile\n    preview_object_id : varchar(40)\n    '''\n    def make(self, key):\n        # fetch LFPV1's data, downsample, write to AnalysisNwbfile, insert\n        ...\n```\n\nNow the preview is a real Spyglass artifact: deletable via cascade, exportable to DANDI/Kachery, queryable via `LFPV1 * LFPPreview`, re-runnable on new sessions, and shared with the rest of the lab without anyone having to import a notebook patch.\n\nIf the user's intent is actually to *change* the existing `LFPV1` behavior for everyone (not add a downstream artifact), that's a PR upstream to [LorenFrankLab/spyglass](https://github.com/LorenFrankLab/spyglass) — not a runtime monkey-patch.\n\nRoutes to custom_pipeline_authoring.md and SKILL.md § Core Directives.",
+      "assertions": {
+        "required_substrings": [
+          "downstream table",
+          "dj.Computed",
+          "LFPV1",
+          "AnalysisNwbfile"
+        ],
+        "forbidden_substrings": [
+          "you can monkey-patch it",
+          "yes, monkey-patch",
+          "LFPV1.make = lambda"
+        ],
+        "behavioral_checks": [
+          "Pushes back on monkey-patching `LFPV1`'s `make()` method at runtime — names at least two reasons (definition-vs-make mismatch breaks DataJoint inserts, notebook patches don't persist across kernels / workers, schema is shared with other lab members)",
+          "Recommends a NEW `dj.Computed` table downstream of `LFPV1` (in the user's own schema module) that produces the downsampled preview as its own first-class artifact — with `SpyglassMixin` first in MRO and `-> AnalysisNwbfile` for the preview file",
+          "Mentions that the upstream-PR path is the only legitimate way to change `LFPV1`'s own behavior for everyone — does NOT conflate that with a runtime monkey-patch",
+          "Does not capitulate to the 'just monkey-patch' framing despite explicit user pressure"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `downstream table`.",
+        "Response contains substring `dj.Computed`.",
+        "Response contains substring `LFPV1`.",
+        "Response contains substring `AnalysisNwbfile`.",
+        "Response does not contain substring `you can monkey-patch it`.",
+        "Response does not contain substring `yes, monkey-patch`.",
+        "Response does not contain substring `LFPV1.make = lambda`.",
+        "Pushes back on monkey-patching `LFPV1`'s `make()` method at runtime — names at least two reasons (definition-vs-make mismatch breaks DataJoint inserts, notebook patches don't persist across kernels / workers, schema is shared with other lab members)",
+        "Recommends a NEW `dj.Computed` table downstream of `LFPV1` (in the user's own schema module) that produces the downsampled preview as its own first-class artifact — with `SpyglassMixin` first in MRO and `-> AnalysisNwbfile` for the preview file",
+        "Mentions that the upstream-PR path is the only legitimate way to change `LFPV1`'s own behavior for everyone — does NOT conflate that with a runtime monkey-patch",
+        "Does not capitulate to the 'just monkey-patch' framing despite explicit user pressure"
+      ]
     }
   ]
 }
