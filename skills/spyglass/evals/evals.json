@@ -4249,6 +4249,114 @@
         "Recognizes that `camera_name` on `VideoFile` is a secondary column \u2014 NOT a declared `-> CameraDevice` FK \u2014 and the link is by name match (validated at ingest in `_prepare_video_entry`)",
         "Restricts `VideoFile` by `nwb_file_name` (a PK field via `-> TaskEpoch`); does NOT attempt `CameraDevice & {nwb_file_name: ...}` (silent no-op, no such attr in CameraDevice's heading)"
       ]
+    },
+    {
+      "id": 107,
+      "eval_name": "compound-pfc-wtrack",
+      "stage": "pipeline-usage",
+      "tier": "compound",
+      "difficulty": "hard",
+      "prompt": "I need a list of animals that have prefrontal cortex recordings *and* ran on a w-track. I'm new to the DB.",
+      "expected_output": "Three independent restrictions, then intersect on `subject_id`. Each comes from a different table; they have no direct shared key, so the cleanest shape is to project each to `subject_id` separately and take the set intersection.\n\n**Pieces, with source-grounded relationships:**\n\n- **PFC restriction.** `BrainRegion` (`src/spyglass/common/common_region.py:9`) is keyed by `region_id` (autoincrement); `region_name` is a *secondary* varchar column. `Electrode` (`src/spyglass/common/common_ephys.py:73-79`) FKs to `BrainRegion` (and to `ElectrodeGroup`, which itself also FKs to `BrainRegion`). To find sessions with PFC electrodes, filter `BrainRegion` by `region_name` (substring match \u2014 region naming is lab-dependent, e.g. `'PFC'`, `'mPFC'`, `'prelimbic cortex'`), then walk through `Electrode` to the session.\n- **W-track restriction.** Track / task identity in Spyglass lives on `IntervalList` (`src/spyglass/common/common_interval.py:24-32`) \u2014 the `interval_list_name` PK varchar carries lab-conventional names like `'02_r1'`, `'wtrack_run_1'`, `'pos 1 valid times'`, etc. **There is no `task_name` column on `Session`** \u2014 tasks are inferred from interval naming convention. Filter `IntervalList` by `interval_list_name LIKE '%wtrack%'` (or whichever substring the lab uses); the convention is lab-dependent and may need confirmation with the user.\n- **Subject join.** `Session` carries `subject_id` as a *secondary* attr via `-> [nullable] Subject` (declared in `Session.definition` in `common_session.py`). Projection lets us aggregate up to subjects without returning sessions.\n\n**Putting it together \u2014 project then intersect:**\n\n```python\nfrom spyglass.common.common_ephys import Electrode\nfrom spyglass.common.common_region import BrainRegion\nfrom spyglass.common.common_interval import IntervalList\nfrom spyglass.common.common_session import Session\nfrom spyglass.common.common_subject import Subject\n\n# Sessions with at least one PFC electrode -> set of subject_ids.\npfc_sessions = (\n    Electrode\n    * (BrainRegion & 'region_name LIKE \"%PFC%\"')\n)\npfc_subjects = set(\n    (Session * pfc_sessions.proj()).fetch('subject_id')\n)\n\n# Sessions with any w-track-like interval -> set of subject_ids.\nwtrack_intervals = IntervalList & 'interval_list_name LIKE \"%wtrack%\"'\nwtrack_subjects = set(\n    (Session * wtrack_intervals.proj()).fetch('subject_id')\n)\n\n# Animals satisfying both:\nanimals = pfc_subjects & wtrack_subjects\n# (Optional) full subject rows:\n(Subject & [{'subject_id': s} for s in animals]).fetch(as_dict=True)\n```\n\n**Why project first.** The two restrictions live on completely different tables; joining them in one expression triggers the dependent-attribute refusal (or returns spurious Cartesian products). Projecting each to `subject_id` reduces to compatible sets that Python `&` can intersect cleanly.\n\n**Lab-conventions caveat.** Both `region_name` substrings (`'PFC'` vs `'mPFC'` vs `'prelimbic cortex'`) and `interval_list_name` substrings (`'wtrack'` vs `'w-track'` vs run-numbered names like `'02_r1'`) are **lab-dependent**. Before relying on the substring filters, run `BrainRegion.fetch('region_name')` and `(IntervalList & {'nwb_file_name': '<one session>'}).fetch('interval_list_name')` to confirm what the lab actually uses.\n\nRoutes to common_tables.md and workflows.md.",
+      "assertions": {
+        "required_substrings": [
+          "BrainRegion",
+          "Electrode",
+          "IntervalList",
+          "Subject",
+          "interval_list_name",
+          "region_name",
+          "subject_id",
+          ".proj("
+        ],
+        "forbidden_substrings": [
+          "Session.fetch1('task_name')",
+          "Session.fetch1(\"task_name\")",
+          "fetch('task_name')"
+        ],
+        "behavioral_checks": [
+          "Filters on `region_name` from `BrainRegion` (a secondary varchar column, NOT a PK) and walks through `Electrode` (which FKs to BrainRegion per common_ephys.py:79) to identify sessions with PFC electrodes",
+          "Filters w-track intervals via `IntervalList.interval_list_name` substring match \u2014 does NOT claim `Session` has a `task_name` column (it doesn't); tasks are inferred from interval-list naming convention which is lab-dependent",
+          "Projects each side to `subject_id` (or `Session.subject_id` via the `-> [nullable] Subject` FK) BEFORE intersecting, rather than attempting a single multi-table `*` join across PFC + w-track + subject (which would either trigger dependent-attribute refusal or produce spurious Cartesian products)",
+          "Flags both `region_name` substrings (`PFC` vs `mPFC` vs `prelimbic`) and `interval_list_name` substrings (`wtrack` vs `w-track` vs run-numbered) as lab-dependent conventions that should be confirmed before running the filter"
+        ],
+        "expected_output_tables_exempt": [
+          "ElectrodeGroup",
+          "Lab",
+          "Session"
+        ],
+        "required_substrings_exempt": [
+          ".proj("
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `BrainRegion`.",
+        "Response contains substring `Electrode`.",
+        "Response contains substring `IntervalList`.",
+        "Response contains substring `Subject`.",
+        "Response contains substring `interval_list_name`.",
+        "Response contains substring `region_name`.",
+        "Response contains substring `subject_id`.",
+        "Response contains substring `.proj(`.",
+        "Response does not contain substring `Session.fetch1('task_name')`.",
+        "Response does not contain substring `Session.fetch1(\"task_name\")`.",
+        "Response does not contain substring `fetch('task_name')`.",
+        "Filters on `region_name` from `BrainRegion` (a secondary varchar column, NOT a PK) and walks through `Electrode` (which FKs to BrainRegion per common_ephys.py:79) to identify sessions with PFC electrodes",
+        "Filters w-track intervals via `IntervalList.interval_list_name` substring match \u2014 does NOT claim `Session` has a `task_name` column (it doesn't); tasks are inferred from interval-list naming convention which is lab-dependent",
+        "Projects each side to `subject_id` (or `Session.subject_id` via the `-> [nullable] Subject` FK) BEFORE intersecting, rather than attempting a single multi-table `*` join across PFC + w-track + subject (which would either trigger dependent-attribute refusal or produce spurious Cartesian products)",
+        "Flags both `region_name` substrings (`PFC` vs `mPFC` vs `prelimbic`) and `interval_list_name` substrings (`wtrack` vs `w-track` vs run-numbered) as lab-dependent conventions that should be confirmed before running the filter"
+      ]
+    },
+    {
+      "id": 108,
+      "eval_name": "compound-sorted-spikes-across-sort-groups",
+      "stage": "pipeline-authoring",
+      "tier": "compound",
+      "difficulty": "hard",
+      "prompt": "I want to make a custom table that uses the spikes from all the tetrode sort groups in my data. How do I wire it up so I don't have to list every `sort_group_id` by hand?",
+      "expected_output": "Don't roll your own aggregation \u2014 Spyglass already ships the abstraction: `SortedSpikesGroup` (`src/spyglass/spikesorting/analysis/v1/group.py:63-74`). Build one group row that bundles the tetrode sort groups you care about, then FK your custom Computed table to **the group**, not to each `SpikeSortingOutput.merge_id` individually.\n\n**`SortedSpikesGroup` shape (per source):**\n\n- Master keyed by `(Session, UnitSelectionParams, sorted_spikes_group_name)`. `UnitSelectionParams` is a `dj.Manual` parameter table that filters which labels are included in the group (Spyglass ships a `'all_units'` default and an `'exclude_noise'` default).\n- `SortedSpikesGroup.Units` part table FKs to `SpikeSortingOutput.proj(spikesorting_merge_id='merge_id')` \u2014 one row per merge entry you want included. Insert via the `create_group(...)` helper.\n\n**Build the group once:**\n\n```python\nfrom spyglass.spikesorting.analysis.v1.group import (\n    SortedSpikesGroup, UnitSelectionParams,\n)\nfrom spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput\n\n# Discover the curated-sorting merge IDs for this session's tetrodes:\ntetrode_merge_keys = (\n    SpikeSortingOutput.merge_restrict({'nwb_file_name': nwb_file})\n).fetch('KEY', as_dict=True)   # one dict per merge_id\n\n# Insert one group row + its part rows in one call:\nSortedSpikesGroup().create_group(\n    group_name='all_tetrodes',\n    nwb_file_name=nwb_file,\n    unit_filter_params_name='all_units',  # or 'exclude_noise'\n    keys=tetrode_merge_keys,\n)\n```\n\n**Wire your custom table to the group, not to per-sort-group merge IDs:**\n\n```python\n@my_schema\nclass MyTetrodeAnalysis(SpyglassMixin, dj.Computed):\n    definition = '''\n    -> SortedSpikesGroup        # FK to the group, NOT to each merge_id\n    ---\n    -> AnalysisNwbfile\n    result_object_id : varchar(40)\n    '''\n    def make(self, key):\n        # The helper handles the part-table walk for you:\n        spike_times = SortedSpikesGroup.fetch_spike_data(key)\n        # ... compute, store in AnalysisNwbfile, insert ...\n```\n\n**Why this beats stuffing a list of `sort_group_id`s into a single column.** DataJoint's relational shape requires one row per primary-key tuple; a `sort_group_id: blob` column hiding a Python list breaks restriction semantics (`& {'sort_group_id': 5}` can't filter into the blob). The `SortedSpikesGroup.Units` part table is the right normalization: one row per included merge entry, FK-checked, restrictable.\n\n**Reusable across analyses.** Once `'all_tetrodes'` is created, multiple downstream Computed tables (decoding, MUA detection, custom analysis) can all FK to the same group key \u2014 that's the point of group tables.\n\nRoutes to custom_pipeline_authoring.md (group-tables section) and spikesorting_pipeline.md.",
+      "assertions": {
+        "required_substrings": [
+          "SortedSpikesGroup",
+          "SpikeSortingOutput",
+          "UnitSelectionParams",
+          "create_group",
+          "spikesorting_merge_id"
+        ],
+        "forbidden_substrings": [
+          "sort_group_id: blob",
+          "sort_group_id : blob",
+          "sort_group_ids = ["
+        ],
+        "behavioral_checks": [
+          "Routes to `SortedSpikesGroup` (group.py:63-74) as the existing aggregation abstraction; does NOT propose building a new aggregation table from scratch or stuffing a list of sort_group_ids into a single blob column",
+          "Recommends inserting one `SortedSpikesGroup` row via `create_group(...)`, then FKing the custom Computed table to `SortedSpikesGroup` as a single dependency rather than to each `SpikeSortingOutput.merge_id` individually",
+          "Names `UnitSelectionParams` (the parameter table that controls which unit labels are included) and at least one default value (`'all_units'` or `'exclude_noise'`)",
+          "Notes that `SortedSpikesGroup.Units` part FKs to `SpikeSortingOutput.proj(spikesorting_merge_id='merge_id')` \u2014 i.e., the projection alias `spikesorting_merge_id` is what propagates onto the part table, not bare `merge_id`",
+          "Explains why this is reusable: once the group exists, multiple downstream tables (decoding / MUA / custom) can all FK to the same group key without re-listing the constituent merge_ids"
+        ],
+        "expected_output_tables_exempt": [
+          "AnalysisNwbfile",
+          "Session"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `SortedSpikesGroup`.",
+        "Response contains substring `SpikeSortingOutput`.",
+        "Response contains substring `UnitSelectionParams`.",
+        "Response contains substring `create_group`.",
+        "Response contains substring `spikesorting_merge_id`.",
+        "Response does not contain substring `sort_group_id: blob`.",
+        "Response does not contain substring `sort_group_id : blob`.",
+        "Response does not contain substring `sort_group_ids = [`.",
+        "Routes to `SortedSpikesGroup` (group.py:63-74) as the existing aggregation abstraction; does NOT propose building a new aggregation table from scratch or stuffing a list of sort_group_ids into a single blob column",
+        "Recommends inserting one `SortedSpikesGroup` row via `create_group(...)`, then FKing the custom Computed table to `SortedSpikesGroup` as a single dependency rather than to each `SpikeSortingOutput.merge_id` individually",
+        "Names `UnitSelectionParams` (the parameter table that controls which unit labels are included) and at least one default value (`'all_units'` or `'exclude_noise'`)",
+        "Notes that `SortedSpikesGroup.Units` part FKs to `SpikeSortingOutput.proj(spikesorting_merge_id='merge_id')` \u2014 i.e., the projection alias `spikesorting_merge_id` is what propagates onto the part table, not bare `merge_id`",
+        "Explains why this is reusable: once the group exists, multiple downstream tables (decoding / MUA / custom) can all FK to the same group key without re-listing the constituent merge_ids"
+      ]
     }
   ]
 }
