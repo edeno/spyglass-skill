@@ -465,7 +465,7 @@
       "stage": "pipeline-usage",
       "tier": "atomic-read",
       "difficulty": "medium",
-      "prompt": "Fetch the Trodes position dataframe for session j1620210710_, interval 02_r1, default params — I already ran the pipeline on this.",
+      "prompt": "Fetch the Trodes position dataframe via `PositionOutput` for session j1620210710_, interval 02_r1, default params — I want the merge-wrapper-routed call so downstream code can pass `merge_id`s around instead of part-table-specific keys. I already ran the pipeline on this.",
       "expected_output": "Two-step: resolve the merge_key via `PositionOutput.TrodesPosV1 & {'nwb_file_name': 'j1620210710_.nwb', 'interval_list_name': '02_r1', 'trodes_pos_params_name': 'default'}` → `.fetch1('KEY')` (or via `merge_get_part`), then `(PositionOutput & merge_key).fetch1_dataframe()`.",
       "assertions": {
         "required_substrings": [
@@ -500,12 +500,11 @@
       "tier": "merge-key-discovery",
       "difficulty": "medium",
       "prompt": "Find the merge_id for Trodes position on session j1620210710_, interval 02_r1, params `default`.",
-      "expected_output": "`PositionOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'interval_list_name': '02_r1', 'trodes_pos_params_name': 'default'}).fetch1('KEY')`. Confirms len==1 before fetch1 if there's any doubt about uniqueness.",
+      "expected_output": "Either form is correct — the prompt asks for `merge_id` so the scalar form is the most direct answer; `'KEY'` returns the full PK dict, which on a merge master is just `{'merge_id': ...}` (`PositionOutput`'s master PK is literally `merge_id`).\n\n```python\nPositionOutput.merge_get_part({\n    'nwb_file_name': 'j1620210710_.nwb',\n    'interval_list_name': '02_r1',\n    'trodes_pos_params_name': 'default',\n}).fetch1('merge_id')   # scalar UUID — directly answers the prompt\n# or equivalently:\n# .fetch1('KEY')         # returns {'merge_id': ...} — useful when you want a key\n#                         that downstream merge-aware helpers can consume\n```\n\nConfirms `len == 1` before `fetch1` if there's any doubt about uniqueness.",
       "assertions": {
         "required_substrings": [
           "merge_get_part",
-          "fetch1",
-          "KEY",
+          "fetch1(",
           "PositionOutput"
         ],
         "forbidden_substrings": [
@@ -513,20 +512,22 @@
           "(PositionOutput & {\"nwb_file_name\""
         ],
         "behavioral_checks": [
-          "Calls merge_get_part as a classmethod (PositionOutput.merge_get_part(...)), not on a restricted relation",
-          "Retrieves the merge key via fetch1('KEY'), not a list of merge_ids"
+          "Calls `merge_get_part` as a classmethod (`PositionOutput.merge_get_part(...)`), not on a restricted relation",
+          "Retrieves the merge key via `fetch1('merge_id')` (the scalar the prompt asks for) OR `fetch1('KEY')` (the full PK dict, also acceptable) — not a `.fetch()` list of merge_ids"
+        ],
+        "required_substrings_exempt": [
+          "fetch1("
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `merge_get_part`.",
-        "Response contains substring `fetch1`.",
-        "Response contains substring `KEY`.",
+        "Response contains substring `fetch1(`.",
         "Response contains substring `PositionOutput`.",
         "Response does not contain substring `(PositionOutput & {'nwb_file_name'`.",
         "Response does not contain substring `(PositionOutput & {\"nwb_file_name\"`.",
-        "Calls merge_get_part as a classmethod (PositionOutput.merge_get_part(...)), not on a restricted relation",
-        "Retrieves the merge key via fetch1('KEY'), not a list of merge_ids"
+        "Calls `merge_get_part` as a classmethod (`PositionOutput.merge_get_part(...)`), not on a restricted relation",
+        "Retrieves the merge key via `fetch1('merge_id')` (the scalar the prompt asks for) OR `fetch1('KEY')` (the full PK dict, also acceptable) — not a `.fetch()` list of merge_ids"
       ]
     },
     {
@@ -536,12 +537,13 @@
       "tier": "merge-key-discovery",
       "difficulty": "medium",
       "prompt": "I need the LFP merge entry for j1620210710_ with the standard lab wideband filter — get me the `merge_id` so I can pass it to my downstream code.",
-      "expected_output": "`LFPOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'filter_name': 'LFP 0-400 Hz'}).fetch1('merge_id')`. `'LFP 0-400 Hz'` is the canonical example lab wideband filter name registered in `FirFilterParameters` via `add_filter` calls in `create_standard_filters` (see common_filter.py:583). If the response doesn't know the exact name, it should discover it via `FirFilterParameters.fetch('filter_name')` first rather than guess. If the response prefers the full KEY dict, `fetch1('KEY')` is also acceptable.",
+      "expected_output": "`'LFP 0-400 Hz'` is registered in `FirFilterParameters` for **both** 20 kHz and 30 kHz raw sampling rates (see `create_standard_filters`, `common_filter.py:582-595`), so `filter_name` alone does not uniquely identify the filter. The full PK chain on `LFPSelection` is `LFPElectrodeGroup` + projected `IntervalList` (as `target_interval_list_name`) + `FirFilterParameters` (which itself keys on `(filter_name, filter_sampling_rate)`), so a scalar `merge_id` for an LFP output requires more than nwb_file_name + filter_name.\n\nTwo viable shapes — pick by what the user already knows:\n\n**(a) Discovery first, then restrict.** If unsure which sampling rate / electrode group / interval was used, list candidates and pick:\n\n```python\n(LFPOutput.LFPV1\n & {'nwb_file_name': 'j1620210710_.nwb', 'filter_name': 'LFP 0-400 Hz'}\n).fetch('lfp_electrode_group_name', 'target_interval_list_name',\n        'filter_sampling_rate', 'merge_id', as_dict=True)\n```\n\nInspect the returned rows and pick the one whose interval / electrode group / sampling rate match what the user actually wants.\n\n**(b) Direct fetch with the full restriction.** If the user already knows the sampling rate and the electrode group / interval they care about (typical: 30 kHz raw on the canonical session, the standard wideband electrode group, the session interval used for ingest):\n\n```python\nLFPOutput.merge_get_part({\n    'nwb_file_name': 'j1620210710_.nwb',\n    'filter_name': 'LFP 0-400 Hz',\n    'filter_sampling_rate': 30000,\n    'lfp_electrode_group_name': '<group>',\n    'target_interval_list_name': '<interval>',\n}).fetch1('merge_id')\n```\n\nIf `merge_get_part` returns more than one row, the restriction is still under-specified — fall back to (a) and pick. If it returns zero rows, the LFP hasn't been populated yet for this combination, or one of the field values is misspelled.\n\nIf the response doesn't know the exact filter name, discover it via `FirFilterParameters.fetch('filter_name', 'filter_sampling_rate')` first rather than guess. If the response prefers the full KEY dict over the scalar, `fetch1('KEY')` is also acceptable.",
       "assertions": {
         "required_substrings": [
           "LFPOutput",
           "merge_get_part",
           "filter_name",
+          "filter_sampling_rate",
           "FirFilterParameters"
         ],
         "forbidden_substrings": [
@@ -549,10 +551,16 @@
           "filter_name=\"default\""
         ],
         "behavioral_checks": [
-          "Uses merge_get_part classmethod form",
-          "Includes filter_name in the restriction (not just nwb_file_name)",
-          "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (FirFilterParameters.fetch) rather than guessing 'default'",
-          "Notes that filter_name alone doesn't uniquely identify a filter — FirFilterParameters keys on (filter_name, filter_sampling_rate), so a Nyquist-aware answer mentions the sampling rate if the session's raw fs could differ from 30000 Hz (typical for example lab trodes)."
+          "Uses `merge_get_part` as a classmethod, not on a restricted relation",
+          "Recognizes that `filter_name='LFP 0-400 Hz'` alone is NOT unique — `FirFilterParameters` keys on `(filter_name, filter_sampling_rate)` and the canonical 'LFP 0-400 Hz' filter is registered for both 20 kHz and 30 kHz raw rates",
+          "Either (a) shows a discovery step listing candidates with `lfp_electrode_group_name` / `target_interval_list_name` / `filter_sampling_rate` before restricting, OR (b) gives a fully-specified restriction including `filter_sampling_rate` (and ideally `lfp_electrode_group_name` / `target_interval_list_name`)",
+          "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (`FirFilterParameters.fetch`) — does not guess `filter_name='default'`"
+        ],
+        "expected_output_tables_exempt": [
+          "IntervalList",
+          "LFPElectrodeGroup",
+          "LFPSelection",
+          "LFPV1"
         ]
       },
       "files": [],
@@ -560,13 +568,14 @@
         "Response contains substring `LFPOutput`.",
         "Response contains substring `merge_get_part`.",
         "Response contains substring `filter_name`.",
+        "Response contains substring `filter_sampling_rate`.",
         "Response contains substring `FirFilterParameters`.",
         "Response does not contain substring `filter_name='default'`.",
         "Response does not contain substring `filter_name=\"default\"`.",
-        "Uses merge_get_part classmethod form",
-        "Includes filter_name in the restriction (not just nwb_file_name)",
-        "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (FirFilterParameters.fetch) rather than guessing 'default'",
-        "Notes that filter_name alone doesn't uniquely identify a filter — FirFilterParameters keys on (filter_name, filter_sampling_rate), so a Nyquist-aware answer mentions the sampling rate if the session's raw fs could differ from 30000 Hz (typical for example lab trodes)."
+        "Uses `merge_get_part` as a classmethod, not on a restricted relation",
+        "Recognizes that `filter_name='LFP 0-400 Hz'` alone is NOT unique — `FirFilterParameters` keys on `(filter_name, filter_sampling_rate)` and the canonical 'LFP 0-400 Hz' filter is registered for both 20 kHz and 30 kHz raw rates",
+        "Either (a) shows a discovery step listing candidates with `lfp_electrode_group_name` / `target_interval_list_name` / `filter_sampling_rate` before restricting, OR (b) gives a fully-specified restriction including `filter_sampling_rate` (and ideally `lfp_electrode_group_name` / `target_interval_list_name`)",
+        "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (`FirFilterParameters.fetch`) — does not guess `filter_name='default'`"
       ]
     },
     {
@@ -722,16 +731,10 @@
         "required_substrings": [
           "pynwb"
         ],
-        "forbidden_substrings": [
-          "insert_sessions",
-          "SpyglassMixin",
-          "dj.Computed",
-          "Session.insert",
-          "fetch_nwb"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
-          "Does not introduce Spyglass concepts (tables, mixins, merge, populate)",
-          "Answers the pynwb question or defers to the nwb skill"
+          "Does NOT recommend any Spyglass machinery as the solution — no `insert_sessions(...)` call, no `SpyglassMixin` inheritance, no `dj.Computed` table, no `Session.insert(...)`, no `fetch_nwb()`. Mentioning these terms in passing to *clarify why they don't apply* is fine; recommending them as the path forward is not.",
+          "Answers the pynwb question directly with plain pynwb (e.g., `with NWBHDF5IO(path, 'r') as io: nwbfile = io.read()` then accessing `nwbfile.acquisition[name].timestamps`) OR defers to the nwb skill — does not introduce Spyglass concepts as the path forward"
         ],
         "required_substrings_exempt": [
           "pynwb"
@@ -740,13 +743,8 @@
       "files": [],
       "expectations": [
         "Response contains substring `pynwb`.",
-        "Response does not contain substring `insert_sessions`.",
-        "Response does not contain substring `SpyglassMixin`.",
-        "Response does not contain substring `dj.Computed`.",
-        "Response does not contain substring `Session.insert`.",
-        "Response does not contain substring `fetch_nwb`.",
-        "Does not introduce Spyglass concepts (tables, mixins, merge, populate)",
-        "Answers the pynwb question or defers to the nwb skill"
+        "Does NOT recommend any Spyglass machinery as the solution — no `insert_sessions(...)` call, no `SpyglassMixin` inheritance, no `dj.Computed` table, no `Session.insert(...)`, no `fetch_nwb()`. Mentioning these terms in passing to *clarify why they don't apply* is fine; recommending them as the path forward is not.",
+        "Answers the pynwb question directly with plain pynwb (e.g., `with NWBHDF5IO(path, 'r') as io: nwbfile = io.read()` then accessing `nwbfile.acquisition[name].timestamps`) OR defers to the nwb skill — does not introduce Spyglass concepts as the path forward"
       ]
     },
     {
