@@ -653,11 +653,12 @@
       "expected_output": "Correct, portable answer: `set(TrodesPosV1.fetch('nwb_file_name')) - set(DLCPosV1.fetch('nwb_file_name'))`. A DataJoint-native antijoin is tempting, but **bare `TrodesPosV1 - DLCPosV1` raises** `DataJointError: Cannot join query expressions on dependent attribute 'analysis_file_name'` — both tables inherit `analysis_file_name` (via `-> AnalysisNwbfile`) and the three identical NWB `*_object_id` columns as secondary attrs, and DataJoint's `-` operator uses the same dependent-attribute refusal rule as `*` (see common_mistakes.md § 9). The working antijoin form projects the secondaries away on both sides: `set((TrodesPosV1.proj() - DLCPosV1.proj()).fetch('nwb_file_name'))` — `.proj()` with no args reduces each side to PK only, leaving just `nwb_file_name` as a shared attribute (PK on both, so no dependent-attribute collision). Set-difference via `.fetch()` is usually more legible and less fragile.",
       "assertions": {
         "required_substrings": [
-          ".fetch('nwb_file_name'",
+          ".fetch(",
           "set(",
           "TrodesPosV1",
           "DLCPosV1",
-          "AnalysisNwbfile"
+          "AnalysisNwbfile",
+          "nwb_file_name"
         ],
         "forbidden_substrings": [
           "(TrodesPosV1 * DLCPosV1)"
@@ -669,16 +670,18 @@
           "Does not claim the naive antijoin `TrodesPosV1 - DLCPosV1` is a valid drop-in for the set-difference form — it raises at query-build time (see common_mistakes.md § 9)"
         ],
         "required_substrings_exempt": [
+          ".fetch(",
           "set("
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `.fetch('nwb_file_name'`.",
+        "Response contains substring `.fetch(`.",
         "Response contains substring `set(`.",
         "Response contains substring `TrodesPosV1`.",
         "Response contains substring `DLCPosV1`.",
         "Response contains substring `AnalysisNwbfile`.",
+        "Response contains substring `nwb_file_name`.",
         "Response does not contain substring `(TrodesPosV1 * DLCPosV1)`.",
         "Computes set difference (Trodes minus DLC) via set(A.fetch('nwb_file_name')) - set(B.fetch('nwb_file_name'))",
         "Does not use an inner join (`*`) when a difference is needed",
