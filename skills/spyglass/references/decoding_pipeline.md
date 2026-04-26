@@ -368,11 +368,19 @@ os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.99'
 
 **Workaround for `n_chunks` being ignored when
 `estimate_decoding_params=False`:** set `estimate_decoding_params=True`
-on the selection row; the kwarg reaches the decoder that way. This
-behavior depends on the installed `non_local_detector` version — if
-both branches accept `n_chunks` in your installed copy, the workaround
-is unnecessary. Verify with `inspect.signature` on the relevant
-classifier method to confirm.
+on the selection row; the kwarg reaches the decoder that way. **Caveat:**
+the `True` branch calls `classifier.estimate_parameters(...)` (see
+`src/spyglass/decoding/v1/clusterless.py:320`), which **re-runs EM
+parameter estimation** — that is *not* the normal inference path the
+user wants for routine decoding. Use this workaround only when you
+genuinely need the parameter-estimation pass too (or as a one-off to
+get past OOM); otherwise prefer fixing the kwarg-pass-through in the
+`False` branch (e.g. by upgrading `non_local_detector` to a version
+whose `predict()` accepts `n_chunks`). This behavior depends on the
+installed `non_local_detector` version — if both branches accept
+`n_chunks` in your installed copy, the workaround is unnecessary.
+Verify with `inspect.signature` on the relevant classifier method to
+confirm.
 
 ## Storage
 
