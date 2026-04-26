@@ -1,3 +1,4 @@
+<!-- pipeline-version: v1 -->
 # LFP Pipeline
 
 ## Contents

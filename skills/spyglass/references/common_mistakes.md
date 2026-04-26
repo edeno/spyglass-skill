@@ -1,3 +1,4 @@
+<!-- pipeline-version: v1 -->
 # Common Mistakes — Expanded
 
 Expanded prose for the 9 most common Spyglass footguns — top 5 are summarized in SKILL.md; entries 6–9 are additional shapes that surface less often but reliably trip up new users. Each section gives the full mechanism, fix, and cross-reference. Load this reference when the user's code shows one of these shapes, or when the SKILL.md one-liner needs a longer explanation.

@@ -64,8 +64,19 @@ fi
 
 PY="${PYTHON_ENV:-python3}"
 
+# Baseline: 3 size warnings (long reference files that have already been
+# split as far as the topic structure allows). All known multi-version
+# ambiguity is resolved at file scope via `<!-- pipeline-version: vN -->`
+# markers in the affected references; new ambiguity warnings are
+# fail-loud signals to fix, not noise to baseline away. Bump only when a
+# legitimate new size warning lands or when the maintainer consciously
+# accepts a new ambiguity case (and document why in the commit).
+if ! [[ " ${VALIDATOR_ARGS[*]} " == *" --baseline-warnings "* ]]; then
+    VALIDATOR_ARGS+=("--baseline-warnings" "3")
+fi
+
 echo "============================================================"
-echo "[1/3] Main validator"
+echo "[1/4] Main validator"
 echo "============================================================"
 "$PY" "$SCRIPT_DIR/validate_skill.py" --spyglass-src "$SPYGLASS_SRC" \
     "${VALIDATOR_ARGS[@]}"
@@ -73,7 +84,7 @@ validator_rc=$?
 
 echo
 echo "============================================================"
-echo "[2/3] Regression fixtures"
+echo "[2/4] Validator-regression fixtures"
 echo "============================================================"
 "$PY" "$SKILL_ROOT/tests/test_validator_regressions.py" \
     --spyglass-src "$SPYGLASS_SRC"
@@ -81,14 +92,22 @@ regression_rc=$?
 
 echo
 echo "============================================================"
-echo "[3/3] Runnable-example import harness (informational)"
+echo "[3/4] code_graph.py tool-contract fixtures"
+echo "============================================================"
+"$PY" "$SKILL_ROOT/tests/test_code_graph.py" \
+    --spyglass-src "$SPYGLASS_SRC"
+code_graph_rc=$?
+
+echo
+echo "============================================================"
+echo "[4/4] Runnable-example import harness (informational)"
 echo "============================================================"
 "$PY" "$SKILL_ROOT/tests/test_runnable_imports.py" \
     --spyglass-src "$SPYGLASS_SRC" || true  # harness rc is informational
 
 echo
-if [[ $validator_rc -ne 0 || $regression_rc -ne 0 ]]; then
-    echo "FAILED: validator=$validator_rc regression=$regression_rc"
+if [[ $validator_rc -ne 0 || $regression_rc -ne 0 || $code_graph_rc -ne 0 ]]; then
+    echo "FAILED: validator=$validator_rc regression=$regression_rc code_graph=$code_graph_rc"
     exit 1
 fi
 echo "All gated checks passed."
