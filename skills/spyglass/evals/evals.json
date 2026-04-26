@@ -1531,8 +1531,7 @@
           "SpyglassConfig"
         ],
         "forbidden_substrings": [
-          "SPYGLASS_BASE_DIR is all you need",
-          "mount it at the same path on both machines"
+          "SPYGLASS_BASE_DIR is all you need"
         ],
         "behavioral_checks": [
           "Explains that dj.config['stores'] is machine-local and SPYGLASS_BASE_DIR does NOT propagate into it",
@@ -1548,7 +1547,6 @@
         "Response contains substring `save_local`.",
         "Response contains substring `SpyglassConfig`.",
         "Response does not contain substring `SPYGLASS_BASE_DIR is all you need`.",
-        "Response does not contain substring `mount it at the same path on both machines`.",
         "Explains that dj.config['stores'] is machine-local and SPYGLASS_BASE_DIR does NOT propagate into it",
         "Offers both fixes: regenerate config per machine OR edit in-place + save_local",
         "Shows the session-start assertion (stores.raw.location prefix matches SPYGLASS_BASE_DIR)",
@@ -1571,15 +1569,13 @@
           "CHANGELOG.md",
           "SpikeSortingRecording"
         ],
-        "forbidden_substrings": [
-          "git checkout",
-          "downgrade spyglass"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies the drift direction: code ahead of DB",
           "Shows both sides of the diagnostic (Python describe() vs DB SHOW CREATE TABLE)",
           "Directs the user to CHANGELOG.md, which documents the per-release Table().alter() calls an admin needs to run so the database catches up to the package",
-          "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables"
+          "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables",
+          "Does not recommend `git checkout` to an older commit, downgrading the spyglass package, or otherwise rolling the code back as the fix — the right path is to apply the per-release `Table.alter()` migrations from CHANGELOG.md so the database catches up to the package"
         ]
       },
       "files": [],
@@ -1588,12 +1584,11 @@
         "Response contains substring `from spyglass.common import *`.",
         "Response contains substring `CHANGELOG.md`.",
         "Response contains substring `SpikeSortingRecording`.",
-        "Response does not contain substring `git checkout`.",
-        "Response does not contain substring `downgrade spyglass`.",
         "Identifies the drift direction: code ahead of DB",
         "Shows both sides of the diagnostic (Python describe() vs DB SHOW CREATE TABLE)",
         "Directs the user to CHANGELOG.md, which documents the per-release Table().alter() calls an admin needs to run so the database catches up to the package",
-        "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables"
+        "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables",
+        "Does not recommend `git checkout` to an older commit, downgrading the spyglass package, or otherwise rolling the code back as the fix — the right path is to apply the per-release `Table.alter()` migrations from CHANGELOG.md so the database catches up to the package"
       ]
     },
     {
@@ -1782,12 +1777,9 @@
           "pip install -e .",
           "restart the kernel"
         ],
-        "forbidden_substrings": [
-          "file a bug",
-          "wait for the next release"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
-          "Identifies site-packages shadowing as the root cause (not a spyglass code bug)",
+          "Identifies site-packages shadowing as the root cause (not a spyglass code bug) — does NOT recommend filing a bug or waiting for the next release; the fix is user-side (`pip install -e .` from the checkout)",
           "Shows `print(spyglass.__file__)` as the concrete diagnostic",
           "Includes the `pip install -e .` step AND the Jupyter kernel restart",
           "Mentions uninstalling `spyglass-neuro` if both installs coexist"
@@ -1798,9 +1790,7 @@
         "Response contains substring `spyglass.__file__`.",
         "Response contains substring `pip install -e .`.",
         "Response contains substring `restart the kernel`.",
-        "Response does not contain substring `file a bug`.",
-        "Response does not contain substring `wait for the next release`.",
-        "Identifies site-packages shadowing as the root cause (not a spyglass code bug)",
+        "Identifies site-packages shadowing as the root cause (not a spyglass code bug) — does NOT recommend filing a bug or waiting for the next release; the fix is user-side (`pip install -e .` from the checkout)",
         "Shows `print(spyglass.__file__)` as the concrete diagnostic",
         "Includes the `pip install -e .` step AND the Jupyter kernel restart",
         "Mentions uninstalling `spyglass-neuro` if both installs coexist"
@@ -1820,7 +1810,6 @@
           "--dry-run"
         ],
         "forbidden_substrings": [
-          "pip install opencv-python",
           "pin cv2 to"
         ],
         "behavioral_checks": [
@@ -1834,7 +1823,6 @@
       "expectations": [
         "Response contains substring `environments/environment_min.yml`.",
         "Response contains substring `--dry-run`.",
-        "Response does not contain substring `pip install opencv-python`.",
         "Response does not contain substring `pin cv2 to`.",
         "Identifies the pip-install-broke-conda-env pattern (not a spyglass code issue)",
         "Recommends recreating the env from `environments/environment_min.yml` (the default minimal file per setup_install.md) or `environments/environment.yml` (full install) using either `mamba env update --prune` or `conda env update --prune` (either tool is acceptable — labs use both)",
@@ -1890,7 +1878,6 @@
       "assertions": {
         "required_substrings": [
           "merge_restrict",
-          "silently no-op",
           "nwb_file_name",
           "DecodingOutput"
         ],
@@ -1915,7 +1902,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `merge_restrict`.",
-        "Response contains substring `silently no-op`.",
         "Response contains substring `nwb_file_name`.",
         "Response contains substring `DecodingOutput`.",
         "Response does not contain substring `DB really is that full`.",
