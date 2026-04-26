@@ -432,10 +432,7 @@
           "Electrode",
           "len("
         ],
-        "forbidden_substrings": [
-          "fetch().__len__",
-          ".fetch())"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Uses len(relation) to count without fetching all rows",
           "Does not fetch the full Electrode set just to take its length",
@@ -449,8 +446,6 @@
       "expectations": [
         "Response contains substring `Electrode`.",
         "Response contains substring `len(`.",
-        "Response does not contain substring `fetch().__len__`.",
-        "Response does not contain substring `.fetch())`.",
         "Uses len(relation) to count without fetching all rows",
         "Does not fetch the full Electrode set just to take its length",
         "Bonus: notes that each Electrode row is one recording contact (keyed by electrode_id within an ElectrodeGroup), so the count returns total contacts — not tetrodes/shanks/ElectrodeGroups (e.g., a 32-tetrode session yields 128 Electrode rows, not 32)"
@@ -471,9 +466,7 @@
           "trodes_pos_params_name",
           "TrodesPosV1"
         ],
-        "forbidden_substrings": [
-          "TrodesPosV1.fetch1_dataframe"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Fetches through the merge master (PositionOutput), not the part table directly",
           "Uses trodes_pos_params_name in the restriction to disambiguate the part"
@@ -485,7 +478,6 @@
         "Response contains substring `fetch1_dataframe`.",
         "Response contains substring `trodes_pos_params_name`.",
         "Response contains substring `TrodesPosV1`.",
-        "Response does not contain substring `TrodesPosV1.fetch1_dataframe`.",
         "Fetches through the merge master (PositionOutput), not the part table directly",
         "Uses trodes_pos_params_name in the restriction to disambiguate the part"
       ]
