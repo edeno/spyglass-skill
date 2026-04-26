@@ -1529,7 +1529,7 @@
           "dj.config['stores']",
           "SPYGLASS_BASE_DIR",
           "SpyglassConfig",
-          "stores['raw']",
+          "['stores']['raw']",
           "save_dj_config"
         ],
         "forbidden_substrings": [
@@ -1543,7 +1543,7 @@
           "Does not recommend remounting the share at the same path on both machines as the primary fix"
         ],
         "required_substrings_exempt": [
-          "stores['raw']"
+          "['stores']['raw']"
         ]
       },
       "files": [],
@@ -1551,7 +1551,7 @@
         "Response contains substring `dj.config['stores']`.",
         "Response contains substring `SPYGLASS_BASE_DIR`.",
         "Response contains substring `SpyglassConfig`.",
-        "Response contains substring `stores['raw']`.",
+        "Response contains substring `['stores']['raw']`.",
         "Response contains substring `save_dj_config`.",
         "Response does not contain substring `SPYGLASS_BASE_DIR is all you need`.",
         "Confirms what the resolved `dj.config['stores']['raw']['location']` actually is on the failing (HPC) machine — does NOT assume the env var alone fixed it; runs the assertion that compares stores.raw.location's prefix against `SPYGLASS_BASE_DIR`",
@@ -1782,7 +1782,7 @@
         "required_substrings": [
           "spyglass.__file__",
           "pip install -e .",
-          "restart the kernel"
+          "Jupyter kernel"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -1796,7 +1796,7 @@
       "expectations": [
         "Response contains substring `spyglass.__file__`.",
         "Response contains substring `pip install -e .`.",
-        "Response contains substring `restart the kernel`.",
+        "Response contains substring `Jupyter kernel`.",
         "Identifies site-packages shadowing as the root cause (not a spyglass code bug) — does NOT recommend filing a bug or waiting for the next release; the fix is user-side (`pip install -e .` from the checkout)",
         "Shows `print(spyglass.__file__)` as the concrete diagnostic",
         "Includes the `pip install -e .` step AND the Jupyter kernel restart",
