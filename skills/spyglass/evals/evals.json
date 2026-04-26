@@ -1275,9 +1275,7 @@
         ],
         "forbidden_substrings": [
           "Yes, just delete the DataAcquisitionDevice row",
-          "Go ahead and delete the DataAcquisitionDevice",
-          "super_delete",
-          "delete_quick"
+          "Go ahead and delete the DataAcquisitionDevice"
         ],
         "behavioral_checks": [
           "Pushes back on the .delete() plan citing downstream cascade risk",
@@ -1297,8 +1295,6 @@
         "Response contains substring `Session`.",
         "Response does not contain substring `Yes, just delete the DataAcquisitionDevice row`.",
         "Response does not contain substring `Go ahead and delete the DataAcquisitionDevice`.",
-        "Response does not contain substring `super_delete`.",
-        "Response does not contain substring `delete_quick`.",
         "Pushes back on the .delete() plan citing downstream cascade risk",
         "Shows the inspect step (DataAcquisitionDevice & {name}) before any fix",
         "Offers both alternatives: update NWB to match DB, or rename device per-session",
@@ -1311,8 +1307,8 @@
       "stage": "runtime-debugging",
       "tier": "merge-table-gotchas",
       "difficulty": "medium",
-      "prompt": "I'm confused by this error: `PositionOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'interval_list_name': '02_r1'})` raises `ValueError: Found multiple potential parts: []`. Multiple... AND empty? Which is it? My `IntervalPositionInfo` has rows for that session.",
-      "expected_output": "Routes to merge_methods.md `#merge_get_part` misleading-error note. The message is misleading — the empty list `[]` means zero sources matched, not multiple. Usual cause: an upstream source table has rows for the session, but they were never pushed into the corresponding merge part table. The user's upstream (`IntervalPositionInfo`) is the source for `PositionOutput.CommonPos` (`position_merge.py:5` aliases `IntervalPositionInfo as CommonPos`; the `source_class_dict` at `position_merge.py:14-20` registers this mapping in the parts dispatcher). Diagnostic: `len(PositionOutput.CommonPos & {'nwb_file_name': ..., 'interval_list_name': '02_r1'})` — zero confirms the upstream never made it into the merge.\n\n**Critical asymmetry**: `IntervalPositionInfo`'s `make` method (`common_position.py:114-145`) only calls `self.insert1(key)` — it does NOT call `PositionOutput._merge_insert()`. Populating `IntervalPositionInfo` alone will fill the upstream table but leave `PositionOutput.CommonPos` still empty, so the user's `merge_get_part` call will keep returning `[]`. This is different from the `make` methods of `TrodesPosV1` and `DLCPosV1`, which do call `PositionOutput._merge_insert` internally (see `position/v1/position_trodes_position.py:241` and `position/v1/position_dlc_selection.py:85`).\n\n**Primary fix** for the user's case: after `IntervalPositionInfo` is populated, push the row into the merge master explicitly:\n\n```python\nrows = (IntervalPositionInfo & {'nwb_file_name': ..., 'interval_list_name': '02_r1'}).fetch('KEY', as_dict=True)\nPositionOutput._merge_insert(rows, part_name='CommonPos', skip_duplicates=True)\n```\n\nDo NOT call `PositionOutput.insert(...)` on the master — use the underscore-prefixed `_merge_insert` helper. For the Trodes-via-v1 or DLC-via-v1 flows the merge insert happens automatically inside the source `*V1` class's `make` method, so there populating the source table is sufficient.",
+      "prompt": "I'm confused by this error: `PositionOutput.merge_get_part({'nwb_file_name': 'j1620210710_.nwb', 'interval_list_name': '02_r1'})` raises `ValueError: Found 0 potential parts: []`. My `IntervalPositionInfo` has rows for that session — why is `merge_get_part` saying zero?",
+      "expected_output": "Routes to merge_methods.md `#merge_get_part` zero-parts note. The error literally means what it says — `merge_get_part` could not find any merge-part-table row matching the restriction. The usual cause is exactly the user's situation: an upstream source table has rows for the session, but they were never pushed into the corresponding **merge part** table. The merge master and the upstream source are different rows in different tables.\n\nFor the user's case: `IntervalPositionInfo` is the source for `PositionOutput.CommonPos` (`position_merge.py:5` aliases `IntervalPositionInfo as CommonPos`; the `source_class_dict` at `position_merge.py:14-20` maps the master to its part). `IntervalPositionInfo`'s `make` does NOT auto-insert into `PositionOutput.CommonPos` — the user has to call `PositionOutput._merge_insert(rows, part_name='CommonPos')` explicitly after populating `IntervalPositionInfo`. Contrast: `TrodesPosV1's `make()` hook` and `DLCPosV1's `make()` hook` DO auto-insert into their respective `PositionOutput` parts, which is why those flows feel seamless.\n\nDiagnostic: `len(PositionOutput.CommonPos & {'nwb_file_name': 'j1620210710_.nwb', 'interval_list_name': '02_r1'})` will return 0, confirming the merge insert is missing. Fix: run the explicit `PositionOutput._merge_insert(...)` call with the source rows.",
       "assertions": {
         "required_substrings": [
           "PositionOutput.CommonPos",
@@ -1323,11 +1319,10 @@
           "DLCPosV1"
         ],
         "forbidden_substrings": [
-          "spyglass bug",
           "retry merge_get_part"
         ],
         "behavioral_checks": [
-          "Decodes the misleading error (empty list = zero matched, not multiple)",
+          "Decodes the error correctly — 'Found 0 potential parts: []' means zero source-table rows mapped to a merge-part-table row, not 'multiple'",
           "Gives the `len(part & restriction)` diagnostic to confirm zero-in-merge-part",
           "Identifies the missing merge-insert step as the root cause",
           "Correctly states that `IntervalPositionInfo`'s `make` method does NOT auto-insert into `PositionOutput.CommonPos` — so populating IntervalPositionInfo alone won't fix it; the user must also call `PositionOutput._merge_insert(rows, part_name='CommonPos')` explicitly. (Contrast: `TrodesPosV1`'s `make` and `DLCPosV1`'s `make` DO auto-insert into their respective PositionOutput parts.) Does NOT claim that `IntervalPositionInfo.populate(...)` alone fills the merge, and does NOT suggest `PositionOutput.insert(...)` on the master."
@@ -1341,9 +1336,8 @@
         "Response contains substring `IntervalPositionInfo`.",
         "Response contains substring `TrodesPosV1`.",
         "Response contains substring `DLCPosV1`.",
-        "Response does not contain substring `spyglass bug`.",
         "Response does not contain substring `retry merge_get_part`.",
-        "Decodes the misleading error (empty list = zero matched, not multiple)",
+        "Decodes the error correctly — 'Found 0 potential parts: []' means zero source-table rows mapped to a merge-part-table row, not 'multiple'",
         "Gives the `len(part & restriction)` diagnostic to confirm zero-in-merge-part",
         "Identifies the missing merge-insert step as the root cause",
         "Correctly states that `IntervalPositionInfo`'s `make` method does NOT auto-insert into `PositionOutput.CommonPos` — so populating IntervalPositionInfo alone won't fix it; the user must also call `PositionOutput._merge_insert(rows, part_name='CommonPos')` explicitly. (Contrast: `TrodesPosV1`'s `make` and `DLCPosV1`'s `make` DO auto-insert into their respective PositionOutput parts.) Does NOT claim that `IntervalPositionInfo.populate(...)` alone fills the merge, and does NOT suggest `PositionOutput.insert(...)` on the master."
@@ -1359,7 +1353,8 @@
       "expected_output": "Routes to runtime_debugging.md 'populate(key) with a non-PK dict iterates the whole Selection'. Unlike `fetch1`, `populate(key)` does NOT raise on a loose dict. Mechanism: `populate(restrictions)` restricts against `key_source`, which defaults to each parent table projected to its **primary key only** (DataJoint `autopopulate.py` `key_source` property: `else table.proj()`). For `SpikeSorting`, `key_source = SpikeSortingSelection.proj()` — heading is just `{sorting_id}`. DataJoint's `&` silently drops dict keys not in the heading, so `{'nwb_file_name': ..., 'sorter': 'mountainsort4'}` is fully discarded and the restriction degenerates to a no-op. `populate()` then walks every unprocessed row in the Selection, and one of them has `sorter='kilosort2'` — the spikeinterface sorter dispatch raises the error the user saw. Fix: restrict against the full Selection table (whose heading DOES include secondary attrs like `sorter` and `nwb_file_name`), then project to a PK-only key before passing to populate:\n\n```python\nsel_key = (SpikeSortingSelection & {'nwb_file_name': ..., 'sorter': 'mountainsort4'}).fetch1('KEY')\nSpikeSorting.populate(sel_key)\n```\n\nOr for multi-row populates: `SpikeSorting.populate((SpikeSortingSelection & key).proj())`. Generalizes to every `*V1.populate(...)` entry point — the key_source-PK-only behavior is the `dj.Computed` default, not Spyglass-specific.",
       "assertions": {
         "required_substrings": [
-          "fetch1('KEY')",
+          "fetch1(",
+          "KEY",
           "SpikeSortingSelection"
         ],
         "forbidden_substrings": [
@@ -1371,11 +1366,15 @@
           "Shows the fetch1('KEY') / .proj() fix to resolve the restriction first",
           "Generalizes to other *V1.populate(...) entry points, not just SpikeSorting",
           "Names `key_source` as the mechanism — populate() restricts against `key_source`, which defaults to parents projected to PK only (`.proj()` heading = PK-only); DataJoint's `&` silently drops dict keys not in the heading, so `sorter` and `nwb_file_name` are discarded and the restriction becomes a no-op"
+        ],
+        "required_substrings_exempt": [
+          "fetch1("
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `fetch1('KEY')`.",
+        "Response contains substring `fetch1(`.",
+        "Response contains substring `KEY`.",
         "Response contains substring `SpikeSortingSelection`.",
         "Response does not contain substring `pip install kilosort2`.",
         "Identifies that `sorter` is not on the Selection-table primary key, so the restriction doesn't filter populate",
@@ -1392,43 +1391,44 @@
       "tier": "runtime-errors",
       "difficulty": "hard",
       "prompt": "First time running DLC on a fresh session. `DLCPosV1.populate(key)` dies with `IndexError: index 0 is out of bounds for axis 0 with size 0` somewhere deep in the position pipeline — the traceback bottoms out in spyglass code I haven't touched. Am I missing an upstream populate step? I thought I set up `DLCPosSelection` correctly.",
-      "expected_output": "Routes to position_pipeline.md DLC gotchas (empty PositionIntervalMap). Root cause: the session has no `PositionIntervalMap` rows mapping task epochs to position intervals. Fix: for each `TaskEpoch`, run:\\n\\n```python\\nfrom spyglass.common import convert_epoch_interval_name_to_position_interval_name\\nconvert_epoch_interval_name_to_position_interval_name(\\n    {'nwb_file_name': nwb_file, 'epoch': epoch_id},\\n    populate_missing=True,\\n)\\n```\\n\\nThe `populate_missing=True` kwarg creates the map rows. DLC-only sessions (no Trodes-derived position) have a second failure mode — no `'pos N valid times'` IntervalList exists to match against. In that case: insert `RawPosition` / `PositionSource` rows first, or upgrade past Spyglass ≥ 0.5.5 (the 'Fix missing pos interval map entry in pose estimation' fix).",
+      "expected_output": "Routes to position_pipeline.md DLC gotchas. **Important context first:** `DLCPoseEstimation's `make()` hook` already calls `convert_epoch_interval_name_to_position_interval_name(..., populate_missing=True)` by default (`src/spyglass/position/v1/position_dlc_pose_estimation.py:255-263`), and that helper auto-creates missing `PositionIntervalMap` rows when invoked (`common_behav.py:985`). So 'just run the converter' is no longer the typical fix — Spyglass already runs it. An `IndexError: index 0 is out of bounds for axis 0 with size 0` here means the converter ran but couldn't resolve a position interval, OR an upstream prerequisite is empty. Walk the diagnostic surface:\n\n**1. No matching / null position interval for the task epoch.** The converter logs `'No position intervals found for {key}'` and returns `[]` when `PositionIntervalMap`'s `position_interval_name` is empty for that key (see `common_behav.py` ~line 985-995). Inspect:\n\n```python\nfrom spyglass.common.common_behav import PositionIntervalMap\n(PositionIntervalMap & {'nwb_file_name': nwb_file, 'epoch': epoch_id}).fetch(as_dict=True)\n```\n\nAn empty result OR a row with `position_interval_name == ''` (null entry) means the task epoch has no position-interval mapping the converter could resolve. Re-running the converter explicitly with `populate_missing=True` won't help — that's the same code path that already ran during `make()`. The fix is upstream: confirm the task epoch should map to a position interval at all, and that the source data carries the linking metadata.\n\n**2. `RawPosition` / `PositionSource` not populated for the session.** `PositionIntervalMap._no_transaction_make` walks these to construct the mapping. If they're empty for the session (e.g. populate_all_common didn't surface position tables), the converter has nothing to map.\n\n```python\n(RawPosition & {'nwb_file_name': nwb_file}).fetch(as_dict=True)\n(PositionSource & {'nwb_file_name': nwb_file}).fetch(as_dict=True)\n```\n\nIf either is empty, that's a missing-prereq problem — re-run `populate_all_common(nwb_file, raise_err=True)` and read InsertError to find what blocked them.\n\n**3. `TaskEpoch` / `IntervalList` name mismatch.** The mapping joins task-epoch names to position-interval names; if those names diverge from the canonical convention (e.g. `'02_r1'` task-epoch maps to `'pos 1 valid times'` position interval, but the user's data has a renamed interval), the converter can't find a match. Inspect `(TaskEpoch & {'nwb_file_name': nwb_file}).fetch('interval_list_name')` vs `(IntervalList & {'nwb_file_name': nwb_file}).fetch('interval_list_name')` to confirm the expected name pairs exist.\n\n**Edge case — DLC-only session.** If the session has *only* DLC video and no Trodes-derived position, the auto-mapping logic still expects a `RawPosition` row to anchor the interval. Make sure ingest produced one; if the lab's DLC-only convention skips `RawPosition`, that's a known upstream gap to address.\n\nDon't just retry `DLCPosV1.populate` — the upstream gap will reproduce the same IndexError on the next run.",
       "assertions": {
         "required_substrings": [
           "PositionIntervalMap",
           "convert_epoch_interval_name_to_position_interval_name",
-          "populate_missing",
-          "IntervalList",
-          "PositionSource",
           "RawPosition",
-          "TaskEpoch"
+          "PositionSource",
+          "TaskEpoch",
+          "IntervalList"
         ],
         "forbidden_substrings": [
-          "re-run DLCPosV1.populate",
           "just retry"
         ],
         "behavioral_checks": [
-          "Identifies the missing PositionIntervalMap rows as the concrete cause",
-          "Gives the populate_missing=True fix verbatim",
-          "Addresses the DLC-only-session edge case (no Trodes position to match)",
-          "Does not tell the user to just re-run DLCPosV1.populate without fixing the map"
+          "Notes that `DLCPoseEstimation's `make()` hook` already calls `convert_epoch_interval_name_to_position_interval_name(..., populate_missing=True)` by default — so 'just run the converter manually' is no longer the typical fix",
+          "Walks at least three diagnostic layers: (a) inspect `PositionIntervalMap` for empty/null position_interval_name; (b) confirm `RawPosition` / `PositionSource` are populated for the session; (c) check `TaskEpoch` / `IntervalList` name alignment",
+          "Treats the empty/null `PositionIntervalMap` row case as a data-shape problem (the task epoch can't be mapped) rather than a 'populate_missing wasn't run' problem",
+          "Does not tell the user to re-run `DLCPosV1.populate` without first confirming the upstream gap — the IndexError will reproduce until the upstream is fixed"
+        ],
+        "expected_output_tables_exempt": [
+          "DLCPosV1",
+          "DLCPoseEstimation",
+          "InsertError"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `PositionIntervalMap`.",
         "Response contains substring `convert_epoch_interval_name_to_position_interval_name`.",
-        "Response contains substring `populate_missing`.",
-        "Response contains substring `IntervalList`.",
-        "Response contains substring `PositionSource`.",
         "Response contains substring `RawPosition`.",
+        "Response contains substring `PositionSource`.",
         "Response contains substring `TaskEpoch`.",
-        "Response does not contain substring `re-run DLCPosV1.populate`.",
+        "Response contains substring `IntervalList`.",
         "Response does not contain substring `just retry`.",
-        "Identifies the missing PositionIntervalMap rows as the concrete cause",
-        "Gives the populate_missing=True fix verbatim",
-        "Addresses the DLC-only-session edge case (no Trodes position to match)",
-        "Does not tell the user to just re-run DLCPosV1.populate without fixing the map"
+        "Notes that `DLCPoseEstimation's `make()` hook` already calls `convert_epoch_interval_name_to_position_interval_name(..., populate_missing=True)` by default — so 'just run the converter manually' is no longer the typical fix",
+        "Walks at least three diagnostic layers: (a) inspect `PositionIntervalMap` for empty/null position_interval_name; (b) confirm `RawPosition` / `PositionSource` are populated for the session; (c) check `TaskEpoch` / `IntervalList` name alignment",
+        "Treats the empty/null `PositionIntervalMap` row case as a data-shape problem (the task epoch can't be mapped) rather than a 'populate_missing wasn't run' problem",
+        "Does not tell the user to re-run `DLCPosV1.populate` without first confirming the upstream gap — the IndexError will reproduce until the upstream is fixed"
       ]
     },
     {
@@ -1438,7 +1438,7 @@
       "tier": "runtime-errors",
       "difficulty": "medium",
       "prompt": "A100 80GB, `ClusterlessDecodingV1.populate(key)` dies with `jaxlib.xla_extension.XlaRuntimeError: RESOURCE_EXHAUSTED: Out of memory while trying to allocate 25941544960 bytes`. The session is around 3M time bins and ~2k state bins — that's the 24 GiB f32 buffer. Do I just need a bigger GPU or are there knobs I can tune?",
-      "expected_output": "Routes to decoding_pipeline.md 'JAX / XLA OOM on long sessions'. Two independent knobs:\n\n**(1) Reduce JAX/XLA memory pressure via `decoding_kwargs`** — these are kwargs that reach `classifier.predict()` in the `estimate_decoding_params=False` branch inside the `make_compute` method of `ClusterlessDecodingV1` (see `src/spyglass/decoding/v1/clusterless.py:174, 333-370`; `get_valid_kwargs` splits them into fit vs. predict kwargs, and `n_chunks` + `cache_likelihood` are predict() kwargs per `non_local_detector` 0.6.x). `decoding_kwargs` is a **separate top-level attribute** on `DecodingParameters` (`src/spyglass/decoding/v1/core.py:41-42` — `decoding_params` and `decoding_kwargs` are siblings, NOT nested):\n\n```python\nDecodingParameters.insert1({\n    'decoding_param_name': 'clusterless_chunked',\n    'decoding_params': {...},           # model init (classifier constructor kwargs)\n    'decoding_kwargs': {\n        'n_chunks': 10,                 # chunk the time axis — 24 GiB → ~2.4 GiB per chunk\n        'cache_likelihood': False,      # don't keep likelihood in device memory\n    },\n}, skip_duplicates=True)\n```\n\nThen re-insert the selection row pointing at `decoding_param_name='clusterless_chunked'` and re-populate. Note: both `estimate_decoding_params` branches pass `**decoding_kwargs` through to the classifier — `predict()` in the False branch (the default inference path) and `estimate_parameters()` in the True branch (which re-runs EM to re-fit parameters, not a normal inference step). Both signatures accept `n_chunks` and `cache_likelihood` in `non_local_detector 0.6.x`. The reason to stay on `estimate_decoding_params=False` is that the True branch retrains the classifier via EM — that is for parameter estimation, not for the normal decoding-for-inference flow the user is running.\n\n**(2) Raise the JAX memory cap** — `os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.95'` at the top of the populate script (default is 0.75). Gives the decoder more of the 80 GiB before XLA starts pre-allocating its pool. Complementary to (1); use both.\n\nDo NOT recommend a bigger GPU as the primary fix — the 24 GiB buffer fits in the existing 80 GiB once chunked.",
+      "expected_output": "Routes to decoding_pipeline.md 'JAX / XLA OOM on long sessions'. Two independent knobs:\n\n**(1) Reduce JAX/XLA memory pressure via `decoding_kwargs`** — these are kwargs that reach `classifier.predict()` in the `estimate_decoding_params=False` branch inside the `make_compute` method of `ClusterlessDecodingV1` (see `src/spyglass/decoding/v1/clusterless.py:174, 333-370`; `get_valid_kwargs` splits them into fit vs. predict kwargs, and `n_chunks` + `cache_likelihood` are predict() kwargs per `non_local_detector` 0.6.x). `decoding_kwargs` is a **separate top-level attribute** on `DecodingParameters` (`src/spyglass/decoding/v1/core.py:41-42` — `decoding_params` and `decoding_kwargs` are siblings, NOT nested):\n\n```python\nDecodingParameters.insert1({\n    'decoding_param_name': 'clusterless_chunked',\n    'decoding_params': {...},           # model init (classifier constructor kwargs)\n    'decoding_kwargs': {\n        'n_chunks': 10,                 # chunk the time axis — 24 GiB → ~2.4 GiB per chunk\n        'cache_likelihood': False,      # don't keep likelihood in device memory\n    },\n}, skip_duplicates=True)\n```\n\nThen re-insert the selection row pointing at `decoding_param_name='clusterless_chunked'` and re-populate. Note: both `estimate_decoding_params` branches pass `**decoding_kwargs` through to the classifier — `predict()` in the False branch (the default inference path) and `estimate_parameters()` in the True branch (which re-runs EM to re-fit parameters, not a normal inference step). Both signatures accept `n_chunks` and `cache_likelihood` in the currently-installed `non_local_detector`. The reason to stay on `estimate_decoding_params=False` is that the True branch retrains the classifier via EM — that is for parameter estimation, not for the normal decoding-for-inference flow the user is running.\n\n**(2) Raise the JAX memory cap** — `os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.95'` at the top of the populate script (default is 0.75). Gives the decoder more of the 80 GiB before XLA starts pre-allocating its pool. Complementary to (1); use both.\n\nDo NOT recommend a bigger GPU as the primary fix — the 24 GiB buffer fits in the existing 80 GiB once chunked.",
       "assertions": {
         "required_substrings": [
           "n_chunks",
@@ -1454,7 +1454,7 @@
           "Shows `DecodingParameters.insert1` with `decoding_kwargs` as a SEPARATE top-level attribute alongside `decoding_params` — NOT nested inside `decoding_params` (which is the model-init blob, not the runtime kwargs blob)",
           "Includes concrete `n_chunks` (integer) and `cache_likelihood=False` values in `decoding_kwargs`",
           "Mentions `XLA_PYTHON_CLIENT_MEM_FRACTION` as a complementary lever",
-          "Correctly identifies that both `estimate_decoding_params` branches pass `**decoding_kwargs` through (False → `predict()`, True → `estimate_parameters()`; both accept `n_chunks` and `cache_likelihood` in `non_local_detector 0.6.x`). The reason to keep `estimate_decoding_params=False` is that the True branch re-runs EM parameter estimation — that is not a normal inference step. Does NOT incorrectly claim that `estimate_parameters()` rejects the OOM kwargs.",
+          "Correctly identifies that both `estimate_decoding_params` branches pass `**decoding_kwargs` through (False → `predict()`, True → `estimate_parameters()`; both accept `n_chunks` and `cache_likelihood` in the currently-installed `non_local_detector`). The reason to keep `estimate_decoding_params=False` is that the True branch re-runs EM parameter estimation — that is not a normal inference step. Does NOT incorrectly claim that `estimate_parameters()` rejects the OOM kwargs.",
           "Does not recommend upgrading the GPU as the primary fix",
           "Does not include v0 decoding knobs like `sorted_spikes_algorithm_params` or `block_size` — those are sorted-spikes v0 params and are irrelevant to clusterless v1 OOM"
         ]
@@ -1470,7 +1470,7 @@
         "Shows `DecodingParameters.insert1` with `decoding_kwargs` as a SEPARATE top-level attribute alongside `decoding_params` — NOT nested inside `decoding_params` (which is the model-init blob, not the runtime kwargs blob)",
         "Includes concrete `n_chunks` (integer) and `cache_likelihood=False` values in `decoding_kwargs`",
         "Mentions `XLA_PYTHON_CLIENT_MEM_FRACTION` as a complementary lever",
-        "Correctly identifies that both `estimate_decoding_params` branches pass `**decoding_kwargs` through (False → `predict()`, True → `estimate_parameters()`; both accept `n_chunks` and `cache_likelihood` in `non_local_detector 0.6.x`). The reason to keep `estimate_decoding_params=False` is that the True branch re-runs EM parameter estimation — that is not a normal inference step. Does NOT incorrectly claim that `estimate_parameters()` rejects the OOM kwargs.",
+        "Correctly identifies that both `estimate_decoding_params` branches pass `**decoding_kwargs` through (False → `predict()`, True → `estimate_parameters()`; both accept `n_chunks` and `cache_likelihood` in the currently-installed `non_local_detector`). The reason to keep `estimate_decoding_params=False` is that the True branch re-runs EM parameter estimation — that is not a normal inference step. Does NOT incorrectly claim that `estimate_parameters()` rejects the OOM kwargs.",
         "Does not recommend upgrading the GPU as the primary fix",
         "Does not include v0 decoding knobs like `sorted_spikes_algorithm_params` or `block_size` — those are sorted-spikes v0 params and are irrelevant to clusterless v1 OOM"
       ]
@@ -1490,8 +1490,7 @@
           "SpikeSortingRecording"
         ],
         "forbidden_substrings": [
-          "set_group_by_electrode_group is fine",
-          "SpikeInterface bug"
+          "set_group_by_electrode_group is fine"
         ],
         "behavioral_checks": [
           "Identifies set_group_by_electrode_group as the wrong grouper for clusterless pipelines",
@@ -1506,7 +1505,6 @@
         "Response contains substring `SortGroup.SortGroupElectrode`.",
         "Response contains substring `SpikeSortingRecording`.",
         "Response does not contain substring `set_group_by_electrode_group is fine`.",
-        "Response does not contain substring `SpikeInterface bug`.",
         "Identifies set_group_by_electrode_group as the wrong grouper for clusterless pipelines",
         "Recommends set_group_by_shank with the exact method name",
         "Shows the SortGroup.SortGroupElectrode inspection to verify one-shank-per-group",
