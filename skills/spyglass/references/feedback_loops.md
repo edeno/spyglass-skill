@@ -144,3 +144,50 @@ Identity claims about Spyglass are well-handled by the existing toolchain — `T
 **v0 / v1 method symmetry.** v1 is a partial refactor of v0; helper methods that exist on the v0 version of a table do *not* always have a v1 counterpart, even when the table name is the same. Confirm by reading the v1 class definition before naming a method. Concrete examples: `set_group_by_electrode_group` exists on v0 `SortGroup` (`src/spyglass/spikesorting/v0/spikesorting_recording.py:94`) but **not** on v1 `SortGroup`, which exposes only `set_group_by_shank` (`src/spyglass/spikesorting/v1/recording.py:51`). Similarly, `LFPSelection.set_lfp_electrodes` is v0 (`src/spyglass/common/common_ephys.py`); the v1 equivalent is `LFPElectrodeGroup.create_lfp_electrode_group`, on a different class. Asymmetry shows up most often around helpers that pre-date the v1 split — when in doubt, `grep -rn "def MethodName" src/spyglass/spikesorting/v1/` (or `lfp/v1/`, etc.) before claiming the helper exists.
 
 **Why a separate loop:** the validator and `KNOWN_CLASSES` catch identity errors at gate time. They cannot catch a behavior claim that names real classes and real methods but describes their interaction wrong. The `AttributeError` you'd normally rely on doesn't fire — the call works, just not the way the answer says it does. Source verification is the only check.
+
+### Three graphs, three primitive families
+
+**Decision tree — pick the graph before picking the tool:**
+
+| Question shape | Graph | Where to look |
+| --- | --- | --- |
+| Source class / method / schema dependency (does method Y exist on class X? what FKs does X declare? what's the chain from A to B?) | **Code** | `code_graph.py` |
+| Row existence, merge IDs, user-inserted state, custom-table visibility, or runtime behavior diverging from source | **DB / session** | The user's analysis session (`Table.parents()`, `Table.descendants()`, `&` restrictions) — no source-only tool can answer these |
+| What does method Y *do* inside its body? | (no graph) | Read the source — no tool substitutes |
+| Where is artifact / NWB object on disk? | **Disk** | `settings.py`, `AnalysisNwbfile.create(nwb_file_name)` in the user's session |
+
+`code_graph.py` is **source-only** — every JSON payload stamps `"graph": "code"` and `"authority": "source-only"` at the top level so an agent reading the output can't mistake it for runtime truth. When the source-graph answer disagrees with observed runtime behavior, the DB / session is authoritative.
+
+Spyglass has at least three overlapping graphs. Hallucinations come from confusing one for another, or from not traversing the relevant one fast enough to verify before answering. Match the question shape to its graph before reaching for a tool:
+
+- **Code graph** — what the source declares. Classes, methods, bases, `definition` strings, `->` declarations. Authoritative for "what does the source say?" Source-only; works without a DB connection.
+
+  ```bash
+  python skills/spyglass/scripts/code_graph.py path --to A B   # FK chain A → B (eval 81's merge-hop case)
+  python skills/spyglass/scripts/code_graph.py path --up X     # full upstream dep-trace
+  python skills/spyglass/scripts/code_graph.py path --down X   # what breaks if I modify X? (counterfactual cascade)
+  python skills/spyglass/scripts/code_graph.py describe X      # node view: tier, bases, structured PK / FK / renames, methods (incl. mixin-inherited)
+  python skills/spyglass/scripts/code_graph.py find-method Y   # which class owns method Y?
+  ```
+
+  Every output carries `file:line` plus an `evidence` source-line so the agent has a citation per claim, not a paraphrase. Add `--json` for machine-readable output (each node also carries a stable `record_id` of the form `<file>:<line>:<qualname>`, and a top-level `warnings` block lists any same-qualname collisions resolved by same-package preference). Exit codes: `0` = ok; `2` = usage error; `3` = user-supplied input ambiguous (re-run with `--from-file`/`--to-file`/`--file`); `4` = class/method not in the index; `5` = traversal needed a heuristic to disambiguate a same-qualname collision (only emitted when `--fail-on-heuristic` is passed, for validators that should refuse to guess).
+
+- **DB graph** — what DataJoint actually wired up at import time (`Table.parents()`, `Table.descendants()`, `dj.Diagram`). Authoritative for runtime behavior — the code graph is usually a faithful approximation, but dynamic part registration, runtime FK overrides, aliased-import resolution, and **custom tables defined outside `$SPYGLASS_SRC`** (lab-member analysis repos, institute forks, downstream pip packages) can make them diverge. Requires a DB connection AND that the user has imported the relevant modules in their Python session — DJ only knows about classes that have been imported.
+
+  *Out of scope for this source-only skill — query in the user's analysis session directly. When the agent has DB access, ask the user to import the relevant module first, then call:*
+
+  ```python
+  from spyglass.lfp.v1 import LFPV1   # whatever module defines the class in question
+  LFPV1.parents()                      # list of parent-table qualnames
+  LFPV1.descendants()                  # full downstream cascade
+  ```
+
+- **Disk graph** — where artifacts live on disk (raw NWBs at `$SPYGLASS_BASE_DIR/raw/`, analysis NWBs at `$SPYGLASS_BASE_DIR/analysis/<nwb_file_name>/`, kachery sandboxes, DLC project dirs). Authoritative for "where is the file?" Path conventions live in `settings.py` and `AnalysisNwbfile`.
+
+  *Out of scope for this skill — read `settings.py` directly for path conventions, or call `AnalysisNwbfile.create(nwb_file_name)` in the user's session to get a concrete path. The path-construction logic is small enough that wrapping it in a CLI would just add a layer over the same string formatting.*
+
+For version-asymmetry questions ("is method Y on this class in v0 and v1?"), `code_graph.py` is single-version-aware (it shows whichever class has the unique top-level qualname). For now, run `code_graph.py describe` against each version's class explicitly (e.g. `describe Curation --file <v0 path>` and `describe CurationV1 --file <v1 path>`) and diff the two payloads, or read the source files directly.
+
+For behavior questions ("what does method Y do inside its body?"), read the source — no script substitutes for actually reading the function.
+
+**When the code-graph answer disagrees with observed runtime behavior, the DB graph is authoritative.** Specifically: if `code_graph.py describe MyTable` reports `not_found` but the user knows `MyTable` exists in their schema, the right fallback is "this is a custom table outside `$SPYGLASS_SRC` (lab-member or external-package code) — ask the user to import their analysis module and run `Table.descendants()`." (Rare alternative: the class lives inside `$SPYGLASS_SRC` but under a module layout `_index.py` doesn't walk — flag and have the user verify.) Don't conclude the table doesn't exist.

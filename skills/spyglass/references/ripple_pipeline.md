@@ -1,3 +1,4 @@
+<!-- pipeline-version: v1 -->
 # Ripple Detection Pipeline
 
 Detects sharp-wave ripple events from ripple-band-filtered LFP. No merge table — outputs directly from `RippleTimesV1`.

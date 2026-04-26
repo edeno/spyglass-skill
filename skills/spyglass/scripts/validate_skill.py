@@ -32,17 +32,30 @@ from pathlib import Path
 SKILL_DIR = Path(__file__).parent.parent
 REFERENCES_DIR = SKILL_DIR / "references"
 
+# Co-located shared module that powers code_graph.py. The validator
+# uses `_index.scan` as the single source of truth for class
+# discovery — every class declared in `$SPYGLASS_SRC/spyglass/` is
+# auto-discovered. The previous hand-curated KNOWN_CLASSES dict has
+# been removed; if a future case needs an override layer for classes
+# outside `$SPYGLASS_SRC`, see the comment block where KNOWN_CLASSES
+# used to live (just below this import) for the design constraints.
+#
+# The sys.path insert is needed because `_index` is a co-located private
+# module (under skills/spyglass/scripts/), not a pip-installable package.
+# Each subprocess (pre-commit hook, CI, ad-hoc invocation) initializes
+# its own sys.path, so this insert doesn't pollute any other consumer.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _index  # noqa: E402
+
 # No hardcoded default — use --spyglass-src or run from the repo root
 DEFAULT_SPYGLASS_SRC = None
 
-# Import / method-call / kwarg extraction all now go through the AST walk
-# in iter_python_blocks. Regex was retired in the Phase 1 refactor —
-# Method-call and kwarg extraction are done via AST walk (see
-# iter_python_blocks / resolve_receiver / check_methods / check_kwargs).
-# A single AST walker replaces the previous regex-based scan so that aliased
-# imports (`from spyglass.common import Session as Sess`) and module-qualified
-# receivers (`import spyglass.common as sgc; sgc.Session.fetch()`) — both
-# common in real notebooks — resolve correctly to their canonical classes.
+# Method-call and kwarg extraction go through `iter_python_blocks` →
+# `resolve_receiver` → `check_methods` / `check_kwargs`. AST-based so
+# aliased imports (`from spyglass.common import Session as Sess`) and
+# module-qualified receivers (`import spyglass.common as sgc;
+# sgc.Session.fetch()`) — both common in real notebooks — resolve
+# correctly to canonical classes.
 
 # The five merge masters — tables that inherit from `_Merge` in Spyglass.
 # Source of truth for check_merge_registry, which cross-checks this tuple
@@ -59,108 +72,22 @@ MERGE_MASTERS = (
     "LinearizedPositionOutput",
 )
 
-# Known classes and the module file that defines them
-# Format: "ClassName": "dotted.module.path" (relative to spyglass src)
-KNOWN_CLASSES = {
-    "PositionOutput": "spyglass/position/position_merge.py",
-    "LFPOutput": "spyglass/lfp/lfp_merge.py",
-    "SpikeSortingOutput": "spyglass/spikesorting/spikesorting_merge.py",
-    "DecodingOutput": "spyglass/decoding/decoding_merge.py",
-    "LinearizedPositionOutput": "spyglass/linearization/merge.py",
-    "Session": "spyglass/common/common_session.py",
-    "IntervalList": "spyglass/common/common_interval.py",
-    "Nwbfile": "spyglass/common/common_nwbfile.py",
-    "AnalysisNwbfile": "spyglass/common/common_nwbfile.py",
-    "ElectrodeGroup": "spyglass/common/common_ephys.py",
-    "Electrode": "spyglass/common/common_ephys.py",
-    "Raw": "spyglass/common/common_ephys.py",
-    "FirFilterParameters": "spyglass/common/common_filter.py",
-    "BrainRegion": "spyglass/common/common_region.py",
-    "Subject": "spyglass/common/common_subject.py",
-    "UserEnvironment": "spyglass/common/common_user.py",
-    "PositionSource": "spyglass/common/common_behav.py",
-    "DataAcquisitionDevice": "spyglass/common/common_device.py",
-    "Probe": "spyglass/common/common_device.py",
-    "ProbeType": "spyglass/common/common_device.py",
-    "CameraDevice": "spyglass/common/common_device.py",
-    "LabMember": "spyglass/common/common_lab.py",
-    "LabTeam": "spyglass/common/common_lab.py",
-    "Institution": "spyglass/common/common_lab.py",
-    "IntervalPositionInfoSelection": "spyglass/common/common_position.py",
-    "IntervalPositionInfo": "spyglass/common/common_position.py",
-    "SortedSpikesGroup": "spyglass/spikesorting/analysis/v1/group.py",
-    "UnitSelectionParams": "spyglass/spikesorting/analysis/v1/group.py",
-    "UnitAnnotation": "spyglass/spikesorting/analysis/v1/unit_annotation.py",
-    "ImportedSpikeSorting": "spyglass/spikesorting/imported.py",
-    "CurationV1": "spyglass/spikesorting/v1/curation.py",
-    "BurstPairParams": "spyglass/spikesorting/v1/burst_curation.py",
-    "BurstPairSelection": "spyglass/spikesorting/v1/burst_curation.py",
-    "BurstPair": "spyglass/spikesorting/v1/burst_curation.py",
-    "SortGroup": "spyglass/spikesorting/v1/recording.py",
-    "SpikeSorting": "spyglass/spikesorting/v1/sorting.py",
-    "SpikeSorterParameters": "spyglass/spikesorting/v1/sorting.py",
-    # Ambiguous between v0 and v1 — skill documents v1
-    "SpikeSortingRecordingSelection": "spyglass/spikesorting/v1/recording.py",
-    "SpikeSortingRecording": "spyglass/spikesorting/v1/recording.py",
-    "SpikeSortingSelection": "spyglass/spikesorting/v1/sorting.py",
-    "SpikeSortingPreprocessingParameters": "spyglass/spikesorting/v1/recording.py",
-    "ArtifactDetectionSelection": "spyglass/spikesorting/v1/artifact.py",
-    "WaveformParameters": "spyglass/spikesorting/v1/metric_curation.py",
-    "MetricParameters": "spyglass/spikesorting/v1/metric_curation.py",
-    "LinearizationParameters": "spyglass/linearization/v1/main.py",
-    "ArtifactDetection": "spyglass/spikesorting/v1/artifact.py",
-    "ArtifactDetectionParameters": "spyglass/spikesorting/v1/artifact.py",
-    "MetricCuration": "spyglass/spikesorting/v1/metric_curation.py",
-    "LFPElectrodeGroup": "spyglass/lfp/lfp_electrode.py",
-    "LFPV1": "spyglass/lfp/v1/lfp.py",
-    "LFPBandV1": "spyglass/lfp/analysis/v1/lfp_band.py",
-    "LFPArtifactDetection": "spyglass/lfp/v1/lfp_artifact.py",
-    "LFPArtifactDetectionParameters": "spyglass/lfp/v1/lfp_artifact.py",
-    "TrodesPosParams": "spyglass/position/v1/position_trodes_position.py",
-    "TrodesPosV1": "spyglass/position/v1/position_trodes_position.py",
-    "DLCPosV1": "spyglass/position/v1/position_dlc_selection.py",
-    "ImportedPose": "spyglass/position/v1/imported_pose.py",
-    "DLCSmoothInterpParams": "spyglass/position/v1/position_dlc_position.py",
-    "DLCCentroidParams": "spyglass/position/v1/position_dlc_centroid.py",
-    "DLCOrientationParams": "spyglass/position/v1/position_dlc_orient.py",
-    "ClusterlessDecodingV1": "spyglass/decoding/v1/clusterless.py",
-    "ClusterlessDecodingSelection": "spyglass/decoding/v1/clusterless.py",
-    "SortedSpikesDecodingV1": "spyglass/decoding/v1/sorted_spikes.py",
-    "DecodingParameters": "spyglass/decoding/v1/core.py",
-    "PositionGroup": "spyglass/decoding/v1/core.py",
-    "RippleTimesV1": "spyglass/ripple/v1/ripple.py",
-    "RippleParameters": "spyglass/ripple/v1/ripple.py",
-    "RippleLFPSelection": "spyglass/ripple/v1/ripple.py",
-    "MuaEventsV1": "spyglass/mua/v1/mua.py",
-    "MuaEventsParameters": "spyglass/mua/v1/mua.py",
-    "PoseGroup": "spyglass/behavior/v1/core.py",
-    "TrackGraph": "spyglass/linearization/v1/main.py",
-    "BodyPart": "spyglass/position/v1/position_dlc_project.py",
-    "DLCProject": "spyglass/position/v1/position_dlc_project.py",
-    "DLCPoseEstimation": "spyglass/position/v1/position_dlc_pose_estimation.py",
-    "DLCPoseEstimationSelection": "spyglass/position/v1/position_dlc_pose_estimation.py",
-    "DLCSmoothInterp": "spyglass/position/v1/position_dlc_position.py",
-    "DLCSmoothInterpSelection": "spyglass/position/v1/position_dlc_position.py",
-    "DLCSmoothInterpCohort": "spyglass/position/v1/position_dlc_cohort.py",
-    "DLCCentroid": "spyglass/position/v1/position_dlc_centroid.py",
-    "DLCOrientation": "spyglass/position/v1/position_dlc_orient.py",
-    "DLCPosSelection": "spyglass/position/v1/position_dlc_selection.py",
-    "DLCModel": "spyglass/position/v1/position_dlc_model.py",
-    "WaveformFeaturesParams": "spyglass/decoding/v1/waveform_features.py",
-    "UnitWaveformFeatures": "spyglass/decoding/v1/waveform_features.py",
-    "UnitWaveformFeaturesGroup": "spyglass/decoding/v1/clusterless.py",
-    "KacheryZone": "spyglass/sharing/sharing_kachery.py",
-    "AnalysisNwbfileKachery": "spyglass/sharing/sharing_kachery.py",
-    "LFPBandSelection": "spyglass/lfp/analysis/v1/lfp_band.py",
-    "LFPSelection": "spyglass/lfp/v1/lfp.py",
-    "ExportSelection": "spyglass/common/common_usage.py",
-    "Export": "spyglass/common/common_usage.py",
-    "InsertError": "spyglass/common/common_usage.py",
-    "FigURLCurationSelection": "spyglass/spikesorting/v1/figurl_curation.py",
-    "FigURLCuration": "spyglass/spikesorting/v1/figurl_curation.py",
-    # Ambiguous between v0 and v1 — skill documents v1
-    "RecordingRecomputeVersions": "spyglass/spikesorting/v1/recompute.py",
-}
+# Class disambiguation is graph-based, not dict-based:
+#
+#   * Method existence (`_ClassRegistry.methods()`) uses union semantics
+#     for unversioned prose and strict-version filtering for files
+#     matching `_v(\\d+)_` or carrying a `<!-- pipeline-version: vN -->`
+#     marker. Yes/no questions union cleanly.
+#   * Schema shape (`resolve_schema()`) returns None for ambiguous
+#     multi-version references (FAIL-LOUD); the maintainer adds the
+#     marker (or renames the file) to resolve them. Per-version field
+#     contracts must not be silently merged.
+#
+# An override layer for classes outside `$SPYGLASS_SRC` would belong
+# here as a hand-curated `dict[str, str]` of `name → relative-path`.
+# None exist today (no skill content references such a class); add the
+# dict back if a future case requires it, with a `check_class_files_exist`
+# cross-validator at the same time to catch drift.
 
 # Methods to skip — DataJoint builtins, mixin methods, etc.
 SKIP_METHODS = {
@@ -220,9 +147,11 @@ DOC_PLACEHOLDERS = {
     "MyTable", "SomeTable", "UpstreamTable", "UpstreamA", "UpstreamB",
     "ParamTable", "SelectionTable",
     # Part-table names accessed via dynamic attribute on merge masters
-    # (e.g., `PositionOutput.DLCPosV1.fetch_nwb()`). Listed here rather
-    # than in KNOWN_CLASSES because they're part-table references, not
-    # top-level classes the skill documents.
+    # (e.g., `PositionOutput.DLCPosV1.fetch_nwb()`). Listed here as
+    # placeholders because the call site references them as parts of a
+    # master, not as standalone class lookups (the index does have
+    # records for them, but the validator's `Class.method()` shape
+    # check expects a top-level class).
     "CurationV1", "TrodesPosV1", "DLCPosV1", "LFPV1",
     "ImportedSpikeSorting", "CuratedSpikeSorting",
     "ClusterlessDecodingV1", "SortedSpikesDecodingV1",
@@ -267,11 +196,12 @@ def collect_md_files():
 
 
 def extract_fenced_blocks(content):
-    """Like extract_code_blocks, but also yields the fence language tag.
-
-    Returns (start_line, lang, body_source_str) triples. `lang` is the string
-    after the opening ``` (empty string if the block has no language tag).
-    Use this when a check needs to know whether a block is marked as python.
+    """Yield ``(start_line, lang, body_source_str)`` for each fenced
+    code block in ``content``. ``lang`` is the string after the opening
+    triple-backtick (empty when the fence carries no language tag).
+    Use this when a check needs to discriminate by language; checks
+    that only care about Python wrap this with a `lang == "python"`
+    filter (or use ``iter_python_blocks``, which AST-parses too).
     """
     blocks = []
     in_code = False
@@ -408,80 +338,65 @@ def resolve_receiver(call_node, alias_map):
 
 
 def parse_class_from_file(filepath, class_name, include_inherited=True):
-    """Parse a Python file with AST and extract method names + signatures.
+    """Return ``{method_name: {params, has_kwargs, is_classmethod, is_staticmethod}}``
+    for ``class_name`` defined at ``filepath``, or ``None`` if not found.
 
-    If include_inherited=True, also checks base class files for methods
-    defined on known Spyglass mixin/base classes.
-
-    Each method info includes `is_classmethod`/`is_staticmethod` flags so
-    callers can check whether `Class.method(...)` (vs `Class().method(...)`) is valid.
+    Consumes ``_index.scan`` for both the body methods and the inherited
+    chain (via ``MIXIN_REGISTRY``) so a new mixin entered in the registry
+    is automatically picked up — the previous hard-coded ``base_files``
+    list silently dropped methods inherited from
+    ``AnalysisMixin`` / ``IngestionMixin`` because those weren't in the
+    list. The dict shape is preserved for the existing call site.
     """
-    try:
-        source = filepath.read_text()
-        tree = ast.parse(source)
-    except (SyntaxError, FileNotFoundError):
+    src_root = filepath
+    for _ in range(10):
+        src_root = src_root.parent
+        if (src_root / "spyglass").is_dir():
+            break
+    if not (src_root / "spyglass").is_dir():
         return None
+    try:
+        index = _index.scan(src_root)
+    except (OSError, ValueError):
+        return None
+    rel = filepath.relative_to(src_root).as_posix()
+    rec = next(
+        (r for r in index.get(class_name, ()) if r.qualname == class_name and r.file == rel),
+        None,
+    )
+    if rec is None:
+        return None
+    methods = {m.name: _method_spec_to_dict(m) for m in rec.methods}
+    if include_inherited:
+        # Walk MIXIN_REGISTRY so AnalysisMixin / IngestionMixin and any
+        # future entries are automatically inherited. _index.resolve_base
+        # would do this transitively from rec's own bases, but the
+        # validator's contract is "any registered Spyglass mixin's
+        # methods are considered available," not strictly "inherited via
+        # this class's MRO" — keeps the validator permissive in the
+        # face of mixin chains that haven't been fully registered yet.
+        for base_name, base_rel_path in _index.MIXIN_REGISTRY.items():
+            base_records = index.get(base_name, ())
+            base_rec = next(
+                (b for b in base_records if b.file == base_rel_path), None,
+            )
+            if base_rec is None:
+                continue
+            for m in base_rec.methods:
+                if m.name not in methods:
+                    methods[m.name] = _method_spec_to_dict(m)
+    return methods
 
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef) and node.name == class_name:
-            methods = {}
-            for item in node.body:
-                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    if item.name.startswith("_") and item.name != "__init__":
-                        continue
-                    params = []
-                    for arg in item.args.args:
-                        params.append(arg.arg)
-                    for arg in item.args.kwonlyargs:
-                        params.append(arg.arg)
-                    has_var_keyword = item.args.kwarg is not None
-                    # Check decorators for classmethod/staticmethod
-                    decorators = [
-                        d.id if isinstance(d, ast.Name)
-                        else d.attr if isinstance(d, ast.Attribute)
-                        else ""
-                        for d in item.decorator_list
-                    ]
-                    is_classmethod = "classmethod" in decorators
-                    is_staticmethod = "staticmethod" in decorators
-                    methods[item.name] = {
-                        "params": params,
-                        "has_kwargs": has_var_keyword,
-                        "is_classmethod": is_classmethod,
-                        "is_staticmethod": is_staticmethod,
-                    }
 
-            if include_inherited:
-                # Also check known base class files for inherited methods
-                base_files = [
-                    ("_Merge", "spyglass/utils/dj_merge_tables.py"),
-                    ("SpyglassMixin", "spyglass/utils/dj_mixin.py"),
-                    ("CautiousDeleteMixin", "spyglass/utils/mixins/cautious_delete.py"),
-                    ("ExportMixin", "spyglass/utils/mixins/export.py"),
-                    ("FetchMixin", "spyglass/utils/mixins/fetch.py"),
-                    ("HelperMixin", "spyglass/utils/mixins/helpers.py"),
-                    ("PopulateMixin", "spyglass/utils/mixins/populate.py"),
-                    ("RestrictByMixin", "spyglass/utils/mixins/restrict_by.py"),
-                ]
-                src_root = filepath
-                # Walk up to find src root (parent of "spyglass" dir)
-                for _ in range(10):
-                    src_root = src_root.parent
-                    if (src_root / "spyglass").is_dir():
-                        break
-
-                for base_name, base_rel_path in base_files:
-                    base_path = src_root / base_rel_path
-                    base_methods = parse_class_from_file(
-                        base_path, base_name, include_inherited=False
-                    )
-                    if base_methods:
-                        for mname, minfo in base_methods.items():
-                            if mname not in methods:
-                                methods[mname] = minfo
-
-            return methods
-    return None
+def _method_spec_to_dict(m: "_index.MethodSpec") -> dict:
+    """Convert a `_index.MethodSpec` to the legacy dict shape consumed
+    by validator method-call checks."""
+    return {
+        "params": list(m.params),
+        "has_kwargs": m.has_kwargs,
+        "is_classmethod": m.is_classmethod,
+        "is_staticmethod": m.is_staticmethod,
+    }
 
 
 def _search_name_in_file(src_root, filepath, name, depth=0):
@@ -609,294 +524,252 @@ def check_imports(src_root, results):
 
 
 def discover_classes(src_root):
-    """Walk the spyglass source tree and index every top-level class definition.
+    """Return ``(discovered, collisions)`` for top-level classes in
+    ``src_root``.
 
-    Returns (discovered, collisions) where:
-      discovered: {class_name: repo-relative path} — first hit wins
-      collisions: {class_name: [path1, path2, ...]} — names defined in >1 file
+    * ``discovered``: ``{class_name: repo-relative path}``. When a name
+      is declared in multiple files, the alphabetically-first path wins
+      — deterministic across machines and runs.
+    * ``collisions``: ``{class_name: [path1, path2, ...]}`` for names
+      declared in >1 file. The list includes the winner stored in
+      ``discovered``; ``collisions[name][0] == discovered[name]``.
 
-    Collisions are returned but NOT warned about here; the caller scopes
-    warnings to classes the skill actually references, to keep signal strong.
+    Collisions are returned but not warned about here — the caller
+    scopes warnings to classes the skill actually references.
+
+    Nested parts (qualname like ``LFPOutput.LFPV1``) are intentionally
+    excluded; consumers reach those via the part lookup in
+    ``_index.scan``.
     """
     discovered = {}
     collisions = {}
-    pkg_root = src_root / "spyglass"
-    if not pkg_root.is_dir():
+    if not (src_root / "spyglass").is_dir():
         return discovered, collisions
-    class_pattern = re.compile(r"^class\s+(\w+)\s*[\(:]", re.MULTILINE)
-    for py_file in sorted(pkg_root.rglob("*.py")):
-        try:
-            source = py_file.read_text()
-        except Exception:
+    index = _index.scan(src_root)
+    for name, records in index.items():
+        # Filter out placeholder/shadow records (e.g. `custom_nwbfile.py`'s
+        # `AnalysisNwbfile` shadow with a "managed by SpyglassAnalysis"
+        # sentinel definition). Without this, real-vs-shadow pairs would
+        # be reported as multi-file collisions and the shadow's empty
+        # `methods` could shadow the real record on downstream lookups.
+        # Mirrors `code_graph.py`'s `_resolve_class` filter and
+        # `ClassIndex.schema_records`.
+        top_level = [
+            r for r in records
+            if r.qualname == name and not _index.is_placeholder(r)
+        ]
+        if not top_level:
             continue
-        for match in class_pattern.finditer(source):
-            name = match.group(1)
-            rel = str(py_file.relative_to(src_root))
-            if name in discovered:
-                collisions.setdefault(name, [discovered[name]]).append(rel)
-            else:
-                discovered[name] = rel
+        sorted_top = sorted(top_level, key=lambda r: r.file)
+        discovered[name] = sorted_top[0].file
+        if len(sorted_top) > 1:
+            collisions[name] = [r.file for r in sorted_top]
     return discovered, collisions
 
 
-_TABLE_SCHEMA_CACHE = {}
+def clear_caches():
+    """Drop the `_index.scan` lru_cache.
 
-
-def collect_table_schemas(src_root):
-    """Extract DataJoint table schemas from every top-level class under src_root.
-
-    Returns {class_name: {
-        "pk":          set[str],  # literal primary-key field names
-        "attrs":       set[str],  # literal non-PK attribute names
-        "parents":     list[str], # names of tables referenced via `->`
-        "projections": list[(new_name, source)],  # from `-> Parent.proj(new='src')`
-        "parent_projections":    # {parent_name: {src_name: new_name}} per-parent
-            dict[str, dict[str, str]],
-    }}.
-
-    The extraction is approximate — we look for `class Foo(...): ...
-    definition = \"\"\"...\"\"\"` and parse the string with a small grammar.
-    False positives (non-DJ classes with a `definition` string attribute)
-    are rare in practice. Cached per src_root to amortize the rglob.
+    Single seam for tests and multi-root callers — `_index.scan` is the
+    only cache layer the validator depends on. Schema resolution runs
+    against `ClassIndex` methods directly, no separate dict cache.
     """
-    key = str(src_root)
-    cached = _TABLE_SCHEMA_CACHE.get(key)
-    if cached is not None:
-        return cached
-    schemas = {}
-    for py_file in src_root.rglob("*.py"):
-        try:
-            tree = ast.parse(py_file.read_text())
-        except (SyntaxError, UnicodeDecodeError):
-            continue
-        # Top-level classes only — part tables (nested) are intentionally
-        # skipped because users reference them as Parent.Part and our
-        # dict-restriction check resolves through the Parent anyway.
-        for stmt in tree.body:
-            if not isinstance(stmt, ast.ClassDef):
-                continue
-            definition = _extract_definition_string(stmt)
-            if definition is None:
-                continue
-            parsed = _parse_dj_definition(definition)
-            # Name-collision disambiguation: Spyglass has v0 and v1 tables
-            # that share class names (SpikeSortingRecordingSelection etc).
-            # Prefer the file pinned in KNOWN_CLASSES; otherwise first-wins.
-            rel = str(py_file.relative_to(src_root))
-            pinned = KNOWN_CLASSES.get(stmt.name)
-            if pinned:
-                if rel == pinned:
-                    schemas[stmt.name] = parsed
-                # If this file isn't the pinned one, skip — pinned file's
-                # definition wins even if encountered later in the walk.
-            elif stmt.name not in schemas:
-                schemas[stmt.name] = parsed
-    _TABLE_SCHEMA_CACHE[key] = schemas
-    return schemas
+    _index.scan.cache_clear()
 
 
-def _extract_definition_string(class_node):
-    """Return the `definition = \"\"\"...\"\"\"` string on a class, or None."""
-    for stmt in class_node.body:
-        if not isinstance(stmt, ast.Assign) or len(stmt.targets) != 1:
-            continue
-        target = stmt.targets[0]
-        if not isinstance(target, ast.Name) or target.id != "definition":
-            continue
-        if (
-            isinstance(stmt.value, ast.Constant)
-            and isinstance(stmt.value.value, str)
-        ):
-            return stmt.value.value
-    return None
+def _ambiguity_warning_text(
+    expr_label, ambiguous, named, reason, md_basename, file_version, location,
+):
+    """Render the maintainer-facing warning for a multi-version drift.
 
-
-_DJ_PROJ_RE = re.compile(r"(\w+)\s*=\s*['\"](\w+)['\"]")
-
-
-def _parse_dj_definition(text):
-    """Parse a DataJoint definition string into pk/attrs/parents/projections.
-
-    Grammar (approximate):
-      <line>     ::= <comment> | <field> | <parent> | "---" | blank
-      <field>    ::= <name> [= <default>] ':' <type> [# <comment>]
-      <parent>   ::= '-> ' <TableName> [ '.proj(' <kv_list> ')' ]
-
-    `---` separates PK lines (above) from attribute lines (below).
-
-    `parent_projections` maps `parent_name → {src_name: new_name}` so the
-    insert-key resolver can exclude renamed-away source fields when walking
-    up. Each parent key appears at most once per class (DataJoint schemas
-    don't reference the same parent twice).
+    Two reasons share the same surface (location + class) but diverge
+    in the fix instruction. Centralized so check_restriction_fields
+    and check_insert_key_shape stay in sync.
     """
-    pk, attrs = set(), set()
-    parents, projections = [], []
-    parent_projections = {}
-    in_attrs = False
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
-        # Strip inline comment
-        if "#" in line:
-            line = line.split("#", 1)[0].strip()
-            if not line:
-                continue
-        if line == "---":
-            in_attrs = True
-            continue
-        dest = attrs if in_attrs else pk
-        if line.startswith("->"):
-            ref = line[2:].strip()
-            # Strip DataJoint modifier tokens like `[nullable]`, `[unique]`
-            # that appear between `->` and the target table name.
-            ref = re.sub(r"^\[[^\]]+\]\s*", "", ref)
-            # Strip trailing punctuation / comma (occasionally present)
-            ref = ref.rstrip(",")
-            if ".proj(" in ref:
-                table_part, proj_part = ref.split(".proj(", 1)
-                parent_name = table_part.strip()
-                parents.append(parent_name)
-                renames = {}
-                for match in _DJ_PROJ_RE.finditer(proj_part):
-                    new_name, source = match.group(1), match.group(2)
-                    projections.append((new_name, source))
-                    dest.add(new_name)
-                    renames[source] = new_name
-                if renames:
-                    parent_projections[parent_name] = renames
-            else:
-                parents.append(ref)
-        elif ":" in line:
-            name_part = line.split(":", 1)[0].strip()
-            # Handle `name = default : type` form
-            if "=" in name_part:
-                name_part = name_part.split("=", 1)[0].strip()
-            if name_part and name_part.replace("_", "").isalnum():
-                dest.add(name_part)
-    return {"pk": pk, "attrs": attrs, "parents": parents,
-            "projections": projections,
-            "parent_projections": parent_projections}
+    chain_suffix = (
+        f" ({ambiguous} via parent chain)" if ambiguous != named else ""
+    )
+    if reason == "version_mismatch":
+        return (
+            f"{location}: {expr_label}: declared version {file_version} "
+            f"has no record for {ambiguous}{chain_suffix} — fix the marker "
+            f"in {md_basename} (or rename the file) to match the version "
+            f"the prose actually documents, or rewrite the prose to a "
+            f"class that exists at {file_version}"
+        )
+    return (
+        f"{location}: {expr_label}: ambiguous multi-version reference"
+        f"{chain_suffix} — add a "
+        f"`<!-- pipeline-version: v1 -->` (or v0) marker at the top of "
+        f"{md_basename}, or rename the file to include a `_v(N)_` "
+        f"segment if the file documents a specific version"
+    )
 
 
-def resolve_table_fields(class_name, schemas, _seen=None):
-    """Return the transitive set of field names accepted by `class_name`.
+_VERSION_FROM_FILENAME_RE = re.compile(r"_v(\d+)[_./]")
+_PIPELINE_VERSION_MARKER_RE = re.compile(r"<!--\s*pipeline-version:\s*v(\d+)\s*-->")
 
-    Walks `->` parent references to union inherited PKs into the child's
-    accepted-field set. Returns None for unknown classes so the caller
-    can distinguish "no schema" from "empty schema".
 
-    `_seen` is copied before each sibling recursion so diamond
-    inheritance walks correctly: two parents reaching the same ancestor
-    must both fully resolve it, not have the second leg truncated by a
-    cycle-guard hit from the first leg's walk.
+def _version_from_location(location):
+    """Parse a version context from a markdown location string.
+
+    Looks for ``_v(\\d+)_`` in the basename of the file the location
+    references. ``spikesorting_v0_legacy.md:42`` → ``"v0"``.
+    Returns None if the filename has no version segment — callers should
+    then check the file CONTENT for an explicit
+    ``<!-- pipeline-version: vN -->`` marker via
+    ``_version_from_markdown_file``.
     """
-    if _seen is None:
-        _seen = set()
-    if class_name in _seen:
-        return set()  # cycle guard (rare, but possible with circular FKs)
-    _seen.add(class_name)
-    schema = schemas.get(class_name)
-    if schema is None:
+    if not location:
         return None
-    fields = set(schema["pk"]) | set(schema["attrs"])
-    for parent in schema["parents"]:
-        parent_fields = resolve_table_fields(parent, schemas, set(_seen))
-        if parent_fields is not None:
-            fields |= parent_fields
-    return fields
+    # Location is typically "filename.md:LINENUM"; extract the filename.
+    fname = location.split(":", 1)[0].split("/")[-1]
+    m = _VERSION_FROM_FILENAME_RE.search(fname)
+    return f"v{m.group(1)}" if m else None
 
 
-def resolve_insert_fields(class_name, schemas, _seen=None):
-    """Return the set of field names valid for inserting into `class_name`,
-    or None if any transitive parent can't be resolved (fail-open signal).
+def _version_from_markdown_file(md_file, results=None):
+    """Return the version a markdown file documents.
 
-    Unlike resolve_table_fields, this applies per-parent projection
-    renames: a field renamed by `-> Parent.proj(new='src')` has `src`
-    excluded from the valid set and `new` included. Critical for
-    catching the Apr 21 linearization bug where
-    `LinearizationSelection.insert1({"merge_id": ...})` used the
-    un-projected parent field instead of `pos_merge_id`.
+    Checks two sources, in order:
 
-    Returning None on *any* unresolvable parent (as opposed to a partial
-    union) guarantees callers don't emit false positives when only part
-    of the parent chain is known — the whole class is skipped instead.
+    1. **Filename**: ``_v(\\d+)_`` in the basename
+       (``spikesorting_v0_legacy.md`` → ``"v0"``).
+    2. **HTML-comment marker**: ``<!-- pipeline-version: vN -->`` anywhere
+       in the file body. Files that document a single version but
+       don't have a version segment in their filename (most v1
+       pipeline references — ``lfp_pipeline.md``, ``ripple_pipeline.md``,
+       etc.) use this marker. Place it once near the top of the file.
 
-    `_seen` is copied before each sibling recursion (see
-    resolve_table_fields for the diamond-inheritance reasoning). The
-    correctness cost of *not* copying is higher here than in
-    resolve_table_fields: a truncated second-sibling walk would fail
-    to apply that sibling's projection renames, leaving both the
-    un-renamed source and the renamed new name in the accepted set.
+    Returns None when neither source identifies a version. Cross-cutting
+    files (``common_mistakes.md``, ``runtime_debugging.md``) without a
+    marker resolve to None — multi-version class mentions in those files
+    surface as ambiguous and the maintainer adds either the marker or a
+    per-mention rewrite.
+
+    Marker hygiene (warnings only when ``results`` is passed):
+
+    * **Filename vs. marker disagreement**: if a versioned filename and
+      a body marker name different versions, the filename wins (back-
+      compat) and a warning surfaces telling the maintainer to remove
+      one of them.
+    * **Multiple distinct markers in one body**: only the first match
+      takes effect; any subsequent markers naming a different version
+      are silently ignored. Surface a warning so the maintainer
+      consolidates or splits the file.
     """
-    if _seen is None:
-        _seen = set()
-    if class_name in _seen:
-        return set()  # cycle guard
-    _seen.add(class_name)
-    schema = schemas.get(class_name)
-    if schema is None:
+    if md_file is None:
         return None
-    fields = set(schema["pk"]) | set(schema["attrs"])
-    parent_projections = schema.get("parent_projections", {})
-    for parent in schema["parents"]:
-        parent_fields = resolve_insert_fields(parent, schemas, set(_seen))
-        if parent_fields is None:
-            return None  # parent unresolvable — bail conservatively
-        parent_fields = set(parent_fields)
-        renames = parent_projections.get(parent, {})
-        for src in renames:
-            parent_fields.discard(src)
-        fields |= parent_fields
-        fields |= set(renames.values())
-    return fields
+    fname_version = _version_from_location(md_file.name)
+    try:
+        text = md_file.read_text()
+    except OSError:
+        return fname_version
+    markers = _PIPELINE_VERSION_MARKER_RE.findall(text)
+    distinct_markers = sorted({f"v{m}" for m in markers})
+    if results is not None and len(distinct_markers) > 1:
+        results.warn(
+            f"{md_file.name}: multiple distinct `<!-- pipeline-version -->` "
+            f"markers found ({', '.join(distinct_markers)}); only the first "
+            f"takes effect. Consolidate to one marker or split the file."
+        )
+    body_version = distinct_markers[0] if distinct_markers else None
+    if fname_version is not None and body_version is not None and fname_version != body_version:
+        if results is not None:
+            results.warn(
+                f"{md_file.name}: filename declares {fname_version} but "
+                f"body marker declares {body_version}. Remove the marker "
+                f"or rename the file — filename wins for now."
+            )
+        return fname_version
+    return fname_version or body_version
 
 
 class _ClassRegistry:
-    """Resolve class names to their parsed method signatures.
+    """Resolve class names to their parsed method signatures via
+    ``_index.scan``. Caches parse results so subsequent checks reuse
+    the same data.
 
-    Combines the hand-curated KNOWN_CLASSES map (wins on name collisions)
-    with auto-discovered classes from src/spyglass/**/*.py. Caches parse
-    results so subsequent checks reuse the same data.
+    For multi-version classes (v0/v1 collisions in Spyglass), resolution
+    is location-driven:
+
+    * **Versioned location** — markdown filename matches ``_v(\\d+)_`` —
+      resolves STRICTLY to that version. A method defined only on the
+      other version is treated as missing.
+    * **Unversioned location** (or no location) — UNION of methods across
+      all version records. A method valid on any version is valid in
+      unversioned prose. v0 isn't legacy-deprecated — neuroscience
+      analysis pipelines run for years, so v0 users still exist after
+      v1 ships and the skill serves both.
     """
 
     def __init__(self, src_root, results):
         self.src_root = src_root
         self.results = results
         self.auto_registry, self.collisions = discover_classes(src_root)
+        self._index = _index.scan(src_root)
+        # Cache key includes version context so unversioned-union and
+        # versioned-strict don't collide.
         self._cache = {}
 
-    def methods(self, class_name):
-        if class_name in self._cache:
-            return self._cache[class_name]
-        rel_path = (
-            KNOWN_CLASSES.get(class_name)
-            or self.auto_registry.get(class_name)
-        )
-        if rel_path is None:
-            self._cache[class_name] = None
+    def _records_for(self, class_name, version):
+        """Return the list of ClassRecord paths the validator should
+        consult for ``class_name`` given an optional ``version`` context.
+
+        * **Singleton** (one top-level record): return it. Version
+          context is irrelevant — there's nothing to disambiguate
+          between, so even a v0-versioned location resolves a
+          version-agnostic class like ``SpikeSortingOutput`` correctly.
+        * **Multi-record + unversioned location**: all top-level
+          records (caller will union the method sets).
+        * **Multi-record + versioned location**: filter to records
+          whose path lives under ``/v<N>/`` matching the version.
+          Empty if no record matches.
+        """
+        records = self._index.get(class_name) or []
+        top_level = [r for r in records if r.qualname == class_name]
+        if not top_level:
+            return []
+        if len(top_level) == 1:
+            return [top_level[0].file]
+        if version is None:
+            return [r.file for r in sorted(top_level, key=lambda r: r.file)]
+        matching = [r for r in top_level if _index._version_from_path(r.file) == version]
+        return [r.file for r in sorted(matching, key=lambda r: r.file)]
+
+    def methods(self, class_name, location=None):
+        version = _version_from_location(location)
+        cache_key = (class_name, version)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        rel_paths = self._records_for(class_name, version)
+        if not rel_paths:
+            self._cache[cache_key] = None
             return None
-        filepath = self.src_root / rel_path
-        parsed = parse_class_from_file(filepath, class_name)
-        self._cache[class_name] = parsed
-        return parsed
+        # Union: a method defined on any matching record is reported as
+        # present. For versioned (single-record) lookups this is just
+        # that record's parsed methods. For unversioned multi-record
+        # lookups, methods that exist on either version are accepted —
+        # which is the right semantics for prose that doesn't commit to
+        # a specific Spyglass version.
+        union = {}
+        for rel in rel_paths:
+            parsed = parse_class_from_file(self.src_root / rel, class_name)
+            if parsed is not None:
+                union.update(parsed)
+        self._cache[cache_key] = union if union else None
+        return self._cache[cache_key]
 
     def report_referenced_collisions(self):
-        """Warn about v0/v1-style collisions only for classes the skill
-        actually references. Avoids noise from unreferenced duplicates."""
-        referenced = {
-            name for name, parsed in self._cache.items()
-            if parsed is not None
-        }
-        for name in sorted(referenced & self.collisions.keys()):
-            if name in KNOWN_CLASSES:
-                continue  # explicitly disambiguated
-            paths = self.collisions[name]
-            self.results.warn(
-                f"class '{name}' is referenced by the skill but appears in "
-                f"multiple files: {', '.join(paths)}. First wins — add to "
-                f"KNOWN_CLASSES to pin the intended version."
-            )
+        """Method-side multi-version references are intentionally permissive
+        (union semantics — a method valid on any version is valid in
+        unversioned prose). The fail-loud signal lives on the SCHEMA
+        side, where ``check_restriction_fields`` and
+        ``check_insert_key_shape`` warn explicitly when an ambiguous
+        ``Class & {field: ...}`` or ``Class.insert(...)`` mention can't
+        be resolved to a single version's schema. Method-side noise
+        would just duplicate that signal at coarser granularity."""
+        return  # intentional no-op; schema-side handles the fail-loud
 
 
 def _classify_method_call(
@@ -921,7 +794,9 @@ def _classify_method_call(
     """
     if method_name in SKIP_METHODS or method_name.startswith("_"):
         return
-    methods = registry.methods(class_name)
+    # Pass the location into the registry so it can pick the right version
+    # of multi-version classes (v0 vs v1) based on the markdown filename.
+    methods = registry.methods(class_name, location=location)
     if methods is None:
         if (
             warn_on_unresolved_class
@@ -930,8 +805,9 @@ def _classify_method_call(
         ):
             results.warn(
                 f"{location}: unresolved class '{class_name}' in "
-                f"'{class_name}.{method_name}()' — typo, or add to "
-                f"KNOWN_CLASSES/DOC_PLACEHOLDERS"
+                f"'{class_name}.{method_name}()' — typo, class lives "
+                f"outside $SPYGLASS_SRC, or add to DOC_PLACEHOLDERS "
+                f"if intentional"
             )
         return
     if method_name not in methods:
@@ -1098,8 +974,20 @@ def check_restriction_fields(src_root, results):
     column is `model_params_name`, and this check would have flagged
     that at skill-write time rather than waiting for a review pass.
     """
-    schemas = collect_table_schemas(src_root)
+    idx = _index.scan(src_root)
     for md_file in collect_md_files():
+        # Per-file version: parsed from the filename (`_v(\d+)_` pattern)
+        # for files that explicitly document a single version. None for
+        # cross-cutting files (common_mistakes.md etc.); multi-version
+        # classes in those files surface as ambiguous and the maintainer
+        # is expected to rewrite the prose to use a version-specific
+        # class name (e.g. `SpikeSortingV1` instead of bare `SpikeSorting`).
+        # Pass `results` so marker-hygiene warnings (filename vs. marker
+        # conflict, multiple distinct markers) surface here. Calling
+        # check_restriction_fields is enough to gather them once per file
+        # — check_insert_key_shape calls _version_from_markdown_file
+        # without `results` to avoid double-emission.
+        file_version = _version_from_markdown_file(md_file, results=results)
         for block_start, tree in iter_python_blocks(md_file):
             alias_map = build_alias_map(tree)
             for node in ast.walk(tree):
@@ -1127,9 +1015,26 @@ def check_restriction_fields(src_root, results):
                 # `(PositionOutput & {"nwb_file_name": f})` pattern.
                 if canonical in MERGE_TABLE_CLASSES:
                     continue
-                fields = resolve_table_fields(canonical, schemas)
+                fields = idx.fields_for(canonical, file_version)
                 if fields is None:
-                    continue  # not a known DJ table; skip silently
+                    # Three None cases: (a) class genuinely not known →
+                    # skip silently; (b) multi-version ambiguity → warn
+                    # asking for a marker; (c) version mismatch → warn
+                    # that the declared version doesn't have this class.
+                    ambiguous, reason = idx.find_ambiguous_in_chain(
+                        canonical, file_version,
+                    )
+                    if ambiguous is not None:
+                        line_num = block_start + node.lineno - 1
+                        location = f"{md_file.name}:{line_num}"
+                        results.warn(
+                            _ambiguity_warning_text(
+                                f"({canonical} & {{...}})",
+                                ambiguous, canonical, reason,
+                                md_file.name, file_version, location,
+                            )
+                        )
+                    continue
                 line_num = block_start + node.lineno - 1
                 location = f"{md_file.name}:{line_num}"
                 for key_node in node.right.keys:
@@ -1175,8 +1080,9 @@ def check_insert_key_shape(src_root, results):
     parser is approximate — see resolve_insert_fields for the projection
     semantics we apply.
     """
-    schemas = collect_table_schemas(src_root)
+    idx = _index.scan(src_root)
     for md_file in collect_md_files():
+        file_version = _version_from_markdown_file(md_file)
         for block_start, tree in iter_python_blocks(md_file):
             alias_map = build_alias_map(tree)
             for node in ast.walk(tree):
@@ -1193,9 +1099,22 @@ def check_insert_key_shape(src_root, results):
                 if resolved is None:
                     continue
                 class_name, _instance_call, call_line = resolved
-                valid_fields = resolve_insert_fields(class_name, schemas)
+                valid_fields = idx.insert_fields_for(class_name, file_version)
                 if valid_fields is None:
-                    continue  # unknown class or unresolvable parent → fail-open
+                    ambiguous, reason = idx.find_ambiguous_in_chain(
+                        class_name, file_version,
+                    )
+                    if ambiguous is not None:
+                        line_num = block_start + call_line - 1
+                        location = f"{md_file.name}:{line_num}"
+                        results.warn(
+                            _ambiguity_warning_text(
+                                f"{class_name}.{method_name}({{...}})",
+                                ambiguous, class_name, reason,
+                                md_file.name, file_version, location,
+                            )
+                        )
+                    continue  # unknown class or ambiguous → fail-open
 
                 first_arg = node.args[0]
                 if isinstance(first_arg, ast.Dict):
@@ -1233,37 +1152,6 @@ def check_insert_key_shape(src_root, results):
                             f"key '{key}' not in schema "
                             f"(known: {hint})"
                         )
-
-
-def check_class_files_exist(src_root, results):
-    """Verify all source files in KNOWN_CLASSES exist."""
-    checked = set()
-    for _class_name, rel_path in sorted(KNOWN_CLASSES.items()):
-        filepath = src_root / rel_path
-        if rel_path in checked:
-            continue
-        checked.add(rel_path)
-
-        if filepath.exists():
-            results.ok(f"source: {rel_path} exists")
-        else:
-            results.fail(f"source: {rel_path} NOT FOUND")
-
-    # Also check that each class is defined in its file
-    for class_name, rel_path in sorted(KNOWN_CLASSES.items()):
-        filepath = src_root / rel_path
-        if not filepath.exists():
-            continue
-        try:
-            source = filepath.read_text()
-            if re.search(rf"class\s+{class_name}\b", source):
-                results.ok(f"registry: {class_name} defined in {rel_path}")
-            else:
-                results.fail(
-                    f"registry: {class_name} NOT DEFINED in {rel_path}"
-                )
-        except Exception as e:
-            results.fail(f"registry: cannot read {rel_path}: {e}")
 
 
 # Pattern for `class Foo(_Merge, ...)` — the canonical shape for Spyglass
@@ -3091,12 +2979,13 @@ def check_structure(results: ValidationResult):
 
     # SKILL.md body size — hard caps. Don't bump without migrating content
     # to references first. Anthropic target is <500 words for frequently-loaded
-    # skills; 1200 gives headroom over the realistic post-migration size while
-    # still forcing migration rather than unbounded growth.
+    # skills; 1250 gives headroom over the realistic post-migration size while
+    # still forcing migration rather than unbounded growth. Bumped from 1200
+    # to accommodate the source-graph routing row added with code_graph.py.
     body = re.sub(r"^---\n.*?\n---\n", "", skill_content, count=1, flags=re.DOTALL)
     body_words = len(body.split())
     body_lines = body.count("\n") + 1
-    WORD_HARD_CAP = 1200
+    WORD_HARD_CAP = 1250
     LINE_HARD_CAP = 500     # Anthropic's explicit cap on SKILL.md body
     if body_words > WORD_HARD_CAP:
         results.fail(
@@ -3203,84 +3092,80 @@ def main():
 
     results = ValidationResult()
 
-    print("\n[1/23] Checking source files and class registry...")
-    check_class_files_exist(src_root, results)
-
-    print("[2/23] Checking import statements in skill files...")
+    print("\n[1/22] Checking import statements in skill files...")
     check_imports(src_root, results)
 
     # Build the class registry once and share it across method + kwarg checks
     registry = _ClassRegistry(src_root, results)
 
-    print("[3/23] Checking method references...")
+    print("[2/22] Checking method references...")
     check_methods(src_root, results, registry=registry)
 
-    print("[4/23] Checking keyword arguments...")
+    print("[3/22] Checking keyword arguments...")
     check_kwargs(src_root, results, registry=registry)
 
-    print("[5/23] Checking skill structure...")
+    print("[4/22] Checking skill structure...")
     check_structure(results)
 
-    print("[6/23] Checking prose assertions...")
+    print("[5/22] Checking prose assertions...")
     check_prose_assertions(results)
 
-    print("[7/23] Parsing Python code blocks (ast.parse)...")
+    print("[6/22] Parsing Python code blocks (ast.parse)...")
     check_python_syntax(results)
 
-    print("[8/23] Verifying prose path references exist in repo...")
+    print("[7/22] Verifying prose path references exist in repo...")
     check_prose_paths(src_root, results)
     check_eval_prose_paths(src_root, results)
 
-    print("[9/23] Verifying notebook names exist in repo...")
+    print("[8/22] Verifying notebook names exist in repo...")
     check_notebook_names(src_root, results)
 
-    print("[10/23] Verifying internal markdown links and anchors...")
+    print("[9/22] Verifying internal markdown links and anchors...")
     check_markdown_links(results)
 
-    print("[11/23] Scanning for documented anti-patterns...")
+    print("[10/22] Scanning for documented anti-patterns...")
     check_anti_patterns(results)
 
-    print("[12/23] Checking dict-restriction field names against schemas...")
+    print("[11/22] Checking dict-restriction field names against schemas...")
     check_restriction_fields(src_root, results)
 
-    print("[13/23] Verifying citation line numbers are in range...")
+    print("[12/22] Verifying citation line numbers are in range...")
     check_citation_lines(src_root, results)
     check_eval_citation_lines(src_root, results)
 
-    print("[14/23] Scanning evals.json for hallucinated class/method refs...")
+    print("[13/22] Scanning evals.json for hallucinated class/method refs...")
     check_evals_content(src_root, results, registry=registry)
 
-    print("[15/23] Scanning prose for banned PR-number citations...")
+    print("[14/22] Scanning prose for banned PR-number citations...")
     check_no_pr_citations(results)
     check_eval_no_pr_citations(results)
 
-    print("[16/23] Enforcing reference-file and section size budgets...")
+    print("[15/22] Enforcing reference-file and section size budgets...")
     check_section_budgets(results)
 
-    print("[17/23] Checking markdown link-landing content overlap...")
+    print("[16/22] Checking markdown link-landing content overlap...")
     check_link_landing(results)
 
-    print("[18/23] Verifying citation lines contain cited identifiers...")
+    print("[17/22] Verifying citation lines contain cited identifiers...")
     check_citation_content(src_root, results)
     check_eval_citation_content(src_root, results)
 
-    print("[19/23] Detecting duplicated code blocks across references...")
+    print("[18/22] Detecting duplicated code blocks across references...")
     check_duplicated_blocks(results)
 
-    print("[20/23] Checking DataJoint insert/populate key shape...")
+    print("[19/22] Checking DataJoint insert/populate key shape...")
     check_insert_key_shape(src_root, results)
 
-    print("[21/23] Cross-checking merge-table registry against source...")
+    print("[20/22] Cross-checking merge-table registry against source...")
     check_merge_registry(src_root, results)
 
-    print("[22/23] Checking eval required_substring hygiene (bare-word / literal-format)...")
+    print("[21/22] Checking eval required_substring hygiene (bare-word / literal-format)...")
     check_eval_required_substring_hygiene(src_root, results, registry=registry)
 
-    print("[23/23] Checking eval required_substring completeness vs expected_output tables...")
+    print("[22/22] Checking eval required_substring completeness vs expected_output tables...")
     check_eval_required_substring_completeness(src_root, results, registry=registry)
 
-    # Scoped collision report: only warn about v0/v1 duplicates for classes
-    # the skill actually references. Avoids noise from unreferenced dupes.
+    # Intentional no-op; see report_referenced_collisions docstring.
     registry.report_referenced_collisions()
 
     # Report

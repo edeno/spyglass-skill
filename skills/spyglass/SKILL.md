@@ -90,6 +90,7 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 | `populate_all_common` silently skipped tables | [populate_all_common_debugging.md](references/populate_all_common_debugging.md) | — |
 | Destructive operations — deletes, cleanup, inspect-before-destroy | [destructive_operations.md](references/destructive_operations.md) | — |
 | Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) | — |
+| Source-graph questions — FK chain A→B, what X declares, owner of method Y, up/downstream | [feedback_loops.md](references/feedback_loops.md) "Three graphs..." → `code_graph.py` | — |
 | Common Spyglass footguns | [common_mistakes.md](references/common_mistakes.md) | — |
 | Merge tables (`_Merge` methods) or SpyglassMixin helpers (`fetch_nwb`, `cautious_delete`, `<<`/`>>`) | [merge_methods.md](references/merge_methods.md), [spyglassmixin_methods.md](references/spyglassmixin_methods.md) | `01_Concepts.ipynb`, `04_Merge_Tables.ipynb` |
 | Group tables (`*Group`, `create_group()`) | [group_tables.md](references/group_tables.md) | — |

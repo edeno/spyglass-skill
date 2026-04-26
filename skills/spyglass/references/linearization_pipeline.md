@@ -1,3 +1,4 @@
+<!-- pipeline-version: v1 -->
 # Linearization Pipeline
 
 Converts 2D position to 1D linearized position using track graphs. Essential for decoding on linear/W-track environments.
