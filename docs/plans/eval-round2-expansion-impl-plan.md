@@ -1,7 +1,19 @@
 # Implementation plan — round-2 eval expansion (`skills/spyglass/evals/evals.json`)
 
 **Date:** 2026-04-24 (re-anchored 2026-04-25 after round-3 burned IDs 90–96)
-**Status:** **Pre-req commit landed `361c6ba` on 2026-04-25.** Batch A in flight.
+**Status:** **Executed 2026-04-25/04-26.** All 8 batches landed on
+`feature/eval-round2-expansion`: pre-reqs (`361c6ba`), Batch A
+(`6b9baae` + 3 reviewer rounds), Batch B (`fd80f6d`), Batch C
+(`51918fe`), Batch D (`6d66561`), Batch E (`a7141c1`), Batch F
+(`e75a3a0`), Batch G (selective: `121` + `123` only — `120` and
+`122` deferred per priority), Batch H (`bd022be`). Plus six
+multi-batch reviewer-driven correction rounds covering source-
+correctness, denial-sensitive forbidden_substrings, grader-hygiene
+mismatches, and stale citations across both new and pre-existing
+evals. Final eval count: **123** (was 95 → 123, +28; IDs `36`,
+`120`, `122` are intentional gaps). Validator clean at
+`--baseline-warnings 3`; ruff clean; expectations re-flattened on
+every change. Branch is fast-forward mergeable to master.
 **Scope:** Add **30 new evals (IDs 97–126)** — was IDs 90–119 in original draft; re-anchored after round-3 expansion (`20d50d0`) consumed 90–96. ID-by-ID remap below; semantic content unchanged. Add **30 new evals (IDs 97–126)** covering topology / dependency reasoning, session-metadata lookups, cross-pipeline compounds, group tables + custom analysis tables, new runtime-debugging failure modes, four new adversarial pushback shapes, and broader coverage in the five categories the maintainer flagged as thin (reference-correctness, parameter-understanding, counterfactual-parameter, hidden-prerequisite, recovery-planning). Land small reference-file and `validate_skill.py` pre-reqs before Phase 1 so new evals don't trip the validator on missing-class warnings. Reuse the existing three-axis taxonomy (stage × tier × difficulty) — no new vocabulary this round.
 
 ## Goals and non-goals
