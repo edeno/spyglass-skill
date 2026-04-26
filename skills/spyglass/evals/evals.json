@@ -2674,7 +2674,7 @@
       "tier": "workflow-position",
       "difficulty": "hard",
       "prompt": "DLC model is trained and in the DLC model table. I want to get from here to a merge_id in `PositionOutput`. What's the ordered list of tables I still need to touch?",
-      "expected_output": "Routes to position_pipeline.md (Pipeline 2: DeepLabCut). Lists the ordered 7-step DLC inference workflow: (1) DLCPoseEstimationSelection.insert_estimation_task → DLCPoseEstimation.populate (writes DLCPoseEstimation.BodyPart per bodypart); (2) DLCSmoothInterpSelection insert (per bodypart) → DLCSmoothInterp.populate; (3) DLCSmoothInterpCohortSelection insert (combines bodyparts) → DLCSmoothInterpCohort.populate; (4) DLCCentroidSelection + DLCCentroid.populate; (5) DLCOrientationSelection + DLCOrientation.populate; (6) DLCPosSelection insert → DLCPosV1.populate. The cohort-projection footgun (the same `dlc_si_cohort_selection_name` is renamed to two aliases — `dlc_si_cohort_centroid` and `dlc_si_cohort_orientation` — by `DLCPosSelection.definition` at `src/spyglass/position/v1/position_dlc_selection.py:33-34`) lives structurally on `DLCPosSelection`, not in `DLCPosV1.populate`; it just surfaces when DLCPosV1 inserts; (7) PositionOutput.DLCPosV1 insert (the merge insert). Notes the cohort step is non-obvious (it aggregates per-bodypart smoothed traces). Each of the per-stage selection tables FKs to its own parameters table — `DLCSmoothInterpSelection -> DLCSmoothInterpParams`, `DLCCentroidSelection -> DLCCentroidParams`, `DLCOrientationSelection -> DLCOrientationParams` — so a row in each params table must exist before the corresponding selection insert. These typically already exist via the labs' `insert_default()` calls; a thorough answer either confirms the defaults are present (`(DLCSmoothInterpParams & {dlc_si_params_name: 'default'}).fetch1(...)`) or inserts custom rows before the selection step.",
+      "expected_output": "Routes to position_pipeline.md (Pipeline 2: DeepLabCut). Lists the ordered 7-step DLC inference workflow: (1) DLCPoseEstimationSelection.insert_estimation_task → DLCPoseEstimation.populate (writes DLCPoseEstimation.BodyPart per bodypart); (2) DLCSmoothInterpSelection insert (per bodypart) → DLCSmoothInterp.populate; (3) DLCSmoothInterpCohortSelection insert (combines bodyparts) → DLCSmoothInterpCohort.populate; (4) DLCCentroidSelection + DLCCentroid.populate; (5) DLCOrientationSelection + DLCOrientation.populate; (6) DLCPosSelection insert → DLCPosV1.populate. The cohort-projection footgun (the same `dlc_si_cohort_selection_name` is renamed to two aliases — `dlc_si_cohort_centroid` and `dlc_si_cohort_orientation` — by `DLCPosSelection.definition` at `src/spyglass/position/v1/position_dlc_selection.py:33-34`) lives structurally on `DLCPosSelection`, not in `DLCPosV1.populate`; it just surfaces when DLCPosV1 inserts; (7) PositionOutput.DLCPosV1 insert (the merge insert). Notes the cohort step is non-obvious (it aggregates per-bodypart smoothed traces). Each of the per-stage selection tables FKs to its own parameters table — `DLCSmoothInterpSelection -> DLCSmoothInterpParams`, `DLCCentroidSelection -> DLCCentroidParams`, `DLCOrientationSelection -> DLCOrientationParams` — so a row in each params table must exist before the corresponding selection insert. These typically already exist via the labs' `insert_default()` calls; a thorough answer either confirms the defaults are present (`(DLCSmoothInterpParams & {'dlc_si_params_name': 'default'}).fetch1(...)`) or inserts custom rows before the selection step.",
       "assertions": {
         "required_substrings": [
           "DLCPoseEstimation",
@@ -2728,7 +2728,7 @@
       "tier": "dependency-tracing",
       "difficulty": "hard",
       "prompt": "Given a `DecodingOutput.ClusterlessDecodingV1` merge entry, enumerate every upstream table (including selections and parameter tables) that must have had an entry for this row to exist. Assume I want to regenerate from raw NWB.",
-      "expected_output": "Routes to decoding_pipeline.md. Produces an ordered or grouped enumeration covering: raw-data tables (Nwbfile, Session, IntervalList, Electrode); recording / sorting branch (SortGroup, SpikeSortingRecordingSelection → SpikeSortingRecording, SpikeSortingSelection → SpikeSorting, CurationV1, SpikeSortingOutput, then the clusterless waveform-features chain (`WaveformFeaturesParams` + `UnitWaveformFeaturesSelection` -> `UnitWaveformFeatures` -> `UnitWaveformFeaturesGroup`)); position branch (one of the position pipeline outputs feeding PositionGroup); decoding-specific (DecodingParameters, ClusterlessDecodingSelection, ClusterlessDecodingV1). Does not invent table names.\n\nNote: `MetricCuration` is **optional**, not a must-have upstream — it is downstream of its own `MetricCurationSelection` and feeds into curation as a metric-driven labelling step, but `SpikeSortingOutput.CurationV1` only depends on `CurationV1` itself (`spikesorting_merge.py:42`). Listing `MetricCuration` as required for a clusterless decoding row to exist is a misattribution.",
+      "expected_output": "Routes to decoding_pipeline.md. Produces an ordered or grouped enumeration covering: raw-data tables (Nwbfile, Session, IntervalList, Electrode); recording / sorting branch (`Raw` + `SortGroup` + `IntervalList` + `SpikeSortingPreprocessingParameters` + `LabTeam` -> `SpikeSortingRecordingSelection` -> `SpikeSortingRecording`; then `SpikeSorterParameters` + `IntervalList` -> `SpikeSortingSelection` -> `SpikeSorting`; `CurationV1`; `SpikeSortingOutput`), then the clusterless waveform-features chain (`WaveformFeaturesParams` + `UnitWaveformFeaturesSelection` -> `UnitWaveformFeatures` -> `UnitWaveformFeaturesGroup`)); position branch (one of the position pipeline outputs feeding PositionGroup); decoding-specific (DecodingParameters, ClusterlessDecodingSelection, ClusterlessDecodingV1). Does not invent table names.\n\nNote: `MetricCuration` is **optional**, not a must-have upstream — it is downstream of its own `MetricCurationSelection` and feeds into curation as a metric-driven labelling step, but `SpikeSortingOutput.CurationV1` only depends on `CurationV1` itself (`spikesorting_merge.py:42`). Listing `MetricCuration` as required for a clusterless decoding row to exist is a misattribution.",
       "assertions": {
         "required_substrings": [
           "Nwbfile",
@@ -2748,12 +2748,16 @@
           "SpikeSortingRecordingSelection",
           "SpikeSortingSelection",
           "UnitWaveformFeaturesSelection",
-          "UnitWaveformFeatures"
+          "UnitWaveformFeatures",
+          "Raw",
+          "SpikeSortingPreprocessingParameters",
+          "SpikeSorterParameters",
+          "LabTeam"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Produces an ordered or grouped list covering raw-data tables, recording / sorting branch, position branch, parameter table, selection table",
-          "Names the v1 `SpikeSorting` Computed table (the sorter step) as a distinct upstream — not just SpikeSortingRecording, SpikeSortingSelection, or SpikeSortingOutput",
+          "Names every direct FK parent on `SpikeSortingRecordingSelection` (`Raw`, `SortGroup`, `IntervalList`, `SpikeSortingPreprocessingParameters`, `LabTeam`) and on `SpikeSortingSelection` (`SpikeSortingRecording`, `SpikeSorterParameters`, `IntervalList`) — does NOT collapse the recording / sorting branch to just the Selection / Computed pair",
           "Does not invent table names that don't exist in Spyglass source",
           "Names the clusterless waveform-features chain explicitly: `WaveformFeaturesParams` + `UnitWaveformFeaturesSelection` -> `UnitWaveformFeatures` -> `UnitWaveformFeaturesGroup`. Does NOT list `MetricCuration` as a must-have upstream — it is optional / downstream of its own selection, not on the must-have chain that produces a `ClusterlessDecodingV1` row."
         ],
@@ -2782,8 +2786,12 @@
         "Response contains substring `SpikeSortingSelection`.",
         "Response contains substring `UnitWaveformFeaturesSelection`.",
         "Response contains substring `UnitWaveformFeatures`.",
+        "Response contains substring `Raw`.",
+        "Response contains substring `SpikeSortingPreprocessingParameters`.",
+        "Response contains substring `SpikeSorterParameters`.",
+        "Response contains substring `LabTeam`.",
         "Produces an ordered or grouped list covering raw-data tables, recording / sorting branch, position branch, parameter table, selection table",
-        "Names the v1 `SpikeSorting` Computed table (the sorter step) as a distinct upstream — not just SpikeSortingRecording, SpikeSortingSelection, or SpikeSortingOutput",
+        "Names every direct FK parent on `SpikeSortingRecordingSelection` (`Raw`, `SortGroup`, `IntervalList`, `SpikeSortingPreprocessingParameters`, `LabTeam`) and on `SpikeSortingSelection` (`SpikeSortingRecording`, `SpikeSorterParameters`, `IntervalList`) — does NOT collapse the recording / sorting branch to just the Selection / Computed pair",
         "Does not invent table names that don't exist in Spyglass source",
         "Names the clusterless waveform-features chain explicitly: `WaveformFeaturesParams` + `UnitWaveformFeaturesSelection` -> `UnitWaveformFeatures` -> `UnitWaveformFeaturesGroup`. Does NOT list `MetricCuration` as a must-have upstream — it is optional / downstream of its own selection, not on the must-have chain that produces a `ClusterlessDecodingV1` row."
       ]
