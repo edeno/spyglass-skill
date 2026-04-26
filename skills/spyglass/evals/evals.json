@@ -4892,6 +4892,233 @@
         "Names the qualitative direction (coarser bins = fewer state bins = faster, lower spatial resolution) without misattributing the change to upstream pipelines",
         "Notes that `UnitWaveformFeaturesGroup` and `PositionGroup` (referenced by the selection) are untouched — they're FK'd by the SELECTION, not by `DecodingParameters` directly"
       ]
+    },
+    {
+      "id": 113,
+      "eval_name": "permission-error-analysis-nwbfile-write",
+      "stage": "runtime-debugging",
+      "tier": "runtime-errors",
+      "difficulty": "medium",
+      "prompt": "traceback from `LFPV1.populate()`: `PermissionError: [Errno 13] Permission denied: '/stelmo/nwb/analysis/j1620210710_/j1620210710_<hash>.nwb'`. other lab members can populate fine. what's going on?",
+      "expected_output": "**Filesystem-permission layer**, not a Spyglass-code bug. The path `/stelmo/nwb/analysis/...` is the resolved `analysis_dir` derived from `SPYGLASS_BASE_DIR` (`SpyglassConfig.analysis_dir` in `src/spyglass/settings.py`). Spyglass writes new AnalysisNwbfiles into that tree at populate time; the kernel raised `Errno 13` because the user can't write to that directory. The fix is upstream of the Python call — at the filesystem / group-permission layer.\n\n**Diagnose, don't blanket-chmod.** Three layers to check, in order:\n\n**(1) Group membership.** Lab installs typically own `analysis/` under a shared group (e.g. `spyglass`, `franklab`). Confirm the user is in that group:\n\n```bash\nid                                       # what groups am I in?\nls -ld /stelmo/nwb/analysis              # owner:group on the dir\n```\n\nIf the listed group is missing from `id`, ask the admin to add the user. Other lab members work because they're already in the group; the new user is the only difference.\n\n**(2) Group-write bit + setgid on the dir.** Even if the user is in the group, the directory needs `g+w` AND the setgid bit (`g+s`, drwxrws---) so newly-created files inherit the group rather than the user's primary group:\n\n```bash\nls -ld /stelmo/nwb/analysis/j1620210710_   # wants drwxrws---, group=spyglass\n# admin fix:\n# chown :spyglass /stelmo/nwb/analysis/j1620210710_\n# chmod 2775 /stelmo/nwb/analysis/j1620210710_   # 2 = setgid; 775 = rwxrwxr-x\n```\n\n**(3) `umask` on the user's shell.** Files Spyglass writes inherit the user's `umask`. Most labs set `umask 002` so newly-created files are group-writable; if the user has `umask 022` from a personal dotfile, their files won't be writable by others. Check `umask` in the shell, and set `umask 002` in the user's `.bashrc` / `.zshrc` if the lab convention requires it.\n\n**Don't:** `chmod -R 777 /stelmo/nwb/analysis`. That removes the permission gate entirely (any user / any process can rewrite arbitrary analysis files), and a lab admin will revert it the next time they audit. Use the targeted fixes above.\n\nRoutes to setup_troubleshooting.md and setup_config.md.",
+      "assertions": {
+        "required_substrings": [
+          "SPYGLASS_BASE_DIR",
+          "permission",
+          "umask",
+          "group",
+          "analysis_dir"
+        ],
+        "forbidden_substrings": [
+          "chmod -R 777 /stelmo",
+          "use chmod -R 777",
+          "blanket chmod 777"
+        ],
+        "behavioral_checks": [
+          "Identifies the failure as filesystem / group-permission layer (not a Spyglass code bug); names that the path is derived from `SPYGLASS_BASE_DIR` so the fix is upstream of the Python call",
+          "Diagnoses in three layers — group membership (`id`, `ls -ld`), group-write bit + setgid on the directory (`drwxrws---`, `chmod 2775`), and `umask 002` on the user's shell — rather than guessing one cause",
+          "Does NOT recommend `chmod -R 777` as the fix — that removes the permission gate entirely; the targeted group + setgid + umask fixes are correct",
+          "Notes that other lab members can populate fine because they're already in the shared group; the user is the only difference"
+        ],
+        "required_substrings_exempt": [
+          "group",
+          "permission",
+          "umask"
+        ],
+        "expected_output_tables_exempt": [
+          "Lab",
+          "SpyglassConfig"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `SPYGLASS_BASE_DIR`.",
+        "Response contains substring `permission`.",
+        "Response contains substring `umask`.",
+        "Response contains substring `group`.",
+        "Response contains substring `analysis_dir`.",
+        "Response does not contain substring `chmod -R 777 /stelmo`.",
+        "Response does not contain substring `use chmod -R 777`.",
+        "Response does not contain substring `blanket chmod 777`.",
+        "Identifies the failure as filesystem / group-permission layer (not a Spyglass code bug); names that the path is derived from `SPYGLASS_BASE_DIR` so the fix is upstream of the Python call",
+        "Diagnoses in three layers — group membership (`id`, `ls -ld`), group-write bit + setgid on the directory (`drwxrws---`, `chmod 2775`), and `umask 002` on the user's shell — rather than guessing one cause",
+        "Does NOT recommend `chmod -R 777` as the fix — that removes the permission gate entirely; the targeted group + setgid + umask fixes are correct",
+        "Notes that other lab members can populate fine because they're already in the shared group; the user is the only difference"
+      ]
+    },
+    {
+      "id": 114,
+      "eval_name": "slow-fetch-db-lock",
+      "stage": "runtime-debugging",
+      "tier": "runtime-errors",
+      "difficulty": "medium",
+      "prompt": "it's taking a really long time to fetch my ripple parameters. like 2 minutes and still hasn't returned. what's happening?",
+      "expected_output": "Almost certainly **DB lock contention**, not slow compute. `RippleParameters` is a `dj.Lookup` keyed on `ripple_param_name` with a small `ripple_param_dict` blob — there's nothing to fetch slowly. A 2-minute idle hang on a params table looks identical to lock contention from another worker / abandoned transaction holding a row-level lock the user's `&` / `.fetch()` is waiting on.\n\n**Diagnose with `check_threads(detailed=True)`** (`src/spyglass/utils/mixins/helpers.py:206`) — every `SpyglassMixin` table carries this method; it queries MySQL's `performance_schema` for live threads, including any blocking lock relationships:\n\n```python\nfrom spyglass.ripple.v1.ripple import RippleParameters\nRippleParameters().check_threads(detailed=True)\n```\n\nThe DataFrame surfaces the threads currently holding locks (`OBJECT_NAME`, `LOCK_TYPE`, `LOCK_STATUS`, plus blocker → waiter chains when `detailed=True`). If the user's session shows a thread waiting on another (often labelled `WAITING FOR ANOTHER TRANSACTION` or similar), that's the proof.\n\n**Distinguish from slow-compute.** A `.fetch()` that pulls a large blob spends time on disk + network and shows CPU activity in the kernel; an *idle* hang (no CPU, no progress) is the lock-contention signature. Params tables are never the slow-compute case — the row is small. So for a 2-minute hang on `RippleParameters`, jump straight to `check_threads(detailed=True)`; don't restart the kernel without a diagnostic first.\n\n**Resolution.** The blocker is usually an abandoned transaction from another worker (an interrupted populate that didn't commit, an open transaction in another notebook). Coordinate with the lab — kill the blocker only with awareness, don't unilaterally `KILL` someone else's transaction.\n\nRoutes to runtime_debugging.md (lock contention section) and spyglassmixin_methods.md.",
+      "assertions": {
+        "required_substrings": [
+          "check_threads",
+          "lock",
+          "performance_schema",
+          "RippleParameters"
+        ],
+        "forbidden_substrings": [
+          "just restart the kernel",
+          "the fix is to restart the kernel"
+        ],
+        "behavioral_checks": [
+          "Routes to `check_threads(detailed=True)` (helpers.py:206) BEFORE suggesting a kernel restart or reconnect — it's the diagnostic primitive that distinguishes lock contention from slow compute",
+          "Distinguishes *idle* hang (no CPU, no progress -> lock contention) from slow-compute (fetch pulling a large blob -> CPU activity in the kernel); picks lock contention as the likely cause for a small params table",
+          "Names `performance_schema` as the underlying mechanism `check_threads` queries, with blocker -> waiter chains surfaced when `detailed=True`",
+          "Recommends coordinating with the lab before killing another transaction — does not unilaterally KILL another worker's transaction"
+        ],
+        "required_substrings_exempt": [
+          "lock"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `check_threads`.",
+        "Response contains substring `lock`.",
+        "Response contains substring `performance_schema`.",
+        "Response contains substring `RippleParameters`.",
+        "Response does not contain substring `just restart the kernel`.",
+        "Response does not contain substring `the fix is to restart the kernel`.",
+        "Routes to `check_threads(detailed=True)` (helpers.py:206) BEFORE suggesting a kernel restart or reconnect — it's the diagnostic primitive that distinguishes lock contention from slow compute",
+        "Distinguishes *idle* hang (no CPU, no progress -> lock contention) from slow-compute (fetch pulling a large blob -> CPU activity in the kernel); picks lock contention as the likely cause for a small params table",
+        "Names `performance_schema` as the underlying mechanism `check_threads` queries, with blocker -> waiter chains surfaced when `detailed=True`",
+        "Recommends coordinating with the lab before killing another transaction — does not unilaterally KILL another worker's transaction"
+      ]
+    },
+    {
+      "id": 115,
+      "eval_name": "editable-install-drift-after-pull",
+      "stage": "setup",
+      "tier": "environment-triage",
+      "difficulty": "medium",
+      "prompt": "just did `git pull` on my spyglass clone, now `from spyglass.decoding.v1.sorted_spikes import SortedSpikesDecodingV1` raises `ImportError: cannot import name 'SortedSpikesDecodingV1'`. didn't change anything on my end.",
+      "expected_output": "Two distinct shapes can produce this. Diagnose before guessing — both have different fixes.\n\n**Step 1 — check which `spyglass` Python actually loaded:**\n\n```python\nimport spyglass\nprint(spyglass.__file__)\n```\n\n**Shape A — site-packages shadowing the editable checkout.** If `spyglass.__file__` points at `.../site-packages/spyglass/...` instead of your checkout's `src/spyglass/__init__.py`, Python is loading a pip-installed (non-editable) copy, not your post-pull source. Fix:\n\n```bash\nconda activate spyglass\ncd ~/spyglass\npip uninstall spyglass-neuro     # remove the shadowing non-editable install\npip install -e .                  # editable install pointing at your source\n```\n\nThen **restart the Jupyter kernel** — Python caches imports, so the old module won't be replaced in a running kernel.\n\n**Shape B — editable install desync after a `pyproject.toml` / `setup.cfg` bump.** If `spyglass.__file__` already points at the source checkout (good — editable is intact), the `git pull` may have changed the package metadata in a way that the previously-installed editable wrapper no longer reflects (new entry points, new sub-package paths, new dependencies). Confirm editable status:\n\n```bash\npip show spyglass-neuro          # 'Editable project location:' should point at your checkout\ngit diff HEAD@{1} HEAD -- pyproject.toml setup.cfg\n```\n\nIf `pyproject.toml` / `setup.cfg` changed in the pull, re-run `pip install -e .` from the checkout to refresh the editable wrapper (it's idempotent and fast). New transitive dependencies that the pull added may also need installing — `pip install -e .` handles that as a side effect.\n\n**Don't:** `pip install spyglass-neuro` from PyPI as the fix. That installs a non-editable copy that will *create* the Shape-A shadowing problem if the checkout was already editable.\n\nRoutes to setup_troubleshooting.md.",
+      "assertions": {
+        "required_substrings": [
+          "pip install -e",
+          "editable",
+          "spyglass.__file__",
+          "pip show"
+        ],
+        "forbidden_substrings": [
+          "pip install spyglass-neuro from PyPI"
+        ],
+        "behavioral_checks": [
+          "Checks `spyglass.__file__` (or `pip show spyglass-neuro` editable status) BEFORE recommending anything destructive — distinguishes Shape A (site-packages shadowing) from Shape B (editable desync after pyproject.toml / setup.cfg bump)",
+          "Notes that a `git pull` that bumps `setup.cfg` / `pyproject.toml` can desync a previously editable install; re-running `pip install -e .` from the checkout refreshes the editable wrapper",
+          "Does NOT recommend `pip install spyglass-neuro` from PyPI as the fix — that creates the site-packages-shadowing problem if the user already had an editable checkout",
+          "Mentions kernel restart for Jupyter when reinstalling — Python caches imports across `pip install` so the running kernel won't pick up the new module otherwise"
+        ],
+        "required_substrings_exempt": [
+          "editable"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `pip install -e`.",
+        "Response contains substring `editable`.",
+        "Response contains substring `spyglass.__file__`.",
+        "Response contains substring `pip show`.",
+        "Response does not contain substring `pip install spyglass-neuro from PyPI`.",
+        "Checks `spyglass.__file__` (or `pip show spyglass-neuro` editable status) BEFORE recommending anything destructive — distinguishes Shape A (site-packages shadowing) from Shape B (editable desync after pyproject.toml / setup.cfg bump)",
+        "Notes that a `git pull` that bumps `setup.cfg` / `pyproject.toml` can desync a previously editable install; re-running `pip install -e .` from the checkout refreshes the editable wrapper",
+        "Does NOT recommend `pip install spyglass-neuro` from PyPI as the fix — that creates the site-packages-shadowing problem if the user already had an editable checkout",
+        "Mentions kernel restart for Jupyter when reinstalling — Python caches imports across `pip install` so the running kernel won't pick up the new module otherwise"
+      ]
+    },
+    {
+      "id": 121,
+      "eval_name": "hallucination-fetch-nwb-single",
+      "stage": "hallucination-resistance",
+      "tier": "adversarial",
+      "difficulty": "easy",
+      "prompt": "Is there a `fetch_nwb1()` that returns one NWB object instead of a list? I keep forgetting to index `[0]`.",
+      "expected_output": "**No such method exists.** Spyglass has `fetch_nwb` (`src/spyglass/utils/mixins/fetch.py:284`), inherited by every `SpyglassMixin` table — it returns a list of NWB objects regardless of row count, including a list-of-one when the restriction matches a single row. There is no `fetch_nwb1` shorthand.\n\n**Verify with the source / `dir`:**\n\n```python\nfrom spyglass.lfp.v1.lfp import LFPV1\nimport inspect\n[m for m in dir(LFPV1) if 'fetch' in m]   # see what's actually there\ninspect.getsource(LFPV1.fetch_nwb) if hasattr(LFPV1, 'fetch_nwb') else None\n```\n\n**The single-row idiom — restrict + index:**\n\n```python\n# (a) Restrict via & + fetch1('KEY') first, then fetch_nwb returns list-of-one:\nkey = (LFPV1 & {'nwb_file_name': 'j1620210710_.nwb',\n                'lfp_electrode_group_name': 'CA1',\n                'target_interval_list_name': '02_r1',\n                ...}).fetch1('KEY')\nnwb = (LFPV1 & key).fetch_nwb()[0]\n\n# (b) Or just index [0] inline once you know the restriction is unique:\nnwb = (LFPV1 & key).fetch_nwb()[0]\n```\n\nIf you find yourself wishing `fetch_nwb1()` existed, the underlying issue is usually that the restriction isn't actually unique — multiple rows survive `&`, so `fetch_nwb()` returns a list-of-N rather than list-of-one and `[0]` silently picks an arbitrary one. Fix the restriction (`fetch1('KEY')` first to confirm uniqueness) instead of looking for a different fetch helper.\n\nRoutes to spyglassmixin_methods.md.",
+      "assertions": {
+        "required_substrings": [
+          "no such method",
+          "fetch1",
+          "fetch_nwb",
+          "list of NWB"
+        ],
+        "forbidden_substrings": [
+          "yes, fetch_nwb1() returns",
+          "use fetch_nwb1",
+          "fetch_nwb1 is shorthand"
+        ],
+        "behavioral_checks": [
+          "States that `fetch_nwb1()` does NOT exist on Spyglass tables; the real method is `fetch_nwb` which returns a list regardless of row count",
+          "Names `dir()` or `inspect.getsource` (or equivalent introspection) as the verification primitive — does not invent a signature",
+          "Explains the single-row idiom: restrict to ensure uniqueness via `& + fetch1('KEY')` first (or assert `len() == 1`), then `fetch_nwb()[0]` — the `[0]` is correct, the issue is when the restriction isn't actually unique",
+          "Notes that wishing for `fetch_nwb1()` often signals a too-loose restriction (multiple rows survive `&`); fix the restriction, not the fetch helper"
+        ],
+        "expected_output_tables_exempt": [
+          "LFPV1"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `no such method`.",
+        "Response contains substring `fetch1`.",
+        "Response contains substring `fetch_nwb`.",
+        "Response contains substring `list of NWB`.",
+        "Response does not contain substring `yes, fetch_nwb1() returns`.",
+        "Response does not contain substring `use fetch_nwb1`.",
+        "Response does not contain substring `fetch_nwb1 is shorthand`.",
+        "States that `fetch_nwb1()` does NOT exist on Spyglass tables; the real method is `fetch_nwb` which returns a list regardless of row count",
+        "Names `dir()` or `inspect.getsource` (or equivalent introspection) as the verification primitive — does not invent a signature",
+        "Explains the single-row idiom: restrict to ensure uniqueness via `& + fetch1('KEY')` first (or assert `len() == 1`), then `fetch_nwb()[0]` — the `[0]` is correct, the issue is when the restriction isn't actually unique",
+        "Notes that wishing for `fetch_nwb1()` often signals a too-loose restriction (multiple rows survive `&`); fix the restriction, not the fetch helper"
+      ]
+    },
+    {
+      "id": 123,
+      "eval_name": "hallucination-spyglass-compact",
+      "stage": "hallucination-resistance",
+      "tier": "adversarial",
+      "difficulty": "medium",
+      "prompt": "I read about a `spyglass.compact()` or maybe `dj.compact()` function that removes orphaned analysis files. What's the exact call?",
+      "expected_output": "**No such top-level function exists** in either `spyglass` or `dj`. Verify with `dir(spyglass)` / `dir(dj)`. The user is reaching for the wrong abstraction — orphan cleanup in Spyglass lives on individual tables, not as a global function.\n\n**Real cleanup primitives:**\n\n**(1) `Table().delete_orphans(dry_run=True)`** — generic SpyglassMixin method (`src/spyglass/utils/mixins/helpers.py:167`). Returns the rows with no child-table entries; `dry_run=True` is the **default**, so a bare call previews what would be removed. Set `dry_run=False` only after reviewing the preview:\n\n```python\nfrom spyglass.lfp.v1.lfp import LFPV1\norphans = LFPV1().delete_orphans()              # dry_run=True by default\nprint(orphans)                                  # inspect first\nLFPV1().delete_orphans(dry_run=False)           # actually delete after review\n```\n\n**(2) `AnalysisNwbfile().cleanup(dry_run=False)`** — analysis-file-tree cleanup at `src/spyglass/common/common_nwbfile.py:754`. Removes orphaned `.nwb` files on disk that no `AnalysisNwbfile` row references. Run `dry_run=True` first (the default differs from `delete_orphans` — confirm by running once before destructive cleanup) and review the file list:\n\n```python\nfrom spyglass.common.common_nwbfile import AnalysisNwbfile\nAnalysisNwbfile().cleanup(dry_run=True)         # preview\nAnalysisNwbfile().cleanup(dry_run=False)        # delete files after review\n```\n\nTogether they cover both senses of 'orphans': `delete_orphans` removes DataJoint rows with no children; `AnalysisNwbfile.cleanup` removes files on disk with no DJ row pointing at them.\n\n**Always run with `dry_run=True` first** for either primitive. Spyglass-skill's destructive-operations Core Directive applies (inspect before destroy); orphan cleanup deletes files / rows in bulk and is very hard to recover from if the wrong scope is selected.\n\nRoutes to destructive_operations.md and spyglassmixin_methods.md.",
+      "assertions": {
+        "required_substrings": [
+          "no such function",
+          "delete_orphans",
+          "AnalysisNwbfile",
+          "dry_run"
+        ],
+        "forbidden_substrings": [
+          "yes, spyglass.compact() cleans up",
+          "use spyglass.compact",
+          "dj.compact is the call"
+        ],
+        "behavioral_checks": [
+          "States that `spyglass.compact()` and `dj.compact()` do NOT exist as top-level functions; verifies via `dir(spyglass)` / `dir(dj)` or equivalent",
+          "Routes to `Table().delete_orphans(dry_run=True)` (helpers.py:167) for orphaned DJ rows, AND `AnalysisNwbfile().cleanup(dry_run=False)` (common_nwbfile.py:754) for orphaned files on disk — these cover the two senses of 'orphans' (rows vs files)",
+          "Emphasizes the `dry_run=True` gate as a destructive-operations safety primitive — do NOT recommend running with `dry_run=False` without preview, regardless of which cleanup helper is used",
+          "Does not invent a signature for the fabricated top-level function"
+        ],
+        "expected_output_tables_exempt": [
+          "LFPV1"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `no such function`.",
+        "Response contains substring `delete_orphans`.",
+        "Response contains substring `AnalysisNwbfile`.",
+        "Response contains substring `dry_run`.",
+        "Response does not contain substring `yes, spyglass.compact() cleans up`.",
+        "Response does not contain substring `use spyglass.compact`.",
+        "Response does not contain substring `dj.compact is the call`.",
+        "States that `spyglass.compact()` and `dj.compact()` do NOT exist as top-level functions; verifies via `dir(spyglass)` / `dir(dj)` or equivalent",
+        "Routes to `Table().delete_orphans(dry_run=True)` (helpers.py:167) for orphaned DJ rows, AND `AnalysisNwbfile().cleanup(dry_run=False)` (common_nwbfile.py:754) for orphaned files on disk — these cover the two senses of 'orphans' (rows vs files)",
+        "Emphasizes the `dry_run=True` gate as a destructive-operations safety primitive — do NOT recommend running with `dry_run=False` without preview, regardless of which cleanup helper is used",
+        "Does not invent a signature for the fabricated top-level function"
+      ]
     }
   ]
 }
