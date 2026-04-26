@@ -3973,17 +3973,16 @@
       "tier": "dependency-tracing",
       "difficulty": "medium",
       "prompt": "I'm about to populate `RippleTimesV1` for the first time. What tables must already have entries for my key before `.populate()` will find work to do?",
-      "expected_output": "`RippleTimesV1.populate()` finds work via its `key_source` — the join of its FK parents — so an entry in *every* upstream table is required before populate has anything to do. The full list:\n\n1. **`RippleLFPSelection`** — the *selection* table. This is the row that says 'compute ripples for this LFP band + electrode group'. Easy to forget because users often think of `RippleParameters` as the entry point.\n2. **`LFPBandV1`** — `RippleLFPSelection` FKs to `LFPBandV1`, so the LFP band must already be populated. This in turn requires `LFPBandSelection`, `LFPV1`, `LFPSelection`, etc.\n3. **`RippleParameters`** — the parameter set (named `ripple_param_name`, e.g. `default` or `default_trodes`). Spyglass ships defaults; you don't usually need to insert your own.\n4. **`PositionOutput`** — `RippleTimesV1` has `-> PositionOutput.proj(pos_merge_id='merge_id')` in its definition. This is the **easy-to-miss FK**: ripple detection uses speed (from position) to gate candidate ripples, so a populated position merge entry is required. Users often have an LFP-only mental model and don't realize position must be done first.\n5. **`IntervalList`** — the time interval over which to detect ripples (referenced by name).\n\nUse `RippleTimesV1.parents()` to enumerate this list programmatically; `RippleTimesV1.describe()` shows the FK declarations inline. If `populate()` runs but does no work, run `(RippleTimesV1.key_source & key)` to see what the join surfaces — typically zero rows means one of these upstreams is missing for your key.\n\nRoutes to ripple_pipeline.md.",
+      "expected_output": "`RippleTimesV1.populate()` finds work via its `key_source` — the join of its FK parents — so an entry in *every* upstream table is required before populate has anything to do. The full list (read straight off `RippleTimesV1.describe()` / `RippleTimesV1.parents()`):\n\n1. **`RippleLFPSelection`** — the *selection* table. This is the row that says 'compute ripples for this LFP band + electrode group'. Easy to forget because users often think of `RippleParameters` as the entry point.\n2. **`LFPBandV1`** — `RippleLFPSelection` FKs to `LFPBandV1`, so the LFP band must already be populated. This in turn requires `LFPBandSelection`, `LFPV1`, `LFPSelection`, etc.\n3. **`RippleParameters`** — the parameter set (named `ripple_param_name`, e.g. `default` or `default_trodes`). Spyglass ships defaults; you don't usually need to insert your own.\n4. **`PositionOutput`** — `RippleTimesV1` has `-> PositionOutput.proj(pos_merge_id='merge_id')` in its definition. This is the **easy-to-miss FK**: ripple detection uses speed (from position) to gate candidate ripples, so a populated position merge entry is required. Users often have an LFP-only mental model and don't realize position must be done first.\n\nThese four are the direct FK parents. (The relevant interval-list rows enter only transitively, via the LFP chain — `LFPBandV1` carries the interval through its own FK to LFPBandSelection. They aren't a `RippleTimesV1.parents()` entry, so don't list them as a separate prereq.)\n\nUse `RippleTimesV1.parents()` to enumerate this list programmatically; `RippleTimesV1.describe()` shows the FK declarations inline. If `populate()` runs but does no work, run `(RippleTimesV1.key_source & key)` to see what the join surfaces — typically zero rows means one of these four upstreams is missing for your key.\n\nRoutes to ripple_pipeline.md.",
       "assertions": {
         "required_substrings": [
           "RippleLFPSelection",
           "LFPBandV1",
           "RippleParameters",
-          "IntervalList",
           "PositionOutput"
         ],
         "forbidden_substrings": [
-          "populate_all_common",
+          "populate_all_common(",
           "RippleTimesV1 has no upstream"
         ],
         "behavioral_checks": [
@@ -3993,8 +3992,8 @@
         "expected_output_tables_exempt": [
           "LFPBandSelection",
           "LFPV1",
-          "RippleTimesV1",
-          "LFPSelection"
+          "LFPSelection",
+          "RippleTimesV1"
         ]
       },
       "files": [],
@@ -4002,9 +4001,8 @@
         "Response contains substring `RippleLFPSelection`.",
         "Response contains substring `LFPBandV1`.",
         "Response contains substring `RippleParameters`.",
-        "Response contains substring `IntervalList`.",
         "Response contains substring `PositionOutput`.",
-        "Response does not contain substring `populate_all_common`.",
+        "Response does not contain substring `populate_all_common(`.",
         "Response does not contain substring `RippleTimesV1 has no upstream`.",
         "Enumerates the *selection* tables (RippleLFPSelection in particular) alongside the parameter and output tables, not just the output tables",
         "Identifies `PositionOutput` (via the `pos_merge_id` projection FK) as the hidden / easy-to-miss prerequisite — ripple detection uses position-derived speed"
@@ -4111,17 +4109,17 @@
       "tier": "workflow-recovery",
       "difficulty": "hard",
       "prompt": "I ran `populate_all_common('j1620210710_.nwb')`. `Session`, `IntervalList`, `Raw`, `Electrode` all populated. But `Probe` has zero rows for this session. The file has tetrode metadata — I checked in HDFView. What's the safe next step?",
-      "expected_output": "Don't re-run the ingest blindly. Inspect first.\n\n**Step 1 — read what populate_all_common already told you.** `populate_all_common` swallows per-table exceptions by default (`raise_err=False`) and writes a short message per silently-skipped table to `common_usage.InsertError`. Query it before doing anything else:\n\n```python\nfrom spyglass.common.common_usage import InsertError\n(InsertError & {'nwb_file_name': 'j1620210710_.nwb'}).fetch(as_dict=True)\n```\n\nThat tells you which table actually raised and what the message was. Almost always with a missing `Probe` row, the failure isn't on `Probe` itself — it's upstream. `Probe` depends on `ProbeType`, which is populated from a probe-type config; if your `DataAcquisitionDevice` ingestion didn't surface the right probe type (or your config doesn't list this tetrode geometry), `Probe` insertion silently skips and the cascade stops.\n\n**Step 2 — re-run only the affected tables with `raise_err=True`** so the real traceback surfaces:\n\n```python\nfrom spyglass.common import populate_all_common\npopulate_all_common('j1620210710_.nwb', raise_err=True)\n```\n\nOr call the affected table's `populate()` directly with the restriction, again with `raise_err=True`. Use a fresh kernel so any cached connection state is reset.\n\n**What NOT to do:**\n- Do **not** call `reinsert=True` on `insert_sessions` before you've read the InsertError message — you'll re-trigger the same silent skip and lose the diagnostic trail.\n- Do **not** `super_delete()` `Session` / `IntervalList` / `Raw` / `Electrode` rows that ingested correctly — they're fine, and deleting them cascades downstream.\n\nOnce the error is identified, the fix is usually small — add the missing `DataAcquisitionDevice` / `ProbeType` row, or fix the probe-type entry in your config — and then re-populate just the affected table.\n\nRoutes to populate_all_common_debugging.md and ingestion.md.",
+      "expected_output": "Don't re-run the ingest blindly. Inspect first.\n\n**Step 1 — read what populate_all_common already told you.** `populate_all_common` swallows per-table exceptions by default (`raise_err=False`) and writes a short message per silently-skipped table to `common_usage.InsertError`. Query it before doing anything else:\n\n```python\nfrom spyglass.common.common_usage import InsertError\n(InsertError & {'nwb_file_name': 'j1620210710_.nwb'}).fetch(as_dict=True)\n```\n\nThat tells you which table actually raised and what the message was. Almost always with a missing `Probe` row, the failure isn't on `Probe` itself — it's upstream. `Probe` has a hard FK to `ProbeType`, so a missing `ProbeType` row blocks `Probe` insertion silently. Less commonly, `DataAcquisitionDevice` (a nullable FK on `Probe`) can be involved if the device-reading step skipped a row your config expected — but `ProbeType` is the primary cause to check first.\n\n**Step 2 — re-run only the affected tables with `raise_err=True`** so the real traceback surfaces:\n\n```python\nfrom spyglass.common import populate_all_common\npopulate_all_common('j1620210710_.nwb', raise_err=True)\n```\n\nOr call the affected table's `populate()` directly with the restriction, again with `raise_err=True`. Use a fresh kernel so any cached connection state is reset.\n\n**What NOT to do:**\n- Do not call `reinsert=True` on `insert_sessions` before you've read the InsertError message — you'll re-trigger the same silent skip and lose the diagnostic trail.\n- Do not bypass `cautious_delete` to wipe `Session` / `IntervalList` / `Raw` / `Electrode` rows that ingested correctly — they're fine, and deleting them cascades downstream.\n\nOnce the error is identified, the fix is usually small — add the missing `ProbeType` row (or, if needed, the upstream `DataAcquisitionDevice` row) — and then re-populate just the affected table.\n\nRoutes to populate_all_common_debugging.md and ingestion.md.",
       "assertions": {
         "required_substrings": [
           "InsertError",
           "raise_err=True",
-          "DataAcquisitionDevice"
+          "ProbeType"
         ],
         "forbidden_substrings": [
           "reinsert=True before",
-          "super_delete",
-          "delete the Session"
+          "should super_delete",
+          "delete the Session row and re-ingest"
         ],
         "behavioral_checks": [
           "Inspects `common_usage.InsertError` first (with the session's nwb_file_name restriction) rather than re-running the ingest blindly",
@@ -4136,17 +4134,17 @@
           "Raw",
           "Electrode",
           "Probe",
-          "ProbeType"
+          "DataAcquisitionDevice"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `InsertError`.",
         "Response contains substring `raise_err=True`.",
-        "Response contains substring `DataAcquisitionDevice`.",
+        "Response contains substring `ProbeType`.",
         "Response does not contain substring `reinsert=True before`.",
-        "Response does not contain substring `super_delete`.",
-        "Response does not contain substring `delete the Session`.",
+        "Response does not contain substring `should super_delete`.",
+        "Response does not contain substring `delete the Session row and re-ingest`.",
         "Inspects `common_usage.InsertError` first (with the session's nwb_file_name restriction) rather than re-running the ingest blindly",
         "Mentions that missing `Probe` rows often indicate an upstream `DataAcquisitionDevice` / `ProbeType` dependency that skipped silently — not a Probe-table-level fault"
       ]
