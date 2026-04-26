@@ -494,6 +494,8 @@ Populate/insert the missing ancestor first, then retry.
 
 Long idle stalls (no CPU, no progress) usually mean **lock contention** — another worker or an abandoned transaction is holding a MySQL lock your call is waiting on, not a slow `make()` body. First rule out "the DB isn't reachable at all" with `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_connection --timeout 10` — `check_threads` itself needs a live connection and will hang the same way if the server's unreachable. Once connectivity is confirmed, diagnose with `AnyTable().check_threads(detailed=True)` (any `SpyglassMixin` table works); it returns a DataFrame of live threads from `performance_schema` including blockers. Coordinate with the lab before killing an abandoned transaction.
 
+If a `.fetch()` or `.fetch1()` call hangs with no CPU activity — not slow compute, just an *idle* long fetch — go straight to `check_threads(detailed=True)`. User-perceived "this fetch is taking forever" is almost always lock contention, not query plan.
+
 ## Debugging `populate_all_common`
 
 `populate_all_common` swallows per-table exceptions by default (`raise_err=False`), logging only a short message to `common_usage.InsertError`. When a fresh ingest "completes" but common tables silently miss rows, that's the usual cause. The fix is small (`raise_err=True` or populate tables directly) but the diagnostic context is enough that it lives in its own reference: see [populate_all_common_debugging.md](populate_all_common_debugging.md).
