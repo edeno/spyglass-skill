@@ -103,18 +103,20 @@ A method, kwarg, column, or table name that sounds right given surrounding conve
 
 The failure mode is uniform: LLMs and humans alike pattern-match from similar contexts and guess a name that sounds consistent. The verification step takes seconds; the cost of shipping the wrong name can be weeks of downstream confusion.
 
-**Fix.** Before writing code or guidance that depends on a specific identifier, verify it against the source:
+**Fix.** Before writing code or guidance that depends on a specific identifier, verify it via the bundled scripts first; fall back to grep / `inspect` when the script can't speak to the question:
 
 ```bash
-# Does this method / kwarg / field actually exist?
+# Does this class / method / FK actually exist? (Source identity, fast, no DB.)
+python skills/spyglass/scripts/code_graph.py describe Cls --json
+python skills/spyglass/scripts/code_graph.py find-method the_method_name --json
+
+# Does this table / heading actually exist on the live server? (Runtime truth.)
+python skills/spyglass/scripts/db_graph.py describe Cls --json
+python skills/spyglass/scripts/db_graph.py find-instance --class Cls --key f=v --fields KEY
+
+# Fallback: method body, signature, blob-key shape — things the scripts don't surface.
 grep -rn "def the_method_name" src/spyglass/
-grep -rn "the_field_name" src/spyglass/
-
-# What's the real signature?
 python -c "import inspect; from spyglass.X import Cls; print(inspect.signature(Cls.method))"
-
-# What fields does this table actually declare?
-python -c "from spyglass.X import Table; print(Table.heading.primary_key); print(list(Table.heading.attributes.keys()))"
 ```
 
 If the symbol doesn't surface in at least one of those checks, assume it doesn't exist and rename. The skill validator enforces this for KNOWN_CLASSES, but field names in blob params, kwargs on lesser-known methods, and part-table attribute-access patterns all slip past it — those are exactly where the pattern-matching guesses hit hardest. Related active check: the validator's `check_evals_content` scans `evals/evals.json` `expected_output`, `behavioral_checks`, and `required_substrings` for method references that don't resolve; `forbidden_substrings` is intentionally skipped because those entries are wrong-by-design adversarial patterns the eval must reject. The corresponding check for reference prose runs via `check_methods`.
