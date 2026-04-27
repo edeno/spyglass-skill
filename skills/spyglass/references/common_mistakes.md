@@ -83,8 +83,12 @@ The same splits happen with any free-form string PK field: subject names (`j16` 
 BrainRegion.fetch("region_name")
 # Electrode groups already inserted for this session
 (ElectrodeGroup & {"nwb_file_name": f}).fetch("electrode_group_name")
-# Existing parameter-set names on a selection table
-ParamsTable.fetch("params_name")
+# Existing parameter-set names on a parameter table. There is no
+# universal `params_name` field — each parameter table has its own
+# field (e.g. `trodes_pos_params_name`, `decoding_param_name`,
+# `dlc_si_params_name`). Discover via the table's PK, then fetch:
+pk = ParamsTable.heading.primary_key
+ParamsTable.fetch(*pk)
 ```
 
 Treat existing values in `BrainRegion`, `LabMember`, `LabTeam`, and the lab's established parameter tables as the de facto naming convention — they are what downstream analyses pin to. Diverge only with a specific reason, and when you do, pick an informatively-distinct name (not a typo-variant that collides under casing or whitespace normalization).

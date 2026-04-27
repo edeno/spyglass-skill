@@ -104,12 +104,22 @@ sessions = (Session & {"subject_id": "J16"}).fetch("KEY")
 results = []
 for sk in sessions:
     key = {**sk, "interval_list_name": "task"}
-    part = PositionOutput.merge_get_part(key)
-    if len(part) == 1:          # skip ambiguous/missing sessions
-        results.append((PositionOutput & part.fetch1("KEY")).fetch1_dataframe())
+    # `merge_get_part(key)` raises (DataJointError / ValueError)
+    # before returning when zero or multiple parts match — see
+    # `utils/dj_merge_tables.py:624-636` ("Found N potential parts:
+    # ..."). A `len(part) == 1` guard never executes on the failure
+    # branches, so wrap the call in try/except and use
+    # `multi_source=True` to opt out of the strict-one check when
+    # multiple matches are acceptable.
+    try:
+        part = PositionOutput.merge_get_part(key)
+    except (dj.DataJointError, ValueError):
+        # zero or multiple matches — skip this session in the batch
+        continue
+    results.append((PositionOutput & part.fetch1("KEY")).fetch1_dataframe())
 ```
 
-The `len(part) == 1` guard replaces a try/except around `fetch1("KEY")` — cheaper, more readable, and it's the cardinality check [feedback_loops.md](feedback_loops.md) recommends before any `fetch1()`.
+For batch loops where ambiguous sessions are common, `merge_get_part(key, multi_source=True)` returns the part(s) without raising, and the caller iterates the parts explicitly.
 
 ### Incremental Exploration
 
@@ -181,8 +191,11 @@ PositionOutput.merge_view({'nwb_file_name': nwb_file})
 ```python
 parts = PositionOutput.merge_get_part(key, multi_source=True)
 for part in parts:
-    mk = part.fetch1("KEY")
-    print(f"Source: {part.table_name}, merge_id: {mk}")
+    # Each `part` may itself contain multiple rows — `fetch1("KEY")`
+    # only works when len(part) == 1. Iterate or use fetch(...) when
+    # the part might match more than one row.
+    for mk in part.fetch("KEY", as_dict=True):
+        print(f"Source: {part.table_name}, merge_id: {mk}")
 ```
 
 ### Join Not Working

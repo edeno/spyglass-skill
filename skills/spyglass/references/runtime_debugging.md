@@ -357,13 +357,31 @@ MyTable().populate(
 MyTable().make(failing_key)
 ```
 
-Inspect the jobs table to see reserved/errored keys:
+Inspect the jobs table to see reserved/errored keys. **Derive the
+jobs table from the failing table** rather than hard-coding a
+schema name — Spyglass schemas are split across many database names
+(`common`, `lfp_v1`, `spikesorting_v1`, `position_v1`, `decoding_v1`,
+etc.; a quick check is the `database` attribute on the failing
+table's connection). Each schema has its own `~jobs` table:
 
 ```python
 import datajoint as dj
-jobs = dj.schema("spyglass_common").jobs   # or whichever schema owns MyTable
-jobs.fetch(as_dict=True)
-jobs.delete_quick()   # only after confirming you want to re-run those keys
+
+# Pick the schema that owns the table you're populating.
+# `MyTable.database` is the underlying schema name; use that
+# instead of guessing.
+schema_name = MyTable.connection.dependencies.parent_class[
+    MyTable.full_table_name
+].database  # or just MyTable.database in many DataJoint versions
+jobs = dj.Schema(schema_name).jobs
+
+# Filter to this table's failed entries before doing anything:
+errors = jobs & {
+    "table_name": MyTable.table_name,
+    "status": "error",
+}
+errors.fetch(as_dict=True)
+errors.delete_quick()   # only after confirming you want to re-run those keys
 ```
 
 **Minimal fix.** Debug with orchestration off. Once the true cause is fixed, re-enable reservation/parallelism for the full run.
@@ -452,15 +470,25 @@ include those secondary attrs (from its `-> IntervalList` and
 directly works — but `populate()` doesn't use that heading, it uses
 `key_source`'s.
 
-**Fix.** Restrict against the full Selection table, then project to a
-PK-only key before `populate`:
+**Fix.** Restrict against the full Selection table for **the table you're
+populating**, then project to a PK-only key before `populate`. For
+`SpikeSorting.populate`, that's `SpikeSortingSelection`
+(`spikesorting/v1/sorting.py:199`; PK = `sorting_id`):
 
 ```python
-sel_key = (SpikeSortingRecordingSelection & key).fetch1('KEY')
-SpikeSortingRecording.populate(sel_key)
+# SpikeSorting.populate — fix the symptom-table's Selection (NOT
+# SpikeSortingRecordingSelection, which gates the upstream
+# `SpikeSortingRecording.populate` instead):
+sort_key = (SpikeSortingSelection & key).fetch1('KEY')
+SpikeSorting.populate(sort_key)
 
-# or for multi-row populates:
-SpikeSortingRecording.populate((SpikeSortingRecordingSelection & key).proj())
+# Multi-row populate:
+SpikeSorting.populate((SpikeSortingSelection & key).proj())
+
+# Same shape one tier upstream — for SpikeSortingRecording.populate,
+# fix SpikeSortingRecordingSelection:
+rec_key = (SpikeSortingRecordingSelection & key).fetch1('KEY')
+SpikeSortingRecording.populate(rec_key)
 ```
 
 Applies to every `*V1.populate(...)` entry point

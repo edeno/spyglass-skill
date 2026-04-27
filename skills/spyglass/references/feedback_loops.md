@@ -92,7 +92,7 @@ Common causes when this fails:
 
 - Selection-table insert used a different value for a key field (typical: interval name mismatch — see runtime_debugging.md Signature F).
 - Selection row exists but references an interval/params/group that was never populated upstream.
-- The key you built includes a field that doesn't exist on `key_source` — for standard computed tables, DataJoint typically ignores unknown fields in a dictionary restriction, producing an empty match with no error. Tables with custom `key_source` properties may behave differently; if the restriction seems valid but `len(key_source & key) == 0`, print the `key_source.heading.primary_key` to confirm which fields it actually accepts.
+- The key you built includes a field that isn't on `key_source`'s heading. **DataJoint silently DROPS the unknown field rather than failing** (this is the silent-no-op shape `runtime_debugging.md` Signature G describes for `populate()`, and the same shape `common_mistakes.md` #1 warns about for restrictions in general). The danger is the opposite of "empty match": the restriction becomes a **no-op**, and `populate()` runs against the unrestricted `key_source` — populating far more keys than you intended. To verify, print `key_source.heading.primary_key` and compare to your dict's keys; any field in your dict that isn't in the heading is silently being ignored.
 
 ## Pre-`fetch1()` cardinality check
 

@@ -76,11 +76,13 @@ Control which tables are excluded from restrict_by graph traversal.
 ### `cautious_delete(force_permission=False, dry_run=False, *args, **kwargs)`
 Permission-checked deletion. Checks that the user is an admin or on a team with the session's experimenter(s). Walks the DataJoint dependency graph to cascade the delete — if any descendant class (especially a merge master) is not imported in the current session, the walk fails with `NetworkXError: ... not in the digraph`. See [merge_methods.md § Import merge masters before cascade-deleting](merge_methods.md#import-merge-masters-before-cascade-deleting-upstream-keys).
 
+`force_permission=True` skips just the team-permission check (`cautious_delete.py:226`) — the cascade and the per-store external-file cleanup at `cautious_delete.py:238-241` still run. Use this when you're an admin or genuinely the data owner and the team check is misfiring.
+
 ### `delete(*args, **kwargs)`
 Alias for `cautious_delete`.
 
 ### `super_delete(warn=True, *args, **kwargs)`
-Bypass permission checks **and** Spyglass's analysis-file cleanup — aliases straight to `datajoint.Table.delete`. DB rows are removed but `.nwb` files stay on disk; follow up with `AnalysisNwbfile().cleanup(dry_run=True)` → review → `dry_run=False`. Use only for legitimate admin cleanup, not to silence permission errors (the right fix there is wiring the user into `LabMember.LabMemberInfo`).
+Bypass permission checks **and** Spyglass's analysis-file cleanup — aliases straight to `datajoint.Table.delete` (`cautious_delete.py:249-254`); the external-file cleanup loop is NOT executed because the call never enters cautious_delete's body. DB rows are removed but `.nwb` files stay on disk; follow up with `AnalysisNwbfile().cleanup(dry_run=True)` → review → `dry_run=False`. Use only for legitimate admin cleanup, not to silence permission errors (the right fix there is wiring the user into `LabMember.LabMemberInfo`). Contrast with `force_permission=True` above, which skips only the team check and still cleans external files.
 
 ## Helper Methods
 

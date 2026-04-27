@@ -246,12 +246,13 @@ Returns the part table(s) containing entries matching the restriction. This is t
 
 **Raises `ValueError`** if zero or multiple sources match when `multi_source=False` (default). Always wrap in try/except or use `multi_source=True`.
 
-**Misleading-error note.** When `merge_get_part` reports
-`ValueError: Found multiple potential parts: []` — the empty list means
-zero sources matched, not multiple. The usual cause is that the
-upstream source table (e.g. `IntervalPositionInfo`) has rows but they
-were never inserted into the merge part table (e.g.
-`PositionOutput.CommonPos`).
+**Misleading-error note.** Current source raises
+`ValueError: Found 0 potential parts: []` (`utils/dj_merge_tables.py:634`)
+— the count is interpolated, so the literal "0" appears in the
+message and the empty list `[]` confirms zero sources matched. The
+usual cause is that the upstream source table (e.g.
+`IntervalPositionInfo`) has rows but they were never inserted into
+the merge part table (e.g. `PositionOutput.CommonPos`).
 
 Check:
 
