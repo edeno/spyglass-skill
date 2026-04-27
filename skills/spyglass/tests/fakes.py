@@ -39,6 +39,17 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
+# Cached copy of this file's source so per-fixture sandbox builds do not
+# re-read it from disk. ``prepare_sandbox`` consumes it.
+_FAKES_SOURCE: str | None = None
+
+
+def _read_fakes_source() -> str:
+    global _FAKES_SOURCE
+    if _FAKES_SOURCE is None:
+        _FAKES_SOURCE = Path(__file__).resolve().read_text()
+    return _FAKES_SOURCE
+
 
 class FakeHeading:
     """Stand-in for ``datajoint.Heading``.
@@ -511,6 +522,20 @@ def build_fake_datajoint_sandbox(target: Path) -> Path:
             '''
         )
     )
+    return target
+
+
+def prepare_sandbox(target: Path) -> Path:
+    """Build the datajoint shim and write a copy of ``fakes.py`` into ``target``.
+
+    Every test that runs ``db_graph.py`` against a synthetic class
+    needs both: the shim so ``import datajoint`` resolves to our
+    fakes, and a sibling ``fakes.py`` so the synthetic module's
+    ``from fakes import FakeRelation, FakeHeading`` works. ``target``
+    is the tempdir that callers point ``PYTHONPATH`` at.
+    """
+    build_fake_datajoint_sandbox(target)
+    (target / "fakes.py").write_text(_read_fakes_source())
     return target
 
 

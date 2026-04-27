@@ -1213,14 +1213,7 @@ def _setup_fakes_sandbox(
     """
     import fakes as _fakes_module
 
-    _fakes_module.build_fake_datajoint_sandbox(tmp)
-    # Copy fakes.py into the sandbox so the synthetic module can
-    # import its FakeHeading / FakeRelation. Using shutil would also
-    # work but a direct read+write avoids importing shutil here.
-    fakes_src_path = (
-        Path(__file__).resolve().parent / "fakes.py"
-    )
-    (tmp / "fakes.py").write_text(fakes_src_path.read_text())
+    _fakes_module.prepare_sandbox(tmp)
     _fakes_module.write_fake_test_module(
         tmp,
         module_name=module_name,
@@ -1541,9 +1534,7 @@ def fixture_c_fakes_safe_serialization_envelopes(
         # Fake datajoint + fakes copy.
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         # Synthetic module written directly so the rows can construct
         # bytes / datetime / UUID / NaN values via real Python
         # expressions (write_fake_test_module's repr-based path can't
@@ -1794,9 +1785,7 @@ def fixture_d_fakes_merge_routes_part_only_field_to_part(
         tmp = Path(tmp_str)
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         _write_fake_merge_module(tmp)
         rc, out, err = _run_db_graph(
             [
@@ -1858,6 +1847,275 @@ def fixture_d_fakes_merge_routes_part_only_field_to_part(
     return True
 
 
+def fixture_d_fakes_merge_count_unbounded_by_limit(
+    args: argparse.Namespace,
+) -> bool:
+    """Merge ``--count`` reports the TRUE count, not a page-limited count.
+
+    150 part rows match the restriction. With default ``--limit 100``,
+    the failure mode this fixture pins is paginating part keys to 100,
+    then counting master rows reachable from that bounded key set —
+    which would silently report ``count: 100`` (wrong-count footgun).
+    The expected behavior is to compute count DB-side from the FULL
+    restricted part, so ``count == 150`` regardless of ``--limit``.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.prepare_sandbox(tmp)
+
+        master_rows = ", ".join(
+            f"{{'merge_id': 'm-{i:03d}', 'source': 'PartA'}}"
+            for i in range(150)
+        )
+        part_rows = ", ".join(
+            f"{{'merge_id': 'm-{i:03d}', "
+            "'subject_id': 'aj80', 'epoch': '01'}"
+            for i in range(150)
+        )
+        (tmp / "fakemerge_big.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual, Part",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "class MasterMerge(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('merge_id',),",
+                    "        names=('merge_id', 'source'),",
+                    "        attributes={"
+                    "'merge_id': 'uuid', 'source': 'varchar(32)'},",
+                    "    )",
+                    f"    _rows = [{master_rows}]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                    "",
+                    "class PartA(Part):",
+                    "    master = MasterMerge",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('merge_id',),",
+                    "        names=('merge_id', 'subject_id', 'epoch'),",
+                    "        attributes={",
+                    "            'merge_id': 'uuid',",
+                    "            'subject_id': 'varchar(8)',",
+                    "            'epoch': 'varchar(32)',",
+                    "        },",
+                    "    )",
+                    f"    _rows = [{part_rows}]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                ]
+            )
+        )
+
+        rc_count, out_count, err_count = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakemerge_big",
+                "--merge-master",
+                "fakemerge_big:MasterMerge",
+                "--part",
+                "fakemerge_big:PartA",
+                "--key",
+                "subject_id=aj80",
+                "--count",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+        rc_rows, out_rows, err_rows = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakemerge_big",
+                "--merge-master",
+                "fakemerge_big:MasterMerge",
+                "--part",
+                "fakemerge_big:PartA",
+                "--key",
+                "subject_id=aj80",
+                "--fields",
+                "KEY",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+
+    if rc_count != 0 or rc_rows != 0:
+        print(
+            f"  [FAIL] expected rc=0, got count rc={rc_count} "
+            f"({err_count[:200]!r}); rows rc={rc_rows} "
+            f"({err_rows[:200]!r})"
+        )
+        return False
+    payload_count = _parse_json_or_fail(out_count, "merge --count payload")
+    payload_rows = _parse_json_or_fail(out_rows, "merge rows payload")
+    if payload_count is None or payload_rows is None:
+        return False
+    if payload_count.get("count") != 150:
+        print(
+            f"  [FAIL] --count: expected 150, got "
+            f"{payload_count.get('count')!r} (page-limited count footgun)"
+        )
+        return False
+    if payload_rows.get("count") != 150:
+        print(
+            f"  [FAIL] rows mode: expected count=150 (true count), got "
+            f"{payload_rows.get('count')!r}"
+        )
+        return False
+    rows = payload_rows.get("rows", [])
+    if len(rows) != 100:
+        print(
+            f"  [FAIL] rows mode: expected len(rows)==100 (page bound), "
+            f"got {len(rows)}"
+        )
+        return False
+    if not payload_rows.get("truncated"):
+        print(
+            f"  [FAIL] rows mode: expected truncated=True, got "
+            f"{payload_rows.get('truncated')!r}"
+        )
+        return False
+    print(
+        "  [ok] merge --count: 150 (true count); rows mode: count=150, "
+        "len(rows)=100, truncated=true"
+    )
+    return True
+
+
+def fixture_d_fakes_merge_ids_dedup_when_part_rows_share_master(
+    args: argparse.Namespace,
+) -> bool:
+    """``merge.merge_ids`` is a SET of master keys, deduped on master-key
+    tuple. A part can have its own primary key in addition to the
+    master FK, so multiple part rows often share the same master key.
+    The payload must NOT echo the part-row count under ``merge_ids`` —
+    otherwise an LLM treating ``len(merge_ids)`` as "distinct master
+    rows" would over-count.
+
+    Fixture has 3 part rows pointing at 2 distinct master keys
+    (m-1×2, m-2×1). Expectation: ``count == 2``, ``len(rows) == 2``,
+    ``len(merge_ids) == 2`` (deduped).
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.prepare_sandbox(tmp)
+        (tmp / "fakemerge_dup.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual, Part",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "class MasterMerge(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('merge_id',),",
+                    "        names=('merge_id', 'source'),",
+                    "        attributes={"
+                    "'merge_id': 'uuid', 'source': 'varchar(32)'},",
+                    "    )",
+                    "    _rows = [",
+                    "        {'merge_id': 'm-1', 'source': 'PartA'},",
+                    "        {'merge_id': 'm-2', 'source': 'PartA'},",
+                    "    ]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                    "",
+                    "class PartA(Part):",
+                    "    master = MasterMerge",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('merge_id', 'epoch'),",
+                    "        names=('merge_id', 'subject_id', 'epoch'),",
+                    "        attributes={",
+                    "            'merge_id': 'uuid',",
+                    "            'subject_id': 'varchar(8)',",
+                    "            'epoch': 'varchar(32)',",
+                    "        },",
+                    "    )",
+                    "    _rows = [",
+                    "        {'merge_id': 'm-1', 'subject_id': 'aj80', "
+                    "'epoch': '01'},",
+                    "        {'merge_id': 'm-1', 'subject_id': 'aj80', "
+                    "'epoch': '02'},",
+                    "        {'merge_id': 'm-2', 'subject_id': 'aj80', "
+                    "'epoch': '01'},",
+                    "    ]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                ]
+            )
+        )
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakemerge_dup",
+                "--merge-master",
+                "fakemerge_dup:MasterMerge",
+                "--part",
+                "fakemerge_dup:PartA",
+                "--key",
+                "subject_id=aj80",
+                "--fields",
+                "KEY",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "merge dedup payload")
+    if payload is None:
+        return False
+    if payload.get("count") != 2:
+        print(
+            f"  [FAIL] count != 2 (distinct master rows): "
+            f"{payload.get('count')!r}"
+        )
+        return False
+    rows = payload.get("rows", [])
+    if len(rows) != 2:
+        print(f"  [FAIL] len(rows) != 2: {len(rows)}")
+        return False
+    merge_ids = payload.get("merge", {}).get("merge_ids", [])
+    if len(merge_ids) != 2:
+        print(
+            f"  [FAIL] merge_ids must be deduped to 2 (m-1, m-2), "
+            f"got {len(merge_ids)}: {merge_ids!r}"
+        )
+        return False
+    resolved_ids = sorted(r.get("merge_id") for r in merge_ids)
+    if resolved_ids != ["m-1", "m-2"]:
+        print(f"  [FAIL] merge_ids drift: {resolved_ids!r}")
+        return False
+    print(
+        "  [ok] merge_ids deduped on master-key tuple "
+        "(3 part rows → 2 distinct master keys)"
+    )
+    return True
+
+
 def fixture_d_fakes_merge_master_only_field_silent_no_op_refused(
     args: argparse.Namespace,
 ) -> bool:
@@ -1874,9 +2132,7 @@ def fixture_d_fakes_merge_master_only_field_silent_no_op_refused(
         tmp = Path(tmp_str)
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         _write_fake_merge_module(tmp)
         rc, out, err = _run_db_graph(
             [
@@ -1927,9 +2183,7 @@ def fixture_d_fakes_merge_part_master_mismatch_exits_3(
         tmp = Path(tmp_str)
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         _write_fake_merge_module(tmp)
         # Add a second master that PartA does NOT point at; supply it
         # to --merge-master to trigger the mismatch.
@@ -2156,9 +2410,7 @@ def _setup_setop_sandbox(tmp: Path) -> None:
     """Build a sandbox with the fake datajoint and the setop module."""
     import fakes as _fakes_module
 
-    _fakes_module.build_fake_datajoint_sandbox(tmp)
-    fakes_path = Path(__file__).resolve().parent / "fakes.py"
-    (tmp / "fakes.py").write_text(fakes_path.read_text())
+    _fakes_module.prepare_sandbox(tmp)
     _write_fake_setop_module(tmp)
 
 
@@ -2203,6 +2455,12 @@ def fixture_e_fakes_intersect_returns_shared_keys(
             f"  [FAIL] query.set_op_form drift: {query.get('set_op_form')!r}"
         )
         return False
+    if query.get("class") != "fakesetop:Left":
+        print(
+            f"  [FAIL] query.class must echo the user's --class "
+            f"(fakesetop:Left), got {query.get('class')!r}"
+        )
+        return False
     rows = payload.get("rows", [])
     ids = sorted(r.get("id") for r in rows)
     if ids != [2]:
@@ -2240,10 +2498,14 @@ def fixture_e_fakes_except_returns_left_minus_right(
     payload = _parse_json_or_fail(out, "except payload")
     if payload is None:
         return False
-    if payload.get("query", {}).get("set_op") != "except":
+    query = payload.get("query", {})
+    if query.get("set_op") != "except":
+        print(f"  [FAIL] query.set_op != 'except': {query.get('set_op')!r}")
+        return False
+    if query.get("class") != "fakesetop:Left":
         print(
-            f"  [FAIL] query.set_op != 'except': "
-            f"{payload.get('query', {}).get('set_op')!r}"
+            f"  [FAIL] query.class must echo the user's --class "
+            f"(fakesetop:Left), got {query.get('class')!r}"
         )
         return False
     rows = payload.get("rows", [])
@@ -2285,10 +2547,14 @@ def fixture_e_fakes_join_validates_output_fields(
     payload = _parse_json_or_fail(out, "join payload")
     if payload is None:
         return False
-    if payload.get("query", {}).get("set_op") != "join":
+    query = payload.get("query", {})
+    if query.get("set_op") != "join":
+        print(f"  [FAIL] query.set_op != 'join': {query.get('set_op')!r}")
+        return False
+    if query.get("class") != "fakesetop:Left":
         print(
-            f"  [FAIL] query.set_op != 'join': "
-            f"{payload.get('query', {}).get('set_op')!r}"
+            f"  [FAIL] query.class must echo the user's --class "
+            f"(fakesetop:Left), got {query.get('class')!r}"
         )
         return False
     rows = payload.get("rows", [])
@@ -2322,9 +2588,7 @@ def fixture_e_fakes_intersect_secondary_only_overlap_refused(
         tmp = Path(tmp_str)
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         (tmp / "secondary_share.py").write_text(
             "\n".join(
                 [
@@ -2639,9 +2903,7 @@ def _write_fake_grouping_module(target: Path) -> None:
 def _setup_grouping_sandbox(tmp: Path) -> None:
     import fakes as _fakes_module
 
-    _fakes_module.build_fake_datajoint_sandbox(tmp)
-    fakes_path = Path(__file__).resolve().parent / "fakes.py"
-    (tmp / "fakes.py").write_text(fakes_path.read_text())
+    _fakes_module.prepare_sandbox(tmp)
     _write_fake_grouping_module(tmp)
 
 
@@ -2683,6 +2945,13 @@ def fixture_e_fakes_group_by_table_eval19_shape(
         return False
     if payload.get("kind") != "grouped_count":
         print(f"  [FAIL] kind != 'grouped_count': {payload.get('kind')!r}")
+        return False
+    query = payload.get("query", {})
+    if query.get("class") != "fakegroup:Electrode":
+        print(
+            f"  [FAIL] query.class must echo the user's --class "
+            f"(fakegroup:Electrode), got {query.get('class')!r}"
+        )
         return False
     groups = payload.get("groups", [])
     by_session = {
@@ -2794,9 +3063,7 @@ def fixture_d_merge_error_payload_carries_merge_context(
         tmp = Path(tmp_str)
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         # Don't write fakemerge.py — both classes will fail to resolve.
         rc, out, _ = _run_db_graph(
             [
@@ -2844,9 +3111,7 @@ def fixture_d_fakes_merge_count_only(args: argparse.Namespace) -> bool:
         tmp = Path(tmp_str)
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         _write_fake_merge_module(tmp)
         rc, out, _ = _run_db_graph(
             [
@@ -3167,6 +3432,83 @@ def fixture_c_null_key_value_refused(args: argparse.Namespace) -> bool:
         )
         return False
     print("  [ok] --key field=null is refused with kind=null_restriction_refused")
+    return True
+
+
+def fixture_c_fields_key_mixed_with_explicit_fields_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """``--fields KEY,name`` is refused.
+
+    Real DataJoint accepts the union (PK fields + extras) but the
+    per-row payload dict cannot disambiguate a literal ``"KEY"`` from
+    the PK fields it would expand to. The contract picks one form:
+    ``--fields KEY`` for the primary key, or ``--fields f1,f2,...``
+    for an explicit projection. Pinning the parser-side refusal so
+    later passes cannot quietly relax it.
+
+    Pure parser test — does not need datajoint/spyglass on python_env.
+    """
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "json:JSONDecoder",
+            "--fields",
+            "KEY,name",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "fields KEY-mix payload")
+    if payload is None:
+        return False
+    if payload.get("error", {}).get("kind") != "malformed_fields":
+        print(
+            f"  [FAIL] error.kind != 'malformed_fields': "
+            f"{payload.get('error', {})!r}"
+        )
+        return False
+    print("  [ok] --fields KEY,name refused with kind=malformed_fields")
+    return True
+
+
+def fixture_c_null_keyjson_value_refused(args: argparse.Namespace) -> bool:
+    """``--key-json field=null`` is refused for the same reason ``--key
+    field=null`` is — JSON ``null`` would otherwise sneak past the
+    scalar-parser refusal and let DataJoint silently drop the
+    restriction, returning the unrestricted relation.
+
+    Pure parser test — does not need datajoint/spyglass on python_env.
+    """
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "json:JSONDecoder",
+            "--key-json",
+            "x=null",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "null_keyjson payload")
+    if payload is None:
+        return False
+    if payload.get("error", {}).get("kind") != "null_restriction_refused":
+        print(
+            f"  [FAIL] error.kind != 'null_restriction_refused': "
+            f"{payload.get('error', {})!r}"
+        )
+        return False
+    print(
+        "  [ok] --key-json field=null is refused with "
+        "kind=null_restriction_refused"
+    )
     return True
 
 
@@ -4013,9 +4355,7 @@ def fixture_f_fakes_describe_returns_heading_and_adjacency(
         tmp = Path(tmp_str)
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         (tmp / "describetest.py").write_text(
             "\n".join(
                 [
@@ -4137,9 +4477,7 @@ def fixture_f_fakes_describe_errored_metadata_reported_as_error(
         tmp = Path(tmp_str)
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         # Synthetic class whose returned relation has ``parents()``
         # raise — simulates an older DataJoint or a custom relation
         # whose schema metadata round-trip fails.  describe should
@@ -4229,9 +4567,7 @@ def fixture_f_fakes_describe_omits_count_by_default(
         tmp = Path(tmp_str)
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         (tmp / "describenocnt.py").write_text(
             "\n".join(
                 [
@@ -4297,9 +4633,7 @@ def fixture_f_fakes_describe_unavailable_metadata_distinguished(
         tmp = Path(tmp_str)
         import fakes as _fakes_module
 
-        _fakes_module.build_fake_datajoint_sandbox(tmp)
-        fakes_path = Path(__file__).resolve().parent / "fakes.py"
-        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _fakes_module.prepare_sandbox(tmp)
         # Synthetic class returns a relation whose ``parents``
         # attribute is None — ``getattr(rel, "parents", None)`` then
         # falls into the unavailable path inside
@@ -4551,9 +4885,7 @@ def _write_fake_path_module(target: Path) -> None:
 def _setup_path_sandbox(tmp: Path) -> None:
     import fakes as _fakes_module
 
-    _fakes_module.build_fake_datajoint_sandbox(tmp)
-    fakes_path = Path(__file__).resolve().parent / "fakes.py"
-    (tmp / "fakes.py").write_text(fakes_path.read_text())
+    _fakes_module.prepare_sandbox(tmp)
     _write_fake_path_module(tmp)
 
 
@@ -4938,6 +5270,104 @@ def fixture_g_fakes_path_walk_incomplete_when_neighbor_errors(
     return True
 
 
+def fixture_g_fakes_path_schema_error_carries_input_context(
+    args: argparse.Namespace,
+) -> bool:
+    """A class that resolves but lacks ``full_table_name`` exits with a
+    structured ``db_error`` (kind=schema). The failure payload must
+    carry the user's path-mode inputs (``query.up`` / ``query.from`` /
+    ``query.to``) so an LLM can act on it without re-parsing the
+    command line — and it must NOT crash with an AttributeError when
+    the path namespace has no ``--class``.
+    """
+    import fakes as _fakes_module
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _fakes_module.prepare_sandbox(tmp)
+        (tmp / "nofull.py").write_text(
+            "\n".join(
+                [
+                    "import datajoint",
+                    "",
+                    "class NoFull(datajoint.user_tables.UserTable):",
+                    "    definition = 'id: int'",
+                ]
+            )
+        )
+
+        rc_up, out_up, err_up = _run_db_graph(
+            [
+                "path",
+                "--import",
+                "nofull",
+                "--up",
+                "nofull:NoFull",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+        rc_to, out_to, err_to = _run_db_graph(
+            [
+                "path",
+                "--import",
+                "nofull",
+                "--to",
+                "nofull:NoFull",
+                "nofull:NoFull",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+
+    if rc_up != 5:
+        print(
+            f"  [FAIL] --up no-full_table_name: expected rc=5, got "
+            f"{rc_up}; stderr: {err_up[:200]!r}"
+        )
+        return False
+    if rc_to != 5:
+        print(
+            f"  [FAIL] --to no-full_table_name: expected rc=5, got "
+            f"{rc_to}; stderr: {err_to[:200]!r}"
+        )
+        return False
+    payload_up = _parse_json_or_fail(out_up, "path --up schema-error payload")
+    payload_to = _parse_json_or_fail(out_to, "path --to schema-error payload")
+    if payload_up is None or payload_to is None:
+        return False
+    if payload_up.get("kind") != "db_error":
+        print(f"  [FAIL] --up kind != 'db_error': {payload_up.get('kind')!r}")
+        return False
+    if payload_to.get("kind") != "db_error":
+        print(f"  [FAIL] --to kind != 'db_error': {payload_to.get('kind')!r}")
+        return False
+    if payload_up.get("error", {}).get("kind") != "schema":
+        print(
+            f"  [FAIL] --up error.kind != 'schema': "
+            f"{payload_up.get('error', {})!r}"
+        )
+        return False
+    query_up = payload_up.get("query", {})
+    if query_up.get("up") != "nofull:NoFull":
+        print(
+            f"  [FAIL] --up payload missing query.up: {query_up!r}"
+        )
+        return False
+    query_to = payload_to.get("query", {})
+    if query_to.get("from") != "nofull:NoFull" or query_to.get("to") != "nofull:NoFull":
+        print(
+            f"  [FAIL] --to payload missing query.from / query.to: "
+            f"{query_to!r}"
+        )
+        return False
+    print(
+        "  [ok] path schema-error payload carries query.up / query.from / "
+        "query.to (no AttributeError when --class is absent)"
+    )
+    return True
+
+
 def fixture_g_path_advertised_in_info(
     args: argparse.Namespace,
 ) -> bool:
@@ -5141,6 +5571,8 @@ FIXTURES = [
     fixture_c_fakes_db_error_classification,
     # Batch D — merge-aware lookup (fakes sandbox)
     fixture_d_fakes_merge_routes_part_only_field_to_part,
+    fixture_d_fakes_merge_count_unbounded_by_limit,
+    fixture_d_fakes_merge_ids_dedup_when_part_rows_share_master,
     fixture_d_fakes_merge_master_only_field_silent_no_op_refused,
     fixture_d_fakes_merge_part_master_mismatch_exits_3,
     fixture_d_fakes_merge_count_only,
@@ -5178,6 +5610,7 @@ FIXTURES = [
     fixture_g_fakes_path_max_depth_truncates,
     fixture_g_fakes_path_to_incomplete_when_traversal_errors,
     fixture_g_fakes_path_walk_incomplete_when_neighbor_errors,
+    fixture_g_fakes_path_schema_error_carries_input_context,
     fixture_g_path_advertised_in_info,
     fixture_g_eval_path_session_descendants,
     # Batch D — live Spyglass evals
@@ -5191,6 +5624,8 @@ FIXTURES = [
     fixture_c_unknown_restriction_field_refused,
     fixture_c_blob_restriction_refused,
     fixture_c_null_key_value_refused,
+    fixture_c_null_keyjson_value_refused,
+    fixture_c_fields_key_mixed_with_explicit_fields_refused,
     fixture_c_malformed_key_argument_refused,
     fixture_c_unknown_fetch_field_refused,
     fixture_c_eval9_session_row_lookup,
@@ -5212,7 +5647,7 @@ def main() -> int:
         default=None,
         help=(
             "Path to spyglass src/ directory. Parity with sibling test files; "
-            "Batch A fixtures do not consume this."
+            "fixtures that exercise the source-only path do not consume this."
         ),
     )
     parser.add_argument(
@@ -5232,14 +5667,14 @@ def main() -> int:
         help=(
             "Treat missing python_env capabilities (datajoint, spyglass) "
             "as failure instead of skip. Pass this in CI / pre-commit so "
-            "an environment that cannot exercise Batch-B resolution does "
+            "an environment that cannot exercise the resolution path does "
             "not silently report '23/23 passed'."
         ),
     )
     args = parser.parse_args()
 
     # Capability detection: pre-compute once so per-fixture invocations
-    # stay free. The Batch B resolution fixtures gate on these flags.
+    # stay free. Resolution fixtures gate on these flags.
     args.has_datajoint = _python_can_import(args.python_env, "datajoint")
     args.has_spyglass = _python_can_import(args.python_env, "spyglass")
 

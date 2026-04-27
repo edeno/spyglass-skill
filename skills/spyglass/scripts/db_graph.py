@@ -24,12 +24,6 @@ Subcommands
   cost.
 * ``db_graph.py find-instance --class CLS [...]`` — bounded row lookup,
   count, merge-key resolution, conservative set ops, and grouped counts.
-  *Through Batch B class resolution is implemented end-to-end; the
-  query stage (heading validation, restriction, fetch, set ops,
-  aggregation) lands in Batch C+ per
-  docs/plans/db-graph-impl-plan.md. A successfully-resolved query
-  returns ``kind: "not_implemented"`` with ``query.stage="resolved"``
-  until then.*
 
 Exit codes
 ----------
@@ -73,6 +67,7 @@ import json
 import os
 import sys
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -657,11 +652,11 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "timings_ms",
         "groups",
     ],
-    # Batch F runtime introspection. ``describe`` carries the runtime
-    # heading + adjacency in a sub-block (vs the source-only fields
-    # ``code_graph.py describe`` exposes at the top level). The
-    # sub-block keeps the top-level shape compact and lets later
-    # batches extend the runtime view without churn.
+    # ``describe`` carries the runtime heading + adjacency in a
+    # sub-block (vs the source-only fields ``code_graph.py describe``
+    # exposes at the top level). The sub-block keeps the top-level
+    # shape compact and lets later additions extend the runtime view
+    # without churn.
     "describe": [
         "schema_version",
         "kind",
@@ -673,11 +668,11 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "describe",
         "timings_ms",
     ],
-    # Batch G runtime graph traversal. ``--to`` produces ``hops``;
-    # ``--up`` / ``--down`` produce ``nodes`` + ``edges``. The envelope
-    # lists the union; the actual emitted shape carries either ``hops``
-    # OR ``nodes``+``edges``, with ``query.mode`` discriminating
-    # ("to" vs "ancestors" vs "descendants").
+    # ``--to`` produces ``hops``; ``--up`` / ``--down`` produce
+    # ``nodes`` + ``edges``. The envelope lists the union; the actual
+    # emitted shape carries either ``hops`` OR ``nodes``+``edges``,
+    # with ``query.mode`` discriminating ("to" vs "ancestors" vs
+    # "descendants").
     "path": [
         "schema_version",
         "kind",
@@ -770,9 +765,9 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "error",
         "timings_ms",
     ],
-    # Field-validation / restriction-malformed shape (Batch C): the class
-    # was resolved successfully but the user-supplied query is malformed
-    # in a way DataJoint would silently no-op (unknown field, blob
+    # Field-validation / restriction-malformed shape: the class was
+    # resolved successfully but the user-supplied query is malformed in
+    # a way DataJoint would silently no-op (unknown field, blob
     # restriction, --key-json with non-JSON value). Maps to exit 2 — a
     # usage error in the same family as "argparse complained" — but the
     # structured payload lets an LLM see exactly which field was bad and
@@ -788,13 +783,12 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "error",
         "timings_ms",
     ],
-    # Build-time scaffolding shape: emitted by the find-instance stub
-    # while implementation lands in Batch C+. Documenting it here keeps
-    # `info --json` the source of truth for every JSON shape the tool
-    # can emit, including this one. The kind value is "not_implemented"
-    # rather than the generic "error" so an LLM that sees the payload
-    # can distinguish a build-incomplete stub from a runtime DB error
-    # (which uses the `db_error` envelope).
+    # Build-time scaffolding shape: emitted when a code path is
+    # explicitly stubbed. Documenting it here keeps `info --json` the
+    # source of truth for every JSON shape the tool can emit. The
+    # kind value is "not_implemented" rather than the generic "error"
+    # so an LLM that sees the payload can distinguish a stub from a
+    # runtime DB error (which uses the `db_error` envelope).
     "not_implemented": [
         "schema_version",
         "kind",
@@ -837,7 +831,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_info.add_argument("--json", action="store_true", help="Emit JSON.")
 
-    # describe — Batch F runtime introspection. Smaller surface than
+    # describe — runtime introspection. Smaller surface than
     # `code_graph.py describe`: heading, parent/child/part class names,
     # optional row count. Where ``code_graph.py describe`` is the
     # canonical source-only view (definitions, body methods, mixin
@@ -886,12 +880,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="Emit JSON."
     )
 
-    # path — Batch G runtime graph traversal. Mirrors code_graph.py path
-    # in shape (--to / --up / --down with --max-depth) but operates on
-    # the live DataJoint adjacency rather than the source-only FK graph.
-    # Used when source and runtime disagree, or when a custom-table
-    # subgraph that is not visible to the static index needs to be
-    # walked.
+    # path — runtime graph traversal. Mirrors code_graph.py path in
+    # shape (--to / --up / --down with --max-depth) but operates on
+    # the live DataJoint adjacency rather than the source-only FK
+    # graph. Used when source and runtime disagree, or when a
+    # custom-table subgraph that is not visible to the static index
+    # needs to be walked.
     p_path = sub.add_parser(
         "path",
         help=(
@@ -942,9 +936,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_path.add_argument("--json", action="store_true", help="Emit JSON.")
 
-    # find-instance — full argparse surface so info advertises the planned
-    # contract accurately. Implementation lands in Batch C+; this build
-    # returns a structured 'not_implemented' error when invoked.
+    # find-instance — read-only DataJoint inspection (resolve, restrict,
+    # fetch, count, merge-key, set ops, grouped counts).
     p_fi = sub.add_parser(
         "find-instance",
         help=(
@@ -954,8 +947,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "Read-only DataJoint inspection: resolve a class, restrict by "
             "scalar key, fetch bounded rows or counts, route merge-master "
-            "lookups through the part, and run conservative set operations. "
-            "Implementation arrives in Batch C+; this build is a scaffold."
+            "lookups through the part, and run conservative set operations."
         ),
     )
     p_fi.add_argument(
@@ -1422,7 +1414,7 @@ def cmd_info(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Resolution-failure payload emitters (Batch B)
+# Resolution-failure payload emitters
 # ---------------------------------------------------------------------------
 
 
@@ -1445,11 +1437,12 @@ def _failure_query_block(args: argparse.Namespace) -> dict:
     --merge-master/--part.
     """
     # Use ``getattr`` defensively because ``_failure_query_block`` is
-    # also called from subcommands (``describe``) whose argparse
-    # namespace does not define the find-instance-only flags. Treating
+    # also called from subcommands (``describe``, ``path``) whose
+    # argparse namespace does not define the find-instance-only flags
+    # — and ``path`` does not even declare ``--class``. Treating
     # missing attrs as None keeps the helper a safe drop-in for any
     # subcommand that wants standardized failure context.
-    query: dict[str, object] = {"class": args.class_name}
+    query: dict[str, object] = {"class": getattr(args, "class_name", None)}
     merge_master = getattr(args, "merge_master", None)
     part = getattr(args, "part", None)
     intersect = getattr(args, "intersect", None)
@@ -1480,6 +1473,20 @@ def _failure_query_block(args: argparse.Namespace) -> dict:
         query["group_by_table"] = group_by_table
     if count_distinct:
         query["count_distinct_field"] = count_distinct
+    # Path-mode inputs (``--to FROM TO`` / ``--up CLASS`` / ``--down CLASS``)
+    # are surfaced when present so a path-mode failure payload still
+    # tells an LLM which class(es) the user actually named — without
+    # them the only identifier in a post-resolution schema error
+    # would be ``resolved_class``.
+    to_pair = getattr(args, "to", None)
+    up_target = getattr(args, "up", None)
+    down_target = getattr(args, "down", None)
+    if to_pair:
+        query["from"], query["to"] = to_pair[0], to_pair[1]
+    if up_target:
+        query["up"] = up_target
+    if down_target:
+        query["down"] = down_target
     return query
 
 
@@ -1621,7 +1628,7 @@ def _emit_db_error(
 
 
 # ---------------------------------------------------------------------------
-# Batch C — restriction parsing, fetch path, safe serialization
+# Restriction parsing, fetch path, safe serialization
 # ---------------------------------------------------------------------------
 
 
@@ -1737,7 +1744,7 @@ def _parse_key_args(
                 )
             if flag == "--key-json":
                 try:
-                    out[field] = json.loads(value)
+                    parsed = json.loads(value)
                 except json.JSONDecodeError as exc:
                     raise _InvalidQuery(
                         "malformed_key",
@@ -1745,6 +1752,24 @@ def _parse_key_args(
                         field=field,
                         received=value,
                     ) from exc
+                # JSON ``null`` would degenerate to the same DataJoint
+                # silent-drop footgun that ``--key field=null`` is
+                # refused for: DataJoint discards the restriction and
+                # returns the unrestricted relation, which an LLM
+                # would mis-cite as "filter applied, no rows match."
+                if parsed is None:
+                    raise _InvalidQuery(
+                        "null_restriction_refused",
+                        (
+                            "--key-json field=null is refused. DataJoint "
+                            "silently drops null restrictions; the tool "
+                            "refuses them so an LLM cannot mistake an "
+                            "unrestricted relation for a filtered one."
+                        ),
+                        field=field,
+                        received=value,
+                    )
+                out[field] = parsed
             else:
                 out[field] = _parse_scalar_value(value)
     return out
@@ -1758,9 +1783,29 @@ def _parse_fields_arg(fields_raw: str) -> list[str]:
     a stray empty string would surface as a confusing fetch error. The
     sentinel ``KEY`` is preserved verbatim — DataJoint's fetch API takes
     it directly.
+
+    ``KEY`` mixed with explicit field names (``--fields KEY,name``) is
+    refused: real DataJoint accepts the union (primary-key fields +
+    extras), but the payload's per-row dict shape is ambiguous (a
+    literal ``"KEY"`` column appears alongside the PK fields it
+    expands to, and downstream LLMs cannot tell which is authoritative).
+    Pick one form: ``--fields KEY`` for the primary key, or ``--fields
+    f1,f2,...`` for an explicit projection.
     """
     fields = [f.strip() for f in fields_raw.split(",") if f.strip()]
-    return fields or ["KEY"]
+    if not fields:
+        return ["KEY"]
+    if "KEY" in fields and len(fields) > 1:
+        raise _InvalidQuery(
+            "malformed_fields",
+            (
+                "--fields KEY mixed with explicit fields is refused. "
+                "Use --fields KEY for the primary key, or --fields "
+                "f1,f2,... for an explicit projection — not both."
+            ),
+            received=fields_raw,
+        )
+    return fields
 
 
 def _validate_restriction_fields(
@@ -1995,7 +2040,7 @@ def _emit_invalid_query(
 
 
 # ---------------------------------------------------------------------------
-# Batch D — merge-aware lookup
+# Merge-aware lookup
 # ---------------------------------------------------------------------------
 
 
@@ -2124,42 +2169,28 @@ def _cmd_find_instance_merge(
     Failure modes:
 
     * Either class fails to resolve → kind=ambiguous / not_found /
-      not_a_table / db_error, exit 3 / 4 / 4 / 5 (Batch B paths).
+      not_a_table / db_error, exit 3 / 4 / 4 / 5.
     * Restriction names a field absent from the part heading →
-      kind=invalid_query / error.kind=unknown_field, exit 2. This is
-      the eval #50 silent-wrong-count footgun.
+      kind=invalid_query / error.kind=unknown_field, exit 2. (This is
+      the silent-wrong-count footgun: a misspelled key on the master
+      tail-rows the part-side restriction without warning.)
     * part.master disagrees with --merge-master → kind=ambiguous with
       a structural hint, exit 3.
     * No structural link identifiable → same.
     """
     timer.mark("resolve")
-    try:
-        master = resolve_class(
-            args.merge_master, src=args.src, imports=tuple(args.imports)
-        )
-        part = resolve_class(
-            args.part, src=args.src, imports=tuple(args.imports)
-        )
-    except _AmbiguousClass as exc:
-        return _emit_ambiguous(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    except _NotADataJointTable as exc:
-        return _emit_not_a_table(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    except _DataJointUnavailable as exc:
-        return _emit_db_error(
-            args=args,
-            timer=timer,
-            error_kind="datajoint_import",
-            message=f"DataJoint is not importable: {exc.original}",
-            src_root=src_root_used,
-        )
-    except _ClassNotFound as exc:
-        return _emit_not_found(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
+    master_or_rc = _handle_resolve(
+        args, args.merge_master, timer=timer, src_root_used=src_root_used
+    )
+    if isinstance(master_or_rc, int):
+        return master_or_rc
+    master = master_or_rc
+    part_or_rc = _handle_resolve(
+        args, args.part, timer=timer, src_root_used=src_root_used
+    )
+    if isinstance(part_or_rc, int):
+        return part_or_rc
+    part = part_or_rc
 
     timer.mark("heading")
     try:
@@ -2215,29 +2246,41 @@ def _cmd_find_instance_merge(
     timer.mark("query")
     try:
         restricted_part = part_rel & restriction if restriction else part_rel
-        # Fetch master-key tuples from the restricted part to detect truncation.
-        fetched_master_keys = restricted_part.fetch(
-            *master_key_fields, as_dict=True, limit=args.limit + 1
+        # Compute the true master-row count DB-side from the FULL
+        # restricted part (no pagination), so ``count`` is unbounded
+        # by ``--limit``. Pagination below only governs how many master
+        # rows we round-trip back to the caller.
+        master_count_relation = master_rel & restricted_part.proj(
+            *master_key_fields
         )
-        truncated = len(fetched_master_keys) > args.limit
-        fetched_master_keys = fetched_master_keys[: args.limit]
-        master_keys_for_restrict = [
-            {k: r[k] for k in master_key_fields} for r in fetched_master_keys
-        ]
-        if master_keys_for_restrict:
-            master_restricted = master_rel & master_keys_for_restrict
-            count = len(master_restricted)
-            if not args.count:
+        count = len(master_count_relation)
+
+        if args.count:
+            fetched_master_keys: list[dict] = []
+            fetched_rows: list[dict] = []
+            truncated = False
+        else:
+            # Fetch limit+1 master-key tuples from the restricted part
+            # to detect truncation in one round-trip.
+            fetched_master_keys = restricted_part.fetch(
+                *master_key_fields, as_dict=True, limit=args.limit + 1
+            )
+            truncated = len(fetched_master_keys) > args.limit
+            fetched_master_keys = fetched_master_keys[: args.limit]
+            master_keys_for_restrict = [
+                {k: r[k] for k in master_key_fields}
+                for r in fetched_master_keys
+            ]
+            if master_keys_for_restrict:
+                master_restricted = master_rel & master_keys_for_restrict
                 fetched_rows = master_restricted.fetch(
                     *fetch_fields, as_dict=True, limit=args.limit + 1
                 )
-                truncated = truncated or (len(fetched_rows) > args.limit)
+                rows_truncated = len(fetched_rows) > args.limit
+                truncated = truncated or rows_truncated
                 fetched_rows = fetched_rows[: args.limit]
             else:
                 fetched_rows = []
-        else:
-            count = 0
-            fetched_rows = []
     except _InvalidQuery as exc:
         return _emit_invalid_query(
             args=args, timer=timer, resolved=part,
@@ -2258,10 +2301,22 @@ def _cmd_find_instance_merge(
         {k: _safe_serialize_value(v) for k, v in row.items()}
         for row in fetched_rows
     ]
-    serialized_merge_ids = [
-        {k: _safe_serialize_value(v) for k, v in r.items()}
-        for r in fetched_master_keys
-    ]
+    # Multiple part rows can point to the same master-key tuple (a
+    # part typically has its own primary key on top of the master FK).
+    # The ``merge_ids`` payload field names a SET of master keys, so
+    # dedupe on the master-key tuple in arrival order — otherwise a
+    # downstream LLM would over-count "distinct master rows" by
+    # treating part-row evidence as unique.
+    seen_master_key_tuples: set[tuple] = set()
+    serialized_merge_ids: list[dict] = []
+    for r in fetched_master_keys:
+        key_tuple = tuple(r.get(f) for f in master_key_fields)
+        if key_tuple in seen_master_key_tuples:
+            continue
+        seen_master_key_tuples.add(key_tuple)
+        serialized_merge_ids.append(
+            {k: _safe_serialize_value(v) for k, v in r.items()}
+        )
 
     payload = _stamp_envelope(
         "merge", source_root=master.src_root or part.src_root
@@ -2296,7 +2351,7 @@ def _cmd_find_instance_merge(
 
 
 # ---------------------------------------------------------------------------
-# Batch E — set operations and grouped counts
+# Set operations and grouped counts
 # ---------------------------------------------------------------------------
 
 
@@ -2326,34 +2381,17 @@ def _resolve_setop_pair(
     either resolution fails, so callers can ``return`` it directly.
     """
     timer.mark("resolve")
-    try:
-        base = resolve_class(
-            args.class_name, src=args.src, imports=tuple(args.imports)
-        )
-        partner = resolve_class(
-            partner_name, src=args.src, imports=tuple(args.imports)
-        )
-    except _AmbiguousClass as exc:
-        return _emit_ambiguous(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    except _NotADataJointTable as exc:
-        return _emit_not_a_table(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    except _DataJointUnavailable as exc:
-        return _emit_db_error(
-            args=args,
-            timer=timer,
-            error_kind="datajoint_import",
-            message=f"DataJoint is not importable: {exc.original}",
-            src_root=src_root_used,
-        )
-    except _ClassNotFound as exc:
-        return _emit_not_found(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    return base, partner
+    base_or_rc = _handle_resolve(
+        args, args.class_name, timer=timer, src_root_used=src_root_used
+    )
+    if isinstance(base_or_rc, int):
+        return base_or_rc
+    partner_or_rc = _handle_resolve(
+        args, partner_name, timer=timer, src_root_used=src_root_used
+    )
+    if isinstance(partner_or_rc, int):
+        return partner_or_rc
+    return base_or_rc, partner_or_rc
 
 
 def _cmd_find_instance_setop(
@@ -2558,16 +2596,17 @@ def _cmd_find_instance_setop(
         else:  # join
             result = base_rel * partner_rel
 
-        count = len(result)
-        if not args.count:
+        if args.count:
+            count = len(result)
+            fetched = []
+            truncated = False
+        else:
             fetched = result.fetch(
                 *fetch_fields, as_dict=True, limit=args.limit + 1
             )
             truncated = len(fetched) > args.limit
+            count = len(result) if truncated else len(fetched)
             fetched = fetched[: args.limit]
-        else:
-            fetched = []
-            truncated = False
     except Exception as exc:
         return _emit_db_error(
             args=args,
@@ -2605,8 +2644,9 @@ def _cmd_find_instance_setop(
     payload["count"] = count
     payload["limit"] = args.limit
     payload["truncated"] = truncated
-    # Batch E set ops are DB-side; ``incomplete`` reserves the bounded-
-    # Python-fallback marker for a future iteration. Always False today.
+    # Set ops run DB-side; ``incomplete`` reserves the
+    # bounded-Python-fallback marker for a future iteration. Always
+    # False today.
     payload["incomplete"] = False
     payload["timings_ms"] = timer.finalize()
     payload["rows"] = serialized_rows
@@ -2642,51 +2682,21 @@ def _cmd_find_instance_grouped_count(
     primary key participates.
     """
     timer.mark("resolve")
-    try:
-        base = resolve_class(
-            args.class_name, src=args.src, imports=tuple(args.imports)
-        )
-    except _AmbiguousClass as exc:
-        return _emit_ambiguous(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    except _NotADataJointTable as exc:
-        return _emit_not_a_table(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    except _DataJointUnavailable as exc:
-        return _emit_db_error(
-            args=args,
-            timer=timer,
-            error_kind="datajoint_import",
-            message=f"DataJoint is not importable: {exc.original}",
-            src_root=src_root_used,
-        )
-    except _ClassNotFound as exc:
-        return _emit_not_found(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
+    base_or_rc = _handle_resolve(
+        args, args.class_name, timer=timer, src_root_used=src_root_used
+    )
+    if isinstance(base_or_rc, int):
+        return base_or_rc
+    base = base_or_rc
 
     grouping: _Resolved | None = None
     if args.group_by_table:
-        try:
-            grouping = resolve_class(
-                args.group_by_table,
-                src=args.src,
-                imports=tuple(args.imports),
-            )
-        except _AmbiguousClass as exc:
-            return _emit_ambiguous(
-                args=args, timer=timer, exc=exc, src_root=src_root_used
-            )
-        except _NotADataJointTable as exc:
-            return _emit_not_a_table(
-                args=args, timer=timer, exc=exc, src_root=src_root_used
-            )
-        except _ClassNotFound as exc:
-            return _emit_not_found(
-                args=args, timer=timer, exc=exc, src_root=src_root_used
-            )
+        grouping_or_rc = _handle_resolve(
+            args, args.group_by_table, timer=timer, src_root_used=src_root_used
+        )
+        if isinstance(grouping_or_rc, int):
+            return grouping_or_rc
+        grouping = grouping_or_rc
 
     timer.mark("heading")
     try:
@@ -2789,8 +2799,6 @@ def _cmd_find_instance_grouped_count(
             result = universal.aggr(base_rel, **{agg_name: agg_expr})
             group_key_fields = tuple(explicit_group_fields)
 
-        # Number of groups.
-        count = len(result)
         groups_data = result.fetch(
             *group_key_fields,
             agg_name,
@@ -2798,6 +2806,9 @@ def _cmd_find_instance_grouped_count(
             limit=args.limit + 1,
         )
         truncated = len(groups_data) > args.limit
+        # Number of groups; when truncated we still need a COUNT(*) to
+        # report the true total.
+        count = len(result) if truncated else len(groups_data)
         groups_data = groups_data[: args.limit]
     except Exception as exc:
         return _emit_db_error(
@@ -2850,7 +2861,7 @@ def _cmd_find_instance_grouped_count(
 
 
 # ---------------------------------------------------------------------------
-# Subcommand: path (Batch G — runtime graph traversal)
+# Subcommand: path — runtime graph traversal
 # ---------------------------------------------------------------------------
 
 
@@ -2908,9 +2919,9 @@ def _bfs_walk(
     edges: list[dict] = []
     truncated = False
     truncated_at_depth: int | None = None
-    queue: list[tuple[str, int]] = [(start, 0)]
+    queue: deque[tuple[str, int]] = deque([(start, 0)])
     while queue:
-        name, depth = queue.pop(0)
+        name, depth = queue.popleft()
         if depth >= max_depth:
             if not truncated:
                 truncated = True
@@ -2964,13 +2975,13 @@ def _bfs_path(
       rather than "no path."
     """
     parent_of: dict[str, str | None] = {from_name: None}
-    queue: list[tuple[str, int]] = [(from_name, 0)]
+    queue: deque[tuple[str, int]] = deque([(from_name, 0)])
     truncated = False
     truncated_at_depth: int | None = None
     errors: list[dict] = []
     incomplete = False
     while queue:
-        name, depth = queue.pop(0)
+        name, depth = queue.popleft()
         if name == to_name:
             chain: list[str] = []
             current: str | None = name
@@ -3000,24 +3011,38 @@ def _bfs_path(
     return [], truncated, truncated_at_depth, errors, incomplete
 
 
-def _resolve_path_class(
+def _handle_resolve(
     args: argparse.Namespace,
     name: str,
     *,
     timer: _Timer,
     src_root_used: Path | None,
 ) -> _Resolved | int:
-    """Resolve a single class for the path command.
+    """Resolve a class; on failure, return an emitter exit code.
 
-    Returns the resolved class on success, or an exit code from the
-    appropriate failure emitter (so callers can ``return`` it
-    directly). Sets ``args.class_name`` to ``name`` before each
-    resolution so the failure emitters' query block points at the
-    class that actually failed (rather than always the first one).
+    Returns the ``_Resolved`` object on success, or the rc from the
+    appropriate failure emitter so callers can ``return`` it directly.
+    On failure, ``args.class_name`` is set to ``name`` so the shared
+    failure emitters' ``query.class`` field names whichever class
+    actually failed (important for handlers that resolve multiple
+    classes — merge / set-op / path / grouped-count). On success
+    ``args.class_name`` is left untouched so that downstream success
+    payloads keep echoing the user's original ``--class`` argument
+    rather than a partner / grouping name resolved on the side.
+
+    The ``path`` subparser does not declare a ``--class`` argument
+    (its inputs are ``--to FROM TO`` / ``--up CLASS`` / ``--down CLASS``),
+    so ``args.class_name`` may be absent entirely. Treat that as "no
+    previous value to restore" and only set the attribute on failure
+    paths, where downstream emitters depend on it.
     """
+    had_class_name = hasattr(args, "class_name")
+    previous = getattr(args, "class_name", None)
     args.class_name = name
     try:
-        return resolve_class(name, src=args.src, imports=tuple(args.imports))
+        resolved = resolve_class(
+            name, src=args.src, imports=tuple(args.imports)
+        )
     except _AmbiguousClass as exc:
         return _emit_ambiguous(
             args=args, timer=timer, exc=exc, src_root=src_root_used
@@ -3038,6 +3063,11 @@ def _resolve_path_class(
         return _emit_not_found(
             args=args, timer=timer, exc=exc, src_root=src_root_used
         )
+    if had_class_name:
+        args.class_name = previous
+    else:
+        del args.class_name
+    return resolved
 
 
 def cmd_path(args: argparse.Namespace) -> int:
@@ -3062,12 +3092,12 @@ def cmd_path(args: argparse.Namespace) -> int:
     timer.mark("resolve")
     if args.to:
         from_name, to_name = args.to
-        from_resolved = _resolve_path_class(
+        from_resolved = _handle_resolve(
             args, from_name, timer=timer, src_root_used=src_root_used
         )
         if isinstance(from_resolved, int):
             return from_resolved
-        to_resolved = _resolve_path_class(
+        to_resolved = _handle_resolve(
             args, to_name, timer=timer, src_root_used=src_root_used
         )
         if isinstance(to_resolved, int):
@@ -3132,7 +3162,7 @@ def cmd_path(args: argparse.Namespace) -> int:
     target_name = args.up if args.up else args.down
     direction = "parents" if args.up else "children"
     walk_kind = "ancestors" if args.up else "descendants"
-    resolved = _resolve_path_class(
+    resolved = _handle_resolve(
         args, target_name, timer=timer, src_root_used=src_root_used
     )
     if isinstance(resolved, int):
@@ -3189,7 +3219,7 @@ def cmd_path(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Subcommand: describe (Batch F — runtime introspection)
+# Subcommand: describe — runtime introspection
 # ---------------------------------------------------------------------------
 
 
@@ -3198,9 +3228,9 @@ def _describe_attribute(name: str, attr: object, primary_key: tuple) -> dict:
 
     The real ``datajoint.heading.Attribute`` is a namedtuple with many
     fields (type, nullable, default, autoincrement, numeric, string,
-    is_blob, is_uuid, ...). For Batch F we surface the few that an
-    LLM consuming the contract is likely to act on; extras can join
-    later without breaking the envelope.
+    is_blob, is_uuid, ...). We surface the few that an LLM consuming
+    the contract is likely to act on; extras can join later without
+    breaking the envelope.
     """
     return {
         "type": getattr(attr, "type", None),
@@ -3261,30 +3291,12 @@ def cmd_describe(args: argparse.Namespace) -> int:
     src_root_used = _select_src_root(args.src)
 
     timer.mark("resolve")
-    try:
-        resolved = resolve_class(
-            args.class_name, src=args.src, imports=tuple(args.imports)
-        )
-    except _AmbiguousClass as exc:
-        return _emit_ambiguous(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    except _NotADataJointTable as exc:
-        return _emit_not_a_table(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    except _DataJointUnavailable as exc:
-        return _emit_db_error(
-            args=args,
-            timer=timer,
-            error_kind="datajoint_import",
-            message=f"DataJoint is not importable: {exc.original}",
-            src_root=src_root_used,
-        )
-    except _ClassNotFound as exc:
-        return _emit_not_found(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
+    result = _handle_resolve(
+        args, args.class_name, timer=timer, src_root_used=src_root_used
+    )
+    if isinstance(result, int):
+        return result
+    resolved = result
 
     timer.mark("heading")
     try:
@@ -3369,14 +3381,14 @@ def cmd_describe(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Subcommand: find-instance (Batch C — basic restriction + fetch + count)
+# Subcommand: find-instance — basic restriction + fetch + count
 # ---------------------------------------------------------------------------
 
 
 def cmd_find_instance(args: argparse.Namespace) -> int:
     """Resolve the class, validate the query, fetch bounded rows.
 
-    Batch C scope (per docs/plans/db-graph-impl-plan.md):
+    Scope:
 
     * Scalar ``--key`` restrictions, JSON-typed ``--key-json`` restrictions.
     * Heading-based field validation (refuses unknown / blob restrictions).
@@ -3392,13 +3404,13 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
     ``RestrGraph`` or ``TableChain``. Source-text grep over db_graph.py
     confirms (``tests/test_db_graph.py`` pins this).
 
-    Failure modes (stable from Batch B): ambiguous=3, not_found=4,
-    not_a_table=4, datajoint_import=5. New in Batch C: invalid_query=2
-    for malformed restrictions / unknown fields.
+    Failure modes: ambiguous=3, not_found=4, not_a_table=4,
+    datajoint_import=5, invalid_query=2 (malformed restrictions /
+    unknown fields).
     """
     timer = _Timer()
 
-    # Step 0: parse user input BEFORE anything that imports Spyglass or
+    # Parse user input BEFORE anything that imports Spyglass or
     # DataJoint. Malformed --key / --key-json / --fields are detected
     # synchronously, with no cold Spyglass init cost — the entire
     # invalid_query path stays under ~10 ms even on a slow interpreter.
@@ -3417,8 +3429,8 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
             src_root=None,
         )
 
-    # Step 1: now resolve src_root (may import spyglass for the
-    # installed-package fallback) and resolve the class.
+    # Resolve src_root (may import spyglass for the installed-package
+    # fallback) and resolve the class.
     src_root_used = _select_src_root(args.src)
 
     # Merge-aware lookup branches off here. The merge handler shares
@@ -3434,7 +3446,7 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
             timer=timer,
         )
 
-    # Batch E: set ops (intersect/except/join) and grouped counts
+    # Set ops (intersect/except/join) and grouped counts
     # (group-by/group-by-table) take dedicated handlers. Each carries
     # its own kind in the emitted payload (find-instance for set ops,
     # grouped_count for aggregates) so an LLM can dispatch on kind.
@@ -3455,34 +3467,16 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
         )
 
     timer.mark("resolve")
-    try:
-        resolved = resolve_class(
-            args.class_name, src=args.src, imports=tuple(args.imports)
-        )
-    except _AmbiguousClass as exc:
-        return _emit_ambiguous(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    except _NotADataJointTable as exc:
-        return _emit_not_a_table(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
-    except _DataJointUnavailable as exc:
-        return _emit_db_error(
-            args=args,
-            timer=timer,
-            error_kind="datajoint_import",
-            message=f"DataJoint is not importable: {exc.original}",
-            src_root=src_root_used,
-        )
-    except _ClassNotFound as exc:
-        return _emit_not_found(
-            args=args, timer=timer, exc=exc, src_root=src_root_used
-        )
+    result = _handle_resolve(
+        args, args.class_name, timer=timer, src_root_used=src_root_used
+    )
+    if isinstance(result, int):
+        return result
+    resolved = result
 
     timer.mark("heading")
 
-    # Step 2: build the relation and read its heading. Both can raise
+    # Build the relation and read its heading. Both can raise
     # DataJoint connection / auth / schema errors; surface them as
     # db_error with the `error.kind` discriminator that ``info --json``
     # documents.
@@ -3507,9 +3501,9 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
             resolved=resolved,
         )
 
-    # Step 3: validate fields against the runtime heading. Both
-    # restriction keys and fetch fields are checked here; either being
-    # malformed is exit 2 invalid_query.
+    # Validate fields against the runtime heading. Both restriction
+    # keys and fetch fields are checked here; either being malformed
+    # is exit 2 invalid_query.
     try:
         _validate_restriction_fields(restriction, heading_names)
         _validate_blob_restrictions(restriction, heading_attributes)
@@ -3523,20 +3517,23 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
             src_root=src_root_used,
         )
 
-    # Step 4: apply restriction and run the query.
+    # Apply restriction and run the query.
     timer.mark("query")
     try:
         restricted = rel & restriction if restriction else rel
-        count = len(restricted)
         rows: list[dict] = []
         truncated = False
-        if not args.count:
-            # Fetch limit + 1 so we can detect truncation without a
-            # second round-trip.
+        if args.count:
+            count = len(restricted)
+        else:
+            # Fetch limit + 1 to detect truncation in one round-trip; if
+            # the result fits, ``count`` is just ``len(fetched)`` — no
+            # separate COUNT(*) query.
             fetched = restricted.fetch(
                 *fetch_fields, as_dict=True, limit=args.limit + 1
             )
             truncated = len(fetched) > args.limit
+            count = len(restricted) if truncated else len(fetched)
             fetched = fetched[: args.limit]
             timer.mark("serialize")
             rows = [
@@ -3561,9 +3558,9 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
             resolved=resolved,
         )
 
-    # Step 5: build the success payload. Shape and field order match
-    # ``PAYLOAD_ENVELOPES["find-instance"]``; the Batch A schema-envelope
-    # fixture pins this so Batch C cannot drift it.
+    # Build the success payload. Shape and field order match
+    # ``PAYLOAD_ENVELOPES["find-instance"]``; the schema-envelope
+    # fixture in tests pins this so the handler cannot drift it.
     payload = _stamp_envelope("find-instance", source_root=resolved.src_root)
     payload["db"] = _build_db_envelope()
     payload["query"] = {
@@ -3579,7 +3576,7 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
     payload["count"] = count
     payload["limit"] = args.limit
     payload["truncated"] = truncated
-    # ``incomplete`` is reserved for set-op fallbacks (Batch E); a basic
+    # ``incomplete`` is reserved for set-op fallbacks; a basic
     # find-instance is always complete within --limit.
     payload["incomplete"] = False
     payload["timings_ms"] = timer.finalize()
@@ -3655,8 +3652,9 @@ def main() -> int:
     if args.cmd == "find-instance":
         # Cross-flag validation that argparse cannot express. Keep these in
         # sync with `info --json`'s `subcommands.find-instance.hints` and
-        # `subcommands.find-instance.modes`. Pin each rule with a fixture
-        # so Batch C+ cannot drift into accepting malformed combinations.
+        # `subcommands.find-instance.modes`. Each rule is pinned with a
+        # fixture so the handlers cannot drift into accepting malformed
+        # combinations.
         if bool(args.merge_master) != bool(args.part):
             parser.error("--merge-master and --part must be supplied together")
         # One-of: --class XOR (--merge-master + --part). Merge mode names
@@ -3688,10 +3686,9 @@ def main() -> int:
                 "--count-distinct requires --group-by FIELDS or "
                 "--group-by-table CLASS"
             )
-        # Batch E flags are now implemented. main() still validates the
-        # mutually-exclusive shape (one of {intersect, except, join,
-        # group-by/group-by-table}) so set-op + aggregate combinations
-        # cannot reach the handlers.
+        # main() validates the mutually-exclusive shape (one of
+        # {intersect, except, join, group-by/group-by-table}) so set-op
+        # + aggregate combinations cannot reach the handlers.
         set_op_flags = sum(
             1 for f in (args.intersect, args.except_class, args.join) if f
         )
