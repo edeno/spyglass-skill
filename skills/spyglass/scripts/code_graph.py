@@ -906,6 +906,18 @@ def _record_path_to(
     visited node is the actual record from ``--from-file`` /
     ``--to-file`` disambiguation (or its record-resolved ancestor).
 
+    Heuristic-log scoping: the BFS explores side branches that are
+    discarded once the path is found. Logging heuristics during
+    exploration would attribute off-path same-package-preference
+    resolutions to the returned payload — turning ``--fail-on-heuristic``
+    from "the returned path required a heuristic" into "the search
+    touched any heuristic anywhere" and confusing LLM consumers that
+    see warnings for classes absent from ``hops``. We therefore run
+    the BFS with ``log=None`` and then replay only the chosen path's
+    edge resolutions with the caller's real log via
+    :func:`_replay_on_path_heuristics`. Net: ``warnings`` is exactly
+    the on-path heuristic set.
+
     Returns ``(None, truncated)`` when no path is found within
     ``max_depth``. ``truncated`` honestly reports whether at least one
     node at the depth boundary had unvisited neighbors, so callers can
@@ -913,6 +925,7 @@ def _record_path_to(
     """
     if src_rec == dst_rec:
         # Trivial: already there. Single-hop "path" is just the source.
+        # No edges to replay either, so the caller's log is untouched.
         evidence = f"class {src_rec.name}({', '.join(src_rec.bases)}):"
         return [(src_rec, "fk", evidence)], False
 
@@ -940,7 +953,9 @@ def _record_path_to(
                 if any(a not in visited for a in peek):
                     truncated = True
             continue
-        for parent_rec, kind, evidence in _record_ancestors(idx, rec, log=log):
+        # log=None during exploration; replay only the chosen path's
+        # edges with the caller's real log after reconstruction.
+        for parent_rec, kind, evidence in _record_ancestors(idx, rec, log=None):
             if parent_rec in visited:
                 continue
             visited.add(parent_rec)
@@ -972,6 +987,7 @@ def _record_path_to(
     # spin forever silently.
     for _ in range(len(next_hop_from) + 1):
         if cur == dst_rec:
+            _replay_on_path_heuristics(idx, hops, log)
             return hops, False
         if cur not in next_hop_from:
             # Shouldn't happen: BFS reached src_rec, which means the
@@ -987,6 +1003,65 @@ def _record_path_to(
         f"_record_path_to: reconstruction did not terminate within "
         f"{len(next_hop_from)} steps — likely a cycle in next_hop_from."
     )
+
+
+def _replay_on_path_heuristics(
+    idx: _index.ClassIndex,
+    hops: list[tuple[_index.ClassRecord, str, str]],
+    log: _HeuristicLog | None,
+) -> None:
+    """Re-resolve each on-path edge with the caller's real log so only
+    path-local same-package-preference picks land in ``warnings``.
+
+    The BFS in :func:`_record_path_to` runs with ``log=None`` so
+    discarded side branches don't pollute the log. Once the path is
+    chosen, we walk the hops and replay just the resolution call that
+    produced each on-path neighbor — this fires
+    :func:`_resolve_target_record`'s heuristic-log emit point exactly
+    when the on-path resolution would have fired during exploration,
+    and only then.
+
+    Two emit shapes match :func:`_record_ancestors`:
+
+    * **FK edge** (``kind`` is one of the FKEdge.kind values): during
+      exploration, ``hop[i].record`` had an FK whose ``qualname_target``
+      resolved (under same-package preference) to ``hop[i-1].record``.
+      Replay the matching ``_resolve_target_record`` call.
+    * **Part bridge** (``kind`` in ``("merge_part", "nested_part")``):
+      ``hop[i-1].record`` is a part of ``hop[i].record`` (the master);
+      :func:`_parts_of_master` resolves the part's master via
+      ``_resolve_target_record(idx, master.qualname, anchor_rec=part)``.
+      Replay that call.
+
+    No-op when ``log`` is ``None`` — callers that don't care about the
+    heuristic provenance pay zero cost.
+    """
+    if log is None or len(hops) < 2:
+        return
+    for i in range(1, len(hops)):
+        prev_rec, _, _ = hops[i - 1]
+        next_rec, kind, _ = hops[i]
+        if kind in ("merge_part", "nested_part"):
+            # next_rec is the master; prev_rec is one of its parts.
+            # _parts_of_master anchors on the part to look up the master
+            # qualname — that's the resolution call we replay here.
+            _resolve_target_record(
+                idx, next_rec.qualname, anchor_rec=prev_rec, log=log,
+            )
+            continue
+        # FK edge: find the edge on next_rec.fk_edges whose target
+        # resolves (silently) to prev_rec, then re-resolve with the real
+        # log so any same-package-preference pick gets attributed to the
+        # on-path edge only.
+        for edge in next_rec.fk_edges:
+            silent_resolved = _resolve_target_record(
+                idx, edge.qualname_target, anchor_rec=next_rec, log=None,
+            )
+            if silent_resolved is prev_rec:
+                _resolve_target_record(
+                    idx, edge.qualname_target, anchor_rec=next_rec, log=log,
+                )
+                break
 
 
 def _record_path_payload(

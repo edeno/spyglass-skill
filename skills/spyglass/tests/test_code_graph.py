@@ -1929,6 +1929,126 @@ def fixture_path_to_endpoint_pinning_keeps_intermediates_in_v1(
     return True
 
 
+def fixture_path_to_warnings_are_path_local_not_search_global(
+    src_root: Path,
+) -> bool:
+    """``--fail-on-heuristic`` must mean "the RETURNED PATH required a
+    heuristic," not "the BFS search touched any heuristic anywhere."
+
+    During exploration, BFS upstream from ``dst`` walks side branches
+    that are discarded once the path is found. If those off-path
+    branches' heuristic resolutions land in ``warnings``, an LLM
+    seeing the payload sees v0/v1 disambiguation for classes absent
+    from the rendered hops, and ``--fail-on-heuristic`` rejects
+    perfectly clean paths.
+
+    Synthetic shape:
+
+    * ``Source -> Mid -> Sink`` is the unique single-resolution chain
+      (no v0/v1 collisions for any hop on this path).
+    * ``Sink`` ALSO has an FK to ``OffPath``, whose qualname collides
+      with a v0/``OffPath`` sibling — so resolving that off-path FK
+      requires same-package preference (a heuristic).
+
+    The BFS-upstream from ``Sink`` enumerates both ``Mid`` (on path)
+    and ``OffPath`` (off path) at depth 1. With log=None during
+    exploration and on-path replay only, the returned payload should
+    have ``warnings == []`` and ``--fail-on-heuristic`` should exit 0.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = _write_fakepipe(Path(tmp_str), {
+            "utils/dj_mixin.py": "class SpyglassMixin: pass\n",
+            "fakepipe/v1/source.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class Source(SpyglassMixin):
+                    definition = """
+                    source_id: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v1/mid.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class Mid(SpyglassMixin):
+                    definition = """
+                    -> Source
+                    mid_id: int
+                    ---
+                    """
+            ''',
+            # Sink FKs to BOTH Mid (on the path) and OffPath (forces
+            # heuristic during the BFS exploration of Sink's
+            # ancestors but not on the chosen path).
+            "fakepipe/v1/sink.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class Sink(SpyglassMixin):
+                    definition = """
+                    -> Mid
+                    -> OffPath
+                    sink_id: int
+                    ---
+                    """
+            ''',
+            # v1 OffPath: the resolution target Sink's FK actually
+            # picks under same-package preference.
+            "fakepipe/v1/offpath.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class OffPath(SpyglassMixin):
+                    definition = """
+                    offpath_id: int
+                    ---
+                    """
+            ''',
+            # v0 OffPath: same qualname as v1 OffPath — forces the
+            # heuristic disambiguation.
+            "fakepipe/v0/offpath.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class OffPath(SpyglassMixin):
+                    definition = """
+                    legacy_id: int
+                    ---
+                    """
+            ''',
+        })
+        rc, out, err = _run_code_graph([
+            "--src", str(tmp), "path", "--to", "Source", "Sink",
+            "--from-file", "spyglass/fakepipe/v1/source.py",
+            "--to-file", "spyglass/fakepipe/v1/sink.py",
+            "--fail-on-heuristic",
+            "--json",
+        ])
+    if rc != 0:
+        print(
+            f"  [FAIL] expected exit 0 (path is heuristic-free), got {rc}: "
+            f"stderr={err[:300]!r}"
+        )
+        return False
+    payload = _parse_json_or_fail(out, "path-local warnings")
+    if payload is None:
+        return False
+    if payload.get("kind") != "path":
+        print(f"  [FAIL] expected kind=path, got {payload.get('kind')!r}")
+        return False
+    hop_qualnames = [h.get("qualname") for h in payload.get("hops", [])]
+    if hop_qualnames != ["Source", "Mid", "Sink"]:
+        print(
+            f"  [FAIL] expected hops [Source, Mid, Sink], got {hop_qualnames!r}"
+        )
+        return False
+    warnings = payload.get("warnings") or []
+    if warnings:
+        print(
+            f"  [FAIL] expected warnings==[] (path is heuristic-free); "
+            f"got {len(warnings)} entries — off-path branch leakage. "
+            f"first: {warnings[0]!r}"
+        )
+        return False
+    print(
+        "  [ok] path --to: warnings are path-local (off-path heuristic "
+        "from Sink's other FK does not leak into payload)"
+    )
+    return True
+
+
 def fixture_path_hop_citation_matches_record_that_owns_edge(src_root: Path) -> bool:
     """When v0 and v1 share a qualname, the rendered ``file:line`` for an
     intermediate hop must come from the record that ACTUALLY owns the
@@ -2872,6 +2992,7 @@ FIXTURES = [
     fixture_path_to_still_bridges_master_part,
     fixture_path_edge_meta_walks_all_records_for_qualname,
     fixture_path_to_endpoint_pinning_keeps_intermediates_in_v1,
+    fixture_path_to_warnings_are_path_local_not_search_global,
     fixture_path_hop_citation_matches_record_that_owns_edge,
     fixture_path_no_path_returns_kind_no_path,
     fixture_path_not_found_returns_exit_4,
