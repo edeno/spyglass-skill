@@ -32,7 +32,7 @@ User-facing scripts in this directory are explicitly prototypes. Each one names 
 | `code_graph.py` (+ `_index.py`) | `spyglass.utils.code_graph` (or `spyglass.cli.code_graph`); upstream merge would also fold in `KNOWN_CLASSES` auto-derivation |
 | `db_graph.py` | `spyglass.utils.db_graph` (or `spyglass.cli.db_graph`); upstream merge should preserve `info --json` and read-only/no-write guarantees |
 
-Full design context for each prototype lives in [docs/plans/env-scripts-impl-plan.md](../../../docs/plans/env-scripts-impl-plan.md) (gitignored — it's a rolling design doc, not repo content).
+Lifecycle / upstream-merge intent for each prototype is captured in the script's own top-level docstring (open the script and read the "Lifecycle" paragraph). Branch-life design plans for these scripts are not retained in the repo once the script lands.
 
 ## Adding a new user-facing script — checklist
 

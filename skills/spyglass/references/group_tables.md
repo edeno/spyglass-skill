@@ -104,8 +104,11 @@ existing = SortedSpikesGroup & {
 print(len(existing), "existing rows for this group key")
 
 # 4. Create the group. create_group() inserts the master row and all
-#    part rows in one call; it raises if the (file, name) pair already
-#    exists, so the inspect step above is the safety net.
+#    part rows in one call; it raises if a row with the same
+#    (nwb_file_name, unit_filter_params_name, sorted_spikes_group_name)
+#    triple already exists (`spikesorting/analysis/v1/group.py:84-95`).
+#    The same group_name CAN coexist under a different
+#    unit_filter_params_name — they're distinct rows by PK.
 SortedSpikesGroup().create_group(
     nwb_file_name=nwb_file,
     group_name=group_name,

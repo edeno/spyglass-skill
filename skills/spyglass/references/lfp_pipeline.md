@@ -249,17 +249,27 @@ LFPBandSelection().set_lfp_band_electrodes(
     lfp_band_sampling_rate=1000,
 )
 
-# 4. Populate.
-LFPBandV1.populate(
-    {"lfp_merge_id": lfp_merge_id, "filter_name": "Theta 5-11 Hz"},
-    display_progress=True,
-)
+# 4. Populate. `LFPBandSelection`'s PK is wider than (lfp_merge_id,
+#    filter_name) — it also keys on `filter_sampling_rate`,
+#    `target_interval_list_name`, and `lfp_band_sampling_rate`
+#    (`lfp/analysis/v1/lfp_band.py:22-30`). Restricting populate /
+#    fetch by only the first two would silently grab any matching
+#    selection row across other sampling rates / intervals — exactly
+#    the partial-key footgun this skill warns about. Pull the FULL
+#    selection key after `set_lfp_band_electrodes()` and use it.
+band_sel_key = (LFPBandSelection & {
+    "nwb_file_name": nwb_file,
+    "lfp_merge_id": lfp_merge_id,
+    "filter_name": "Theta 5-11 Hz",
+    "target_interval_list_name": "02_r1",
+    "lfp_band_sampling_rate": 1000,
+}).fetch1("KEY")
+LFPBandV1.populate(band_sel_key, display_progress=True)
 
-# 5. Fetch + derived quantities.
-band_key = {"lfp_merge_id": lfp_merge_id, "filter_name": "Theta 5-11 Hz"}
-theta_df = (LFPBandV1 & band_key).fetch1_dataframe()
-phase = (LFPBandV1 & band_key).compute_signal_phase(electrode_list=[0, 1, 2, 3])
-power = (LFPBandV1 & band_key).compute_signal_power(electrode_list=[0, 1, 2, 3])
+# 5. Fetch + derived quantities — reuse the same full key.
+theta_df = (LFPBandV1 & band_sel_key).fetch1_dataframe()
+phase = (LFPBandV1 & band_sel_key).compute_signal_phase(electrode_list=[0, 1, 2, 3])
+power = (LFPBandV1 & band_sel_key).compute_signal_power(electrode_list=[0, 1, 2, 3])
 ```
 
 For ripple band, swap `"Theta 5-11 Hz"` for `"Ripple 150-250 Hz"` (band_edges `[140, 150, 250, 260]`). `RippleLFPSelection.validate_key` rejects `LFPBandV1` rows whose `filter_name` does not contain `"ripple"` — name the filter accordingly if you want to use it downstream.

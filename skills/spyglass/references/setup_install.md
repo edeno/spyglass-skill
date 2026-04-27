@@ -198,7 +198,7 @@ Lab admins can pre-configure shared settings so new members only need to provide
 ### Obtaining tutorial NWB files
 
 The example files referenced in `02_Insert_Data.ipynb` /
-`0_intro.ipynb` are periodically re-homed. The current canonical
+`00_Setup.ipynb` are periodically re-homed. The current canonical
 locations are linked from the tutorial notebooks themselves — if a
 Dropbox link 404s, open the notebook on master to get the current
 UCSF Box URL, or use the `minirec` / `mediumnwb` files hosted by the

@@ -123,12 +123,16 @@ RippleParameters().insert_default()   # inserts "default" and "default_trodes"
 # `PositionOutput` is a merge master — its declaration at
 # `position/position_merge.py:32` is `merge_id: uuid` + `source: varchar(32)`.
 # `nwb_file_name` and `interval_list_name` are NOT on the master, so a
-# direct `& {nwb_file_name=..., interval_list_name=...}` silently matches
-# zero rows. Resolve through the appropriate part instead, e.g.
-# `PositionOutput.TrodesPosV1` for Trodes position or `PositionOutput.DLCPosV1`
-# for DLC. See merge_methods.md for the pattern (and the silent wrong-count
-# footgun the merge mode of `db_graph.py find-instance --merge-master ...
-# --part ...` exists to close).
+# direct `& {nwb_file_name=..., interval_list_name=...}` silently RETURNS
+# THE WHOLE TABLE (DataJoint drops restriction fields not in the heading;
+# see SKILL.md Core Directives + common_mistakes.md #1) — `fetch1("merge_id")`
+# would then raise "expected one row, got N", and any per-row downstream
+# step would pick an arbitrary master entry. Resolve through the
+# appropriate part instead, e.g. `PositionOutput.TrodesPosV1` for Trodes
+# position or `PositionOutput.DLCPosV1` for DLC. See merge_methods.md for
+# the pattern (and the silent wrong-count footgun the merge mode of
+# `db_graph.py find-instance --merge-master ... --part ...` exists to
+# close).
 pos_merge_id = (PositionOutput.TrodesPosV1 & {
     "nwb_file_name": nwb_file_name,
     "interval_list_name": interval_list_name,

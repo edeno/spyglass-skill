@@ -86,9 +86,12 @@ sorted_spikes_group_key = {
     "unit_filter_params_name": "default_exclusion",
 }
 
-# 3. Parameters — the default preset is inserted by the `contents` class attribute
-#    at schema creation; insert_default() is idempotent if you want to be explicit.
-MuaEventsParameters.insert_default()
+# 3. Parameters. `MuaEventsParameters` is `dj.Manual` (`mua/v1/mua.py:20`) —
+#    its class-level `contents` (`mua/v1/mua.py:44`) is just data for
+#    `insert_default` (`mua/v1/mua.py:57`) to consume; it is NOT
+#    auto-inserted at schema creation the way `dj.Lookup.contents` is.
+#    Call this explicitly before populate. Idempotent (uses `skip_duplicates`).
+MuaEventsParameters().insert_default()
 
 # 4. Populate. Note the renamed FKs: pos_merge_id (not merge_id) and
 #    detection_interval (not interval_list_name).

@@ -87,7 +87,7 @@ from spyglass.linearization.v1 import (
 
 - Key: `linearization_param_name`
 - Parameters for the HMM-based linearization algorithm
-- `dj.Lookup` (not `Manual`) at `linearization/v1/main.py:22` — it ships default rows; verify with `code_graph.py describe LinearizationParameters`
+- `dj.Lookup` (not `Manual`) at `linearization/v1/main.py:22`. **No `contents`** are declared, so the table is empty by default — `dj.Lookup` only auto-populates when `contents = [...]` is set on the class. Insert a row before using it; the canonical workflow uses `linearization_param_name="default"` and notebook `24_Linearization.py` inserts that row explicitly with `LinearizationParameters().insert1({"linearization_param_name": "default"}, skip_duplicates=True)`. Verify on your install with `code_graph.py describe LinearizationParameters` (no `contents` in the class body) and `(LinearizationParameters & {"linearization_param_name": "default"}).fetch()`.
 
 **LinearizationSelection** (Lookup)
 
