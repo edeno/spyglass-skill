@@ -4121,17 +4121,17 @@ def fixture_f_fakes_describe_returns_heading_and_adjacency(
     return True
 
 
-def fixture_f_fakes_describe_unavailable_metadata_distinguished(
+def fixture_f_fakes_describe_errored_metadata_reported_as_error(
     args: argparse.Namespace,
 ) -> bool:
-    """``parents() not exposed`` is reported as unavailable, not empty.
+    """``parents()`` raising → ``status: "error"`` (not confirmed-empty).
 
-    Builds a synthetic class whose ``__new__`` returns a bare
-    FakeRelation with no parents/children/parts attributes — the
-    methods exist on FakeRelation though, so we override one to be
-    None on the instance to simulate "method missing." The describe
-    payload must report ``status: "unavailable"`` rather than
-    ``parents: []`` with no further signal.
+    Builds a synthetic class whose returned relation has
+    ``parents()`` overridden to raise (simulating an older
+    DataJoint or a custom relation whose schema metadata
+    round-trip fails). describe must report
+    ``status: "error"`` plus the scrubbed message — distinct from a
+    confirmed-empty list.
     """
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp = Path(tmp_str)
@@ -4278,6 +4278,102 @@ def fixture_f_fakes_describe_omits_count_by_default(
         )
         return False
     print("  [ok] describe without --count: describe.count is null")
+    return True
+
+
+def fixture_f_fakes_describe_unavailable_metadata_distinguished(
+    args: argparse.Namespace,
+) -> bool:
+    """``parents`` not exposed on the relation → ``status: "unavailable"``.
+
+    Distinct from the errored-metadata fixture: here the method
+    simply isn't accessible (``getattr(rel, "parents", None) is
+    None``) — the canonical "older DataJoint or non-DJ relation"
+    case. ``children`` and ``parts`` remain functional on the same
+    relation, so the fixture asserts only ``parents`` is reported
+    as unavailable while the others stay ``ok``.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        # Synthetic class returns a relation whose ``parents``
+        # attribute is None — ``getattr(rel, "parents", None)`` then
+        # falls into the unavailable path inside
+        # ``_safe_runtime_metadata``.
+        (tmp / "describeunavail.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "class Demo(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('id',),",
+                    "        names=('id',),",
+                    "        attributes={'id': 'int'},",
+                    "    )",
+                    "    def __new__(cls):",
+                    "        rel = FakeRelation(",
+                    "            heading=cls._heading_obj, rows=[],",
+                    "            children=('schema.downstream_x',),",
+                    "        )",
+                    "        # Older DataJoint / non-DJ relation: no "
+                    "parents() method.",
+                    "        rel.parents = None",
+                    "        return rel",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                ]
+            )
+        )
+        rc, out, _ = _run_db_graph(
+            [
+                "describe",
+                "describeunavail:Demo",
+                "--import",
+                "describeunavail",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "describe-unavail-real payload")
+    if payload is None:
+        return False
+    status = payload.get("describe", {}).get(
+        "relationship_metadata_status", {}
+    )
+    parents_status = status.get("parents", {}).get("status")
+    if parents_status != "unavailable":
+        print(
+            f"  [FAIL] parents.status should be 'unavailable' (None "
+            f"attribute), got {parents_status!r}"
+        )
+        return False
+    if status.get("parents", {}).get("error") is not None:
+        print(
+            f"  [FAIL] parents.error should be null on unavailable: "
+            f"{status.get('parents', {}).get('error')!r}"
+        )
+        return False
+    children_status = status.get("children", {}).get("status")
+    if children_status != "ok":
+        print(
+            f"  [FAIL] children.status should be 'ok': "
+            f"{children_status!r}"
+        )
+        return False
+    print(
+        "  [ok] describe distinguishes 'unavailable' (method missing) "
+        "from 'ok' on the same relation"
+    )
     return True
 
 
@@ -4532,6 +4628,7 @@ FIXTURES = [
     # Batch F — describe (runtime introspection)
     fixture_f_fakes_describe_returns_heading_and_adjacency,
     fixture_f_fakes_describe_omits_count_by_default,
+    fixture_f_fakes_describe_errored_metadata_reported_as_error,
     fixture_f_fakes_describe_unavailable_metadata_distinguished,
     fixture_f_describe_advertised_in_info,
     fixture_f_eval_describe_session,

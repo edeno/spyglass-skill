@@ -1135,10 +1135,17 @@ def cmd_info(args: argparse.Namespace) -> int:
                     "running a query."
                 ),
                 (
-                    "parents / children / parts may be empty when the "
-                    "DataJoint version does not expose the method or "
-                    "the metadata round-trip fails — soft failure, "
-                    "rather than aborting the payload."
+                    "Before interpreting `describe.parents` / "
+                    "`describe.children` / `describe.parts` as "
+                    "confirmed empty, inspect "
+                    "`describe.relationship_metadata_status.<name>"
+                    ".status`. Three values: 'ok' (the call returned, "
+                    "list is authoritative), 'unavailable' (method "
+                    "not exposed on this object — older DataJoint or "
+                    "a custom relation), 'error' (the method raised; "
+                    "see `.error` for the scrubbed message). 'ok + "
+                    "[]' is the ONLY state that means 'no relationships'; "
+                    "the others mean 'the tool does not know.'"
                 ),
             ],
         },
