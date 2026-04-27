@@ -987,12 +987,22 @@ def cmd_info(args: argparse.Namespace) -> int:
                     "with exit 3 rather than guessing the link."
                 ),
                 "intersect/except/join": (
-                    "--intersect / --except / --join CLASS. DB-side relational "
-                    "operations along shared attributes; refuses zero-overlap."
+                    "--intersect / --except / --join CLASS. DB-side "
+                    "relational operations along shared attribute "
+                    "names: intersect → `L & R.proj()`, except → "
+                    "`L - R.proj()`, join → `L * R`. Refuses with "
+                    "kind=invalid_query / no_shared_attributes when "
+                    "the operands' headings have zero overlap, so a "
+                    "Cartesian product can never accidentally land."
                 ),
                 "grouped_count": (
-                    "--group-by f1,f2 --count-distinct FIELD or "
-                    "--group-by-table CLASS --count-distinct FIELD."
+                    "--group-by f1,f2 --count-distinct FIELD: "
+                    "`dj.U(f1, f2).aggr(C, n=count(distinct FIELD))`. "
+                    "--group-by-table CLASS --count-distinct FIELD: "
+                    "`G.aggr(C * G.proj(), n=count(distinct FIELD))` — "
+                    "one row per matching G primary-key tuple. The "
+                    "FIELD must exist on the COUNTED relation C, not "
+                    "the grouping table."
                 ),
             },
             "hints": [
@@ -1972,6 +1982,485 @@ def _cmd_find_instance_merge(
 
 
 # ---------------------------------------------------------------------------
+# Batch E — set operations and grouped counts
+# ---------------------------------------------------------------------------
+
+
+def _set_op_canonical_form(op: str) -> str:
+    """Render the canonical DataJoint expression for a set-op flag.
+
+    Documented in payloads so an LLM can see the exact relational
+    expression the tool ran (rather than guessing from the flag name).
+    """
+    return {
+        "intersect": "L & R.proj()",
+        "except": "L - R.proj()",
+        "join": "L * R",
+    }[op]
+
+
+def _resolve_setop_pair(
+    args: argparse.Namespace,
+    *,
+    src_root_used: Path | None,
+    timer: _Timer,
+    partner_name: str,
+) -> tuple[_Resolved, _Resolved] | int:
+    """Resolve --class L and the partner R; return (L, R) or an exit code.
+
+    The exit-code return is the rc from the appropriate emitter when
+    either resolution fails, so callers can ``return`` it directly.
+    """
+    timer.mark("resolve")
+    try:
+        base = resolve_class(
+            args.class_name, src=args.src, imports=tuple(args.imports)
+        )
+        partner = resolve_class(
+            partner_name, src=args.src, imports=tuple(args.imports)
+        )
+    except _AmbiguousClass as exc:
+        return _emit_ambiguous(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _NotADataJointTable as exc:
+        return _emit_not_a_table(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _DataJointUnavailable as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind="datajoint_import",
+            message=f"DataJoint is not importable: {exc.original}",
+            src_root=src_root_used,
+        )
+    except _ClassNotFound as exc:
+        return _emit_not_found(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    return base, partner
+
+
+def _cmd_find_instance_setop(
+    args: argparse.Namespace,
+    *,
+    restriction: dict,
+    fetch_fields: list[str],
+    src_root_used: Path | None,
+    timer: _Timer,
+) -> int:
+    """Handle ``--intersect`` / ``--except`` / ``--join``.
+
+    Algorithm per docs/plans/db-graph-impl-plan.md:
+
+    * intersect: ``L & R.proj()`` — DataJoint natural restriction along
+      shared attribute names.
+    * except:    ``L - R.proj()`` — DataJoint antijoin along shared
+      attributes.
+    * join:      ``L * R`` — DataJoint natural join.
+
+    Shared-attribute requirement: at least one heading attribute name
+    must appear in both ``L.heading.names`` and ``R.heading.names``.
+    Zero overlap is refused with exit 2 (``invalid_query`` /
+    ``no_shared_attributes``); silently degenerating to a Cartesian
+    product would be the wrong-shape footgun this tool exists to close.
+    """
+    if args.intersect:
+        op, partner_name = "intersect", args.intersect
+    elif args.except_class:
+        op, partner_name = "except", args.except_class
+    else:
+        op, partner_name = "join", args.join
+
+    pair = _resolve_setop_pair(
+        args, src_root_used=src_root_used, timer=timer,
+        partner_name=partner_name,
+    )
+    if isinstance(pair, int):
+        return pair
+    base, partner = pair
+
+    timer.mark("heading")
+    try:
+        base_callable = base.cls
+        partner_callable = partner.cls
+        base_rel = base_callable()  # ty: ignore[call-non-callable]
+        partner_rel = partner_callable()  # ty: ignore[call-non-callable]
+        base_heading_names: tuple[str, ...] = tuple(base_rel.heading.names)
+        partner_heading_names: tuple[str, ...] = tuple(
+            partner_rel.heading.names
+        )
+        base_heading_attrs = dict(base_rel.heading.attributes)
+    except Exception as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind=_classify_dj_error(exc),
+            message=_scrub_secrets(str(exc)),
+            src_root=src_root_used,
+            resolved=base,
+        )
+
+    shared = sorted(set(base_heading_names) & set(partner_heading_names))
+    if not shared:
+        return _emit_invalid_query(
+            args=args,
+            timer=timer,
+            resolved=base,
+            exc=_InvalidQuery(
+                "no_shared_attributes",
+                (
+                    f"--{op} requires at least one shared attribute "
+                    f"between {args.class_name!r} and {partner_name!r}; "
+                    "their headings do not overlap. Use --class with a "
+                    "different partner, or restrict beforehand so the "
+                    "operands share a key."
+                ),
+                base_heading=list(base_heading_names),
+                partner_heading=list(partner_heading_names),
+            ),
+            src_root=src_root_used,
+        )
+
+    try:
+        _validate_restriction_fields(restriction, base_heading_names)
+        _validate_blob_restrictions(restriction, base_heading_attrs)
+    except _InvalidQuery as exc:
+        return _emit_invalid_query(
+            args=args,
+            timer=timer,
+            resolved=base,
+            exc=exc,
+            src_root=src_root_used,
+        )
+
+    if op == "join":
+        # Join's output heading is the union of both operands; validate
+        # fields against the union.
+        post_join_names = tuple(
+            sorted(set(base_heading_names) | set(partner_heading_names))
+        )
+        try:
+            _validate_fetch_fields(fetch_fields, post_join_names)
+        except _InvalidQuery as exc:
+            return _emit_invalid_query(
+                args=args, timer=timer, resolved=base, exc=exc,
+                src_root=src_root_used,
+            )
+    else:
+        # intersect / except preserve the base's heading. Validate
+        # fetch fields against the base.
+        try:
+            _validate_fetch_fields(fetch_fields, base_heading_names)
+        except _InvalidQuery as exc:
+            return _emit_invalid_query(
+                args=args, timer=timer, resolved=base, exc=exc,
+                src_root=src_root_used,
+            )
+
+    timer.mark("query")
+    try:
+        if restriction:
+            base_rel = base_rel & restriction
+        if op == "intersect":
+            result = base_rel & partner_rel.proj()
+        elif op == "except":
+            result = base_rel - partner_rel.proj()
+        else:  # join
+            result = base_rel * partner_rel
+
+        count = len(result)
+        if not args.count:
+            fetched = result.fetch(
+                *fetch_fields, as_dict=True, limit=args.limit + 1
+            )
+            truncated = len(fetched) > args.limit
+            fetched = fetched[: args.limit]
+        else:
+            fetched = []
+            truncated = False
+    except Exception as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind=_classify_dj_error(exc),
+            message=_scrub_secrets(str(exc)),
+            src_root=src_root_used,
+            resolved=base,
+        )
+
+    timer.mark("serialize")
+    serialized_rows = [
+        {k: _safe_serialize_value(v) for k, v in row.items()}
+        for row in fetched
+    ]
+
+    payload = _stamp_envelope("find-instance", source_root=base.src_root)
+    payload["db"] = _build_db_envelope()
+    payload["query"] = {
+        "class": args.class_name,
+        "resolved_class": f"{base.module}.{base.qualname}",
+        "module": base.module,
+        "qualname": base.qualname,
+        "resolution_source": base.source,
+        "set_op": op,
+        "set_op_partner": partner_name,
+        "set_op_partner_resolved": f"{partner.module}.{partner.qualname}",
+        "set_op_form": _set_op_canonical_form(op),
+        "shared_attributes": shared,
+        "restriction": restriction,
+        "fields": fetch_fields,
+        "mode": "count" if args.count else "rows",
+    }
+    payload["count"] = count
+    payload["limit"] = args.limit
+    payload["truncated"] = truncated
+    # Batch E set ops are DB-side; ``incomplete`` reserves the bounded-
+    # Python-fallback marker for a future iteration. Always False today.
+    payload["incomplete"] = False
+    payload["timings_ms"] = timer.finalize()
+    payload["rows"] = serialized_rows
+
+    print(json.dumps(payload))
+    if count == 0 and args.fail_on_empty:
+        return EXIT_EMPTY
+    return EXIT_OK
+
+
+def _cmd_find_instance_grouped_count(
+    args: argparse.Namespace,
+    *,
+    restriction: dict,
+    src_root_used: Path | None,
+    timer: _Timer,
+) -> int:
+    """Handle ``--group-by`` / ``--group-by-table`` + ``--count-distinct``.
+
+    Two forms (per plan):
+
+    * Explicit fields: ``--group-by f1,f2 --count-distinct FIELD`` →
+      group by (f1, f2) on the counted relation, count distinct
+      ``FIELD`` per group.
+    * By table: ``--group-by-table G --count-distinct FIELD`` →
+      ``G.aggr(C * G.proj(), count_distinct_FIELD="count(distinct FIELD)")``
+      groups by G's primary key, counts distinct FIELD on C per group.
+
+    ``count`` in the payload is the number of groups; rows are
+    enumerated under ``groups``. ``count-distinct`` field must exist on
+    the counted relation (``C``); group-by fields must exist on C; the
+    grouping table (when supplied) is resolved separately and only its
+    primary key participates.
+    """
+    timer.mark("resolve")
+    try:
+        base = resolve_class(
+            args.class_name, src=args.src, imports=tuple(args.imports)
+        )
+    except _AmbiguousClass as exc:
+        return _emit_ambiguous(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _NotADataJointTable as exc:
+        return _emit_not_a_table(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _DataJointUnavailable as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind="datajoint_import",
+            message=f"DataJoint is not importable: {exc.original}",
+            src_root=src_root_used,
+        )
+    except _ClassNotFound as exc:
+        return _emit_not_found(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+
+    grouping: _Resolved | None = None
+    if args.group_by_table:
+        try:
+            grouping = resolve_class(
+                args.group_by_table,
+                src=args.src,
+                imports=tuple(args.imports),
+            )
+        except _AmbiguousClass as exc:
+            return _emit_ambiguous(
+                args=args, timer=timer, exc=exc, src_root=src_root_used
+            )
+        except _NotADataJointTable as exc:
+            return _emit_not_a_table(
+                args=args, timer=timer, exc=exc, src_root=src_root_used
+            )
+        except _ClassNotFound as exc:
+            return _emit_not_found(
+                args=args, timer=timer, exc=exc, src_root=src_root_used
+            )
+
+    timer.mark("heading")
+    try:
+        base_callable = base.cls
+        base_rel = base_callable()  # ty: ignore[call-non-callable]
+        base_heading_names: tuple[str, ...] = tuple(base_rel.heading.names)
+        base_heading_attrs = dict(base_rel.heading.attributes)
+        grouping_rel = None
+        grouping_pk: tuple[str, ...] = ()
+        if grouping is not None:
+            grouping_callable = grouping.cls
+            grouping_rel = grouping_callable()  # ty: ignore[call-non-callable]
+            grouping_pk = tuple(grouping_rel.heading.primary_key)
+    except Exception as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind=_classify_dj_error(exc),
+            message=_scrub_secrets(str(exc)),
+            src_root=src_root_used,
+            resolved=base,
+        )
+
+    # Validate count-distinct field is on the counted relation, NOT
+    # the grouping table — the eval-#19 ground truth pins this.
+    if args.count_distinct not in base_heading_names:
+        return _emit_invalid_query(
+            args=args,
+            timer=timer,
+            resolved=base,
+            exc=_InvalidQuery(
+                "unknown_field",
+                (
+                    f"--count-distinct field {args.count_distinct!r} is "
+                    f"not in {args.class_name!r}'s heading. The field "
+                    "must exist on the COUNTED relation, not the "
+                    "grouping table."
+                ),
+                unknown_fields=[args.count_distinct],
+                valid_fields=list(base_heading_names),
+            ),
+            src_root=src_root_used,
+        )
+
+    # Validate explicit-group-by fields against the counted heading.
+    explicit_group_fields: list[str] = []
+    if args.group_by:
+        explicit_group_fields = [
+            f.strip() for f in args.group_by.split(",") if f.strip()
+        ]
+        unknown = [
+            f for f in explicit_group_fields if f not in base_heading_names
+        ]
+        if unknown:
+            return _emit_invalid_query(
+                args=args,
+                timer=timer,
+                resolved=base,
+                exc=_InvalidQuery(
+                    "unknown_field",
+                    f"--group-by fields {unknown!r} are not in heading.",
+                    unknown_fields=unknown,
+                    valid_fields=list(base_heading_names),
+                ),
+                src_root=src_root_used,
+            )
+
+    # Validate restriction.
+    try:
+        _validate_restriction_fields(restriction, base_heading_names)
+        _validate_blob_restrictions(restriction, base_heading_attrs)
+    except _InvalidQuery as exc:
+        return _emit_invalid_query(
+            args=args, timer=timer, resolved=base, exc=exc,
+            src_root=src_root_used,
+        )
+
+    timer.mark("query")
+    agg_name = f"count_distinct_{args.count_distinct}"
+    agg_expr = f"count(distinct {args.count_distinct})"
+    try:
+        if restriction:
+            base_rel = base_rel & restriction
+        if grouping_rel is not None:
+            joined = base_rel * grouping_rel.proj()
+            result = grouping_rel.aggr(joined, **{agg_name: agg_expr})
+            group_key_fields = grouping_pk
+        else:
+            # Explicit ``--group-by f1,f2`` form. ``dj.U(*fields)`` is a
+            # Universal relation whose primary key is exactly the group
+            # fields, so aggregating against the counted relation
+            # produces one row per (f1, f2) tuple. This is the
+            # canonical DataJoint pattern for "group by an arbitrary
+            # set of fields"; using ``base_rel.proj(*group_fields)``
+            # would not work because DataJoint's ``proj`` preserves the
+            # original PK and the group key would still be the PK.
+            import datajoint as dj  # ty: ignore[unresolved-import]
+
+            universal = dj.U(*explicit_group_fields)
+            result = universal.aggr(base_rel, **{agg_name: agg_expr})
+            group_key_fields = tuple(explicit_group_fields)
+
+        # Number of groups.
+        count = len(result)
+        groups_data = result.fetch(
+            *group_key_fields,
+            agg_name,
+            as_dict=True,
+            limit=args.limit + 1,
+        )
+        truncated = len(groups_data) > args.limit
+        groups_data = groups_data[: args.limit]
+    except Exception as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind=_classify_dj_error(exc),
+            message=_scrub_secrets(str(exc)),
+            src_root=src_root_used,
+            resolved=base,
+        )
+
+    timer.mark("serialize")
+    serialized_groups = [
+        {k: _safe_serialize_value(v) for k, v in row.items()}
+        for row in groups_data
+    ]
+
+    payload = _stamp_envelope("grouped_count", source_root=base.src_root)
+    payload["db"] = _build_db_envelope()
+    payload["query"] = {
+        "class": args.class_name,
+        "resolved_class": f"{base.module}.{base.qualname}",
+        "module": base.module,
+        "qualname": base.qualname,
+        "resolution_source": base.source,
+        "group_by": args.group_by,
+        "group_by_table": args.group_by_table,
+        "group_by_table_resolved": (
+            f"{grouping.module}.{grouping.qualname}"
+            if grouping is not None
+            else None
+        ),
+        "group_key_fields": list(group_key_fields),
+        "count_distinct_field": args.count_distinct,
+        "count_distinct_alias": agg_name,
+        "restriction": restriction,
+        "mode": "grouped_count",
+    }
+    payload["count"] = count
+    payload["limit"] = args.limit
+    payload["truncated"] = truncated
+    payload["incomplete"] = False
+    payload["timings_ms"] = timer.finalize()
+    payload["groups"] = serialized_groups
+
+    print(json.dumps(payload))
+    if count == 0 and args.fail_on_empty:
+        return EXIT_EMPTY
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: find-instance (Batch C — basic restriction + fetch + count)
 # ---------------------------------------------------------------------------
 
@@ -2033,6 +2522,26 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
             args,
             restriction=restriction,
             fetch_fields=fetch_fields,
+            src_root_used=src_root_used,
+            timer=timer,
+        )
+
+    # Batch E: set ops (intersect/except/join) and grouped counts
+    # (group-by/group-by-table) take dedicated handlers. Each carries
+    # its own kind in the emitted payload (find-instance for set ops,
+    # grouped_count for aggregates) so an LLM can dispatch on kind.
+    if args.intersect or args.except_class or args.join:
+        return _cmd_find_instance_setop(
+            args,
+            restriction=restriction,
+            fetch_fields=fetch_fields,
+            src_root_used=src_root_used,
+            timer=timer,
+        )
+    if args.group_by or args.group_by_table:
+        return _cmd_find_instance_grouped_count(
+            args,
+            restriction=restriction,
             src_root_used=src_root_used,
             timer=timer,
         )
@@ -2267,38 +2776,22 @@ def main() -> int:
                 "--count-distinct requires --group-by FIELDS or "
                 "--group-by-table CLASS"
             )
-        # Batch E (set ops + grouped counts) is not yet implemented;
-        # reject the flags loudly until the implementation lands.
-        # Argparse exposes the flags so ``info --json`` can advertise
-        # the planned surface, but accepting them silently and
-        # falling through to a basic find-instance call would emit a
-        # plausible-looking but wrong payload — exactly the kind of
-        # silent-no-op footgun this tool exists to close.
-        unimplemented_flags = []
-        if args.intersect:
-            unimplemented_flags.append(f"--intersect {args.intersect}")
-        if args.except_class:
-            unimplemented_flags.append(f"--except {args.except_class}")
-        if args.join:
-            unimplemented_flags.append(f"--join {args.join}")
-        if args.group_by:
-            unimplemented_flags.append(f"--group-by {args.group_by}")
-        if args.group_by_table:
-            unimplemented_flags.append(
-                f"--group-by-table {args.group_by_table}"
-            )
-        if args.count_distinct:
-            unimplemented_flags.append(
-                f"--count-distinct {args.count_distinct}"
-            )
-        if unimplemented_flags:
+        # Batch E flags are now implemented. main() still validates the
+        # mutually-exclusive shape (one of {intersect, except, join,
+        # group-by/group-by-table}) so set-op + aggregate combinations
+        # cannot reach the handlers.
+        set_op_flags = sum(
+            1 for f in (args.intersect, args.except_class, args.join) if f
+        )
+        if set_op_flags > 1:
             parser.error(
-                "set-op and grouped-count flags are not yet implemented "
-                "(Batch E per docs/plans/db-graph-impl-plan.md): "
-                f"{', '.join(unimplemented_flags)}. The flags are "
-                "advertised in `info --json` so an LLM can plan for "
-                "Batch E, but accepting them silently in this build "
-                "would emit a plausible-looking wrong-shape payload."
+                "--intersect / --except / --join are mutually exclusive; "
+                "pick one set operation"
+            )
+        if set_op_flags and (args.group_by or args.group_by_table):
+            parser.error(
+                "set-op flags (--intersect / --except / --join) cannot "
+                "be combined with grouping (--group-by / --group-by-table)"
             )
         return cmd_find_instance(args)
     # Argparse's `required=True` on the subparsers makes this unreachable

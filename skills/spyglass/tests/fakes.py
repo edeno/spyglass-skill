@@ -91,10 +91,12 @@ class FakeRelation:
     * ``rel.heading`` — the :class:`FakeHeading` provided at
       construction.
 
-    Methods not yet exercised (``__mul__``, ``__sub__``, ``proj``,
-    ``aggr``) stay unimplemented; later batches will extend this class.
-    Calling them today raises ``NotImplementedError`` rather than
-    silently returning an empty relation.
+    Batch E adds the relational operator surface: ``proj`` (subset of
+    fields, deduplicated), ``__mul__`` (natural join), ``__sub__``
+    (antijoin), and ``aggr`` (group-by + count(distinct)). All four
+    operate along shared-attribute names — the same semantics
+    DataJoint enforces on the live server — so fakes-driven set-op
+    fixtures pin the same algebra the production code-paths exercise.
     """
 
     def __init__(
@@ -107,11 +109,34 @@ class FakeRelation:
         self._rows: list[dict] = list(rows)
 
     def __and__(self, restriction) -> FakeRelation:
-        # DataJoint accepts both dict (single AND-of-equalities) and
-        # list-of-dicts (OR-of-AND-of-equalities). The merge-aware
-        # path emits list-of-dicts when restricting the master by
-        # multiple resolved part keys.
-        if isinstance(restriction, list):
+        # DataJoint's natural-restriction operator accepts:
+        # * dict — AND-of-equalities (the basic --key form).
+        # * list-of-dicts — OR-of-AND-of-equalities (merge-aware path
+        #   emits this when restricting the master by multiple resolved
+        #   part keys).
+        # * FakeRelation — keep rows whose shared-attribute values
+        #   match at least one row in the restricting relation. This
+        #   is the ``L & R.proj()`` pattern used by --intersect.
+        if isinstance(restriction, FakeRelation):
+            shared = sorted(
+                set(self.heading.names) & set(restriction.heading.names)
+            )
+            if not shared:
+                from datajoint.errors import DataJointError  # ty: ignore[unresolved-import]
+
+                raise DataJointError(
+                    "Cannot apply relational restriction: no shared "
+                    "attributes between operands"
+                )
+            other_keys = {
+                tuple(r.get(f) for f in shared) for r in restriction._rows
+            }
+            filtered = [
+                r
+                for r in self._rows
+                if tuple(r.get(f) for f in shared) in other_keys
+            ]
+        elif isinstance(restriction, list):
             filtered = [
                 r
                 for r in self._rows
@@ -145,6 +170,156 @@ class FakeRelation:
         else:
             keys = fields
         return [{k: row.get(k) for k in keys} for row in rows]
+
+    def proj(self, *fields: str) -> FakeRelation:
+        """Project onto ``fields`` (or PK if none), deduplicating rows.
+
+        Mirrors ``datajoint.Table.proj``: when no fields are given,
+        returns the relation projected to its primary key. With fields,
+        returns those fields as the projection (heading attributes
+        outside the projection are dropped, and the new primary key is
+        the original PK ∩ projection).
+        """
+        proj_fields = tuple(fields) if fields else self.heading.primary_key
+        seen: set[tuple] = set()
+        out_rows: list[dict] = []
+        for r in self._rows:
+            key = tuple(r.get(f) for f in proj_fields)
+            if key in seen:
+                continue
+            seen.add(key)
+            out_rows.append({f: r.get(f) for f in proj_fields})
+        new_pk = tuple(
+            f for f in self.heading.primary_key if f in proj_fields
+        )
+        new_attrs = {
+            f: self.heading.attributes[f].type
+            for f in proj_fields
+            if f in self.heading.attributes
+        }
+        new_heading = FakeHeading(
+            primary_key=new_pk,
+            names=proj_fields,
+            attributes=new_attrs,
+        )
+        return FakeRelation(heading=new_heading, rows=out_rows)
+
+    def __mul__(self, other: FakeRelation) -> FakeRelation:
+        """Natural join: rows where every shared attribute matches.
+
+        Raises a ``DataJointError``-shaped exception when no shared
+        attributes exist (the canonical "Cannot join query
+        expressions" error DataJoint raises in the live server).
+        """
+        from datajoint.errors import DataJointError  # ty: ignore[unresolved-import]
+
+        shared = sorted(set(self.heading.names) & set(other.heading.names))
+        if not shared:
+            raise DataJointError(
+                "Cannot join query expressions: no shared attributes "
+                "between left and right operands"
+            )
+        out_rows: list[dict] = []
+        for r1 in self._rows:
+            for r2 in other._rows:
+                if all(r1.get(f) == r2.get(f) for f in shared):
+                    merged = {**r1, **r2}
+                    out_rows.append(merged)
+        all_names = tuple(
+            sorted(set(self.heading.names) | set(other.heading.names))
+        )
+        all_pk = tuple(
+            sorted(
+                set(self.heading.primary_key)
+                | set(other.heading.primary_key)
+            )
+        )
+        all_attrs: dict[str, str] = {}
+        for h in (self.heading, other.heading):
+            for n, a in h.attributes.items():
+                all_attrs.setdefault(n, a.type)
+        new_heading = FakeHeading(
+            primary_key=all_pk, names=all_names, attributes=all_attrs
+        )
+        return FakeRelation(heading=new_heading, rows=out_rows)
+
+    def __sub__(self, other: FakeRelation) -> FakeRelation:
+        """Antijoin: rows in self whose shared-attr tuple is not in other."""
+        from datajoint.errors import DataJointError  # ty: ignore[unresolved-import]
+
+        shared = sorted(set(self.heading.names) & set(other.heading.names))
+        if not shared:
+            raise DataJointError(
+                "Cannot antijoin: no shared attributes between left "
+                "and right operands"
+            )
+        other_keys = {
+            tuple(r.get(f) for f in shared) for r in other._rows
+        }
+        out_rows = [
+            r
+            for r in self._rows
+            if tuple(r.get(f) for f in shared) not in other_keys
+        ]
+        return FakeRelation(heading=self.heading, rows=out_rows)
+
+    def aggr(self, source: FakeRelation, **expressions: str) -> FakeRelation:
+        """Group-by + count(distinct ...) aggregation.
+
+        Group keys come from ``self``'s primary_key tuples; for each
+        group, the aggregator iterates over rows from ``source`` whose
+        primary-key tuple matches and applies the named expression.
+        Only ``count(distinct FIELD)`` is supported; anything else
+        raises ``NotImplementedError`` (test fakes mirror the bounded
+        MVP surface, no more).
+        """
+        import re
+        from collections import defaultdict
+
+        parsed: dict[str, str] = {}
+        for name, expr in expressions.items():
+            m = re.match(
+                r"\s*count\s*\(\s*distinct\s+(\w+)\s*\)\s*$",
+                expr,
+                re.IGNORECASE,
+            )
+            if not m:
+                raise NotImplementedError(
+                    f"FakeRelation.aggr only supports count(distinct ...); "
+                    f"got {expr!r}"
+                )
+            parsed[name] = m.group(1)
+        pk = self.heading.primary_key
+        groups: dict[tuple, list[dict]] = defaultdict(list)
+        for r in source._rows:
+            key = tuple(r.get(f) for f in pk)
+            groups[key].append(r)
+        out_rows: list[dict] = []
+        for key_tuple, group_rows in groups.items():
+            row: dict[str, object] = dict(zip(pk, key_tuple))
+            for agg_name, field in parsed.items():
+                # ``set`` deduplicates Nones too, mirroring SQL's COUNT
+                # DISTINCT (NULLs are excluded). Skip None explicitly.
+                distinct_vals = {
+                    r.get(field)
+                    for r in group_rows
+                    if r.get(field) is not None
+                }
+                row[agg_name] = len(distinct_vals)
+            out_rows.append(row)
+        new_attrs = {
+            f: self.heading.attributes[f].type
+            for f in pk
+            if f in self.heading.attributes
+        }
+        for n in parsed:
+            new_attrs[n] = "int"
+        new_heading = FakeHeading(
+            primary_key=pk,
+            names=pk + tuple(parsed.keys()),
+            attributes=new_attrs,
+        )
+        return FakeRelation(heading=new_heading, rows=out_rows)
 
 
 # ---------------------------------------------------------------------------
@@ -212,6 +387,22 @@ def build_fake_datajoint_sandbox(target: Path) -> Path:
                 if args and callable(args[0]) and not kwargs:
                     return args[0]
                 return _decorator
+
+
+            def U(*fields):
+                """Mimic ``datajoint.U(*fields)``: a Universal relation
+                whose primary key is ``fields``. Used by the grouped-
+                count code path: ``dj.U("subject_id").aggr(Electrode,
+                n="count(distinct nwb_file_name)")`` groups by
+                ``subject_id`` regardless of Electrode's PK shape."""
+                from fakes import FakeHeading, FakeRelation
+
+                heading = FakeHeading(
+                    primary_key=tuple(fields),
+                    names=tuple(fields),
+                    attributes={f: "varchar(64)" for f in fields},
+                )
+                return FakeRelation(heading=heading, rows=[])
             '''
         )
     )

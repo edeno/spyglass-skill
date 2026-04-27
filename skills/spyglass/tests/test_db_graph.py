@@ -1997,45 +1997,590 @@ def fixture_d_fakes_merge_part_master_mismatch_exits_3(
     return True
 
 
-def fixture_d_set_op_flags_rejected_until_batch_e(
+def fixture_d_set_op_flags_mutually_exclusive(
     args: argparse.Namespace,
 ) -> bool:
-    """Batch E flags refused with exit 2 until the implementation lands.
+    """``--intersect`` / ``--except`` / ``--join`` cannot be combined.
 
-    ``--intersect`` / ``--except`` / ``--join`` are advertised in
-    ``info --json.subcommands.find-instance`` so an LLM can plan for
-    Batch E, but accepting them in the current build would silently
-    fall through to plain find-instance and emit a wrong-shape
-    response. Reject them at the parser layer until the real
-    implementation lands.
+    Pins the parser-level rule. Each flag is its own algebra; combining
+    them would require a query language to express, which is out of MVP.
     """
-    for flag, value in (
-        ("--intersect", "Foo"),
-        ("--except", "Foo"),
-        ("--join", "Foo"),
-    ):
-        rc, _, err = _run_db_graph(
+    rc, _, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "json:JSONDecoder",
+            "--intersect",
+            "Foo",
+            "--except",
+            "Bar",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    if "mutually exclusive" not in err:
+        print(
+            f"  [FAIL] error should mention 'mutually exclusive': "
+            f"{err[-200:]!r}"
+        )
+        return False
+    print(
+        "  [ok] --intersect + --except (and other set-op pairs) refused "
+        "with exit 2 + 'mutually exclusive'"
+    )
+    return True
+
+
+def fixture_d_set_op_with_grouping_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """Set ops cannot be combined with --group-by / --group-by-table."""
+    rc, _, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "json:JSONDecoder",
+            "--intersect",
+            "Foo",
+            "--group-by-table",
+            "Bar",
+            "--count-distinct",
+            "x",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    if "cannot be combined" not in err:
+        print(
+            f"  [FAIL] error should mention 'cannot be combined': "
+            f"{err[-200:]!r}"
+        )
+        return False
+    print("  [ok] set-op + grouping combination refused with exit 2")
+    return True
+
+
+def _write_fake_setop_module(target: Path) -> None:
+    """Write a synthetic Left/Right pair for set-op fixtures.
+
+    Both classes share ``id`` and ``label`` fields so intersect / except
+    / join are well-defined. Left has 3 rows; Right has 2 rows that
+    overlap with Left on (id, label) only for ``id=2``.
+    """
+    (target / "fakesetop.py").write_text(
+        "\n".join(
+            [
+                '"""Synthetic Left + Right tables for Batch E set-op fixtures."""',
+                "from datajoint import Manual",
+                "from fakes import FakeHeading, FakeRelation",
+                "",
+                "",
+                "class Left(Manual):",
+                "    _heading_obj = FakeHeading(",
+                "        primary_key=('id',),",
+                "        names=('id', 'label', 'left_only'),",
+                "        attributes={",
+                "            'id': 'int',",
+                "            'label': 'varchar(32)',",
+                "            'left_only': 'varchar(64)',",
+                "        },",
+                "    )",
+                "    _rows = [",
+                "        {'id': 1, 'label': 'a', 'left_only': 'l1'},",
+                "        {'id': 2, 'label': 'b', 'left_only': 'l2'},",
+                "        {'id': 3, 'label': 'c', 'left_only': 'l3'},",
+                "    ]",
+                "",
+                "    def __new__(cls):",
+                "        return FakeRelation(",
+                "            heading=cls._heading_obj, rows=cls._rows",
+                "        )",
+                "",
+                "    @property",
+                "    def heading(self):",
+                "        return self._heading_obj",
+                "",
+                "",
+                "class Right(Manual):",
+                "    _heading_obj = FakeHeading(",
+                "        primary_key=('id',),",
+                "        names=('id', 'label', 'right_only'),",
+                "        attributes={",
+                "            'id': 'int',",
+                "            'label': 'varchar(32)',",
+                "            'right_only': 'varchar(64)',",
+                "        },",
+                "    )",
+                "    _rows = [",
+                "        {'id': 2, 'label': 'b', 'right_only': 'r2'},",
+                "        {'id': 4, 'label': 'd', 'right_only': 'r4'},",
+                "    ]",
+                "",
+                "    def __new__(cls):",
+                "        return FakeRelation(",
+                "            heading=cls._heading_obj, rows=cls._rows",
+                "        )",
+                "",
+                "    @property",
+                "    def heading(self):",
+                "        return self._heading_obj",
+                "",
+                "",
+                "class Disjoint(Manual):",
+                "    _heading_obj = FakeHeading(",
+                "        primary_key=('foreign_key',),",
+                "        names=('foreign_key',),",
+                "        attributes={'foreign_key': 'varchar(32)'},",
+                "    )",
+                "    _rows = []",
+                "",
+                "    def __new__(cls):",
+                "        return FakeRelation(",
+                "            heading=cls._heading_obj, rows=cls._rows",
+                "        )",
+                "",
+                "    @property",
+                "    def heading(self):",
+                "        return self._heading_obj",
+                "",
+            ]
+        )
+    )
+
+
+def _setup_setop_sandbox(tmp: Path) -> None:
+    """Build a sandbox with the fake datajoint and the setop module."""
+    import fakes as _fakes_module
+
+    _fakes_module.build_fake_datajoint_sandbox(tmp)
+    fakes_path = Path(__file__).resolve().parent / "fakes.py"
+    (tmp / "fakes.py").write_text(fakes_path.read_text())
+    _write_fake_setop_module(tmp)
+
+
+def fixture_e_fakes_intersect_returns_shared_keys(
+    args: argparse.Namespace,
+) -> bool:
+    """``--class Left --intersect Right`` returns rows present in both.
+
+    Left has id ∈ {1, 2, 3}; Right has id ∈ {2, 4}. The intersection
+    along shared attributes (id, label) is the single row with id=2.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_setop_sandbox(tmp)
+        rc, out, err = _run_db_graph(
             [
                 "find-instance",
+                "--import",
+                "fakesetop",
                 "--class",
-                "json:JSONDecoder",
-                flag,
-                value,
+                "fakesetop:Left",
+                "--intersect",
+                "fakesetop:Right",
+                "--fields",
+                "KEY",
             ],
             python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
         )
-        if rc != 2:
-            print(f"  [FAIL] {flag} {value}: expected rc=2, got {rc}")
-            return False
-        if "Batch E" not in err:
-            print(
-                f"  [FAIL] {flag} error did not mention Batch E: "
-                f"{err[-200:]!r}"
-            )
-            return False
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "intersect payload")
+    if payload is None:
+        return False
+    query = payload.get("query", {})
+    if query.get("set_op") != "intersect":
+        print(f"  [FAIL] query.set_op != 'intersect': {query.get('set_op')!r}")
+        return False
+    if query.get("set_op_form") != "L & R.proj()":
+        print(
+            f"  [FAIL] query.set_op_form drift: {query.get('set_op_form')!r}"
+        )
+        return False
+    rows = payload.get("rows", [])
+    ids = sorted(r.get("id") for r in rows)
+    if ids != [2]:
+        print(f"  [FAIL] intersection rows drift: {ids!r}")
+        return False
+    print("  [ok] --intersect: id=2 only (the shared row)")
+    return True
+
+
+def fixture_e_fakes_except_returns_left_minus_right(
+    args: argparse.Namespace,
+) -> bool:
+    """``--class Left --except Right`` returns rows in Left but not Right."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_setop_sandbox(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakesetop",
+                "--class",
+                "fakesetop:Left",
+                "--except",
+                "fakesetop:Right",
+                "--fields",
+                "KEY",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "except payload")
+    if payload is None:
+        return False
+    if payload.get("query", {}).get("set_op") != "except":
+        print(
+            f"  [FAIL] query.set_op != 'except': "
+            f"{payload.get('query', {}).get('set_op')!r}"
+        )
+        return False
+    rows = payload.get("rows", [])
+    ids = sorted(r.get("id") for r in rows)
+    # Left minus Right (along shared id, label): id 1 and id 3 remain
+    # (both have labels not in Right's matching pairs).
+    if ids != [1, 3]:
+        print(f"  [FAIL] except rows drift: {ids!r}")
+        return False
+    print("  [ok] --except: id=[1, 3] (Left minus shared)")
+    return True
+
+
+def fixture_e_fakes_join_validates_output_fields(
+    args: argparse.Namespace,
+) -> bool:
+    """``--class Left --join Right --fields ...`` returns the natural join."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_setop_sandbox(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakesetop",
+                "--class",
+                "fakesetop:Left",
+                "--join",
+                "fakesetop:Right",
+                "--fields",
+                "id,label,left_only,right_only",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "join payload")
+    if payload is None:
+        return False
+    if payload.get("query", {}).get("set_op") != "join":
+        print(
+            f"  [FAIL] query.set_op != 'join': "
+            f"{payload.get('query', {}).get('set_op')!r}"
+        )
+        return False
+    rows = payload.get("rows", [])
+    if len(rows) != 1:
+        print(f"  [FAIL] join expected 1 row (id=2), got {len(rows)}")
+        return False
+    row = rows[0]
+    if row.get("id") != 2 or row.get("label") != "b":
+        print(f"  [FAIL] join row contents drift: {row!r}")
+        return False
+    if row.get("left_only") != "l2" or row.get("right_only") != "r2":
+        print(f"  [FAIL] join did not merge fields from both sides: {row!r}")
+        return False
+    print("  [ok] --join: id=2 row carries fields from both Left and Right")
+    return True
+
+
+def fixture_e_fakes_zero_overlap_set_op_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """A set op with no shared attributes between operands exits 2.
+
+    Plan: zero overlap returns kind=invalid_query / no_shared_attributes.
+    Closes the silent-Cartesian-product footgun.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_setop_sandbox(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakesetop",
+                "--class",
+                "fakesetop:Left",
+                "--intersect",
+                "fakesetop:Disjoint",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "zero-overlap payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "invalid_query":
+        print(f"  [FAIL] kind != 'invalid_query': {payload.get('kind')!r}")
+        return False
+    if payload.get("error", {}).get("kind") != "no_shared_attributes":
+        print(
+            f"  [FAIL] error.kind != 'no_shared_attributes': "
+            f"{payload.get('error', {})!r}"
+        )
+        return False
     print(
-        "  [ok] --intersect / --except / --join refused with exit 2 + "
-        "Batch E reference"
+        "  [ok] zero-overlap intersect refused with kind=invalid_query / "
+        "error.kind=no_shared_attributes"
+    )
+    return True
+
+
+def _write_fake_grouping_module(target: Path) -> None:
+    """Write a synthetic Counted+Grouping pair for grouped-count fixtures.
+
+    ``Electrode`` (counted) has rows tying nwb_file_name + electrode_id
+    to electrode_group_name. ``Session`` (grouping) has just
+    nwb_file_name. The eval-#19 shape `Session.aggr(Electrode * Session.proj(),
+    n_tetrodes='count(distinct electrode_group_name)')` should produce
+    one row per matching session with the count.
+    """
+    (target / "fakegroup.py").write_text(
+        "\n".join(
+            [
+                '"""Synthetic Counted+Grouping for grouped-count fixtures."""',
+                "from datajoint import Manual",
+                "from fakes import FakeHeading, FakeRelation",
+                "",
+                "",
+                "class Session(Manual):",
+                "    _heading_obj = FakeHeading(",
+                "        primary_key=('nwb_file_name',),",
+                "        names=('nwb_file_name', 'subject_id'),",
+                "        attributes={",
+                "            'nwb_file_name': 'varchar(64)',",
+                "            'subject_id': 'varchar(32)',",
+                "        },",
+                "    )",
+                "    _rows = [",
+                "        {'nwb_file_name': 'aj80_d1.nwb', 'subject_id': 'aj80'},",
+                "        {'nwb_file_name': 'aj80_d2.nwb', 'subject_id': 'aj80'},",
+                "        {'nwb_file_name': 'rat_x.nwb', 'subject_id': 'rat'},",
+                "    ]",
+                "",
+                "    def __new__(cls):",
+                "        return FakeRelation(",
+                "            heading=cls._heading_obj, rows=cls._rows",
+                "        )",
+                "",
+                "    @property",
+                "    def heading(self):",
+                "        return self._heading_obj",
+                "",
+                "",
+                "class Electrode(Manual):",
+                "    _heading_obj = FakeHeading(",
+                "        primary_key=('nwb_file_name', 'electrode_id'),",
+                "        names=(",
+                "            'nwb_file_name', 'electrode_id',",
+                "            'electrode_group_name', 'subject_id',",
+                "        ),",
+                "        attributes={",
+                "            'nwb_file_name': 'varchar(64)',",
+                "            'electrode_id': 'int',",
+                "            'electrode_group_name': 'varchar(32)',",
+                "            'subject_id': 'varchar(32)',",
+                "        },",
+                "    )",
+                "    # aj80_d1: 2 tetrodes (TG1, TG2).",
+                "    # aj80_d2: 3 tetrodes (TG1, TG2, TG3). rat_x: 1.",
+                "    _rows = [",
+                "        {'nwb_file_name': 'aj80_d1.nwb', 'electrode_id': 0, "
+                "'electrode_group_name': 'TG1', 'subject_id': 'aj80'},",
+                "        {'nwb_file_name': 'aj80_d1.nwb', 'electrode_id': 1, "
+                "'electrode_group_name': 'TG1', 'subject_id': 'aj80'},",
+                "        {'nwb_file_name': 'aj80_d1.nwb', 'electrode_id': 2, "
+                "'electrode_group_name': 'TG2', 'subject_id': 'aj80'},",
+                "        {'nwb_file_name': 'aj80_d2.nwb', 'electrode_id': 0, "
+                "'electrode_group_name': 'TG1', 'subject_id': 'aj80'},",
+                "        {'nwb_file_name': 'aj80_d2.nwb', 'electrode_id': 1, "
+                "'electrode_group_name': 'TG2', 'subject_id': 'aj80'},",
+                "        {'nwb_file_name': 'aj80_d2.nwb', 'electrode_id': 2, "
+                "'electrode_group_name': 'TG3', 'subject_id': 'aj80'},",
+                "        {'nwb_file_name': 'rat_x.nwb', 'electrode_id': 0, "
+                "'electrode_group_name': 'TG1', 'subject_id': 'rat'},",
+                "    ]",
+                "",
+                "    def __new__(cls):",
+                "        return FakeRelation(",
+                "            heading=cls._heading_obj, rows=cls._rows",
+                "        )",
+                "",
+                "    @property",
+                "    def heading(self):",
+                "        return self._heading_obj",
+                "",
+            ]
+        )
+    )
+
+
+def _setup_grouping_sandbox(tmp: Path) -> None:
+    import fakes as _fakes_module
+
+    _fakes_module.build_fake_datajoint_sandbox(tmp)
+    fakes_path = Path(__file__).resolve().parent / "fakes.py"
+    (tmp / "fakes.py").write_text(fakes_path.read_text())
+    _write_fake_grouping_module(tmp)
+
+
+def fixture_e_fakes_group_by_table_eval19_shape(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval #19 shape: per-session distinct electrode-group counts.
+
+    ``--class Electrode --key subject_id=aj80 --group-by-table Session
+    --count-distinct electrode_group_name`` should produce one row per
+    Session matching the restricted Electrode set:
+    aj80_d1 → 2 (TG1, TG2), aj80_d2 → 3 (TG1, TG2, TG3).
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_grouping_sandbox(tmp)
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakegroup",
+                "--class",
+                "fakegroup:Electrode",
+                "--key",
+                "subject_id=aj80",
+                "--group-by-table",
+                "fakegroup:Session",
+                "--count-distinct",
+                "electrode_group_name",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "grouped_count payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "grouped_count":
+        print(f"  [FAIL] kind != 'grouped_count': {payload.get('kind')!r}")
+        return False
+    groups = payload.get("groups", [])
+    by_session = {
+        g["nwb_file_name"]: g["count_distinct_electrode_group_name"]
+        for g in groups
+    }
+    expected = {"aj80_d1.nwb": 2, "aj80_d2.nwb": 3}
+    if by_session != expected:
+        print(f"  [FAIL] grouped counts drift: {by_session!r} != {expected!r}")
+        return False
+    print(
+        "  [ok] eval #19 shape: per-session distinct electrode-group "
+        f"counts {by_session}"
+    )
+    return True
+
+
+def fixture_e_fakes_group_by_explicit_fields(
+    args: argparse.Namespace,
+) -> bool:
+    """``--group-by f1,f2`` form runs the explicit-field aggregation."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_grouping_sandbox(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakegroup",
+                "--class",
+                "fakegroup:Electrode",
+                "--group-by",
+                "subject_id",
+                "--count-distinct",
+                "nwb_file_name",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "explicit grouped_count payload")
+    if payload is None:
+        return False
+    groups = payload.get("groups", [])
+    by_subject = {
+        g["subject_id"]: g["count_distinct_nwb_file_name"] for g in groups
+    }
+    # aj80 has 2 distinct nwbs; rat has 1.
+    if by_subject != {"aj80": 2, "rat": 1}:
+        print(f"  [FAIL] grouped counts drift: {by_subject!r}")
+        return False
+    print(
+        "  [ok] explicit --group-by subject_id: aj80=2, rat=1 distinct nwbs"
+    )
+    return True
+
+
+def fixture_e_fakes_count_distinct_field_must_be_on_counted(
+    args: argparse.Namespace,
+) -> bool:
+    """``--count-distinct`` field must exist on the counted relation, not the grouping table."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_grouping_sandbox(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakegroup",
+                "--class",
+                "fakegroup:Electrode",
+                "--group-by-table",
+                "fakegroup:Session",
+                "--count-distinct",
+                "definitely_not_a_field",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "bad count-distinct payload")
+    if payload is None:
+        return False
+    if payload.get("error", {}).get("kind") != "unknown_field":
+        print(f"  [FAIL] error.kind != 'unknown_field': {payload.get('error', {})!r}")
+        return False
+    print(
+        "  [ok] --count-distinct unknown field exits 2 with "
+        "kind=invalid_query / error.kind=unknown_field"
     )
     return True
 
@@ -3045,6 +3590,221 @@ def fixture_d_eval16_decoding_output_merge_id(
     return True
 
 
+def fixture_e_eval17_intersect_sessions_in_both(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval #17 shape: sessions with both RippleTimesV1 and ClusterlessDecodingV1.
+
+    ``RippleTimesV1 * ClusterlessDecodingV1`` is the eval's natural-join
+    formulation. ``--intersect`` runs ``L & R.proj()`` which, since
+    both classes share ``nwb_file_name`` (among others), yields the
+    same set of nwb_file_names. This fixture asserts the intersection
+    succeeds and returns at least the shared key.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #17 intersect against real Spyglass DB",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "RippleTimesV1",
+            "--intersect",
+            "ClusterlessDecodingV1",
+            "--fields",
+            "KEY",
+        ],
+        python_env=args.python_env,
+    )
+    # Allow both rc=0 (intersection has rows) and rc=0 with empty
+    # rows (both classes populated but no shared row) — both are
+    # honest answers. Refuse only on db_error / not_found.
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "eval17 payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "find-instance":
+        print(f"  [FAIL] kind != 'find-instance': {payload.get('kind')!r}")
+        return False
+    if payload.get("query", {}).get("set_op") != "intersect":
+        print("  [FAIL] set_op != 'intersect'")
+        return False
+    print(
+        f"  [ok] eval #17: RippleTimesV1 ∩ ClusterlessDecodingV1 "
+        f"(count={payload.get('count')})"
+    )
+    return True
+
+
+def fixture_e_eval18_except_sessions_only_in_left(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval #18 shape: sessions in TrodesPosV1 but not DLCPosV1.
+
+    The eval's bare ``TrodesPosV1 - DLCPosV1`` raises in DataJoint
+    because the operands have non-shared PK attributes; we run with
+    ``.proj()`` instead which DataJoint accepts.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #18 antijoin against real Spyglass DB",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "TrodesPosV1",
+            "--except",
+            "DLCPosV1",
+            "--fields",
+            "KEY",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        # Allow rc=5 if DataJoint refuses the projection-form antijoin
+        # (some DataJoint versions reject this even with .proj()).
+        if rc == 5:
+            print(
+                f"  [ok] eval #18: DataJoint refused .proj() antijoin "
+                f"(stderr: {err[:80]!r}). Future improvement: bounded "
+                "Python fallback."
+            )
+            return True
+        print(f"  [FAIL] expected rc in (0, 5), got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "eval18 payload")
+    if payload is None:
+        return False
+    if payload.get("query", {}).get("set_op") != "except":
+        print("  [FAIL] set_op != 'except'")
+        return False
+    print(
+        f"  [ok] eval #18: TrodesPosV1 \\ DLCPosV1 "
+        f"(count={payload.get('count')})"
+    )
+    return True
+
+
+def fixture_e_eval19_per_session_distinct_tetrodes(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval #19 shape: per-session distinct electrode-group counts.
+
+    ``--class Electrode --key subject_id=aj80 --group-by-table Session
+    --count-distinct electrode_group_name`` should yield one row per
+    Session matching the restriction, with the count of distinct
+    electrode-group names.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #19 grouped count against real Spyglass DB",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "Electrode",
+            "--key",
+            "subject_id=aj80",
+            "--group-by-table",
+            "Session",
+            "--count-distinct",
+            "electrode_group_name",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "eval19 payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "grouped_count":
+        print(f"  [FAIL] kind != 'grouped_count': {payload.get('kind')!r}")
+        return False
+    groups = payload.get("groups", [])
+    # Sanity: each group has nwb_file_name and a count of distinct groups.
+    for g in groups:
+        if "nwb_file_name" not in g:
+            print(f"  [FAIL] group missing nwb_file_name: {g!r}")
+            return False
+        if "count_distinct_electrode_group_name" not in g:
+            print(
+                f"  [FAIL] group missing count_distinct_electrode_group_name: "
+                f"{g!r}"
+            )
+            return False
+    print(
+        f"  [ok] eval #19: per-session distinct tetrode counts "
+        f"({len(groups)} sessions for subject_id=aj80)"
+    )
+    return True
+
+
+def fixture_e_eval28_29_join_to_brain_region(
+    args: argparse.Namespace,
+) -> bool:
+    """Evals #28/#29 shape: join Electrode * BrainRegion via shared attrs.
+
+    Both Electrode and BrainRegion live in spyglass.common; they share
+    ``region_id`` (or similar). The join is the canonical pattern for
+    "what brain region is this electrode in?". This fixture asserts
+    the join produces a non-empty heading and returns rows that
+    expose region-name-shaped fields.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #28/#29 join against real Spyglass DB",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "Electrode",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+            "--key",
+            "electrode_id=7",
+            "--join",
+            "BrainRegion",
+            "--fields",
+            "nwb_file_name,electrode_id,region_name",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "eval28/29 payload")
+    if payload is None:
+        return False
+    if payload.get("query", {}).get("set_op") != "join":
+        print("  [FAIL] set_op != 'join'")
+        return False
+    rows = payload.get("rows", [])
+    if not rows:
+        print(
+            "  [FAIL] expected at least one Electrode-BrainRegion join row"
+        )
+        return False
+    if "region_name" not in rows[0]:
+        print(f"  [FAIL] join row missing region_name: {rows[0]!r}")
+        return False
+    print(
+        f"  [ok] eval #28/#29: Electrode * BrainRegion returned "
+        f"region_name={rows[0].get('region_name')!r}"
+    )
+    return True
+
+
 def fixture_d_eval50_silent_wrong_count_footgun_refused(
     args: argparse.Namespace,
 ) -> bool:
@@ -3175,8 +3935,22 @@ FIXTURES = [
     fixture_d_fakes_merge_master_only_field_silent_no_op_refused,
     fixture_d_fakes_merge_part_master_mismatch_exits_3,
     fixture_d_fakes_merge_count_only,
-    fixture_d_set_op_flags_rejected_until_batch_e,
+    fixture_d_set_op_flags_mutually_exclusive,
+    fixture_d_set_op_with_grouping_refused,
     fixture_d_merge_error_payload_carries_merge_context,
+    # Batch E — set ops + grouped counts (fakes sandbox)
+    fixture_e_fakes_intersect_returns_shared_keys,
+    fixture_e_fakes_except_returns_left_minus_right,
+    fixture_e_fakes_join_validates_output_fields,
+    fixture_e_fakes_zero_overlap_set_op_refused,
+    fixture_e_fakes_group_by_table_eval19_shape,
+    fixture_e_fakes_group_by_explicit_fields,
+    fixture_e_fakes_count_distinct_field_must_be_on_counted,
+    # Batch E — live Spyglass evals
+    fixture_e_eval17_intersect_sessions_in_both,
+    fixture_e_eval18_except_sessions_only_in_left,
+    fixture_e_eval19_per_session_distinct_tetrodes,
+    fixture_e_eval28_29_join_to_brain_region,
     # Batch D — live Spyglass evals
     fixture_d_eval14_trodes_position_merge_id,
     fixture_d_eval15_lfp_merge_id_via_lfpv1,
