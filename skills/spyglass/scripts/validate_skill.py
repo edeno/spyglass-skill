@@ -146,6 +146,9 @@ DOC_PLACEHOLDERS = {
     "Table", "Table1", "Table2", "MergeTable",
     "MyTable", "SomeTable", "UpstreamTable", "UpstreamA", "UpstreamB",
     "ParamTable", "SelectionTable",
+    # Loop-variable stand-ins seen in code examples
+    # (e.g. `for T in [...]: T().insert_from_nwbfile(...)`).
+    "T",
     # Part-table names accessed via dynamic attribute on merge masters
     # (e.g., `PositionOutput.DLCPosV1.fetch_nwb()`). Listed here as
     # placeholders because the call site references them as parts of a
