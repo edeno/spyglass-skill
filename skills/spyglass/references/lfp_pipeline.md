@@ -149,6 +149,11 @@ from spyglass.lfp.v1 import LFPSelection, LFPV1
 ### Running the Pipeline (Selection + Populate)
 
 ```python
+# `filter_sampling_rate` must match the actual raw rate. 30000 below
+# is correct ONLY for 30 kHz raw recordings — derive it from Raw if
+# you don't already know the rate:
+#   from spyglass.common import Raw
+#   raw_rate = int((Raw & {"nwb_file_name": nwb_file}).fetch1("sampling_rate"))
 key = {"nwb_file_name": nwb_file, "lfp_electrode_group_name": group_name,
        "target_interval_list_name": interval_name, "filter_name": "LFP 0-400 Hz",
        "filter_sampling_rate": 30000, "target_sampling_rate": 1000}
@@ -164,7 +169,7 @@ key = {
     'lfp_electrode_group_name': 'lfp_tets_j16',
     'target_interval_list_name': '02_r1',
     'filter_name': 'LFP 0-400 Hz',
-    'filter_sampling_rate': 30000,
+    'filter_sampling_rate': 30000,  # only correct for 30 kHz raw — see note above
 }
 merge_key = LFPOutput.merge_get_part(key).fetch1("KEY")
 lfp_df = (LFPOutput & merge_key).fetch1_dataframe()
@@ -195,7 +200,7 @@ from spyglass.lfp.v1 import (
 
 **LFPArtifactDetectionSelection** (Manual; `lfp_artifact.py:145`)
 
-- Pairs an `LFPOutput` merge entry (the LFP being scanned) with an `artifact_params_name` row. Required step before `LFPArtifactDetection.populate()`.
+- FKs `LFPV1` directly (NOT `LFPOutput`) plus `LFPArtifactDetectionParameters` (`lfp_artifact.py:145`). The selection key is the LFPV1 / LFPSelection primary key (`nwb_file_name`, `lfp_electrode_group_name`, `target_interval_list_name`, `filter_name`, `filter_sampling_rate`) plus `artifact_params_name` — not a merge key. Required step before `LFPArtifactDetection.populate()`.
 
 **LFPArtifactDetection** (Computed; defined in `lfp/v1/lfp_artifact.py`)
 
@@ -206,9 +211,15 @@ from spyglass.lfp.v1 import (
 # 0. Make sure the default preset rows exist.
 LFPArtifactDetectionParameters().insert_default()
 
-# 1. Pick which LFP entry to scan (the merge entry from Step 2 above).
+# 1. Pick which LFP entry to scan. The selection FKs LFPV1 (NOT
+#    LFPOutput) — reuse the LFPSelection/LFPV1 primary-key fields
+#    from Step 2 above, do not pass a merge key here.
 artifact_sel_key = {
-    **merge_key,                                  # carries lfp_merge_id
+    "nwb_file_name": key["nwb_file_name"],
+    "lfp_electrode_group_name": key["lfp_electrode_group_name"],
+    "target_interval_list_name": key["target_interval_list_name"],
+    "filter_name": key["filter_name"],
+    "filter_sampling_rate": key["filter_sampling_rate"],
     "artifact_params_name": "default_difference",
 }
 LFPArtifactDetectionSelection.insert1(artifact_sel_key, skip_duplicates=True)
