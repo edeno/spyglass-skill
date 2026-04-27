@@ -24,11 +24,11 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 ## Core Directives
 
 - **NEVER delete or drop without explicit confirmation.** The database holds irreplaceable neuroscience data. Any destructive helper (`delete`, `drop`, `cleanup`, `merge_delete`, etc.) must be paired with an inspect step and user confirmation first. `.delete()` on SpyglassMixin tables aliases to `cautious_delete` — it enforces team-based permissions so you can't accidentally delete another lab member's sessions. Paired shapes + protection model: [destructive_operations.md](references/destructive_operations.md).
-- **Do not invent identifiers.** Plausible method, kwarg, field, and table names are this skill's most common hallucination shape — they fail with `AttributeError`, `TypeError`, or `DataJointError: unknown attribute`. Verify before asserting: grep the source, `inspect.signature`, or `Table.heading`. If unverifiable, flag as unconfirmed. Real examples: Common Mistake #8 in [common_mistakes.md](references/common_mistakes.md).
-- **Treat pipeline version as load-bearing.** If the user names a versioned class/table, version label, import/path, traceback, or version directory (`CurationV1`, `v1 SortGroup`, `spyglass.spikesorting.v1`, `<pipeline>/<version>/`), verify against that version's source before naming classes, methods, kwargs, signatures, tiers, definitions, or workflow steps. Do not infer symmetry from another version. For comparisons, use [feedback_loops.md § Verify behavior, trust identity](references/feedback_loops.md#verify-behavior-trust-identity). If the named version cannot be verified, abstain or flag uncertainty.
+- **Do not invent identifiers.** Plausible method, kwarg, field, and table names are the main hallucination shape. Verify before asserting: `code_graph.py describe` / `find-method` for source identity and FK/method claims; `db_graph.py describe` / `find-instance` for runtime table, heading, row, and merge-id claims. Fall back to grep, `inspect.signature`, or `Table.heading` for method bodies, signatures, and uncovered shapes. If unverifiable, flag as unconfirmed. Examples: [common_mistakes.md](references/common_mistakes.md).
+- **Treat pipeline version as load-bearing.** If the user names a versioned class/table, import/path, traceback, or version directory (`CurationV1`, `v1 SortGroup`, `spyglass.spikesorting.v1`, `<pipeline>/<version>/`), verify that version's source before naming classes, methods, kwargs, signatures, tiers, definitions, or workflow steps. Do not infer symmetry; for comparisons, use [feedback_loops.md § Verify behavior, trust identity](references/feedback_loops.md#verify-behavior-trust-identity). If unverified, abstain or flag uncertainty.
 - **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
 - **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** when the restriction is partial. `print(len(rel))`; if >1, `rel.fetch(as_dict=True)` to find missing PK fields. `Table.describe()` shows schema, not count. Carveout: a full-PK restriction is unique — `fetch1()` skips the `len()`. See Common Mistake #2.
-- **Environment**: detect the user's setup (local Docker, local data, remote lab) — don't assume Jupyter or remote NWB.
+- **Environment**: detect setup; don't assume Jupyter or remote NWB.
 - **DataJoint config files**: `dj_local_conf.json` / `~/.datajoint_config.json` hold plaintext `database.password`. Don't `Read`/`cat`; run `python skills/spyglass/scripts/scrub_dj_config.py` (masks secret leaves). Details: [setup_config.md](references/setup_config.md).
 - **Source of truth**: when the skill and repo disagree, trust the repo. Cited paths use `src/spyglass/...` (drop `src/` for pip installs; locate via `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`). Tutorials at `notebooks/*.ipynb` drift — cite the `.ipynb` (not the `py_scripts/` mirror), and when a cell fails on a missing parameter/table/column, check the source tree.
 - **Do not edit the installed Spyglass package.** Edits to `src/spyglass/...` desync the in-DB schema from what other labs run, and `pip install -e .` silently reverts them. Push back if the user insists.
@@ -50,7 +50,7 @@ Quality-critical ops use validator → fix → proceed. Four loops: post-ingesti
 
 ## Classify the User's Stage
 
-Stages orient you to *what the user is doing*; the Reference Routing table below resolves *what they're asking about*. Use stages for vague questions; use the routing table when the topic is clear.
+Stages orient vague questions; the Reference Routing table resolves clear topics.
 
 1. **Setup/install** → `scripts/install.py` is the canonical fast path per `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md), [setup_config.md](references/setup_config.md), or [setup_troubleshooting.md](references/setup_troubleshooting.md). `00_Setup.ipynb` is a manual fallback.
 2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md) + `02_Insert_Data.ipynb`.
@@ -59,7 +59,7 @@ Stages orient you to *what the user is doing*; the Reference Routing table below
 5. **Pipeline authoring** (extending a pipeline, writing schema modules) → [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md). Different from usage.
 6. **Runtime debugging / traceback triage** (populate/make/fetch1 failures, join multiplicity, one-key-fails, NumPy/pandas bugs inside `make()`) → [runtime_debugging.md](references/runtime_debugging.md). Install/config/connection errors go to [setup_troubleshooting.md](references/setup_troubleshooting.md) instead.
 
-Users may span stages. Infer from the question and any imports/table names in context — don't halt to ask unless (a) the answer would change materially (pipeline usage vs. authoring), or (b) the next step is destructive and intent is ambiguous.
+Users may span stages. Infer from imports/table names; ask only when the answer changes materially or the next step is destructive.
 
 ## Merge Tables
 
@@ -80,7 +80,7 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 
 ## Reference Routing
 
-**Load one reference at a time.** Pick the single most relevant row; open a second only if the first doesn't cover the question. Don't pre-load several "to be safe" — wastes context. This table routes by topic, not by path; repo paths live in each reference file.
+**Load one reference at a time.** Pick the most relevant row; open a second only if needed. This table routes by topic; repo paths live in each reference file.
 
 | User question is about... | Load this reference | Canonical notebook |
 | ------------------------- | ------------------- | ------------------ |
@@ -92,6 +92,7 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 | Destructive operations — deletes, cleanup, inspect-before-destroy | [destructive_operations.md](references/destructive_operations.md) | — |
 | Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) | — |
 | Source-graph questions — FK chain A→B, what X declares, owner of method Y, up/downstream | [feedback_loops.md](references/feedback_loops.md) "Three graphs..." → `code_graph.py` | — |
+| Runtime / DB-graph questions — row existence, counts, merge IDs, set ops, runtime heading vs source heading, source/runtime disagreement, custom tables outside `$SPYGLASS_SRC` | [feedback_loops.md](references/feedback_loops.md) "Three graphs..." → `db_graph.py` | — |
 | Common Spyglass footguns | [common_mistakes.md](references/common_mistakes.md) | — |
 | Merge tables (`_Merge` methods) or SpyglassMixin helpers (`fetch_nwb`, `cautious_delete`, `<<`/`>>`) | [merge_methods.md](references/merge_methods.md), [spyglassmixin_methods.md](references/spyglassmixin_methods.md) | `01_Concepts.ipynb`, `04_Merge_Tables.ipynb` |
 | Group tables (`*Group`, `create_group()`) | [group_tables.md](references/group_tables.md) | — |

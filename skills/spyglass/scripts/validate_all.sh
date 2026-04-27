@@ -76,7 +76,7 @@ if ! [[ " ${VALIDATOR_ARGS[*]} " == *" --baseline-warnings "* ]]; then
 fi
 
 echo "============================================================"
-echo "[1/4] Main validator"
+echo "[1/5] Main validator"
 echo "============================================================"
 "$PY" "$SCRIPT_DIR/validate_skill.py" --spyglass-src "$SPYGLASS_SRC" \
     "${VALIDATOR_ARGS[@]}"
@@ -84,7 +84,7 @@ validator_rc=$?
 
 echo
 echo "============================================================"
-echo "[2/4] Validator-regression fixtures"
+echo "[2/5] Validator-regression fixtures"
 echo "============================================================"
 "$PY" "$SKILL_ROOT/tests/test_validator_regressions.py" \
     --spyglass-src "$SPYGLASS_SRC"
@@ -92,7 +92,7 @@ regression_rc=$?
 
 echo
 echo "============================================================"
-echo "[3/4] code_graph.py tool-contract fixtures"
+echo "[3/5] code_graph.py tool-contract fixtures"
 echo "============================================================"
 "$PY" "$SKILL_ROOT/tests/test_code_graph.py" \
     --spyglass-src "$SPYGLASS_SRC"
@@ -100,14 +100,27 @@ code_graph_rc=$?
 
 echo
 echo "============================================================"
-echo "[4/4] Runnable-example import harness (informational)"
+echo "[4/5] db_graph.py tool-contract fixtures"
+echo "============================================================"
+# db_graph.py imports DataJoint and Spyglass lazily on runtime paths. Pass
+# --python-env so subprocess fixtures use the interpreter the user picked.
+# The info path and fakes-backed fixtures run on stdlib-only Python; live
+# resolution fixtures skip unless that interpreter has DataJoint + Spyglass.
+"$PY" "$SKILL_ROOT/tests/test_db_graph.py" \
+    --spyglass-src "$SPYGLASS_SRC" \
+    --python-env "$PY"
+db_graph_rc=$?
+
+echo
+echo "============================================================"
+echo "[5/5] Runnable-example import harness (informational)"
 echo "============================================================"
 "$PY" "$SKILL_ROOT/tests/test_runnable_imports.py" \
     --spyglass-src "$SPYGLASS_SRC" || true  # harness rc is informational
 
 echo
-if [[ $validator_rc -ne 0 || $regression_rc -ne 0 || $code_graph_rc -ne 0 ]]; then
-    echo "FAILED: validator=$validator_rc regression=$regression_rc code_graph=$code_graph_rc"
+if [[ $validator_rc -ne 0 || $regression_rc -ne 0 || $code_graph_rc -ne 0 || $db_graph_rc -ne 0 ]]; then
+    echo "FAILED: validator=$validator_rc regression=$regression_rc code_graph=$code_graph_rc db_graph=$db_graph_rc"
     exit 1
 fi
 echo "All gated checks passed."

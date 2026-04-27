@@ -15,6 +15,19 @@ local module and update ``feedback_loops.md`` to route at
 ``python -m spyglass.code_graph``. The companion `_index.py` migrates
 together; see its own Lifecycle paragraph.
 
+Boundary
+--------
+
+This script is a source-evidence adapter, not a runtime DataJoint or
+Spyglass reasoning engine. It never imports Spyglass or DataJoint and
+never connects to a database. Its facts come from the checked-out source
+tree: class declarations, literal ``definition`` strings, parsed FK
+references, nested parts, and method bodies. Use ``db_graph.py`` for
+runtime table existence, headings, keys, row counts, and user-specific
+database state. Use source reads or project references for scientific
+meaning, parameter consequences, and behavior that depends on code
+inside ``make`` bodies or third-party packages.
+
 Three subcommands, all consuming ``_index.py``:
 
 * ``code_graph.py describe <Class>`` — node view (bases, methods,
@@ -1248,6 +1261,12 @@ def _print_walk_human(payload: dict, walk_label: str) -> None:
 
 
 def cmd_path(args: argparse.Namespace) -> int:
+    """Source-only FK / containment traversal.
+
+    Builds paths from parsed class definitions and nested class structure.
+    It does not import Spyglass, inspect a live DataJoint connection, count
+    rows, or prove that a table exists in the user's current database.
+    """
     src_root = _index.resolve_src_root(args.src)
     idx = _index.scan(src_root)  # exits if src_root has no `spyglass/` package
     bfs_parent_m = _path_graph(idx)
@@ -1614,6 +1633,13 @@ def _print_describe_human(payload: dict) -> None:
 
 
 def cmd_describe(args: argparse.Namespace) -> int:
+    """Source-only class description.
+
+    Reports what the checked-out source declares: bases, literal
+    definition-derived fields, FK edges, nested parts, and method
+    availability. Runtime headings, actual database keys, row state, and
+    custom imported tables belong to ``db_graph.py``.
+    """
     src_root = _index.resolve_src_root(args.src)
     idx = _index.scan(src_root)  # exits if src_root has no `spyglass/` package
     json_out = bool(args.json)
@@ -1789,6 +1815,13 @@ def _print_findmethod_human(payload: dict) -> None:
 
 
 def cmd_find_method(args: argparse.Namespace) -> int:
+    """Source-only reverse method lookup.
+
+    Finds classes whose source bodies define ``method_name`` and summarizes
+    registered mixin inheritance. It does not inspect runtime monkeypatches,
+    DataJoint base methods, custom modules outside ``$SPYGLASS_SRC``, or
+    behavior inside the method body beyond the cited source line.
+    """
     src_root = _index.resolve_src_root(args.src)
     idx = _index.scan(src_root)  # exits if src_root has no `spyglass/` package
     json_out = bool(args.json)

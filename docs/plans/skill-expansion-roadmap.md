@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-22
 **Author drafted by:** Claude, via skill-creator best practices
-**Status:** Draft for review
+**Status:** Revised 2026-04-27 after `code_graph.py` and `db_graph.py`
 
 ---
 
@@ -20,11 +20,12 @@ the language layer for three research aims:
    queries, pattern ranking with provenance, human-in-the-loop
    exploration tooling.
 
-Gap analysis (previous turn) established that most Aim 1 text deliverables
-are ~50 % shipped, the remaining 50 % and nearly all of Aim 2/3 depend on
-**live database access** and **introspection APIs** that don't exist yet.
-This roadmap sequences the work so the skill's *own* surface stays lean
-while unlocking those downstream capabilities.
+Gap analysis originally found that most Aim 1 text deliverables were partly
+shipped, while live database access and introspection were missing. That is no
+longer the right baseline: `code_graph.py` now provides source-only
+introspection, and `db_graph.py` provides a bounded read-only runtime database
+inspection surface. This roadmap now prioritizes **using those tools well**
+before adding more bundled scripts or adjacent services.
 
 ## Design principles (from skill-creator)
 
@@ -47,13 +48,37 @@ while unlocking those downstream capabilities.
 
 ## Phase 0 — Baseline measurement (1–2 days)
 
-Before changing anything, lock in **where we are today** so the lift of
-each subsequent phase is measurable.
+Before changing more surface area, lock in **whether agents use the existing
+tools correctly**. The next baseline is not "skill vs. no skill"; it is
+"direct answer from memory" vs. "proof-carrying answer grounded in
+`code_graph.py` / `db_graph.py`."
 
 ### Work items
 
-- **0.1** Add 6–8 new eval cases in `skills/spyglass/evals/evals.json`
-  targeting aim-relevant behavior. Suggested cases:
+- **0.1** Add 8–10 eval cases in `skills/spyglass/evals/evals.json`
+  targeting proof-carrying behavior. Suggested cases:
+  - "What key do I need for this table?" with a plausible but wrong field
+    name in the prompt. Expected behavior: verify heading / key via
+    `db_graph.py` or abstain if DB is unavailable.
+  - "Does table A depend on table B?" where source-only structure is enough.
+    Expected behavior: cite `code_graph.py path`, including merge hops and
+    truncation/warnings if present.
+  - "Why is my query empty after changing params?" Expected behavior: combine
+    source path evidence with runtime row/count checks and avoid inventing
+    parameter names.
+  - "What does this parameter row actually affect?" Expected behavior: inspect
+    the parameter blob, identify the consuming `make()` source, and flag
+    third-party call sites rather than inferring from the parameter name.
+  - "Can I ingest this unfamiliar raw NWB?" Expected behavior: inspect file
+    metadata, namespaces, table shapes, and array shapes without reading array
+    payloads or assuming the DB already knows the file.
+  - "What did this AnalysisNWB output actually contain?" Expected behavior:
+    inspect processing modules, object paths, table/dataset shapes, and
+    extension namespaces without reading large payload values.
+  - "My custom lab table is not in source." Expected behavior: use
+    `db_graph.py --import` / runtime heading rather than `code_graph.py`.
+  - "Source says the class exists, but the DB heading differs." Expected
+    behavior: distinguish source truth from runtime DB truth.
   - "Explain `filter_name=lfp_600Hz` and when I'd pick it" (param
     literacy — Aim 1).
   - "I have 120 sessions; which have spike-sorting quality metrics
@@ -62,28 +87,73 @@ each subsequent phase is measurable.
   - "Write the full selection-insert for running `DLCPosV1` on
     session X with params Y" (boilerplate generation — Aim 1).
   - "Given my current DB state, is it safe to re-run `populate` on
-    these 5 sessions?" (context-aware guidance — Aim 1, expected to
-    fail today because there's no DB access).
+    these 5 sessions?" (context-aware guidance — Aim 1; requires
+    runtime DB evidence and should abstain if no DB is available).
   - "Compare ripple rates across rats during novel-environment
     task" (natural-language query — Aim 1 flagship).
   - "Flag sessions where position tracking looked unstable" (Aim 2).
 - **0.2** Run the existing skill-creator eval harness against these
-  cases (with-skill vs. baseline-no-skill). Save under
+  cases. Score both final correctness and evidence behavior: did the agent
+  cite source/runtime evidence for table, key, method, and DAG claims? Save under
   `spyglass-workspace/iteration-0-baseline/`.
 - **0.3** Publish the baseline numbers in this file (fill in Phase 0
   table at the end) so Phase 1+ can claim deltas honestly.
 
 ### Acceptance criteria
 
-- [ ] 6+ new evals merged.
+- [ ] 8+ new evals merged.
 - [ ] Baseline benchmark.json committed (or linked from workspace).
-- [ ] Each eval classified as "text-achievable" or "gated on DB
-      access" — tells us which phase it should move in.
+- [ ] Each eval classified by required authority:
+      `source-only`, `runtime-db`, `source+runtime`, `reference-only`, or
+      `abstain/no-access`.
 
 ## Phase 1 — Skill-internal wins (2–3 weeks)
 
-Highest-leverage, lowest-cost additions. Pure content + validator work;
-no new dependencies.
+Highest-leverage, lowest-cost additions. Pure content + eval/validator work;
+no new runtime dependencies.
+
+### 1.0 Graph-tool integration and evidence habits
+
+**Why:** The largest current hallucination reducers already exist. Agents now
+need simple, copyable habits for when to call them and how to cite their
+outputs.
+
+**Deliverables:**
+
+- Tighten `feedback_loops.md` and `runtime_debugging.md` examples around:
+  source DAG evidence (`code_graph.py`), runtime row/key evidence
+  (`db_graph.py`), and source/runtime disagreement.
+- Add proof-carrying answer templates for insert/fetch/populate code:
+  verified table, primary key, upstream key, row count, and remaining
+  uncertainty.
+- Add evals where direct confident answers fail and tool use or abstention is
+  the expected behavior.
+- Update stale script-priority docs so future work does not duplicate the two
+  graph tools.
+
+This is Phase 1's first step. Do it before catalogs or new scripts.
+
+### 1.0.5 Parameter and NWB evidence probes
+
+**Why:** Two valuable evidence surfaces remain outside the graph tools.
+Parameters live in DB rows as blobs, but their effect is determined where
+`make()` reads those blobs and passes values into Spyglass or third-party
+functions. NWB files also carry facts the DB graph cannot see: raw files before
+ingestion and AnalysisNWB files containing analysis results. They may be too
+large to read into context. Both are common places where an agent otherwise
+guesses.
+
+**Deliverables:**
+
+- Add evals for parameter traceability: params row -> blob summary -> consuming
+  source location -> third-party call site -> uncertainty caveat.
+- Add evals for lightweight NWB inspection: raw file metadata, AnalysisNWB
+  processing modules/results, namespaces, table shapes, array shapes, object
+  paths, and no array payload values.
+- If evals show graph-tool + reference patterns are awkward, write narrow
+  plans for `describe_params.py` / `trace_params.py` and `inspect_nwb_lite.py`.
+- Keep both tools evidentiary. They should surface facts for the agent to cite,
+  not decide scientific validity or ingestion policy by themselves.
 
 ### 1.1 Quality-metrics ontology reference
 
@@ -131,7 +201,13 @@ reconstructs the others from scratch each time.
 prose. A YAML catalog serves both Claude (via the skill) and future
 programmatic consumers (Aim 1.2 APIs).
 
-**Deliverables:**
+**Current decision:** defer as a large static catalog until parameter trace
+evals prove it is needed. Prefer live parameter inspection for row/blob facts
+and source reads for behavioral consequences. A catalog is still valuable for
+high-level parameter sensitivity labels, but it should not become a stale copy
+of live Params table contents.
+
+**Possible deliverables if revived:**
 
 - `skills/spyglass/references/catalog/parameters.yaml` — one entry
   per parameter: name, parent table, type, default, legal range/enum,
@@ -187,17 +263,18 @@ metrics" / "cross-dataset query" surface.
 
 ## Phase 2 — Adjacent infrastructure the skill calls (4–8 weeks)
 
-Biggest single unlock identified in the gap analysis: **live read-only
-DB access**. This is *not* skill content; it's a sibling package. The
-skill learns how to invoke it.
+This phase is now conditional. `db_graph.py` gives the skill a bounded
+read-only DB inspection surface without running a persistent MCP server. A
+separate MCP or Python package should wait until usage shows that subprocess
+CLI calls are too slow, too hard to compose, or unavailable in the target
+agent environments.
 
 ### 2.1 `spyglass-mcp` — read-only DataJoint MCP server
 
 **Why:** Covers Aim 1.2 (programmatic introspection), enables Aim 1.3
 context-aware guidance, and is the prerequisite for Aims 2/3 analyses
-to run against real data. MCP is the right shape because Claude Code
-/ Codex CLI / Gemini CLI all speak it, matching the skill's
-multi-harness story in the README.
+to run against real data. This remains plausible, but it is no longer the
+first live-DB milestone; `db_graph.py` should be evaluated in real use first.
 
 **Deliverables (separate repo `spyglass-mcp`):**
 
@@ -268,10 +345,12 @@ result for any write-up or demo.
 - [ ] Zero destructive-action regressions in eval suite (the
       read-only guardrail holds under adversarial prompts).
 
-**Decision point before starting Phase 2:** run Phase 1 for 4–6 weeks
-in the wild. If onboarding friction demonstrably drops and users
-start asking for "but can it query my DB too?", Phase 2 is validated.
-If not, revisit scope.
+**Decision point before starting Phase 2:** run the graph tools for 4–6 weeks
+in real interactions. Start MCP/introspection work only if users or evals show
+one of these concrete blockers: subprocess latency dominates, agents need
+multi-query stateful sessions, notebook users need the same primitives without
+shelling out, or cross-dataset health tooling needs a package API rather than
+a CLI.
 
 ## Phase 3 — Monitoring and meta-analysis (quarter+)
 
@@ -403,8 +482,7 @@ Each new structured artifact needs a corresponding check:
 
 ## Immediate next step
 
-Agree on Phase 0 eval cases + their expected-output sketches, then
-run the baseline. Phase 1.1 (quality-metrics ontology) is a natural
-kickoff because it's fully skill-internal, has obvious structure,
-and touches the smallest surface area while still being visible to
-users.
+Agree on the Phase 0 proof-carrying eval cases + expected-output sketches,
+then run the baseline. Phase 1.0 (graph-tool integration and evidence habits)
+is the natural kickoff because it hardens the capabilities already shipped and
+prevents the next round of plans from duplicating them.
