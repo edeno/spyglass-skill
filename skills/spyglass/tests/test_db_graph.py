@@ -452,8 +452,8 @@ def fixture_emitted_kind_always_appears_in_payload_envelopes(
     ``info --json`` is the contract source of truth. If the tool emits a
     ``kind`` that has no matching envelope, an LLM consuming the contract
     has no shape to validate the payload against. Tests both the
-    deterministic ``db_error`` path (poisoned env) and, when DataJoint /
-    Spyglass are available, the ``not_implemented`` Batch-B endpoint.
+    deterministic ``db_error`` path (poisoned env). Successful
+    find-instance payloads are covered by the fakes-backed fixtures below.
     """
     rc_info, out_info, err_info = _run_db_graph(
         ["info", "--json"], python_env=args.python_env
@@ -479,26 +479,7 @@ def fixture_emitted_kind_always_appears_in_payload_envelopes(
     if not _kind_matches_envelope(db_payload, envelopes, "db_error path"):
         return False
 
-    # Path 2: not_implemented (Batch-B success) — only when DataJoint AND
-    # Spyglass both import on python_env.
-    if args.has_datajoint and args.has_spyglass:
-        _, out_ni, _ = _run_db_graph(
-            ["find-instance", "--class", "Session"],
-            python_env=args.python_env,
-        )
-        ni_payload = _parse_json_or_fail(out_ni, "not_implemented path")
-        if ni_payload is None:
-            return False
-        if not _kind_matches_envelope(ni_payload, envelopes, "not_implemented path"):
-            return False
-        print(
-            "  [ok] db_error and not_implemented both match documented envelopes"
-        )
-    else:
-        print(
-            "  [ok] db_error matches documented envelope; "
-            "not_implemented path skipped (no datajoint/spyglass on python_env)"
-        )
+    print("  [ok] db_error matches documented envelope")
     return True
 
 
@@ -695,7 +676,7 @@ def _require_capability(
 ) -> bool:
     """Capability gate. Returns True iff the fixture body should run.
 
-    Convention used by every Batch-B fixture::
+    Convention used by every capability-gated fixture::
 
         if not _require_capability(args, datajoint=True, spyglass=True, why="..."):
             return True  # short-circuit; runner reads the markers below
@@ -737,14 +718,12 @@ def _expect_resolved_payload(
 ) -> bool:
     """Shared assertion: payload's resolution provenance matches expectations.
 
-    Used by every Batch-B fixture that wants to pin "this class went
+    Used by every resolution fixture that wants to pin "this class went
     through this resolution path" without caring about the row data.
-    find-instance subsumes the resolution-only endpoint: instead of
-    ``kind: "not_implemented"``, a successful resolution now produces
-    ``kind: "find-instance"`` with real ``count``/``rows``. The provenance
+    Successful resolution produces ``kind: "find-instance"`` with real
+    ``count`` / ``rows``. The provenance
     fields (``query.module``, ``query.qualname``, ``query.resolution_source``)
-    remain the contract this helper pins. ``query.stage`` was a Batch-B
-    affordance and is gone now that find-instance is fully wired.
+    are the contract this helper pins.
     """
     payload = _parse_json_or_fail(out, "find-instance resolved stdout")
     if payload is None:
@@ -1247,8 +1226,8 @@ def _setup_fakes_sandbox(
 def fixture_find_instance_fakes_restriction_and_fetch(args: argparse.Namespace) -> bool:
     """End-to-end find-instance via the fakes sandbox — no live DB needed.
 
-    This is the canonical Batch-C coverage fixture for the no-VPN /
-    no-spyglass-installed case. A synthetic ``FakeSession`` class is
+    This is the canonical coverage fixture for the no-VPN /
+    no-Spyglass-installed case. A synthetic ``FakeSession`` class is
     built with three rows; ``--key subject_id=aj80`` filters to two of
     them and ``--fields KEY`` returns just the primary keys. The fixture
     asserts the find-instance envelope, count, restriction echo,
@@ -1542,8 +1521,7 @@ def fixture_find_instance_fakes_safe_serialization_envelopes(
 
     Numpy ``ndarray`` is intentionally left out: it requires numpy
     available to the subprocess interpreter. The corresponding
-    serialization branch is exercised by an inline smoke check at
-    Batch-C commit time.
+    serialization branch is exercised by a direct unit-style smoke check.
     """
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp = Path(tmp_str)

@@ -798,23 +798,6 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "error",
         "timings_ms",
     ],
-    # Build-time scaffolding shape: emitted when a code path is
-    # explicitly stubbed. Documenting it here keeps `info --json` the
-    # source of truth for every JSON shape the tool can emit. The
-    # kind value is "not_implemented" rather than the generic "error"
-    # so an LLM that sees the payload can distinguish a stub from a
-    # runtime DB error (which uses the `db_error` envelope).
-    "not_implemented": [
-        "schema_version",
-        "kind",
-        "graph",
-        "authority",
-        "source_root",
-        "db",
-        "query",
-        "error",
-        "timings_ms",
-    ],
 }
 
 

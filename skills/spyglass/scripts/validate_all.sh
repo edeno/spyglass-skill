@@ -102,11 +102,10 @@ echo
 echo "============================================================"
 echo "[4/5] db_graph.py tool-contract fixtures"
 echo "============================================================"
-# db_graph.py imports DataJoint and Spyglass lazily on the find-instance
-# path. Pass --python-env so the test runner's subprocess invocations use
-# the same interpreter the user picked (or sys.executable otherwise).
-# Batch A fixtures pass on a stdlib-only Python because the info path is
-# DataJoint-free; later batches will need a Spyglass-equipped interpreter.
+# db_graph.py imports DataJoint and Spyglass lazily on runtime paths. Pass
+# --python-env so subprocess fixtures use the interpreter the user picked.
+# The info path and fakes-backed fixtures run on stdlib-only Python; live
+# resolution fixtures skip unless that interpreter has DataJoint + Spyglass.
 "$PY" "$SKILL_ROOT/tests/test_db_graph.py" \
     --spyglass-src "$SPYGLASS_SRC" \
     --python-env "$PY"

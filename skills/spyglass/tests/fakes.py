@@ -102,12 +102,12 @@ class FakeRelation:
     * ``rel.heading`` — the :class:`FakeHeading` provided at
       construction.
 
-    Batch E adds the relational operator surface: ``proj`` (subset of
-    fields, deduplicated), ``__mul__`` (natural join), ``__sub__``
-    (antijoin), and ``aggr`` (group-by + count(distinct)). All four
-    operate along shared-attribute names — the same semantics
-    DataJoint enforces on the live server — so fakes-driven set-op
-    fixtures pin the same algebra the production code-paths exercise.
+    The relational operator surface includes ``proj`` (subset of fields,
+    deduplicated), ``__mul__`` (natural join), ``__sub__`` (antijoin), and
+    ``aggr`` (group-by + count(distinct)). All four operate along
+    shared-attribute names — the same semantics DataJoint enforces on the
+    live server — so fakes-driven set-op fixtures pin the same algebra the
+    production code paths exercise.
     """
 
     def __init__(
@@ -121,9 +121,9 @@ class FakeRelation:
     ) -> None:
         self.heading = heading
         self._rows: list[dict] = list(rows)
-        # Batch F describe metadata. Synthetic test classes can supply
-        # parent / child / part names so the describe handler's
-        # adjacency block round-trips through the fakes sandbox.
+        # Synthetic test classes can supply parent / child / part names
+        # so the describe handler's adjacency block round-trips through
+        # the fakes sandbox.
         self._parents = tuple(parents)
         self._children = tuple(children)
         self._parts = tuple(parts)
@@ -434,13 +434,13 @@ def build_fake_datajoint_sandbox(target: Path) -> Path:
                 return FakeRelation(heading=heading, rows=[])
 
 
-            # Batch G path-traversal support. Synthetic test modules
-            # populate ``_TABLE_GRAPH`` with the runtime adjacency they
-            # want to expose: ``{full_name: {"parents": [...],
-            # "children": [...]}}``. ``FreeTable(conn, full_name)``
-            # returns a stand-in whose ``parents()`` / ``children()``
-            # look up the registry. Real DataJoint queries the live
-            # schema graph; the fake mimics enough of that for tests.
+            # Path-traversal support. Synthetic test modules populate
+            # ``_TABLE_GRAPH`` with the runtime adjacency they want to
+            # expose: ``{full_name: {"parents": [...], "children": [...]}}``.
+            # ``FreeTable(conn, full_name)`` returns a stand-in whose
+            # ``parents()`` / ``children()`` look up the registry. Real
+            # DataJoint queries the live schema graph; the fake mimics
+            # enough of that for tests.
             _TABLE_GRAPH = {}
 
 
