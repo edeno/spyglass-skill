@@ -218,8 +218,10 @@ which SpikeInterface rejects at `SpikeSortingRecording.populate` with
 
 ```python
 SortGroup().set_group_by_shank(nwb_file_name=nwb_file)
-# ^ the single-shank grouper. Do not set_group_by_electrode for
-#   clusterless / waveform-based pipelines.
+# ^ The only v1 grouper (`spikesorting/v1/recording.py:51`). v0's
+#   `set_group_by_electrode_group` (`spikesorting/v0/spikesorting_recording.py:94`)
+#   does NOT exist on v1's SortGroup — do not port that v0 pattern
+#   into clusterless / waveform-based v1 workflows.
 ```
 
 Inspect `(SortGroup.SortGroupElectrode & key)` — if rows from more than
@@ -281,7 +283,7 @@ recording_key = _one(SpikeSortingRecordingSelection.insert_selection({
 SpikeSortingRecording.populate(recording_key)
 ```
 
-The same `insert_selection()` + `populate()` pattern applies to `ArtifactDetection`, `SpikeSorting`, `MetricCuration`, and other v1 stages — each carries the same dict-vs-list return shape on rerun.
+The same `insert_selection()` + `populate()` pattern applies to `ArtifactDetection`, `SpikeSorting`, `MetricCuration`, and other v1 stages. The dict-vs-list rerun shape only applies to selection helpers that wrap `fetch()` (which returns a list of dicts). `MetricCurationSelection.insert_selection` is the exception — on a duplicate row it returns `fetch1()` directly (`spikesorting/v1/metric_curation.py:221`), so the value is already a single dict and you don't index into `[0]`.
 
 ## Step 2: Artifact Detection (Optional)
 
