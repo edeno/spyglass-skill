@@ -120,6 +120,7 @@ RESULT_SHAPE_VALUES = (
     "merge",
     "grouped_count",
     "describe",
+    "path",
     "error",
 )
 
@@ -672,6 +673,27 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "describe",
         "timings_ms",
     ],
+    # Batch G runtime graph traversal. ``--to`` produces ``hops``;
+    # ``--up`` / ``--down`` produce ``nodes`` + ``edges``. The envelope
+    # lists the union; the actual emitted shape carries either ``hops``
+    # OR ``nodes``+``edges``, with ``query.mode`` discriminating
+    # ("to" vs "ancestors" vs "descendants").
+    "path": [
+        "schema_version",
+        "kind",
+        "graph",
+        "authority",
+        "source_root",
+        "db",
+        "query",
+        "hops",
+        "nodes",
+        "edges",
+        "max_depth",
+        "truncated",
+        "truncated_at_depth",
+        "timings_ms",
+    ],
     "info": [
         "schema_version",
         "kind",
@@ -852,6 +874,62 @@ def _build_parser() -> argparse.ArgumentParser:
     p_describe.add_argument(
         "--json", action="store_true", help="Emit JSON."
     )
+
+    # path — Batch G runtime graph traversal. Mirrors code_graph.py path
+    # in shape (--to / --up / --down with --max-depth) but operates on
+    # the live DataJoint adjacency rather than the source-only FK graph.
+    # Used when source and runtime disagree, or when a custom-table
+    # subgraph that is not visible to the static index needs to be
+    # walked.
+    p_path = sub.add_parser(
+        "path",
+        help=(
+            "Runtime graph traversal: BFS over DataJoint parents / "
+            "children. --to A B / --up CLASS / --down CLASS."
+        ),
+        description=(
+            "Read-only runtime graph traversal via DataJoint's "
+            "parents() / children() metadata. Returns DataJoint "
+            "full-table-name identifiers (schema-qualified). For the "
+            "source-only sibling, see `code_graph.py path`."
+        ),
+    )
+    g = p_path.add_mutually_exclusive_group(required=True)
+    g.add_argument(
+        "--to",
+        nargs=2,
+        metavar=("FROM", "TO"),
+        help="Find a runtime parent→child path between two classes.",
+    )
+    g.add_argument(
+        "--up",
+        metavar="CLASS",
+        help="Walk all upstream ancestors via parents() bounded by --max-depth.",
+    )
+    g.add_argument(
+        "--down",
+        metavar="CLASS",
+        help="Walk all downstream descendants via children() bounded by --max-depth.",
+    )
+    p_path.add_argument(
+        "--max-depth",
+        type=int,
+        default=8,
+        help=(
+            "Cap walk depth (default 8). Truncation is reported in "
+            "the payload's `truncated_at_depth` field."
+        ),
+    )
+    p_path.add_argument("--src", default=None, help="Spyglass source root override.")
+    p_path.add_argument(
+        "--import",
+        dest="imports",
+        action="append",
+        default=[],
+        metavar="MODULE",
+        help="Import a custom/lab module before class resolution (repeatable).",
+    )
+    p_path.add_argument("--json", action="store_true", help="Emit JSON.")
 
     # find-instance — full argparse surface so info advertises the planned
     # contract accurately. Implementation lands in Batch C+; this build
@@ -1146,6 +1224,50 @@ def cmd_info(args: argparse.Namespace) -> int:
                     "see `.error` for the scrubbed message). 'ok + "
                     "[]' is the ONLY state that means 'no relationships'; "
                     "the others mean 'the tool does not know.'"
+                ),
+            ],
+        },
+        "path": {
+            "purpose": (
+                "Runtime graph traversal: BFS over DataJoint "
+                "parents() / children() metadata. The runtime sibling "
+                "of `code_graph.py path` (source-only). Identifiers "
+                "are DataJoint full table names (schema-qualified)."
+            ),
+            "modes": {
+                "--to FROM TO": (
+                    "Find a runtime parent→child path between two "
+                    "classes. Returns `hops` (ordered list of "
+                    "full_table_name + depth) when reachable; empty "
+                    "hops when no path was found within --max-depth."
+                ),
+                "--up CLASS": (
+                    "BFS over `parents()` from CLASS, bounded by "
+                    "--max-depth. Returns `nodes` + `edges` with "
+                    "`mode: 'ancestors'`."
+                ),
+                "--down CLASS": (
+                    "BFS over `children()` from CLASS, bounded by "
+                    "--max-depth. Returns `nodes` + `edges` with "
+                    "`mode: 'descendants'`."
+                ),
+            },
+            "hints": [
+                (
+                    "--max-depth defaults to 8; check `truncated` and "
+                    "`truncated_at_depth` to decide whether to re-run "
+                    "with a larger cap."
+                ),
+                (
+                    "Per-node `error` records walk failures local to "
+                    "that node (DataJoint round-trip raised). The walk "
+                    "continues; one bad node does not abort the whole "
+                    "result."
+                ),
+                (
+                    "Returns DataJoint full table names. To map back "
+                    "to Python class qualnames, use `code_graph.py "
+                    "describe` or `db_graph.py describe`."
                 ),
             ],
         },
@@ -2700,6 +2822,298 @@ def _cmd_find_instance_grouped_count(
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: path (Batch G — runtime graph traversal)
+# ---------------------------------------------------------------------------
+
+
+def _full_table_name(cls: object) -> str | None:
+    """Best-effort retrieval of a DataJoint full-table name.
+
+    DataJoint Tables expose ``full_table_name`` as a class attribute
+    (a metaclass property), looking like ``\\`schema\\`.\\`table\\```.
+    Tests using fakes set the same attribute directly. Returns None
+    if the attribute is missing or accessing it raises (e.g. an
+    undeclared table that needs a connection).
+    """
+    try:
+        name = getattr(cls, "full_table_name", None)
+    except Exception:
+        return None
+    return str(name) if name is not None else None
+
+
+def _path_neighbors(name: str, *, direction: str) -> tuple[list[str], str | None]:
+    """Return (neighbors, error_message) for a single graph step.
+
+    ``direction`` is ``"parents"`` or ``"children"``. Returns an empty
+    list with an error message when DataJoint refuses or the metadata
+    round-trip fails — the walker treats that as a soft local failure
+    (the node is still in the result, just with no further hops) so
+    one disconnected node does not abort the whole walk.
+    """
+    try:
+        import datajoint as dj  # ty: ignore[unresolved-import]
+    except ImportError as exc:
+        return [], f"datajoint not importable: {exc}"
+    try:
+        ft = dj.FreeTable(dj.conn(), name)
+        result = ft.parents() if direction == "parents" else ft.children()
+    except Exception as exc:
+        return [], _scrub_secrets(str(exc))
+    return list(result) if result is not None else [], None
+
+
+def _bfs_walk(
+    start: str, *, direction: str, max_depth: int
+) -> tuple[list[dict], list[dict], bool, int | None]:
+    """BFS from ``start`` along ``parents`` or ``children``.
+
+    Returns ``(nodes, edges, truncated, truncated_at_depth)``. Each
+    node carries ``full_table_name`` and ``depth``; each edge carries
+    ``parent`` and ``child`` (canonical direction regardless of walk
+    direction). ``truncated_at_depth`` records the depth at which the
+    walk hit the cap so an LLM can decide whether to re-run with a
+    larger ``--max-depth``.
+    """
+    visited: dict[str, int] = {start: 0}
+    nodes: list[dict] = [{"full_table_name": start, "depth": 0, "error": None}]
+    edges: list[dict] = []
+    truncated = False
+    truncated_at_depth: int | None = None
+    queue: list[tuple[str, int]] = [(start, 0)]
+    while queue:
+        name, depth = queue.pop(0)
+        if depth >= max_depth:
+            if not truncated:
+                truncated = True
+                truncated_at_depth = depth
+            continue
+        neighbors, err = _path_neighbors(name, direction=direction)
+        if err is not None:
+            # Annotate the originating node; do not abort the walk.
+            for node in nodes:
+                if node["full_table_name"] == name and node["error"] is None:
+                    node["error"] = err
+                    break
+            continue
+        for neighbor in neighbors:
+            if direction == "parents":
+                edges.append({"parent": neighbor, "child": name})
+            else:
+                edges.append({"parent": name, "child": neighbor})
+            if neighbor not in visited:
+                visited[neighbor] = depth + 1
+                nodes.append(
+                    {
+                        "full_table_name": neighbor,
+                        "depth": depth + 1,
+                        "error": None,
+                    }
+                )
+                queue.append((neighbor, depth + 1))
+    return nodes, edges, truncated, truncated_at_depth
+
+
+def _bfs_path(
+    from_name: str, to_name: str, max_depth: int
+) -> tuple[list[dict], bool, int | None]:
+    """Find a runtime parent→child path from ``from_name`` to ``to_name``.
+
+    Returns ``(hops, truncated, truncated_at_depth)``. ``hops`` is empty
+    when no path was found within ``max_depth``; otherwise it is the
+    sequence of full-table names from ``from_name`` to ``to_name``.
+    """
+    parent_of: dict[str, str | None] = {from_name: None}
+    queue: list[tuple[str, int]] = [(from_name, 0)]
+    truncated = False
+    truncated_at_depth: int | None = None
+    while queue:
+        name, depth = queue.pop(0)
+        if name == to_name:
+            chain: list[str] = []
+            current: str | None = name
+            while current is not None:
+                chain.append(current)
+                current = parent_of[current]
+            chain.reverse()
+            hops = [
+                {"full_table_name": p, "depth": i}
+                for i, p in enumerate(chain)
+            ]
+            return hops, False, None
+        if depth >= max_depth:
+            if not truncated:
+                truncated = True
+                truncated_at_depth = depth
+            continue
+        children, err = _path_neighbors(name, direction="children")
+        if err is not None:
+            continue
+        for child in children:
+            if child not in parent_of:
+                parent_of[child] = name
+                queue.append((child, depth + 1))
+    return [], truncated, truncated_at_depth
+
+
+def _resolve_path_class(
+    args: argparse.Namespace,
+    name: str,
+    *,
+    timer: _Timer,
+    src_root_used: Path | None,
+) -> _Resolved | int:
+    """Resolve a single class for the path command.
+
+    Returns the resolved class on success, or an exit code from the
+    appropriate failure emitter (so callers can ``return`` it
+    directly). Sets ``args.class_name`` to ``name`` before each
+    resolution so the failure emitters' query block points at the
+    class that actually failed (rather than always the first one).
+    """
+    args.class_name = name
+    try:
+        return resolve_class(name, src=args.src, imports=tuple(args.imports))
+    except _AmbiguousClass as exc:
+        return _emit_ambiguous(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _NotADataJointTable as exc:
+        return _emit_not_a_table(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _DataJointUnavailable as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind="datajoint_import",
+            message=f"DataJoint is not importable: {exc.original}",
+            src_root=src_root_used,
+        )
+    except _ClassNotFound as exc:
+        return _emit_not_found(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+
+
+def cmd_path(args: argparse.Namespace) -> int:
+    """Runtime graph traversal: ``path --to A B`` / ``--up C`` / ``--down C``.
+
+    Pulls parent/child adjacency from the live DataJoint server via
+    ``dj.FreeTable(dj.conn(), full_name).parents() / children()``,
+    BFS-walks the graph, and emits a payload aligned in shape with
+    ``code_graph.py path`` (``hops`` for ``--to``; ``nodes`` + ``edges``
+    for ``--up`` / ``--down``). Identifiers are DataJoint
+    schema-qualified full table names; per-source qualnames are not
+    surfaced because runtime metadata does not carry the original
+    Python class info.
+
+    Walk failures on individual nodes (e.g. one parent's metadata
+    round-trip raises) are local — the node is still in the result,
+    annotated with the scrubbed error, and the walk continues.
+    """
+    timer = _Timer()
+    src_root_used = _select_src_root(args.src)
+
+    timer.mark("resolve")
+    if args.to:
+        from_name, to_name = args.to
+        from_resolved = _resolve_path_class(
+            args, from_name, timer=timer, src_root_used=src_root_used
+        )
+        if isinstance(from_resolved, int):
+            return from_resolved
+        to_resolved = _resolve_path_class(
+            args, to_name, timer=timer, src_root_used=src_root_used
+        )
+        if isinstance(to_resolved, int):
+            return to_resolved
+        from_full = _full_table_name(from_resolved.cls)
+        to_full = _full_table_name(to_resolved.cls)
+        if not from_full or not to_full:
+            return _emit_db_error(
+                args=args,
+                timer=timer,
+                error_kind="schema",
+                message=(
+                    "could not retrieve full_table_name for one or both "
+                    "endpoints; the table may not be declared on the "
+                    "server"
+                ),
+                src_root=src_root_used,
+                resolved=from_resolved,
+            )
+        timer.mark("query")
+        hops, truncated, truncated_at_depth = _bfs_path(
+            from_full, to_full, args.max_depth
+        )
+        payload = _stamp_envelope("path", source_root=from_resolved.src_root)
+        payload["db"] = _build_db_envelope()
+        payload["query"] = {
+            "from": from_name,
+            "to": to_name,
+            "from_resolved_class": (
+                f"{from_resolved.module}.{from_resolved.qualname}"
+            ),
+            "to_resolved_class": f"{to_resolved.module}.{to_resolved.qualname}",
+            "from_full_table_name": from_full,
+            "to_full_table_name": to_full,
+            "mode": "to",
+        }
+        payload["hops"] = hops
+        payload["max_depth"] = args.max_depth
+        payload["truncated"] = truncated
+        payload["truncated_at_depth"] = truncated_at_depth
+        payload["timings_ms"] = timer.finalize()
+        print(json.dumps(payload))
+        return EXIT_OK
+
+    target_name = args.up if args.up else args.down
+    direction = "parents" if args.up else "children"
+    walk_kind = "ancestors" if args.up else "descendants"
+    resolved = _resolve_path_class(
+        args, target_name, timer=timer, src_root_used=src_root_used
+    )
+    if isinstance(resolved, int):
+        return resolved
+    full_name = _full_table_name(resolved.cls)
+    if not full_name:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind="schema",
+            message=(
+                f"could not retrieve full_table_name for {target_name!r}; "
+                "the table may not be declared on the server"
+            ),
+            src_root=src_root_used,
+            resolved=resolved,
+        )
+    timer.mark("query")
+    nodes, edges, truncated, truncated_at_depth = _bfs_walk(
+        full_name, direction=direction, max_depth=args.max_depth
+    )
+    payload = _stamp_envelope("path", source_root=resolved.src_root)
+    payload["db"] = _build_db_envelope()
+    payload["query"] = {
+        "class": target_name,
+        "resolved_class": f"{resolved.module}.{resolved.qualname}",
+        "module": resolved.module,
+        "qualname": resolved.qualname,
+        "full_table_name": full_name,
+        "mode": walk_kind,
+    }
+    payload["nodes"] = nodes
+    payload["edges"] = edges
+    payload["max_depth"] = args.max_depth
+    payload["truncated"] = truncated
+    payload["truncated_at_depth"] = truncated_at_depth
+    payload["timings_ms"] = timer.finalize()
+    print(json.dumps(payload))
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: describe (Batch F — runtime introspection)
 # ---------------------------------------------------------------------------
 
@@ -3161,6 +3575,8 @@ def main() -> int:
         return cmd_info(args)
     if args.cmd == "describe":
         return cmd_describe(args)
+    if args.cmd == "path":
+        return cmd_path(args)
     if args.cmd == "find-instance":
         # Cross-flag validation that argparse cannot express. Keep these in
         # sync with `info --json`'s `subcommands.find-instance.hints` and

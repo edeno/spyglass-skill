@@ -4476,6 +4476,392 @@ def fixture_f_eval_describe_session(args: argparse.Namespace) -> bool:
     return True
 
 
+def _write_fake_path_module(target: Path) -> None:
+    """Write a synthetic three-node chain A → B → C for path fixtures.
+
+    Each class has ``full_table_name`` matching a registry entry in
+    ``datajoint._TABLE_GRAPH``. The chain is acyclic so BFS results
+    are deterministic.
+    """
+    (target / "fakepath.py").write_text(
+        "\n".join(
+            [
+                '"""Synthetic A → B → C chain for Batch G path fixtures."""',
+                "from datajoint import Manual, _TABLE_GRAPH",
+                "from fakes import FakeHeading, FakeRelation",
+                "",
+                "",
+                "_TABLE_GRAPH['fakepath.a'] = {",
+                "    'parents': [],",
+                "    'children': ['fakepath.b'],",
+                "}",
+                "_TABLE_GRAPH['fakepath.b'] = {",
+                "    'parents': ['fakepath.a'],",
+                "    'children': ['fakepath.c'],",
+                "}",
+                "_TABLE_GRAPH['fakepath.c'] = {",
+                "    'parents': ['fakepath.b'],",
+                "    'children': [],",
+                "}",
+                "",
+                "",
+                "class A(Manual):",
+                "    full_table_name = 'fakepath.a'",
+                "    _heading_obj = FakeHeading(",
+                "        primary_key=('id',), names=('id',),",
+                "        attributes={'id': 'int'},",
+                "    )",
+                "    def __new__(cls):",
+                "        return FakeRelation(heading=cls._heading_obj, rows=[])",
+                "    @property",
+                "    def heading(self):",
+                "        return self._heading_obj",
+                "",
+                "",
+                "class B(Manual):",
+                "    full_table_name = 'fakepath.b'",
+                "    _heading_obj = FakeHeading(",
+                "        primary_key=('id',), names=('id',),",
+                "        attributes={'id': 'int'},",
+                "    )",
+                "    def __new__(cls):",
+                "        return FakeRelation(heading=cls._heading_obj, rows=[])",
+                "    @property",
+                "    def heading(self):",
+                "        return self._heading_obj",
+                "",
+                "",
+                "class C(Manual):",
+                "    full_table_name = 'fakepath.c'",
+                "    _heading_obj = FakeHeading(",
+                "        primary_key=('id',), names=('id',),",
+                "        attributes={'id': 'int'},",
+                "    )",
+                "    def __new__(cls):",
+                "        return FakeRelation(heading=cls._heading_obj, rows=[])",
+                "    @property",
+                "    def heading(self):",
+                "        return self._heading_obj",
+                "",
+            ]
+        )
+    )
+
+
+def _setup_path_sandbox(tmp: Path) -> None:
+    import fakes as _fakes_module
+
+    _fakes_module.build_fake_datajoint_sandbox(tmp)
+    fakes_path = Path(__file__).resolve().parent / "fakes.py"
+    (tmp / "fakes.py").write_text(fakes_path.read_text())
+    _write_fake_path_module(tmp)
+
+
+def fixture_g_fakes_path_to_finds_chain(
+    args: argparse.Namespace,
+) -> bool:
+    """``path --to A C`` returns the parent→child chain A → B → C."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_path_sandbox(tmp)
+        rc, out, err = _run_db_graph(
+            [
+                "path",
+                "--to",
+                "fakepath:A",
+                "fakepath:C",
+                "--import",
+                "fakepath",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "path --to payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "path":
+        print(f"  [FAIL] kind != 'path': {payload.get('kind')!r}")
+        return False
+    if payload.get("query", {}).get("mode") != "to":
+        print("  [FAIL] query.mode != 'to'")
+        return False
+    hops = payload.get("hops", [])
+    chain = [h.get("full_table_name") for h in hops]
+    if chain != ["fakepath.a", "fakepath.b", "fakepath.c"]:
+        print(f"  [FAIL] hop chain drift: {chain!r}")
+        return False
+    if payload.get("truncated"):
+        print(f"  [FAIL] truncated should be false: {payload.get('truncated')!r}")
+        return False
+    print(
+        f"  [ok] path --to A C: chain {chain} (depth-3 BFS in fakes sandbox)"
+    )
+    return True
+
+
+def fixture_g_fakes_path_to_no_path_returns_empty(
+    args: argparse.Namespace,
+) -> bool:
+    """``path --to`` returns empty hops when no path exists.
+
+    A → B → C is the only chain; ``path --to C A`` walks children
+    starting at C (no children), so no path is found.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_path_sandbox(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "path",
+                "--to",
+                "fakepath:C",
+                "fakepath:A",
+                "--import",
+                "fakepath",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "path --to no-path payload")
+    if payload is None:
+        return False
+    if payload.get("hops") != []:
+        print(f"  [FAIL] hops should be empty: {payload.get('hops')!r}")
+        return False
+    print("  [ok] path --to: no-path case returns empty hops")
+    return True
+
+
+def fixture_g_fakes_path_up_walks_ancestors(
+    args: argparse.Namespace,
+) -> bool:
+    """``path --up C`` returns ancestors via parents() walk."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_path_sandbox(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "path",
+                "--up",
+                "fakepath:C",
+                "--import",
+                "fakepath",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "path --up payload")
+    if payload is None:
+        return False
+    if payload.get("query", {}).get("mode") != "ancestors":
+        print("  [FAIL] query.mode != 'ancestors'")
+        return False
+    nodes_by_name = {
+        n["full_table_name"]: n for n in payload.get("nodes", [])
+    }
+    if sorted(nodes_by_name.keys()) != [
+        "fakepath.a",
+        "fakepath.b",
+        "fakepath.c",
+    ]:
+        print(f"  [FAIL] node set drift: {sorted(nodes_by_name.keys())!r}")
+        return False
+    if nodes_by_name["fakepath.c"]["depth"] != 0:
+        print(f"  [FAIL] root depth != 0: {nodes_by_name['fakepath.c']!r}")
+        return False
+    if nodes_by_name["fakepath.a"]["depth"] != 2:
+        print(
+            f"  [FAIL] grandparent depth != 2: "
+            f"{nodes_by_name['fakepath.a']!r}"
+        )
+        return False
+    edges = payload.get("edges", [])
+    edge_pairs = sorted((e["parent"], e["child"]) for e in edges)
+    if edge_pairs != [
+        ("fakepath.a", "fakepath.b"),
+        ("fakepath.b", "fakepath.c"),
+    ]:
+        print(f"  [FAIL] edge drift: {edge_pairs!r}")
+        return False
+    print(
+        f"  [ok] path --up C: 3 nodes (A, B, C) at depths 2/1/0; "
+        f"{len(edges)} parent→child edges"
+    )
+    return True
+
+
+def fixture_g_fakes_path_down_walks_descendants(
+    args: argparse.Namespace,
+) -> bool:
+    """``path --down A`` returns descendants via children() walk."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_path_sandbox(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "path",
+                "--down",
+                "fakepath:A",
+                "--import",
+                "fakepath",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "path --down payload")
+    if payload is None:
+        return False
+    if payload.get("query", {}).get("mode") != "descendants":
+        print("  [FAIL] query.mode != 'descendants'")
+        return False
+    nodes = payload.get("nodes", [])
+    if len(nodes) != 3:
+        print(f"  [FAIL] expected 3 nodes, got {len(nodes)}")
+        return False
+    print(
+        "  [ok] path --down A: 3 nodes reachable downstream "
+        "(depth ≤ 2)"
+    )
+    return True
+
+
+def fixture_g_fakes_path_max_depth_truncates(
+    args: argparse.Namespace,
+) -> bool:
+    """``--max-depth 1`` on a 3-node chain marks the walk truncated."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_path_sandbox(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "path",
+                "--down",
+                "fakepath:A",
+                "--max-depth",
+                "1",
+                "--import",
+                "fakepath",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "path --down truncated payload")
+    if payload is None:
+        return False
+    if not payload.get("truncated"):
+        print(f"  [FAIL] truncated should be true: {payload.get('truncated')!r}")
+        return False
+    if payload.get("truncated_at_depth") != 1:
+        print(
+            f"  [FAIL] truncated_at_depth != 1: "
+            f"{payload.get('truncated_at_depth')!r}"
+        )
+        return False
+    nodes = payload.get("nodes", [])
+    # With max-depth=1: A (depth 0) is enqueued, expanded; B (depth 1) is
+    # added but not expanded (its depth >= max_depth). C is unreachable.
+    names = {n["full_table_name"] for n in nodes}
+    if names != {"fakepath.a", "fakepath.b"}:
+        print(f"  [FAIL] truncated walk should reach A + B only: {names!r}")
+        return False
+    print(
+        "  [ok] --max-depth 1: walk truncated at depth 1; "
+        "B reached but not expanded"
+    )
+    return True
+
+
+def fixture_g_path_advertised_in_info(
+    args: argparse.Namespace,
+) -> bool:
+    """``info --json`` advertises path with the documented contract."""
+    rc, out, err = _run_db_graph(["info", "--json"], python_env=args.python_env)
+    if rc != 0:
+        print(f"  [FAIL] info exited {rc}; stderr: {err!r}")
+        return False
+    payload = _parse_json_or_fail(out, "info for path")
+    if payload is None:
+        return False
+    if "path" not in payload.get("subcommands", {}):
+        print(
+            f"  [FAIL] subcommands missing path; got "
+            f"{sorted(payload.get('subcommands', {}).keys())}"
+        )
+        return False
+    if "path" not in payload.get("payload_envelopes", {}):
+        print("  [FAIL] payload_envelopes missing path")
+        return False
+    if "path" not in payload.get("result_shapes", []):
+        print(
+            f"  [FAIL] result_shapes missing 'path'; got "
+            f"{payload.get('result_shapes')!r}"
+        )
+        return False
+    print(
+        "  [ok] info --json: subcommands.path + payload_envelopes.path "
+        "+ result_shapes 'path' all present"
+    )
+    return True
+
+
+def fixture_g_eval_path_session_descendants(
+    args: argparse.Namespace,
+) -> bool:
+    """Live: ``path --down Session --max-depth 2`` returns a non-empty walk.
+
+    Spyglass.Session has many downstream tables (IntervalList, Electrode,
+    Raw, ...). The fixture only verifies the walk produced any nodes
+    and edges within depth 2, since the exact set varies with the
+    Spyglass schema snapshot.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="live path --down Session against real Spyglass DB",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        ["path", "--down", "Session", "--max-depth", "2"],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "live path --down Session")
+    if payload is None:
+        return False
+    nodes = payload.get("nodes", [])
+    edges = payload.get("edges", [])
+    if len(nodes) < 2:
+        print(
+            f"  [FAIL] expected at least 2 nodes downstream of Session, "
+            f"got {len(nodes)}"
+        )
+        return False
+    if not edges:
+        print("  [FAIL] expected at least one parent→child edge")
+        return False
+    print(
+        f"  [ok] live path --down Session: {len(nodes)} nodes, "
+        f"{len(edges)} edges (depth ≤ 2)"
+    )
+    return True
+
+
 def fixture_d_eval50_silent_wrong_count_footgun_refused(
     args: argparse.Namespace,
 ) -> bool:
@@ -4632,6 +5018,14 @@ FIXTURES = [
     fixture_f_fakes_describe_unavailable_metadata_distinguished,
     fixture_f_describe_advertised_in_info,
     fixture_f_eval_describe_session,
+    # Batch G — path (runtime graph traversal)
+    fixture_g_fakes_path_to_finds_chain,
+    fixture_g_fakes_path_to_no_path_returns_empty,
+    fixture_g_fakes_path_up_walks_ancestors,
+    fixture_g_fakes_path_down_walks_descendants,
+    fixture_g_fakes_path_max_depth_truncates,
+    fixture_g_path_advertised_in_info,
+    fixture_g_eval_path_session_descendants,
     # Batch D — live Spyglass evals
     fixture_d_eval14_trodes_position_merge_id,
     fixture_d_eval15_lfp_merge_id_via_lfpv1,

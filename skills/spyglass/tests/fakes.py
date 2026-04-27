@@ -421,6 +421,43 @@ def build_fake_datajoint_sandbox(target: Path) -> Path:
                     attributes={f: "varchar(64)" for f in fields},
                 )
                 return FakeRelation(heading=heading, rows=[])
+
+
+            # Batch G path-traversal support. Synthetic test modules
+            # populate ``_TABLE_GRAPH`` with the runtime adjacency they
+            # want to expose: ``{full_name: {"parents": [...],
+            # "children": [...]}}``. ``FreeTable(conn, full_name)``
+            # returns a stand-in whose ``parents()`` / ``children()``
+            # look up the registry. Real DataJoint queries the live
+            # schema graph; the fake mimics enough of that for tests.
+            _TABLE_GRAPH = {}
+
+
+            def conn():
+                return _ConnSentinel()
+
+
+            class _ConnSentinel:
+                pass
+
+
+            class FreeTable:
+                def __init__(self, _conn, full_table_name):
+                    self.full_table_name = full_table_name
+
+                def parents(self):
+                    return list(
+                        _TABLE_GRAPH.get(self.full_table_name, {}).get(
+                            "parents", []
+                        )
+                    )
+
+                def children(self):
+                    return list(
+                        _TABLE_GRAPH.get(self.full_table_name, {}).get(
+                            "children", []
+                        )
+                    )
             '''
         )
     )
