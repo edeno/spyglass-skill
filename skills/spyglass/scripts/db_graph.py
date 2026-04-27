@@ -114,7 +114,14 @@ LIMIT_DEFAULT = 100
 LIMIT_HARD_MAX = 1000
 
 # Result-shape enum surfaced via ``info --json.result_shapes``.
-RESULT_SHAPE_VALUES = ("rows", "count", "merge", "grouped_count", "error")
+RESULT_SHAPE_VALUES = (
+    "rows",
+    "count",
+    "merge",
+    "grouped_count",
+    "describe",
+    "error",
+)
 
 # Timings keys promised by the contract: every successful DB-reaching
 # payload has all of these populated (integer milliseconds; ``total >=
@@ -2708,26 +2715,31 @@ def _describe_attribute(name: str, attr: object, primary_key: tuple) -> dict:
 
 def _safe_runtime_metadata(
     rel: object, method_name: str
-) -> list:
+) -> tuple[list, str, str | None]:
     """Call ``rel.parents()`` / ``children()`` / ``parts()`` defensively.
 
-    Some DataJoint versions and some test fakes do not expose every
-    method; some implementations require a connection round-trip and
-    raise opaque errors when the schema is drifting. The describe
-    contract treats missing relationship metadata as a soft failure —
-    the field is emitted as an empty list rather than aborting the
-    whole payload — so an LLM still sees the primary information
-    (heading, count) even when the runtime relationship graph is
-    unavailable.
+    Returns ``(values, status, error_message)`` so the describe
+    payload can distinguish "confirmed empty" from "metadata
+    unavailable" — the main hallucination risk in describe is an LLM
+    reading ``parents: []`` and concluding the table has no parents
+    when the tool only knew the call failed.
+
+    ``status`` is one of:
+
+    * ``"ok"`` — the method exists and returned (possibly empty list).
+    * ``"unavailable"`` — the method is not exposed on this object
+      (older DataJoint, custom non-Table, fake without the method).
+    * ``"error"`` — the call raised; ``error_message`` carries the
+      scrubbed exception text.
     """
     fn = getattr(rel, method_name, None)
     if fn is None:
-        return []
+        return [], "unavailable", None
     try:
         result = fn()
-    except Exception:
-        return []
-    return list(result) if result is not None else []
+    except Exception as exc:
+        return [], "error", _scrub_secrets(str(exc))
+    return list(result) if result is not None else [], "ok", None
 
 
 def cmd_describe(args: argparse.Namespace) -> int:
@@ -2802,9 +2814,13 @@ def cmd_describe(args: argparse.Namespace) -> int:
             resolved=resolved,
         )
 
-    parents = _safe_runtime_metadata(rel, "parents")
-    children = _safe_runtime_metadata(rel, "children")
-    parts = _safe_runtime_metadata(rel, "parts")
+    parents, parents_status, parents_error = _safe_runtime_metadata(
+        rel, "parents"
+    )
+    children, children_status, children_error = _safe_runtime_metadata(
+        rel, "children"
+    )
+    parts, parts_status, parts_error = _safe_runtime_metadata(rel, "parts")
 
     count: int | None = None
     if args.count:
@@ -2837,6 +2853,18 @@ def cmd_describe(args: argparse.Namespace) -> int:
         "parents": parents,
         "children": children,
         "parts": parts,
+        # Per-list status so an LLM can tell "confirmed empty" apart
+        # from "metadata unavailable / errored." Without this block,
+        # ``parents: []`` could be misread as "this table has no
+        # parents" when in fact the lookup failed.
+        "relationship_metadata_status": {
+            "parents": {"status": parents_status, "error": parents_error},
+            "children": {
+                "status": children_status,
+                "error": children_error,
+            },
+            "parts": {"status": parts_status, "error": parts_error},
+        },
         "count": count,
     }
     payload["timings_ms"] = timer.finalize()

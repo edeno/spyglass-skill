@@ -4104,9 +4104,119 @@ def fixture_f_fakes_describe_returns_heading_and_adjacency(
     if desc.get("count") != 2:
         print(f"  [FAIL] count != 2 (--count was passed): {desc.get('count')!r}")
         return False
+    # Status block: parents/children present (status=ok). The fake
+    # always exposes the methods, so all three should be ok.
+    status = desc.get("relationship_metadata_status", {})
+    for rel_name in ("parents", "children", "parts"):
+        if status.get(rel_name, {}).get("status") != "ok":
+            print(
+                f"  [FAIL] relationship_metadata_status.{rel_name}.status "
+                f"!= 'ok': {status.get(rel_name)!r}"
+            )
+            return False
     print(
-        "  [ok] describe: heading + adjacency + count round-trip via "
-        "fakes sandbox"
+        "  [ok] describe: heading + adjacency + count + "
+        "relationship_metadata_status round-trip via fakes sandbox"
+    )
+    return True
+
+
+def fixture_f_fakes_describe_unavailable_metadata_distinguished(
+    args: argparse.Namespace,
+) -> bool:
+    """``parents() not exposed`` is reported as unavailable, not empty.
+
+    Builds a synthetic class whose ``__new__`` returns a bare
+    FakeRelation with no parents/children/parts attributes — the
+    methods exist on FakeRelation though, so we override one to be
+    None on the instance to simulate "method missing." The describe
+    payload must report ``status: "unavailable"`` rather than
+    ``parents: []`` with no further signal.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        # Synthetic class whose returned relation has ``parents()``
+        # raise — simulates an older DataJoint or a custom relation
+        # whose schema metadata round-trip fails.  describe should
+        # report ``status: "error"`` rather than ``parents: []`` with
+        # no further signal.
+        (tmp / "describemissing.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "",
+                    "def _raise_no_parents():",
+                    "    raise AttributeError("
+                    "'parents() lookup failed (synthetic)')",
+                    "",
+                    "",
+                    "class Demo(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('id',),",
+                    "        names=('id',),",
+                    "        attributes={'id': 'int'},",
+                    "    )",
+                    "    def __new__(cls):",
+                    "        rel = FakeRelation(",
+                    "            heading=cls._heading_obj, rows=[],",
+                    "            children=('schema.downstream_x',),",
+                    "        )",
+                    "        # Override the instance's parents() to raise.",
+                    "        rel.parents = lambda *a, **k: "
+                    "_raise_no_parents()",
+                    "        return rel",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                ]
+            )
+        )
+        rc, out, _ = _run_db_graph(
+            [
+                "describe",
+                "describemissing:Demo",
+                "--import",
+                "describemissing",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "describe-unavail payload")
+    if payload is None:
+        return False
+    status = payload.get("describe", {}).get(
+        "relationship_metadata_status", {}
+    )
+    parents_status = status.get("parents", {}).get("status")
+    if parents_status != "error":
+        print(
+            f"  [FAIL] parents.status should be 'error' (raised "
+            f"AttributeError), got {parents_status!r}"
+        )
+        return False
+    if not status.get("parents", {}).get("error"):
+        print("  [FAIL] parents.error should carry the message")
+        return False
+    children_status = status.get("children", {}).get("status")
+    if children_status != "ok":
+        print(
+            f"  [FAIL] children.status should be 'ok' (the fake "
+            f"exposes the method): got {children_status!r}"
+        )
+        return False
+    print(
+        "  [ok] describe distinguishes 'errored metadata lookup' from "
+        "'confirmed empty' via relationship_metadata_status"
     )
     return True
 
@@ -4172,23 +4282,62 @@ def fixture_f_fakes_describe_omits_count_by_default(
 
 
 def fixture_f_describe_advertised_in_info(
-    _args: argparse.Namespace,
+    args: argparse.Namespace,
 ) -> bool:
     """``info --json`` advertises describe with the documented contract.
 
-    Pins the contract surface so a future refactor can't quietly drop
-    the describe entry. info is the LLM's discovery channel.
+    Pins the live machine-readable surface, not the source text:
+    runs ``info --json`` and parses the payload, then asserts the
+    describe subcommand block, payload envelope, and result-shape
+    enum entry are all present. The earlier source-grep version
+    missed a real drift (``describe`` not in result_shapes); this
+    fixture would have caught it.
     """
-    src = _read_db_graph_source()
-    # Cheap source-text check to avoid spawning a subprocess.
-    if '"describe": {' not in src:
-        print("  [FAIL] info subcommands missing describe entry")
+    rc, out, err = _run_db_graph(["info", "--json"], python_env=args.python_env)
+    if rc != 0:
+        print(f"  [FAIL] info --json exited {rc}; stderr: {err!r}")
         return False
-    if '"describe": [' not in src:
-        print("  [FAIL] payload_envelopes missing describe envelope")
+    payload = _parse_json_or_fail(out, "info --json")
+    if payload is None:
+        return False
+    subcommands = payload.get("subcommands", {})
+    if "describe" not in subcommands:
+        print(
+            f"  [FAIL] subcommands missing describe entry; got "
+            f"{sorted(subcommands.keys())}"
+        )
+        return False
+    describe_entry = subcommands["describe"]
+    for inner in ("purpose", "modes", "hints"):
+        if inner not in describe_entry:
+            print(
+                f"  [FAIL] subcommands.describe missing {inner!r}: "
+                f"{sorted(describe_entry.keys())}"
+            )
+            return False
+    envelopes = payload.get("payload_envelopes", {})
+    if "describe" not in envelopes:
+        print(
+            f"  [FAIL] payload_envelopes missing describe; got "
+            f"{sorted(envelopes.keys())}"
+        )
+        return False
+    if "describe" not in envelopes["describe"]:
+        print(
+            f"  [FAIL] payload_envelopes.describe missing the "
+            f"`describe` sub-block field: {envelopes['describe']!r}"
+        )
+        return False
+    result_shapes = payload.get("result_shapes", [])
+    if "describe" not in result_shapes:
+        print(
+            f"  [FAIL] result_shapes missing 'describe'; got "
+            f"{result_shapes!r}"
+        )
         return False
     print(
-        "  [ok] info subcommand entry + describe envelope both present"
+        "  [ok] info --json: subcommands.describe + payload_envelopes."
+        "describe + result_shapes 'describe' entry all present"
     )
     return True
 
@@ -4383,6 +4532,7 @@ FIXTURES = [
     # Batch F — describe (runtime introspection)
     fixture_f_fakes_describe_returns_heading_and_adjacency,
     fixture_f_fakes_describe_omits_count_by_default,
+    fixture_f_fakes_describe_unavailable_metadata_distinguished,
     fixture_f_describe_advertised_in_info,
     fixture_f_eval_describe_session,
     # Batch D — live Spyglass evals
