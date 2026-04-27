@@ -31,14 +31,21 @@ from spyglass.decoding.v1.clusterless import (
 )
 
 # Prereqs (not shown here): UnitWaveformFeaturesGroup + PositionGroup rows
-# created upstream; DecodingParameters row with name "contfrag_clusterless";
-# encoding_interval_name and decoding_interval_name exist in IntervalList.
+# created upstream; a DecodingParameters row whose name is the version-
+# suffixed default (e.g. "contfrag_clusterless_v1.2.0"); encoding_interval_name
+# and decoding_interval_name exist in IntervalList. Stock defaults are
+# inserted at module-import time keyed on
+# f"<shape>_<source>_{non_local_detector_version}" — see decoding/v1/core.py:48.
+# Don't hard-code a bare "contfrag_clusterless"; query DecodingParameters first
+# (`(DecodingParameters & 'decoding_param_name LIKE "contfrag_clusterless%"').fetch1("decoding_param_name")`)
+# or import the version constant alongside.
 
 # 1. Selection + populate
+from non_local_detector import __version__ as non_local_detector_version
 selection_key = {
     "waveform_features_group_name": features_group_name,
     "position_group_name": position_group_name,
-    "decoding_param_name": "contfrag_clusterless",
+    "decoding_param_name": f"contfrag_clusterless_{non_local_detector_version}",
     "encoding_interval": encoding_interval_name,
     "decoding_interval": decoding_interval_name,
     "estimate_decoding_params": 0,  # 1 lets the decoder estimate params
@@ -81,7 +88,7 @@ model = DecodingOutput.fetch_model(selection_key)
 | `fetch_position_info(key)` | (DataFrame, list) | Position data + variable names |
 | `fetch_linear_position_info(key)` | DataFrame | Linearized position projected onto track graph |
 | `fetch_spike_data(key, filter_by_interval)` | list | Spike times (+ features for clusterless) |
-| `create_decoding_view(key, ...)` | str | FigURL visualization URI |
+| `create_decoding_view(key, ...)` | FigURL view object (1D or 2D) | Returns a `create_1D_decode_view` / `create_2D_decode_view` view from `non_local_detector.visualization`; call `.url(label=...)` on the returned object to get the shareable string URL. See `decoding/decoding_merge.py:114`. |
 | `cleanup(dry_run)` | None | Remove orphaned .nc/.pkl files |
 
 ## Results Structure (xarray.Dataset)

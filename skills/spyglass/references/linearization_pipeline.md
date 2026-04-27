@@ -83,14 +83,15 @@ from spyglass.linearization.v1 import (
 - Defines track geometry as a networkx graph
 - Used by: linearization pipeline and decoding pipeline
 
-**LinearizationParameters** (Manual)
+**LinearizationParameters** (Lookup)
 
 - Key: `linearization_param_name`
 - Parameters for the HMM-based linearization algorithm
+- `dj.Lookup` (not `Manual`) at `linearization/v1/main.py:22` — it ships default rows; verify with `code_graph.py describe LinearizationParameters`
 
 **LinearizationSelection** (Lookup)
 
-- Links: PositionOutput (merge_id), TrackGraph, LinearizationParameters, IntervalList
+- Links: `PositionOutput.proj(pos_merge_id='merge_id')`, `TrackGraph`, `LinearizationParameters` (`linearization/v1/main.py:101-105`). It does NOT FK `IntervalList` directly — the temporal scope flows in via the `PositionOutput` merge entry, not as a separate selection-table FK.
 
 **LinearizedPositionV1** (Computed)
 

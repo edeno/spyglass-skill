@@ -120,7 +120,16 @@ rip_sel_key = (RippleLFPSelection & lfp_band_key).fetch1("KEY")
 RippleParameters().insert_default()   # inserts "default" and "default_trodes"
 
 # 3. Populate ripple times. The position merge key arrives as pos_merge_id.
-pos_merge_id = (PositionOutput & {
+# `PositionOutput` is a merge master — its declaration at
+# `position/position_merge.py:32` is `merge_id: uuid` + `source: varchar(32)`.
+# `nwb_file_name` and `interval_list_name` are NOT on the master, so a
+# direct `& {nwb_file_name=..., interval_list_name=...}` silently matches
+# zero rows. Resolve through the appropriate part instead, e.g.
+# `PositionOutput.TrodesPosV1` for Trodes position or `PositionOutput.DLCPosV1`
+# for DLC. See merge_methods.md for the pattern (and the silent wrong-count
+# footgun the merge mode of `db_graph.py find-instance --merge-master ...
+# --part ...` exists to close).
+pos_merge_id = (PositionOutput.TrodesPosV1 & {
     "nwb_file_name": nwb_file_name,
     "interval_list_name": interval_list_name,
 }).fetch1("merge_id")

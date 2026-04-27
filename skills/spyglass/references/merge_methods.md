@@ -302,11 +302,14 @@ cls = PositionOutput().merge_get_parent_class("TrodesPosV1")
 Fetch data across all part tables. Similar to `fetch()` but works across the union of all parts. **Instance method** — call on a restricted relation or an instance, not the bare class.
 
 ```python
-# Correct — instance form:
-data = (PositionOutput & {'nwb_file_name': nwb_file}).merge_fetch()
-# Also correct — explicit instance + restriction kwarg:
+# Preferred — explicit restriction kwarg routes the dict to each part:
 data = PositionOutput().merge_fetch(restriction={'nwb_file_name': nwb_file})
+
+# Or resolve through the right part directly when you know which one:
+data = (PositionOutput.TrodesPosV1 & {'nwb_file_name': nwb_file}).fetch(...)
 ```
+
+**Footgun.** Don't write `(PositionOutput & {'nwb_file_name': nwb_file}).merge_fetch()`. The merge master's heading is just `(merge_id, source)` (`position/position_merge.py:31`), so the `&` step looks like the silent-no-op pattern this skill warns about elsewhere — even though `merge_fetch` happens to re-route the attached restriction to the parts internally (via `_merge_restrict_parts(restriction=self.restriction)` at `utils/dj_merge_tables.py:811-826`). The behavior works, but reading the line, you can't tell whether the restriction is being applied or silently ignored — the misreading is the bug. Prefer the explicit `restriction=` kwarg, or resolve through `PositionOutput.<Part>` / `merge_get_part(restriction)` when you know which source you want.
 
 #### `fetch1_dataframe(*attrs, **kwargs) -> pd.DataFrame`
 Fetch a single entry as a pandas DataFrame. Works by routing to the correct part table's `fetch1_dataframe` method.

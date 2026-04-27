@@ -194,15 +194,20 @@ via `convert_epoch_interval_name_to_position_interval_name` in
 
 **Gotcha — DLC env vars must be set in the kernel, not just
 `~/.bashrc`.** IDEs / SSH sessions frequently don't source the login
-profile, so `os.environ['DLC_OUTPUT_PATH']` returns `None` in the
+profile, so `os.environ['DLC_OUTPUT_DIR']` returns `None` in the
 Python kernel and paths like `None/<video>.mp4` or `Path(None)` cause
 `TypeError` / `ffprobe` errors deep in the populate.
 
-**Check.**
+**Check.** The canonical names current Spyglass reads are
+`DLC_PROJECT_DIR`, `DLC_VIDEO_DIR`, `DLC_OUTPUT_DIR` — `settings.py`
+derives them as `f"{dir_type.upper()}_{dir.upper()}_DIR"` via
+`dir_to_var()` (see `settings.py:335`). `DLC_PROJECT_PATH` is only a
+legacy / base-dir fallback (`settings.py:207`); newer code paths
+expect `_DIR`.
 
 ```python
 import os
-need = ['DLC_PROJECT_PATH', 'DLC_VIDEO_PATH', 'DLC_OUTPUT_PATH',
+need = ['DLC_PROJECT_DIR', 'DLC_VIDEO_DIR', 'DLC_OUTPUT_DIR',
         'HDF5_USE_FILE_LOCKING']
 missing = [k for k in need if not os.environ.get(k)]
 if missing:
