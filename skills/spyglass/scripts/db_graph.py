@@ -714,6 +714,24 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "error",
         "timings_ms",
     ],
+    # Field-validation / restriction-malformed shape (Batch C): the class
+    # was resolved successfully but the user-supplied query is malformed
+    # in a way DataJoint would silently no-op (unknown field, blob
+    # restriction, --key-json with non-JSON value). Maps to exit 2 — a
+    # usage error in the same family as "argparse complained" — but the
+    # structured payload lets an LLM see exactly which field was bad and
+    # what the valid alternatives are.
+    "invalid_query": [
+        "schema_version",
+        "kind",
+        "graph",
+        "authority",
+        "source_root",
+        "db",
+        "query",
+        "error",
+        "timings_ms",
+    ],
     # Build-time scaffolding shape: emitted by the find-instance stub
     # while implementation lands in Batch C+. Documenting it here keeps
     # `info --json` the source of truth for every JSON shape the tool
@@ -1218,16 +1236,31 @@ def _emit_db_error(
     error_kind: str,
     message: str,
     src_root: Path | None,
+    resolved: _Resolved | None = None,
 ) -> int:
     """Print the db_error payload, return exit 5.
 
-    ``error_kind`` discriminates the failure mode for the LLM: in Batch
-    B the only emitter site is ``datajoint_import`` (DataJoint not
-    installed); Batch C+ adds ``connection``, ``auth``, ``schema``.
+    ``error_kind`` discriminates the failure mode for the LLM:
+    ``datajoint_import`` (DataJoint not installed), ``connection``
+    (refused / lost), ``auth``, ``schema`` (missing table or column),
+    or ``runtime`` (unclassified). When a ``_Resolved`` is supplied,
+    the payload's ``query`` block carries the resolution provenance so
+    a follow-up tool call can see *which class* triggered the failure
+    rather than just the raw ``--class`` argument.
     """
     payload = _stamp_envelope("db_error", source_root=src_root)
-    payload["db"] = None
-    payload["query"] = {"class": args.class_name}
+    payload["db"] = _build_db_envelope() if resolved is not None else None
+    query: dict[str, object] = {"class": args.class_name}
+    if resolved is not None:
+        query.update(
+            {
+                "resolved_class": f"{resolved.module}.{resolved.qualname}",
+                "module": resolved.module,
+                "qualname": resolved.qualname,
+                "resolution_source": resolved.source,
+            }
+        )
+    payload["query"] = query
     payload["error"] = {
         "kind": error_kind,
         "message": message,
@@ -1238,32 +1271,431 @@ def _emit_db_error(
 
 
 # ---------------------------------------------------------------------------
-# Subcommand: find-instance (Batch B endpoint — class resolution only)
+# Batch C — restriction parsing, fetch path, safe serialization
+# ---------------------------------------------------------------------------
+
+
+class _InvalidQuery(Exception):
+    """Field-validation or restriction error before the query reaches DataJoint.
+
+    Distinct from ``_ClassResolutionError`` (which fires before we have a
+    table to query) and from ``_DataJointUnavailable`` (which fires when
+    the runtime can't even check the type). ``_InvalidQuery`` means the
+    class was resolved, the runtime is healthy, but the user-supplied
+    query is malformed in a way DataJoint would silently no-op
+    (unknown field, blob restriction, etc.). Maps to the ``invalid_query``
+    envelope and exit ``2`` so an LLM does not interpret it as a runtime
+    failure.
+    """
+
+    exit_code: int = EXIT_USAGE
+
+    def __init__(self, kind: str, message: str, **extra: object) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.message = message
+        self.extra = extra
+
+
+def _parse_scalar_value(raw: str) -> str | int | float | bool:
+    """Parse a ``--key field=VALUE`` value into a Python scalar.
+
+    Order of attempts: bool, int, float, string. ``null`` / ``None`` is
+    intentionally rejected at the parser level (DataJoint silently drops
+    ``{f: None}`` from a restriction; emitting SQL ``IS NULL`` is out of
+    MVP scope). Strings are the catch-all so ``--key
+    nwb_file_name=j1620210710_.nwb`` parses without quoting.
+    """
+    if raw == "":
+        return ""
+    lowered = raw.lower()
+    if lowered in ("null", "none"):
+        raise _InvalidQuery(
+            "null_restriction_refused",
+            (
+                "--key field=null is refused in MVP. DataJoint silently "
+                "drops {field: None} from a restriction; supporting NULL "
+                "filtering correctly requires a SQL string restriction "
+                "which expands the surface this MVP keeps small. Filter "
+                "NULLs in a follow-up step."
+            ),
+        )
+    if lowered in ("true", "false"):
+        return lowered == "true"
+    try:
+        return int(raw)
+    except ValueError:
+        pass
+    try:
+        parsed_float = float(raw)
+    except ValueError:
+        return raw
+    # Reject non-finite floats. NaN / Inf are not valid SQL restriction
+    # operands (DataJoint can't generate the right comparison) AND
+    # ``json.dumps`` emits them as the non-strict literals ``NaN`` /
+    # ``Infinity``, which break LLM consumers that pipe through
+    # strict JSON parsers. Refuse them here so the contract stays
+    # ``allow_nan=False``-compatible end-to-end.
+    import math
+
+    if not math.isfinite(parsed_float):
+        raise _InvalidQuery(
+            "non_finite_restriction",
+            (
+                f"--key value {raw!r} parses to a non-finite float "
+                f"({parsed_float}); DataJoint cannot restrict on NaN / "
+                "Inf and the value would emit non-strict JSON."
+            ),
+            received=raw,
+        )
+    return parsed_float
+
+
+def _parse_key_args(
+    key_args: list[str], key_json_args: list[str]
+) -> dict[str, object]:
+    """Parse ``--key`` and ``--key-json`` flags into a single restriction dict.
+
+    Each flag value is ``FIELD=VALUE``; the FIELD before ``=`` is the
+    DataJoint attribute name and VALUE is parsed as a scalar (``--key``)
+    or as JSON (``--key-json``). Duplicate FIELDs across both flag types
+    are rejected because the restriction would be ambiguous.
+    """
+    out: dict[str, object] = {}
+    for flag, items in (("--key", key_args), ("--key-json", key_json_args)):
+        for raw in items:
+            if "=" not in raw:
+                raise _InvalidQuery(
+                    "malformed_key",
+                    f"{flag} expected FIELD=VALUE, got {raw!r}",
+                    flag=flag,
+                    received=raw,
+                )
+            field, _, value = raw.partition("=")
+            if not field:
+                raise _InvalidQuery(
+                    "malformed_key",
+                    f"{flag} {raw!r} has empty FIELD",
+                    flag=flag,
+                    received=raw,
+                )
+            if field in out:
+                raise _InvalidQuery(
+                    "duplicate_key",
+                    f"field {field!r} given twice in --key/--key-json",
+                    field=field,
+                )
+            if flag == "--key-json":
+                try:
+                    out[field] = json.loads(value)
+                except json.JSONDecodeError as exc:
+                    raise _InvalidQuery(
+                        "malformed_key",
+                        f"--key-json {field}=... value is not valid JSON: {exc}",
+                        field=field,
+                        received=value,
+                    ) from exc
+            else:
+                out[field] = _parse_scalar_value(value)
+    return out
+
+
+def _parse_fields_arg(fields_raw: str) -> list[str]:
+    """Parse ``--fields f1,f2`` into a list. ``KEY`` is the primary-key sentinel.
+
+    Empty entries (e.g. trailing commas) are dropped silently because
+    DataJoint accepts ``KEY`` and field-name strings interchangeably and
+    a stray empty string would surface as a confusing fetch error. The
+    sentinel ``KEY`` is preserved verbatim — DataJoint's fetch API takes
+    it directly.
+    """
+    fields = [f.strip() for f in fields_raw.split(",") if f.strip()]
+    return fields or ["KEY"]
+
+
+def _validate_restriction_fields(
+    restriction: dict[str, object],
+    heading_names: tuple[str, ...],
+) -> None:
+    """Refuse restriction keys that DataJoint would silently drop.
+
+    The unknown-attribute footgun: ``(rel & {"unknown": "x"})`` returns
+    the unrestricted relation, which an LLM would then mis-cite as
+    "filter applied, no rows match." Validating field names against the
+    actual heading closes the footgun before it can fire.
+    """
+    unknown = sorted(set(restriction.keys()) - set(heading_names))
+    if unknown:
+        raise _InvalidQuery(
+            "unknown_field",
+            (
+                f"restriction fields {unknown!r} are not in the table heading. "
+                "DataJoint silently drops unknown-attribute restrictions "
+                "(returning the whole relation), which is the wrong-count "
+                "footgun this tool exists to close."
+            ),
+            unknown_fields=unknown,
+            valid_fields=list(heading_names),
+        )
+
+
+def _validate_blob_restrictions(
+    restriction: dict[str, object],
+    heading_attributes: dict,
+) -> None:
+    """Reject restrictions on blob/longblob attributes.
+
+    DataJoint cannot restrict on blob attributes server-side; the
+    restriction would either silently no-op or raise an opaque error
+    deep in the SQL layer. Refusing here gives the LLM a clear message
+    pointing to the actual cause.
+    """
+    blob_types = ("blob", "longblob", "tinyblob", "mediumblob")
+    bad: list[str] = []
+    for field in restriction:
+        attr = heading_attributes.get(field)
+        if attr is None:
+            continue
+        attr_type = getattr(attr, "type", "") or ""
+        if any(blob_type in str(attr_type).lower() for blob_type in blob_types):
+            bad.append(field)
+    if bad:
+        raise _InvalidQuery(
+            "blob_restriction_refused",
+            (
+                f"fields {bad!r} are blob/longblob types; DataJoint cannot "
+                "restrict on blob attributes server-side. Use --key-json for "
+                "DataJoint json-typed attributes only."
+            ),
+            blob_fields=bad,
+        )
+
+
+def _validate_fetch_fields(
+    fetch_fields: list[str], heading_names: tuple[str, ...]
+) -> None:
+    """Refuse ``--fields`` entries that don't exist on the heading.
+
+    The ``KEY`` sentinel is always valid (DataJoint expands it to the
+    primary key). All other entries must be in ``heading_names``.
+    """
+    unknown = [f for f in fetch_fields if f != "KEY" and f not in heading_names]
+    if unknown:
+        raise _InvalidQuery(
+            "unknown_field",
+            (
+                f"fetch fields {unknown!r} are not in the table heading."
+            ),
+            unknown_fields=unknown,
+            valid_fields=list(heading_names),
+        )
+
+
+def _safe_serialize_value(value: object) -> object:
+    """Coerce DataJoint fetch values to JSON-safe forms, per-field.
+
+    Per the plan: per-field substitution, never aborting the whole
+    payload. UUID → string, bytes → ``{type:"bytes", length}``, ndarray
+    → ``{type:"ndarray", shape, dtype}``, datetime → ISO-8601, NumPy
+    scalars → Python scalars, everything else falls back to ``repr`` if
+    ``json.dumps`` cannot handle it.
+    """
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    if isinstance(value, float):
+        # NaN / inf are not JSON-representable; substitute structured envelope.
+        import math
+
+        if math.isnan(value) or math.isinf(value):
+            return {
+                "_unserializable": True,
+                "type": "float",
+                "value": str(value),
+            }
+        return value
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return {
+            "_unserializable": True,
+            "type": "bytes",
+            "length": len(bytes(value)),
+        }
+    # datetime / date / time. Importing locally avoids a top-level dep.
+    import datetime as _dt
+
+    if isinstance(value, (_dt.datetime, _dt.date, _dt.time)):
+        return value.isoformat()
+    # uuid.UUID: string repr.
+    import uuid as _uuid
+
+    if isinstance(value, _uuid.UUID):
+        return str(value)
+    # NumPy: imported lazily; many DataJoint scalars are numpy types.
+    try:
+        import numpy as np  # ty: ignore[unresolved-import]
+    except ImportError:
+        np = None  # type: ignore[assignment]
+    if np is not None:
+        if isinstance(value, np.generic):
+            # Recurse so a NumPy NaN/Inf scalar (np.float32("nan") etc.)
+            # picks up the float-NaN/Inf envelope path; otherwise
+            # ``value.item()`` returns a Python float that ``json.dumps``
+            # serializes as the non-strict ``NaN`` literal.
+            return _safe_serialize_value(value.item())
+        if isinstance(value, np.ndarray):
+            return {
+                "_unserializable": True,
+                "type": "ndarray",
+                "shape": list(value.shape),
+                "dtype": str(value.dtype),
+            }
+    # Last resort: repr so the payload still serializes. Mark it so the
+    # LLM does not interpret repr text as the actual value.
+    try:
+        json.dumps(value)
+    except TypeError:
+        return {
+            "_unserializable": True,
+            "type": type(value).__name__,
+            "repr": repr(value)[:200],
+        }
+    return value
+
+
+def _build_db_envelope() -> dict:
+    """Populate the ``db`` field with sanitized DataJoint config + versions.
+
+    Pulls host / user from ``dj.config`` (no password / connection URL),
+    schema prefix from ``dj.config['database.prefix']`` or
+    ``custom['database.prefix']`` if set, and version strings via
+    ``__version__`` with importlib-metadata fallback. Never raises:
+    a malformed or absent value emits ``null`` in the corresponding
+    field rather than aborting the whole payload.
+    """
+    info: dict[str, object] = {
+        "host": None,
+        "user": None,
+        "database": None,
+        "spyglass_version": None,
+        "datajoint_version": None,
+    }
+    try:
+        import datajoint as dj  # ty: ignore[unresolved-import]
+
+        cfg = getattr(dj, "config", {}) or {}
+        info["host"] = cfg.get("database.host")
+        info["user"] = cfg.get("database.user")
+        prefix = cfg.get("database.prefix")
+        if not prefix:
+            custom = cfg.get("custom") or {}
+            prefix = custom.get("database.prefix")
+        info["database"] = prefix or None
+        info["datajoint_version"] = getattr(dj, "__version__", None)
+    except Exception:
+        pass
+    try:
+        import spyglass
+
+        info["spyglass_version"] = getattr(spyglass, "__version__", None)
+    except Exception:
+        pass
+    if info["spyglass_version"] is None:
+        try:
+            import importlib.metadata as _md
+
+            info["spyglass_version"] = _md.version("spyglass-neuro")
+        except Exception:
+            pass
+    return info
+
+
+def _emit_invalid_query(
+    *,
+    args: argparse.Namespace,
+    timer: _Timer,
+    resolved: _Resolved | None,
+    exc: _InvalidQuery,
+    src_root: Path | None,
+) -> int:
+    """Print the invalid_query payload, return exit 2.
+
+    Reuses the find-instance envelope shape with an explicit ``error``
+    block so an LLM sees both the resolved-class context (when the
+    resolution succeeded but the query was malformed) and the specific
+    field that caused the rejection.
+    """
+    payload = _stamp_envelope("invalid_query", source_root=src_root)
+    payload["db"] = _build_db_envelope() if resolved is not None else None
+    payload["query"] = {"class": args.class_name}
+    if resolved is not None:
+        payload["query"].update(
+            {
+                "module": resolved.module,
+                "qualname": resolved.qualname,
+                "resolution_source": resolved.source,
+            }
+        )
+    payload["error"] = {
+        "kind": exc.kind,
+        "message": exc.message,
+        **{k: v for k, v in exc.extra.items()},
+    }
+    payload["timings_ms"] = timer.finalize()
+    print(json.dumps(payload))
+    return EXIT_USAGE
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: find-instance (Batch C — basic restriction + fetch + count)
 # ---------------------------------------------------------------------------
 
 
 def cmd_find_instance(args: argparse.Namespace) -> int:
-    """Resolve the user-supplied class; query stage lands in Batch C+.
+    """Resolve the class, validate the query, fetch bounded rows.
 
-    Batch B endpoint: every resolution failure reports its proper exit
-    code and structured payload (ambiguous=3, not_found=4, not_a_table=4,
-    datajoint_import=5). On success, the class has been resolved but the
-    query has not been executed; the payload uses ``kind:"not_implemented"``
-    with ``query.stage="resolved"`` and exit ``2``.
+    Batch C scope (per docs/plans/db-graph-impl-plan.md):
 
-    Batch C replaces the success branch with the real query; the failure
-    branches are stable across batches so fixtures pin them now.
+    * Scalar ``--key`` restrictions, JSON-typed ``--key-json`` restrictions.
+    * Heading-based field validation (refuses unknown / blob restrictions).
+    * ``--count`` returns count-only payload with ``rows: []``.
+    * Default fetch returns up to ``--limit`` rows; ``truncated`` set when
+      the relation has more rows than the limit.
+    * Per-field safe serialization for DataJoint blob / NumPy / UUID /
+      datetime values.
+    * Empty result is exit ``0`` with ``count: 0`` (the canonical scientific
+      answer); ``--fail-on-empty`` opts into exit ``7``.
 
-    Lazy-import discipline: DataJoint is imported only inside
-    ``_is_datajoint_user_table``, which runs after the resolver has
-    actually retrieved a class. Resolution paths that fail before the
-    predicate (ambiguous-class, malformed-input, missing-module) do not
-    pay the DataJoint import cost — meaningful for fixture turnaround
-    and for callers running with read-only or sandbox interpreters.
+    Direct-relation discipline: this code path never references
+    ``RestrGraph`` or ``TableChain``. Source-text grep over db_graph.py
+    confirms (``tests/test_db_graph.py`` pins this).
+
+    Failure modes (stable from Batch B): ambiguous=3, not_found=4,
+    not_a_table=4, datajoint_import=5. New in Batch C: invalid_query=2
+    for malformed restrictions / unknown fields.
     """
     timer = _Timer()
-    src_root_used = _select_src_root(args.src)
 
+    # Step 0: parse user input BEFORE anything that imports Spyglass or
+    # DataJoint. Malformed --key / --key-json / --fields are detected
+    # synchronously, with no cold Spyglass init cost — the entire
+    # invalid_query path stays under ~10 ms even on a slow interpreter.
+    # ``_select_src_root`` is intentionally NOT called here because its
+    # installed-package fallback does ``import spyglass``; resolving it
+    # eagerly would defeat the parser-fast-path discipline.
+    try:
+        restriction = _parse_key_args(args.key, args.key_json)
+        fetch_fields = _parse_fields_arg(args.fields)
+    except _InvalidQuery as exc:
+        return _emit_invalid_query(
+            args=args,
+            timer=timer,
+            resolved=None,
+            exc=exc,
+            src_root=None,
+        )
+
+    # Step 1: now resolve src_root (may import spyglass for the
+    # installed-package fallback) and resolve the class.
+    src_root_used = _select_src_root(args.src)
     timer.mark("resolve")
     try:
         resolved = resolve_class(
@@ -1290,34 +1722,162 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
             args=args, timer=timer, exc=exc, src_root=src_root_used
         )
 
-    # Resolution succeeded; query stage is Batch C+. Use the
-    # `not_implemented` envelope (the same shape Batch A used) but with
-    # `query.stage="resolved"` so a fixture can tell Batch B's
-    # resolved-but-not-queried case apart from Batch A's
-    # nothing-happened scaffold.
-    timer.stop()
-    payload = _stamp_envelope("not_implemented", source_root=resolved.src_root)
-    payload["db"] = None
+    timer.mark("heading")
+
+    # Step 2: build the relation and read its heading. Both can raise
+    # DataJoint connection / auth / schema errors; surface them as
+    # db_error with the `error.kind` discriminator that ``info --json``
+    # documents.
+    try:
+        # `_Resolved.cls` is annotated `object` (the lazy-import discipline
+        # forbids importing UserTable at type-check time). Runtime
+        # narrowing via `_is_datajoint_user_table` already proved this is
+        # callable; the cast satisfies the type checker without changing
+        # behavior.
+        cls_callable = resolved.cls
+        rel = cls_callable()  # ty: ignore[call-non-callable]
+        heading = rel.heading
+        heading_names: tuple[str, ...] = tuple(heading.names)
+        heading_attributes = dict(heading.attributes)
+    except Exception as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind=_classify_dj_error(exc),
+            message=_scrub_secrets(str(exc)),
+            src_root=src_root_used,
+            resolved=resolved,
+        )
+
+    # Step 3: validate fields against the runtime heading. Both
+    # restriction keys and fetch fields are checked here; either being
+    # malformed is exit 2 invalid_query.
+    try:
+        _validate_restriction_fields(restriction, heading_names)
+        _validate_blob_restrictions(restriction, heading_attributes)
+        _validate_fetch_fields(fetch_fields, heading_names)
+    except _InvalidQuery as exc:
+        return _emit_invalid_query(
+            args=args,
+            timer=timer,
+            resolved=resolved,
+            exc=exc,
+            src_root=src_root_used,
+        )
+
+    # Step 4: apply restriction and run the query.
+    timer.mark("query")
+    try:
+        restricted = rel & restriction if restriction else rel
+        count = len(restricted)
+        rows: list[dict] = []
+        truncated = False
+        if not args.count:
+            # Fetch limit + 1 so we can detect truncation without a
+            # second round-trip.
+            fetched = restricted.fetch(
+                *fetch_fields, as_dict=True, limit=args.limit + 1
+            )
+            truncated = len(fetched) > args.limit
+            fetched = fetched[: args.limit]
+            timer.mark("serialize")
+            rows = [
+                {k: _safe_serialize_value(v) for k, v in row.items()}
+                for row in fetched
+            ]
+    except _InvalidQuery as exc:
+        return _emit_invalid_query(
+            args=args,
+            timer=timer,
+            resolved=resolved,
+            exc=exc,
+            src_root=src_root_used,
+        )
+    except Exception as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind=_classify_dj_error(exc),
+            message=_scrub_secrets(str(exc)),
+            src_root=src_root_used,
+            resolved=resolved,
+        )
+
+    # Step 5: build the success payload. Shape and field order match
+    # ``PAYLOAD_ENVELOPES["find-instance"]``; the Batch A schema-envelope
+    # fixture pins this so Batch C cannot drift it.
+    payload = _stamp_envelope("find-instance", source_root=resolved.src_root)
+    payload["db"] = _build_db_envelope()
     payload["query"] = {
         "class": args.class_name,
         "resolved_class": f"{resolved.module}.{resolved.qualname}",
         "module": resolved.module,
         "qualname": resolved.qualname,
         "resolution_source": resolved.source,
-        "stage": "resolved",
+        "restriction": restriction,
+        "fields": fetch_fields,
+        "mode": "count" if args.count else "rows",
     }
-    payload["error"] = {
-        "kind": "not_implemented",
-        "message": (
-            "find-instance class resolution succeeds (Batch B). The query "
-            "stage (heading validation, restriction, fetch) lands in Batch "
-            "C per docs/plans/db-graph-impl-plan.md."
-        ),
-        "next_batch": "Batch C (basic find-instance) per implementation plan.",
-    }
+    payload["count"] = count
+    payload["limit"] = args.limit
+    payload["truncated"] = truncated
+    # ``incomplete`` is reserved for set-op fallbacks (Batch E); a basic
+    # find-instance is always complete within --limit.
+    payload["incomplete"] = False
     payload["timings_ms"] = timer.finalize()
+    payload["rows"] = rows
+
     print(json.dumps(payload))
-    return EXIT_USAGE
+    if count == 0 and args.fail_on_empty:
+        return EXIT_EMPTY
+    return EXIT_OK
+
+
+def _classify_dj_error(exc: BaseException) -> str:
+    """Map a DataJoint / pymysql exception to a stable ``error.kind``.
+
+    The discriminator promised by ``info --json``: ``connection`` /
+    ``auth`` / ``schema`` / ``datajoint_import``. Falls back to a
+    generic ``runtime`` for anything we cannot classify.
+
+    Auth-message check goes BEFORE the class-name check because pymysql
+    raises ``OperationalError("(1045, 'Access denied...')")`` for
+    auth failures — classifying that as ``connection`` would point an
+    LLM at the wrong recovery (network / VPN troubleshooting instead
+    of credential review). Message-text wins on the auth path; the
+    class-name list is the second-pass guard for true network failures.
+    """
+    name = type(exc).__name__
+    msg = str(exc).lower()
+    if name == "AccessError" or "access denied" in msg:
+        return "auth"
+    if name in ("LostConnectionError", "OperationalError", "InterfaceError"):
+        return "connection"
+    if "schema" in msg or "table" in msg:
+        return "schema"
+    return "runtime"
+
+
+def _scrub_secrets(text: str) -> str:
+    """Best-effort redaction of credentials in DataJoint error messages.
+
+    Plan: never print raw passwords, connection URLs with credentials,
+    or full tracebacks. DataJoint error text occasionally embeds parts
+    of the connection string (especially ``OperationalError`` from
+    pymysql). Replace anything that looks like ``user:password@host``.
+    """
+    import re
+
+    # Replace `name:secret@host` with `name:***@host`.
+    text = re.sub(r"([\w\-.]+):[^@\s]+@", r"\1:***@", text)
+    # Replace bare-password mentions.
+    text = re.sub(
+        r"(password|secret|token|credential|api_key)[^\s]*[:=]\s*\S+",
+        r"\1=***",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return text
 
 
 # ---------------------------------------------------------------------------

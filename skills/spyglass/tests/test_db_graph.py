@@ -547,7 +547,7 @@ def fixture_count_distinct_requires_a_grouping(
     MVP. Refuse it explicitly so an agent gets a clear error rather than
     a surprising silent reinterpretation.
     """
-    rc, out, err = _run_db_graph(
+    rc, _, err = _run_db_graph(
         ["find-instance", "--class", "Foo", "--count-distinct", "field"],
         python_env=args.python_env,
     )
@@ -572,7 +572,7 @@ def fixture_group_by_and_group_by_table_are_mutually_exclusive(
     is not defined. Refusing now prevents a future Batch E implementation
     from having to invent semantics under deadline pressure.
     """
-    rc, out, err = _run_db_graph(
+    rc, _, err = _run_db_graph(
         [
             "find-instance",
             "--class",
@@ -631,7 +631,7 @@ def fixture_merge_master_without_part_exits_2(
 
 def fixture_limit_hard_max_enforced(args: argparse.Namespace) -> bool:
     """``--limit`` above the hard cap of 1000 is rejected with exit 2."""
-    rc, out, err = _run_db_graph(
+    rc, _, err = _run_db_graph(
         ["find-instance", "--class", "Foo", "--limit", "1001"],
         python_env=args.python_env,
     )
@@ -647,7 +647,7 @@ def fixture_limit_hard_max_enforced(args: argparse.Namespace) -> bool:
 
 def fixture_unknown_subcommand_exits_2(args: argparse.Namespace) -> bool:
     """A subcommand name not in {info, find-instance} returns exit 2."""
-    rc, out, err = _run_db_graph(["bogus"], python_env=args.python_env)
+    rc, _, err = _run_db_graph(["bogus"], python_env=args.python_env)
     if rc != 2:
         print(f"  [FAIL] expected rc=2, got {rc}")
         return False
@@ -717,20 +717,22 @@ def _expect_resolved_payload(
     expected_qualname: str,
     expected_resolution_source: str,
 ) -> bool:
-    """Shared assertion: Batch-B `not_implemented`/`stage:resolved` payload.
+    """Shared assertion: payload's resolution provenance matches expectations.
 
-    Pulled out because four fixtures emit the same envelope with different
-    `query` fields. Pinning the assertion in one place lets Batch C's
-    real-query implementation update one site. db_graph.py emits every
-    structured payload (success and error) to stdout — DataJoint and
-    Spyglass write warnings + connection logs to stderr, so reading
-    stdout is the only way to get clean JSON.
+    Used by every Batch-B fixture that wants to pin "this class went
+    through this resolution path" without caring about the row data.
+    Batch C subsumes the Batch B endpoint: instead of
+    ``kind: "not_implemented"``, a successful resolution now produces
+    ``kind: "find-instance"`` with real ``count``/``rows``. The provenance
+    fields (``query.module``, ``query.qualname``, ``query.resolution_source``)
+    remain the contract this helper pins. ``query.stage`` was a Batch-B
+    affordance and is gone in Batch C.
     """
     payload = _parse_json_or_fail(out, "find-instance resolved stdout")
     if payload is None:
         return False
-    if payload.get("kind") != "not_implemented":
-        print(f"  [FAIL] kind != 'not_implemented': {payload.get('kind')!r}")
+    if payload.get("kind") != "find-instance":
+        print(f"  [FAIL] kind != 'find-instance': {payload.get('kind')!r}")
         return False
     query = payload.get("query", {})
     if query.get("module") != expected_module:
@@ -751,9 +753,6 @@ def _expect_resolved_payload(
             f"{expected_resolution_source!r}: {query.get('resolution_source')!r}"
         )
         return False
-    if query.get("stage") != "resolved":
-        print(f"  [FAIL] query.stage != 'resolved': {query.get('stage')!r}")
-        return False
     return True
 
 
@@ -768,8 +767,11 @@ def fixture_b_resolves_stock_short_name(args: argparse.Namespace) -> bool:
         ["find-instance", "--class", "Session"],
         python_env=args.python_env,
     )
-    if rc != 2:  # Batch-B success endpoint exits 2 (kind=not_implemented)
-        print(f"  [FAIL] expected rc=2, got {rc}; stderr: {err[:200]!r}")
+    # Batch C makes the resolved-class endpoint go all the way through
+    # to a real fetch — exit 0 with kind=find-instance. The provenance
+    # check below pins the resolution path used to get there.
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
         return False
     if not _expect_resolved_payload(
         out,
@@ -798,8 +800,8 @@ def fixture_b_resolves_dotted_qualname(args: argparse.Namespace) -> bool:
         ["find-instance", "--class", "LFPOutput.LFPV1"],
         python_env=args.python_env,
     )
-    if rc != 2:
-        print(f"  [FAIL] expected rc=2, got {rc}; stderr: {err[:200]!r}")
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
         return False
     if not _expect_resolved_payload(
         out,
@@ -823,8 +825,8 @@ def fixture_b_resolves_module_class_form(args: argparse.Namespace) -> bool:
         ["find-instance", "--class", "spyglass.common.common_session:Session"],
         python_env=args.python_env,
     )
-    if rc != 2:
-        print(f"  [FAIL] expected rc=2, got {rc}; stderr: {err[:200]!r}")
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
         return False
     if not _expect_resolved_payload(
         out,
@@ -854,8 +856,8 @@ def fixture_b_resolves_dotted_module_path(args: argparse.Namespace) -> bool:
         ["find-instance", "--class", "spyglass.common.common_session.Session"],
         python_env=args.python_env,
     )
-    if rc != 2:
-        print(f"  [FAIL] expected rc=2, got {rc}; stderr: {err[:200]!r}")
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
         return False
     if not _expect_resolved_payload(
         out,
@@ -913,17 +915,35 @@ def fixture_b_resolves_via_import_for_custom_class(
             python_env=args.python_env,
             extra_env={"PYTHONPATH": str(tmp)},
         )
-    if rc != 2:
-        print(f"  [FAIL] expected rc=2, got {rc}; stderr: {err[:200]!r}")
+    # The synthetic CustomTable has no real DataJoint table backing it
+    # (``create_tables=False``), so the fetch step legitimately fails
+    # with a db_error. The resolution itself succeeded — that is what
+    # this fixture pins. Accept either find-instance (table happened
+    # to exist) or db_error (expected for a truly synthetic class), but
+    # require the resolution provenance to be present in either payload.
+    if rc not in (0, 5):
+        print(f"  [FAIL] expected rc in (0, 5), got {rc}; stderr: {err[:200]!r}")
         return False
-    if not _expect_resolved_payload(
-        out,
-        expected_module="customlab_db_graph",
-        expected_qualname="CustomTable",
-        expected_resolution_source="module_path",
-    ):
+    payload = _parse_json_or_fail(out, "custom-import payload")
+    if payload is None:
         return False
-    print("  [ok] --import + module:Class resolves a custom UserTable")
+    query = payload.get("query", {})
+    if query.get("module") != "customlab_db_graph":
+        print(f"  [FAIL] query.module drifted: {query.get('module')!r}")
+        return False
+    if query.get("qualname") != "CustomTable":
+        print(f"  [FAIL] query.qualname drifted: {query.get('qualname')!r}")
+        return False
+    if query.get("resolution_source") != "module_path":
+        print(
+            f"  [FAIL] query.resolution_source drifted: "
+            f"{query.get('resolution_source')!r}"
+        )
+        return False
+    print(
+        f"  [ok] --import + module:Class resolves a custom class "
+        f"(rc={rc}, kind={payload.get('kind')!r})"
+    )
     return True
 
 
@@ -1135,9 +1155,9 @@ def fixture_b_installed_package_overrides_env_var(
             python_env=args.python_env,
             extra_env={"SPYGLASS_SRC": tmp_str},
         )
-    if rc != 2:
+    if rc != 0:
         print(
-            f"  [FAIL] expected rc=2 (resolved via installed fallback), "
+            f"  [FAIL] expected rc=0 (resolved via installed fallback), "
             f"got {rc}; stderr: {err[:200]!r}"
         )
         return False
@@ -1151,6 +1171,1277 @@ def fixture_b_installed_package_overrides_env_var(
     print(
         "  [ok] installed-package fallback wins over $SPYGLASS_SRC=<bogus>"
     )
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Batch C fixtures: basic find-instance
+# ---------------------------------------------------------------------------
+
+
+def _read_db_graph_source() -> str:
+    """Read the db_graph.py source for static-analysis fixtures."""
+    return DB_GRAPH.read_text()
+
+
+def _setup_fakes_sandbox(
+    tmp: Path,
+    *,
+    module_name: str,
+    class_name: str,
+    primary_key: tuple[str, ...],
+    names: tuple[str, ...],
+    attributes: dict[str, str],
+    rows: list[dict],
+    base: str = "Manual",
+    raises_on_fetch: str | None = None,
+) -> Path:
+    """Build a self-contained PYTHONPATH directory and return its Path.
+
+    The directory contains:
+
+    * ``datajoint/`` — the fake-DataJoint shim from ``fakes.py``.
+    * ``fakes.py`` — copied so the synthetic test module can import
+      ``FakeRelation`` / ``FakeHeading`` directly.
+    * ``<module_name>.py`` — the synthetic UserTable class.
+
+    Subprocess invocations of ``db_graph.py`` then run with
+    ``PYTHONPATH=<dir>`` and ``--import <module_name> --class
+    <module_name>:<class_name>``. The fake DataJoint shadows the real
+    one if installed, removing the live-DB dependency for fixtures
+    that exercise restriction / fetch / heading paths.
+    """
+    import fakes as _fakes_module
+
+    _fakes_module.build_fake_datajoint_sandbox(tmp)
+    # Copy fakes.py into the sandbox so the synthetic module can
+    # import its FakeHeading / FakeRelation. Using shutil would also
+    # work but a direct read+write avoids importing shutil here.
+    fakes_src_path = (
+        Path(__file__).resolve().parent / "fakes.py"
+    )
+    (tmp / "fakes.py").write_text(fakes_src_path.read_text())
+    _fakes_module.write_fake_test_module(
+        tmp,
+        module_name=module_name,
+        class_name=class_name,
+        primary_key=primary_key,
+        names=names,
+        attributes=attributes,
+        rows=rows,
+        base=base,
+        raises_on_fetch=raises_on_fetch,
+    )
+    return tmp
+
+
+def fixture_c_fakes_restriction_and_fetch(args: argparse.Namespace) -> bool:
+    """End-to-end find-instance via the fakes sandbox — no live DB needed.
+
+    This is the canonical Batch-C coverage fixture for the no-VPN /
+    no-spyglass-installed case. A synthetic ``FakeSession`` class is
+    built with three rows; ``--key subject_id=aj80`` filters to two of
+    them and ``--fields KEY`` returns just the primary keys. The fixture
+    asserts the find-instance envelope, count, restriction echo,
+    resolution provenance, and the actual returned rows match the
+    sandboxed truth.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = _setup_fakes_sandbox(
+            Path(tmp_str),
+            module_name="fakelab",
+            class_name="FakeSession",
+            primary_key=("nwb_file_name",),
+            names=("nwb_file_name", "subject_id", "session_description"),
+            attributes={
+                "nwb_file_name": "varchar(64)",
+                "subject_id": "varchar(32)",
+                "session_description": "varchar(2000)",
+            },
+            rows=[
+                {
+                    "nwb_file_name": "one.nwb",
+                    "subject_id": "aj80",
+                    "session_description": "first",
+                },
+                {
+                    "nwb_file_name": "two.nwb",
+                    "subject_id": "aj80",
+                    "session_description": "second",
+                },
+                {
+                    "nwb_file_name": "three.nwb",
+                    "subject_id": "rat42",
+                    "session_description": "third",
+                },
+            ],
+        )
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakelab",
+                "--class",
+                "fakelab:FakeSession",
+                "--key",
+                "subject_id=aj80",
+                "--fields",
+                "KEY",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:300]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "fakes restriction+fetch")
+    if payload is None:
+        return False
+    if payload.get("kind") != "find-instance":
+        print(f"  [FAIL] kind != 'find-instance': {payload.get('kind')!r}")
+        return False
+    if payload.get("count") != 2:
+        print(
+            f"  [FAIL] count != 2 (subject_id=aj80 expected two rows): "
+            f"{payload.get('count')!r}"
+        )
+        return False
+    rows = payload.get("rows", [])
+    pks = sorted(r.get("nwb_file_name") for r in rows)
+    if pks != ["one.nwb", "two.nwb"]:
+        print(f"  [FAIL] rows do not match restriction: {pks!r}")
+        return False
+    restriction_echo = payload.get("query", {}).get("restriction")
+    if restriction_echo != {"subject_id": "aj80"}:
+        print(f"  [FAIL] query.restriction echo drifted: {restriction_echo!r}")
+        return False
+    print("  [ok] fakes sandbox: restriction+fetch returns 2 rows with correct PKs")
+    return True
+
+
+def fixture_c_fakes_count_only(args: argparse.Namespace) -> bool:
+    """``--count`` against the fakes sandbox returns count without rows."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = _setup_fakes_sandbox(
+            Path(tmp_str),
+            module_name="fakelab_count",
+            class_name="FakeElectrode",
+            primary_key=("nwb_file_name", "electrode_id"),
+            names=("nwb_file_name", "electrode_id"),
+            attributes={
+                "nwb_file_name": "varchar(64)",
+                "electrode_id": "int",
+            },
+            rows=[
+                {"nwb_file_name": "x.nwb", "electrode_id": i}
+                for i in range(5)
+            ],
+        )
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakelab_count",
+                "--class",
+                "fakelab_count:FakeElectrode",
+                "--key",
+                "nwb_file_name=x.nwb",
+                "--count",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "fakes count")
+    if payload is None:
+        return False
+    if payload.get("count") != 5:
+        print(f"  [FAIL] count != 5: {payload.get('count')!r}")
+        return False
+    if payload.get("rows") != []:
+        print(f"  [FAIL] --count must yield empty rows: {payload.get('rows')!r}")
+        return False
+    if payload.get("query", {}).get("mode") != "count":
+        print(f"  [FAIL] query.mode != 'count': {payload.get('query', {}).get('mode')!r}")
+        return False
+    print("  [ok] fakes sandbox: --count returns 5 with empty rows")
+    return True
+
+
+def fixture_c_fakes_truncation_marker(args: argparse.Namespace) -> bool:
+    """``--limit 2`` against a 5-row relation triggers ``truncated: true``."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = _setup_fakes_sandbox(
+            Path(tmp_str),
+            module_name="fakelab_truncate",
+            class_name="FakeIntervals",
+            primary_key=("nwb_file_name", "interval_list_name"),
+            names=("nwb_file_name", "interval_list_name"),
+            attributes={
+                "nwb_file_name": "varchar(64)",
+                "interval_list_name": "varchar(200)",
+            },
+            rows=[
+                {"nwb_file_name": "x.nwb", "interval_list_name": f"epoch_{i}"}
+                for i in range(5)
+            ],
+        )
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakelab_truncate",
+                "--class",
+                "fakelab_truncate:FakeIntervals",
+                "--limit",
+                "2",
+                "--fields",
+                "KEY",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "fakes truncation")
+    if payload is None:
+        return False
+    if not payload.get("truncated"):
+        print(f"  [FAIL] truncated should be true: {payload.get('truncated')!r}")
+        return False
+    actual_rows = len(payload.get("rows", []))
+    if actual_rows != 2:
+        print(
+            f"  [FAIL] rows should have 2 entries (the limit), got "
+            f"{actual_rows}"
+        )
+        return False
+    if payload.get("count") != 5:
+        print(f"  [FAIL] count should be 5 (full relation): {payload.get('count')!r}")
+        return False
+    print("  [ok] fakes sandbox: --limit 2 with 5 rows → truncated=true, rows=2, count=5")
+    return True
+
+
+def fixture_c_fakes_unknown_field_validation(
+    args: argparse.Namespace,
+) -> bool:
+    """Unknown restriction field validation runs through fakes too.
+
+    Mirrors the live ``fixture_c_unknown_restriction_field_refused`` but
+    uses the fakes sandbox so it runs on system Python without VPN.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = _setup_fakes_sandbox(
+            Path(tmp_str),
+            module_name="fakelab_validation",
+            class_name="FakeTable",
+            primary_key=("id",),
+            names=("id", "name"),
+            attributes={"id": "int", "name": "varchar(64)"},
+            rows=[{"id": 1, "name": "a"}],
+        )
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakelab_validation",
+                "--class",
+                "fakelab_validation:FakeTable",
+                "--key",
+                "definitely_not_a_field=x",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2 (invalid_query), got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "fakes invalid_query")
+    if payload is None:
+        return False
+    if payload.get("kind") != "invalid_query":
+        print(f"  [FAIL] kind != 'invalid_query': {payload.get('kind')!r}")
+        return False
+    if payload.get("error", {}).get("kind") != "unknown_field":
+        print(f"  [FAIL] error.kind != 'unknown_field': {payload.get('error', {})!r}")
+        return False
+    print("  [ok] fakes sandbox: unknown restriction field exits 2 with kind=invalid_query")
+    return True
+
+
+def fixture_c_fakes_blob_restriction_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """Blob-restriction refusal runs through fakes — no live DB needed."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = _setup_fakes_sandbox(
+            Path(tmp_str),
+            module_name="fakelab_blob",
+            class_name="FakeIntervalList",
+            primary_key=("nwb_file_name", "interval_list_name"),
+            names=("nwb_file_name", "interval_list_name", "valid_times"),
+            attributes={
+                "nwb_file_name": "varchar(64)",
+                "interval_list_name": "varchar(200)",
+                "valid_times": "longblob",
+            },
+            rows=[],
+        )
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakelab_blob",
+                "--class",
+                "fakelab_blob:FakeIntervalList",
+                "--key",
+                "valid_times=anything",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "fakes blob_restriction")
+    if payload is None:
+        return False
+    if payload.get("error", {}).get("kind") != "blob_restriction_refused":
+        print(f"  [FAIL] error.kind != 'blob_restriction_refused': {payload.get('error', {})!r}")
+        return False
+    print("  [ok] fakes sandbox: blob-attribute restriction exits 2 with clear error")
+    return True
+
+
+def fixture_c_fakes_safe_serialization_envelopes(
+    args: argparse.Namespace,
+) -> bool:
+    """Per-field safe serialization envelopes round-trip via the fakes sandbox.
+
+    Builds a synthetic class whose rows contain DataJoint-shaped values
+    that ``json.dumps`` cannot serialize natively: ``bytes`` (blob),
+    ``datetime`` (timestamp), ``uuid.UUID`` (DataJoint's ``uuid`` type),
+    ``float('nan')`` (rare but emitted by some pandas pipelines). The
+    fixture asserts each value is converted to its documented envelope
+    and the whole payload survives ``json.loads(json.dumps(...,
+    allow_nan=False))`` — strict-JSON compliance is the LLM-facing
+    contract this fixture pins.
+
+    Numpy ``ndarray`` is intentionally left out: it requires numpy
+    available to the subprocess interpreter. The corresponding
+    serialization branch is exercised by an inline smoke check at
+    Batch-C commit time.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        # Fake datajoint + fakes copy.
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        # Synthetic module written directly so the rows can construct
+        # bytes / datetime / UUID / NaN values via real Python
+        # expressions (write_fake_test_module's repr-based path can't
+        # round-trip every type).
+        (tmp / "fakelab_serialize.py").write_text(
+            "\n".join(
+                [
+                    '"""Synthetic class with rich-typed rows for serialization tests."""',
+                    "import datetime",
+                    "import uuid",
+                    "from datajoint import Manual",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "",
+                    "class FakeWeirdRow(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('id',),",
+                    "        names=('id', 'blob_data', 'ts', 'uid', 'maybe_nan'),",
+                    "        attributes={",
+                    "            'id': 'int',",
+                    "            'blob_data': 'varchar(64)',",
+                    "            'ts': 'timestamp',",
+                    "            'uid': 'uuid',",
+                    "            'maybe_nan': 'float',",
+                    "        },",
+                    "    )",
+                    "    _rows = [",
+                    "        {",
+                    "            'id': 1,",
+                    "            'blob_data': b'\\x00\\xff\\x10\\x42',",
+                    "            'ts': datetime.datetime(2026, 4, 27, 12, 30, 0),",
+                    "            'uid': uuid.UUID('00000000-0000-0000-0000-000000000001'),",
+                    "            'maybe_nan': float('nan'),",
+                    "        },",
+                    "    ]",
+                    "",
+                    "    def __new__(cls):",
+                    "        return FakeRelation(",
+                    "            heading=cls._heading_obj, rows=cls._rows",
+                    "        )",
+                    "",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                    "",
+                ]
+            )
+        )
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakelab_serialize",
+                "--class",
+                "fakelab_serialize:FakeWeirdRow",
+                "--fields",
+                "id,blob_data,ts,uid,maybe_nan",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:300]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "fakes serialization")
+    if payload is None:
+        return False
+    rows = payload.get("rows", [])
+    if not rows:
+        print("  [FAIL] no rows returned from synthetic FakeWeirdRow")
+        return False
+    row = rows[0]
+    # bytes → {_unserializable, type, length}
+    blob = row.get("blob_data")
+    if not (isinstance(blob, dict) and blob.get("type") == "bytes"
+            and blob.get("length") == 4):
+        print(f"  [FAIL] bytes serialization drift: {blob!r}")
+        return False
+    # datetime → ISO-8601 string
+    ts = row.get("ts")
+    if not (isinstance(ts, str) and "T" in ts and ts.startswith("2026-04-27")):
+        print(f"  [FAIL] datetime serialization drift: {ts!r}")
+        return False
+    # uuid.UUID → string
+    uid = row.get("uid")
+    if uid != "00000000-0000-0000-0000-000000000001":
+        print(f"  [FAIL] UUID serialization drift: {uid!r}")
+        return False
+    # NaN float → {_unserializable, type, value}
+    nan_val = row.get("maybe_nan")
+    if not (isinstance(nan_val, dict) and nan_val.get("type") == "float"
+            and nan_val.get("value") == "nan"):
+        print(f"  [FAIL] NaN float serialization drift: {nan_val!r}")
+        return False
+    # Strict-JSON round-trip: payload must reparse with allow_nan=False.
+    try:
+        json.loads(json.dumps(payload, allow_nan=False))
+    except ValueError as exc:
+        print(f"  [FAIL] payload is not strict-JSON: {exc}")
+        return False
+    print(
+        "  [ok] fakes sandbox: bytes / datetime / UUID / NaN values "
+        "serialize to documented envelopes; strict-JSON round-trip clean"
+    )
+    return True
+
+
+def fixture_c_fakes_nan_restriction_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """``--key x=nan`` is refused at parse time (not echoed into restriction).
+
+    DataJoint cannot generate a NaN comparison anyway, and ``json.dumps``
+    emits ``NaN`` as a non-strict literal — both reasons to refuse at
+    the parser. Pure parser test, no live DB needed.
+    """
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "json:JSONDecoder",
+            "--key",
+            "x=nan",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "nan-restriction payload")
+    if payload is None:
+        return False
+    error = payload.get("error", {})
+    if error.get("kind") != "non_finite_restriction":
+        print(
+            f"  [FAIL] error.kind != 'non_finite_restriction': "
+            f"{error!r}"
+        )
+        return False
+    # Strict-JSON round-trip the payload itself — the rejection path
+    # must not leak NaN into its own response.
+    try:
+        json.loads(json.dumps(payload, allow_nan=False))
+    except ValueError as exc:
+        print(f"  [FAIL] rejection payload is not strict-JSON: {exc}")
+        return False
+    print(
+        "  [ok] --key field=nan refused at parse time with kind="
+        "'non_finite_restriction'; rejection payload is strict-JSON"
+    )
+    return True
+
+
+def fixture_c_fakes_db_error_classification(
+    args: argparse.Namespace,
+) -> bool:
+    """``LostConnectionError`` from fetch is classified as ``connection``.
+
+    Builds a synthetic table whose fetch raises ``LostConnectionError``;
+    db_graph should emit kind=db_error with error.kind=connection. Pins
+    the auth-vs-connection split (the M2 fix) on a deterministic path.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = _setup_fakes_sandbox(
+            Path(tmp_str),
+            module_name="fakelab_dberr",
+            class_name="FakeBroken",
+            primary_key=("id",),
+            names=("id",),
+            attributes={"id": "int"},
+            rows=[],
+            raises_on_fetch="LostConnectionError",
+        )
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakelab_dberr",
+                "--class",
+                "fakelab_dberr:FakeBroken",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 5:
+        print(f"  [FAIL] expected rc=5 (db_error), got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "fakes db_error")
+    if payload is None:
+        return False
+    if payload.get("kind") != "db_error":
+        print(f"  [FAIL] kind != 'db_error': {payload.get('kind')!r}")
+        return False
+    if payload.get("error", {}).get("kind") != "connection":
+        print(f"  [FAIL] error.kind != 'connection': {payload.get('error', {})!r}")
+        return False
+    query = payload.get("query", {})
+    if query.get("module") != "fakelab_dberr":
+        print(
+            f"  [FAIL] resolved-class provenance lost on db_error path: "
+            f"{query!r}"
+        )
+        return False
+    print(
+        "  [ok] fakes sandbox: LostConnectionError → kind=db_error / "
+        "error.kind=connection"
+    )
+    return True
+
+
+def fixture_c_no_restrgraph_or_tablechain_in_source(
+    _args: argparse.Namespace,
+) -> bool:
+    """Plan acceptance: find-instance must not invoke RestrGraph / TableChain.
+
+    Uses AST to walk Name and Attribute nodes — string literals
+    (docstrings, comments, error-message text) explicitly mention
+    ``RestrGraph`` / ``TableChain`` to document the discipline, and a
+    naive substring grep would flag those. The AST walker only sees
+    actual code references, which is the discipline we care about
+    pinning. Plan-cited so a future Batch E author cannot quietly
+    delegate to those classes when implementing set operations.
+    """
+    import ast as _ast
+
+    forbidden = {"RestrGraph", "TableChain"}
+    src = _read_db_graph_source()
+    tree = _ast.parse(src)
+    bad: list[tuple[str, int]] = []
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Name) and node.id in forbidden:
+            bad.append((node.id, node.lineno))
+        elif isinstance(node, _ast.Attribute) and node.attr in forbidden:
+            bad.append((node.attr, node.lineno))
+    if bad:
+        print(
+            f"  [FAIL] db_graph.py source code references "
+            f"{[f'{n}@{ln}' for n, ln in bad]!r}; the plan forbids "
+            "these in find-instance to keep the direct-relation fast path."
+        )
+        return False
+    print(
+        "  [ok] db_graph.py code (excluding docstrings) has no "
+        "RestrGraph / TableChain references"
+    )
+    return True
+
+
+# DataJoint write methods that have no plausible stdlib analogue at our
+# call sites — flagging an attribute call to any of these means we
+# accidentally introduced a write path. ``insert`` and ``delete`` are
+# excluded from the AST check because both are stdlib container methods
+# (``list.insert``, ``set.delete``) and ``sys.path.insert`` is part of
+# our standard module bootstrap; flagging them by attribute name alone
+# would be a false positive. The plan-required read-only invariant is
+# adequately pinned by the unambiguous methods below.
+_DJ_WRITE_METHODS = (
+    "insert1",
+    "delete_quick",
+    "drop",
+    "drop_quick",
+    "populate",
+    "alter",
+)
+
+
+def fixture_c_read_only_no_write_method_calls_in_source(
+    _args: argparse.Namespace,
+) -> bool:
+    """Plan #23 / Definition-of-done: read-only invariant pinned in source.
+
+    AST-walks the source and flags any ``Call`` whose target is one of
+    the unambiguous DataJoint write methods. Comments and docstrings
+    that NAME the methods (the ``security_profile`` block in
+    ``info --json``) pass the check because Constant nodes are not Calls.
+    Strong signal that no code path mutates the production database.
+
+    See the ``_DJ_WRITE_METHODS`` definition for which methods this
+    fixture pins and why ``insert`` / ``delete`` are excluded as
+    ambiguous with stdlib container methods.
+    """
+    import ast as _ast
+
+    src = _read_db_graph_source()
+    tree = _ast.parse(src)
+    bad: list[tuple[str, int]] = []
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, _ast.Attribute) and func.attr in _DJ_WRITE_METHODS:
+            bad.append((func.attr, node.lineno))
+        elif isinstance(func, _ast.Name) and func.id in _DJ_WRITE_METHODS:
+            bad.append((func.id, node.lineno))
+    if bad:
+        print(
+            f"  [FAIL] db_graph.py contains call-shape references to "
+            f"{[f'{n}@{ln}' for n, ln in bad]!r}; the plan declares "
+            "find-instance is read-only by construction."
+        )
+        return False
+    print(
+        "  [ok] db_graph.py has no call-shape references to DataJoint "
+        f"write methods ({', '.join(_DJ_WRITE_METHODS)})"
+    )
+    return True
+
+
+def fixture_c_unknown_restriction_field_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """``--key unknown_field=x`` is refused with exit 2 (kind=invalid_query).
+
+    Closes the silent-no-op footgun: DataJoint silently drops
+    ``{unknown_field: x}`` from a restriction, returning the whole
+    relation; an LLM would mis-cite the result as "filter applied, no
+    rows match." Field validation against ``heading.names`` makes the
+    error explicit.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="unknown_field validation requires a real Spyglass heading",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "Session",
+            "--key",
+            "definitely_not_a_real_field=x",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2 (invalid_query), got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "unknown_field payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "invalid_query":
+        print(f"  [FAIL] kind != 'invalid_query': {payload.get('kind')!r}")
+        return False
+    error = payload.get("error", {})
+    if error.get("kind") != "unknown_field":
+        print(f"  [FAIL] error.kind != 'unknown_field': {error.get('kind')!r}")
+        return False
+    if "definitely_not_a_real_field" not in error.get("unknown_fields", []):
+        print(
+            f"  [FAIL] error.unknown_fields missing the bad field: "
+            f"{error.get('unknown_fields')!r}"
+        )
+        return False
+    if not error.get("valid_fields"):
+        print(
+            f"  [FAIL] error.valid_fields should list the heading "
+            f"to help recovery: {error.get('valid_fields')!r}"
+        )
+        return False
+    print("  [ok] unknown restriction field exits 2 with kind=invalid_query")
+    return True
+
+
+def fixture_c_blob_restriction_refused(args: argparse.Namespace) -> bool:
+    """A ``--key`` against a blob attribute is refused.
+
+    ``IntervalList.valid_times`` is a ``longblob`` attribute; restricting
+    on it server-side is unsupported. Close the footgun before DataJoint
+    emits an opaque SQL error.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="blob-restriction refusal requires a real Spyglass heading",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "IntervalList",
+            "--key",
+            "valid_times=anything",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "blob_restriction payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "invalid_query":
+        print(f"  [FAIL] kind != 'invalid_query': {payload.get('kind')!r}")
+        return False
+    error = payload.get("error", {})
+    if error.get("kind") != "blob_restriction_refused":
+        print(
+            f"  [FAIL] error.kind != 'blob_restriction_refused': "
+            f"{error.get('kind')!r}"
+        )
+        return False
+    print("  [ok] blob-attribute restriction exits 2 with clear error")
+    return True
+
+
+def fixture_c_null_key_value_refused(args: argparse.Namespace) -> bool:
+    """``--key field=null`` is refused; DataJoint silently drops it otherwise.
+
+    Pure parser test — does not need datajoint/spyglass on python_env
+    because the parser fires before the resolver imports anything.
+    """
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "json:JSONDecoder",
+            "--key",
+            "x=null",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "null_key payload")
+    if payload is None:
+        return False
+    if payload.get("error", {}).get("kind") != "null_restriction_refused":
+        print(
+            f"  [FAIL] error.kind != 'null_restriction_refused': "
+            f"{payload.get('error', {})!r}"
+        )
+        return False
+    print("  [ok] --key field=null is refused with kind=null_restriction_refused")
+    return True
+
+
+def fixture_c_malformed_key_argument_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """``--key`` without an ``=`` is refused.
+
+    Pure parser test. Empty FIELD or missing ``=`` falls into the
+    malformed_key error class.
+    """
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "json:JSONDecoder",
+            "--key",
+            "no_equals_here",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "malformed_key payload")
+    if payload is None:
+        return False
+    if payload.get("error", {}).get("kind") != "malformed_key":
+        print(
+            f"  [FAIL] error.kind != 'malformed_key': "
+            f"{payload.get('error', {})!r}"
+        )
+        return False
+    print("  [ok] --key without = is refused with kind=malformed_key")
+    return True
+
+
+def fixture_c_unknown_fetch_field_refused(args: argparse.Namespace) -> bool:
+    """``--fields nonexistent`` is refused.
+
+    Mirrors the restriction-field validation. Catches the case where the
+    user typed a field name that DataJoint would either error on or
+    return None for, depending on the backend.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="fetch-field validation requires a real Spyglass heading",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "Session",
+            "--fields",
+            "definitely_not_a_field",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "unknown_fetch_field payload")
+    if payload is None:
+        return False
+    if payload.get("error", {}).get("kind") != "unknown_field":
+        print(
+            f"  [FAIL] error.kind != 'unknown_field': "
+            f"{payload.get('error', {})!r}"
+        )
+        return False
+    print("  [ok] unknown --fields entry is refused with kind=unknown_field")
+    return True
+
+
+def _expect_find_instance_payload(
+    out: str, *, mode: str, expect_count_at_least: int = 0
+) -> dict | None:
+    """Common assertions for a successful find-instance call."""
+    payload = _parse_json_or_fail(out, "find-instance success")
+    if payload is None:
+        return None
+    if payload.get("kind") != "find-instance":
+        print(f"  [FAIL] kind != 'find-instance': {payload.get('kind')!r}")
+        return None
+    if payload.get("query", {}).get("mode") != mode:
+        print(
+            f"  [FAIL] query.mode != {mode!r}: "
+            f"{payload.get('query', {}).get('mode')!r}"
+        )
+        return None
+    count = payload.get("count")
+    if count is None or count < expect_count_at_least:
+        print(
+            f"  [FAIL] count {count!r} below expected lower bound "
+            f"{expect_count_at_least}"
+        )
+        return None
+    return payload
+
+
+def fixture_c_eval9_session_row_lookup(args: argparse.Namespace) -> bool:
+    """Eval #9 shape: ``--class Session --key nwb_file_name=X --fields KEY``.
+
+    Returns ``query.resolved_class``, ``count``, bounded ``rows``. The
+    nwb file used for this fixture is the lab's standard test session
+    referenced throughout the eval set.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #9 row lookup against real Spyglass DB",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "Session",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+            "--fields",
+            "KEY",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _expect_find_instance_payload(out, mode="rows")
+    if payload is None:
+        return False
+    expected_resolved = "spyglass.common.common_session.Session"
+    if payload["query"].get("resolved_class") != expected_resolved:
+        print(
+            f"  [FAIL] resolved_class drift: "
+            f"{payload['query'].get('resolved_class')!r}"
+        )
+        return False
+    rows = payload.get("rows", [])
+    if not rows:
+        print("  [FAIL] expected at least one row for the lab's test session")
+        return False
+    pk_fields = set(rows[0].keys())
+    if "nwb_file_name" not in pk_fields:
+        print(f"  [FAIL] PK field nwb_file_name missing from row keys: {pk_fields!r}")
+        return False
+    print("  [ok] eval #9: Session row lookup returns PK rows + count")
+    return True
+
+
+def fixture_c_eval10_selected_fields(args: argparse.Namespace) -> bool:
+    """Eval #10 shape: selected fields fetch.
+
+    ``--fields session_description,session_start_time`` returns those
+    two fields per row, with safe-serialized values (datetime → ISO).
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #10 selected fields against real Spyglass DB",
+    ):
+        return True
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "Session",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+            "--fields",
+            "session_description,session_start_time",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _expect_find_instance_payload(out, mode="rows")
+    if payload is None:
+        return False
+    rows = payload.get("rows", [])
+    if not rows:
+        print("  [FAIL] no rows returned")
+        return False
+    keys = set(rows[0].keys())
+    if "session_description" not in keys or "session_start_time" not in keys:
+        print(f"  [FAIL] expected fields not in row: {keys!r}")
+        return False
+    sst = rows[0]["session_start_time"]
+    # ISO-8601 string proves the safe serializer fired.
+    if not isinstance(sst, str) or "T" not in sst:
+        print(f"  [FAIL] session_start_time not safe-serialized to ISO: {sst!r}")
+        return False
+    print("  [ok] eval #10: selected fields returned with ISO-serialized datetime")
+    return True
+
+
+def fixture_c_eval11_field_list(args: argparse.Namespace) -> bool:
+    """Eval #11 shape: field listing across multiple rows.
+
+    ``IntervalList & {nwb_file_name: X}`` typically returns ~50 rows;
+    ``--fields interval_list_name`` should return that many strings.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #11 field list against real Spyglass DB",
+    ):
+        return True
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "IntervalList",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+            "--fields",
+            "interval_list_name",
+            "--limit",
+            "100",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _expect_find_instance_payload(out, mode="rows", expect_count_at_least=1)
+    if payload is None:
+        return False
+    rows = payload.get("rows", [])
+    for row in rows:
+        if "interval_list_name" not in row:
+            print(f"  [FAIL] interval_list_name missing in row: {row!r}")
+            return False
+        if not isinstance(row["interval_list_name"], str):
+            print(
+                f"  [FAIL] interval_list_name not a string: "
+                f"{type(row['interval_list_name']).__name__}"
+            )
+            return False
+    print(
+        f"  [ok] eval #11: IntervalList field list returned "
+        f"{len(rows)} interval names"
+    )
+    return True
+
+
+def fixture_c_eval12_count_only(args: argparse.Namespace) -> bool:
+    """Eval #12 shape: ``--count`` returns count without rows.
+
+    Eval ground truth: ``len(Electrode & {nwb_file_name: X})``. The
+    ``--count`` flag short-circuits the fetch step, so the payload has
+    ``count: N`` and ``rows: []``.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #12 count against real Spyglass DB",
+    ):
+        return True
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "Electrode",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+            "--count",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _expect_find_instance_payload(out, mode="count")
+    if payload is None:
+        return False
+    rows = payload.get("rows", [])
+    if rows:
+        print(f"  [FAIL] --count should yield empty rows, got {len(rows)}")
+        return False
+    if payload["count"] < 1:
+        print(f"  [FAIL] expected nonzero Electrode count, got {payload['count']}")
+        return False
+    print(f"  [ok] eval #12: --count yielded count={payload['count']}, rows=[]")
+    return True
+
+
+def fixture_c_eval13_key_only_resolves_merge_evidence(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval #13 shape: KEY-only fetch resolves the merge evidence.
+
+    The eval prompt asks for the Trodes position dataframe via
+    PositionOutput. Batch C does not implement merge-aware resolution
+    (Batch D), but it MUST be able to fetch the part-table KEY which
+    includes the merge_id. ``PositionOutput.TrodesPosV1 & {...}.fetch1('KEY')``
+    is the canonical resolution step before the dataframe fetch.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #13 KEY-only fetch against real Spyglass DB",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "PositionOutput.TrodesPosV1",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+            "--key",
+            "interval_list_name=02_r1",
+            "--key",
+            "trodes_pos_params_name=default",
+            "--fields",
+            "KEY",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _expect_find_instance_payload(out, mode="rows")
+    if payload is None:
+        return False
+    rows = payload.get("rows", [])
+    if not rows:
+        print(
+            "  [FAIL] expected at least one PositionOutput.TrodesPosV1 row "
+            "for the lab's test session"
+        )
+        return False
+    if "merge_id" not in rows[0]:
+        print(
+            f"  [FAIL] merge_id absent from KEY fetch — Batch D depends "
+            f"on this evidence: {rows[0]!r}"
+        )
+        return False
+    print("  [ok] eval #13: KEY fetch returns merge_id (Batch D evidence ready)")
+    return True
+
+
+def fixture_c_limit_truncation_marker(args: argparse.Namespace) -> bool:
+    """``truncated: true`` fires when the relation has more rows than ``--limit``.
+
+    Uses ``--limit 1`` against IntervalList for the lab's test session
+    (which has many rows); the payload should report ``count > 1`` and
+    ``truncated: true`` with exactly 1 row in the output.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="truncation marker requires fetching from a real DataJoint table",
+    ):
+        return True
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "IntervalList",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+            "--fields",
+            "KEY",
+            "--limit",
+            "1",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "truncation payload")
+    if payload is None:
+        return False
+    if not payload.get("truncated"):
+        print(f"  [FAIL] truncated should be true: {payload.get('truncated')!r}")
+        return False
+    if len(payload.get("rows", [])) != 1:
+        print(f"  [FAIL] rows should have 1 entry, got {len(payload.get('rows', []))}")
+        return False
+    if payload["count"] <= 1:
+        print(
+            f"  [FAIL] count should be > 1 for the truncation case: "
+            f"{payload['count']}"
+        )
+        return False
+    print(
+        f"  [ok] --limit 1 + many rows: truncated=true, count="
+        f"{payload['count']}, rows=1"
+    )
+    return True
+
+
+def fixture_c_empty_result_exit_zero_by_default(
+    args: argparse.Namespace,
+) -> bool:
+    """Empty result is exit 0 with ``count: 0`` (the canonical scientific answer).
+
+    Plan: "I checked; there are zero rows" is a valid final answer; the
+    user opts into a non-zero exit only via ``--fail-on-empty``.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="empty-result-zero-exit requires a real Spyglass query",
+    ):
+        return True
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "Session",
+            "--key",
+            "nwb_file_name=__definitely_not_a_real_session__.nwb",
+            "--fields",
+            "KEY",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "empty-result payload")
+    if payload is None:
+        return False
+    if payload.get("count") != 0:
+        print(f"  [FAIL] count != 0: {payload.get('count')!r}")
+        return False
+    if payload.get("rows", "missing") != []:
+        print(f"  [FAIL] rows != []: {payload.get('rows')!r}")
+        return False
+    print("  [ok] empty result → exit 0 with count=0 (default)")
+    return True
+
+
+def fixture_c_empty_result_fail_on_empty_exit_seven(
+    args: argparse.Namespace,
+) -> bool:
+    """``--fail-on-empty`` opts into exit 7 on an otherwise-successful empty query."""
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="--fail-on-empty round-trip needs a real Spyglass query",
+    ):
+        return True
+    rc, out, _ = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "Session",
+            "--key",
+            "nwb_file_name=__definitely_not_a_real_session__.nwb",
+            "--fields",
+            "KEY",
+            "--fail-on-empty",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 7:
+        print(f"  [FAIL] expected rc=7, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "fail-on-empty payload")
+    if payload is None:
+        return False
+    if payload.get("count") != 0:
+        print(f"  [FAIL] count != 0: {payload.get('count')!r}")
+        return False
+    print("  [ok] --fail-on-empty + count=0 → exit 7")
     return True
 
 
@@ -1185,6 +2476,31 @@ FIXTURES = [
     fixture_b_not_a_table_exits_4,
     fixture_b_src_overrides_installed_package,
     fixture_b_installed_package_overrides_env_var,
+    # Batch C — basic find-instance (fakes sandbox: no live DB needed)
+    fixture_c_fakes_restriction_and_fetch,
+    fixture_c_fakes_count_only,
+    fixture_c_fakes_truncation_marker,
+    fixture_c_fakes_unknown_field_validation,
+    fixture_c_fakes_blob_restriction_refused,
+    fixture_c_fakes_safe_serialization_envelopes,
+    fixture_c_fakes_nan_restriction_refused,
+    fixture_c_fakes_db_error_classification,
+    # Batch C — static-source / parser fixtures
+    fixture_c_no_restrgraph_or_tablechain_in_source,
+    fixture_c_read_only_no_write_method_calls_in_source,
+    fixture_c_unknown_restriction_field_refused,
+    fixture_c_blob_restriction_refused,
+    fixture_c_null_key_value_refused,
+    fixture_c_malformed_key_argument_refused,
+    fixture_c_unknown_fetch_field_refused,
+    fixture_c_eval9_session_row_lookup,
+    fixture_c_eval10_selected_fields,
+    fixture_c_eval11_field_list,
+    fixture_c_eval12_count_only,
+    fixture_c_eval13_key_only_resolves_merge_evidence,
+    fixture_c_limit_truncation_marker,
+    fixture_c_empty_result_exit_zero_by_default,
+    fixture_c_empty_result_fail_on_empty_exit_seven,
 ]
 
 

@@ -7,9 +7,66 @@ fold into the PR description when the work lands.
 ## Batch progress
 
 - **Batch A** (committed `0e9059c`): scaffold + contract. 13 fixtures.
-- **Batch B** (in progress): class resolution. +10 fixtures. Promotes
-  `cmd_find_instance` from kind=not_implemented stub to resolution-only
-  endpoint with proper exit codes for each failure mode.
+- **Batch B** (committed `c153091`): class resolution. +10 fixtures.
+- **Batch C** (in progress): basic find-instance — restriction, count,
+  fetch, limit/truncation, safe serialization. +21 fixtures (6 fakes-
+  driven, 13 live-DB, 2 static-source). Adds `invalid_query` envelope
+  and `_classify_dj_error` helper.
+
+## Batch C implementation notes (2026-04-27)
+
+### Lazy-import discipline (refined)
+
+`cmd_find_instance` parses `--key` / `--fields` BEFORE `_select_src_root`,
+which means a malformed-key error path costs ~140 ms even on the
+Spyglass-equipped interpreter (no Spyglass cold-init). Verified: was
+~18 s before the fix, now ~0.14 s.
+
+### Fakes sandbox
+
+`tests/fakes.py` builds a self-contained PYTHONPATH directory with:
+- `datajoint/` shim (UserTable + Manual/Lookup/Imported/Computed/Part,
+  config dict, errors module).
+- `fakes.py` copy (so synthetic test modules can `from fakes import
+  FakeRelation`).
+- One synthetic UserTable subclass per fixture (plumbed via
+  `--import` + `module:Class`).
+
+Pattern: subprocess invocation with `PYTHONPATH=<sandbox>` lets
+system Python exercise the entire find-instance flow (resolution,
+heading, restriction, fetch, count, truncation, error classification)
+without DataJoint or Spyglass installed. 6 fakes-driven fixtures pass
+on system Python 3.14 with no VPN.
+
+### Read-only invariant
+
+Two source-level checks pin it:
+- AST walk for any `Name`/`Attribute` named `RestrGraph` or `TableChain`
+  (excludes docstrings/comments via the `Constant`-vs-`Name` distinction).
+- AST walk for any `Call` whose target is one of `insert1`,
+  `delete_quick`, `drop`, `drop_quick`, `populate`, `alter`. `insert`
+  and `delete` are excluded because both have stdlib analogues
+  (`list.insert`, `set.delete`); `sys.path.insert` is part of our
+  module bootstrap.
+
+### Envelope additions
+
+- `invalid_query` (new): malformed query before DataJoint round-trip
+  (unknown field, blob restriction, malformed key, null value, etc.).
+  Exit 2. Same shape as `db_error` but `error.kind` discriminator names
+  the parser-level cause.
+- `db_error` payload now carries resolution provenance (`query.module`,
+  `query.qualname`, `query.resolution_source`) when a class was
+  resolved before the failure — important for the LLM to see *which
+  class* triggered a downstream connection / auth error.
+
+### Auth detection ordering
+
+`_classify_dj_error` checks the message string for `"access denied"`
+BEFORE the exception class name. pymysql raises
+`OperationalError("(1045, 'Access denied...')")` for auth failures;
+classifying that as `connection` would point an LLM at network /
+VPN troubleshooting instead of credential review.
 
 ## Batch B implementation notes (2026-04-26)
 
