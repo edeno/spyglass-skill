@@ -14,6 +14,19 @@ Read-only by construction. The script never inserts, deletes, updates,
 populates, alters, drops, or executes raw SQL. The CLI surface intentionally
 exposes no path that could mutate state.
 
+Boundary
+--------
+
+This script is an adapter over DataJoint / Spyglass primitives, not a
+second DataJoint query language. Relational semantics stay in DataJoint:
+``&``, ``-``, ``*``, ``proj``, ``aggr``, ``fetch``, ``len``, ``heading``,
+and ``parents`` / ``children`` are the execution layer. Spyglass's broader
+restriction-cascade machinery (``RestrGraph`` / ``TableChain``) and stock
+merge helpers remain the authority for workflow code. This script's value is
+the LLM-facing contract around those primitives: deterministic resolution,
+field validation for DataJoint silent no-ops, bounded fetches, JSON
+provenance, truncation / incomplete markers, and scrubbed structured errors.
+
 Subcommands
 -----------
 
@@ -2312,6 +2325,14 @@ def _cmd_find_instance_merge(
 ) -> int:
     """Merge-aware find-instance: ``--merge-master MASTER --part PART``.
 
+    Narrow evidence wrapper, not a replacement for Spyglass ``_Merge``
+    workflow helpers such as ``merge_restrict`` / ``merge_get_part`` /
+    ``merge_restrict_class``. Use those helpers for normal Spyglass
+    pipeline code. This mode exists so an LLM can produce a bounded,
+    explicit payload for "which master rows are linked through this part
+    under these part-side keys?", including custom Part classes where
+    source-only lookup is insufficient.
+
     Closes the silent-wrong-count footgun structurally: restrictions
     are applied to the part (whose heading carries the part-only
     fields the user wants to filter on), the part-master link is
@@ -2567,7 +2588,9 @@ def _cmd_find_instance_setop(
 ) -> int:
     """Handle ``--intersect`` / ``--except`` / ``--join``.
 
-    Algorithm per docs/plans/db-graph-impl-plan.md:
+    Thin wrapper around DataJoint operators after heading validation; this
+    does not implement a separate relational algebra. Algorithm per
+    docs/plans/db-graph-impl-plan.md:
 
     * intersect: ``L & R.proj()`` — DataJoint natural restriction along
       shared attribute names.
@@ -2828,6 +2851,10 @@ def _cmd_find_instance_grouped_count(
     timer: _Timer,
 ) -> int:
     """Handle ``--group-by`` / ``--group-by-table`` + ``--count-distinct``.
+
+    Thin wrapper around DataJoint aggregation. The tool validates the
+    named fields and returns a stable, bounded JSON shape; DataJoint
+    remains responsible for the actual group-by / count-distinct query.
 
     Two forms (per plan):
 
@@ -3245,6 +3272,10 @@ def cmd_path(args: argparse.Namespace) -> int:
     surfaced because runtime metadata does not carry the original
     Python class info.
 
+    This is a metadata BFS, not a replacement for Spyglass
+    ``RestrGraph`` / ``TableChain``. It does not cascade restrictions,
+    compute restricted relations, or explain row-level provenance.
+
     Walk failures on individual nodes (e.g. one parent's metadata
     round-trip raises) are local — the node is still in the result,
     annotated with the scrubbed error, and the walk continues.
@@ -3434,9 +3465,10 @@ def _safe_runtime_metadata(
 def cmd_describe(args: argparse.Namespace) -> int:
     """Runtime introspection of a DataJoint table.
 
-    Read-only: instantiates the class (DataJoint cached heading; no
-    schema mutation), reads ``heading.primary_key`` /
-    ``heading.names`` / ``heading.attributes``, optionally calls
+    Adapter over DataJoint heading and relationship metadata. Read-only:
+    instantiates the class (DataJoint cached heading; no schema mutation),
+    reads ``heading.primary_key`` / ``heading.names`` /
+    ``heading.attributes``, optionally calls
     ``rel.parents()`` / ``children()`` / ``parts()`` for the
     runtime-graph adjacency. Optional ``--count`` adds a count(*)
     round-trip; off by default since describe is for schema work.
