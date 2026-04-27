@@ -1154,18 +1154,43 @@ def _failure_query_block(args: argparse.Namespace) -> dict:
     """Build the standard ``query`` block for failure payloads.
 
     All emitters route through this helper so error payloads carry the
-    same context regardless of which classes the user named. In merge
-    mode we include ``merge_master`` and ``part`` so an LLM reading a
-    failure can see the full picture (the master *and* the part the
-    user supplied), not just the conflated ``query.class``.
-    ``args.class_name`` already falls back to ``args.merge_master`` in
-    main(), so ``query.class`` is non-null in merge mode.
+    same context regardless of which classes the user named.
+
+    * Merge mode: include ``merge_master`` and ``part``.
+    * Set-op mode: include ``set_op``, ``set_op_partner``, and
+      ``set_op_form`` so a failed payload still tells an LLM which
+      relational operation the user attempted (failed evidence is
+      still evidence).
+    * Grouping mode: include ``group_by``, ``group_by_table``, and
+      ``count_distinct_field``.
+
+    ``args.class_name`` falls back to ``args.merge_master`` in main(),
+    so ``query.class`` is non-null even when the user only supplied
+    --merge-master/--part.
     """
     query: dict[str, object] = {"class": args.class_name}
     if args.merge_master:
         query["merge_master"] = args.merge_master
     if args.part:
         query["part"] = args.part
+    set_op_partner: str | None = None
+    set_op: str | None = None
+    if args.intersect:
+        set_op, set_op_partner = "intersect", args.intersect
+    elif args.except_class:
+        set_op, set_op_partner = "except", args.except_class
+    elif args.join:
+        set_op, set_op_partner = "join", args.join
+    if set_op is not None:
+        query["set_op"] = set_op
+        query["set_op_partner"] = set_op_partner
+        query["set_op_form"] = _set_op_canonical_form(set_op)
+    if args.group_by:
+        query["group_by"] = args.group_by
+    if args.group_by_table:
+        query["group_by_table"] = args.group_by_table
+    if args.count_distinct:
+        query["count_distinct_field"] = args.count_distinct
     return query
 
 
@@ -2102,8 +2127,26 @@ def _cmd_find_instance_setop(
             resolved=base,
         )
 
-    shared = sorted(set(base_heading_names) & set(partner_heading_names))
+    # Shared-attribute requirement. The actual operator's shared-attr
+    # set depends on the op: intersect / except use ``R.proj()`` which
+    # drops R to its primary key, so the overlap that matters is
+    # ``base.heading.names ∩ partner.heading.primary_key``. ``join``
+    # uses the full natural-join overlap.
+    partner_primary_key: tuple[str, ...] = tuple(partner_rel.heading.primary_key)
+    if op == "join":
+        shared = sorted(
+            set(base_heading_names) & set(partner_heading_names)
+        )
+    else:
+        shared = sorted(
+            set(base_heading_names) & set(partner_primary_key)
+        )
     if not shared:
+        partner_overlap_field = (
+            "heading.names"
+            if op == "join"
+            else "primary_key (R.proj() drops R to its PK)"
+        )
         return _emit_invalid_query(
             args=args,
             timer=timer,
@@ -2113,25 +2156,79 @@ def _cmd_find_instance_setop(
                 (
                     f"--{op} requires at least one shared attribute "
                     f"between {args.class_name!r} and {partner_name!r}; "
-                    "their headings do not overlap. Use --class with a "
+                    f"checked overlap of base.heading.names against "
+                    f"partner.{partner_overlap_field}. Use --class with a "
                     "different partner, or restrict beforehand so the "
                     "operands share a key."
                 ),
                 base_heading=list(base_heading_names),
                 partner_heading=list(partner_heading_names),
+                partner_primary_key=list(partner_primary_key),
+                op=op,
             ),
             src_root=src_root_used,
         )
 
-    try:
-        _validate_restriction_fields(restriction, base_heading_names)
-        _validate_blob_restrictions(restriction, base_heading_attrs)
-    except _InvalidQuery as exc:
+    # Narrower-owner restriction routing per plan:
+    #
+    # * field unique to the base → applied as ``L & {field: val}``.
+    # * field unique to the partner → applied as ``R & {field: val}``
+    #   BEFORE ``.proj()`` for intersect / except so the partner is
+    #   filtered before projecting to its PK.
+    # * field on BOTH → applied to both operands (semantically AND-of-
+    #   filters; equivalent to applying after the operation when the
+    #   shared attr survives the operator).
+    # * field on NEITHER → invalid_query / unknown_field.
+    #
+    # The chosen application point is recorded in
+    # ``query.restriction_applied_to`` so an LLM can see how the keys
+    # were routed without re-deriving from headings.
+    partner_heading_attrs = dict(partner_rel.heading.attributes)
+    base_keys: dict = {}
+    partner_keys: dict = {}
+    application_map: dict[str, str] = {}
+    unknown_keys: list[str] = []
+    for field, value in restriction.items():
+        in_base = field in base_heading_names
+        in_partner = field in partner_heading_names
+        if not in_base and not in_partner:
+            unknown_keys.append(field)
+            continue
+        if in_base:
+            base_keys[field] = value
+        if in_partner:
+            partner_keys[field] = value
+        if in_base and in_partner:
+            application_map[field] = "both"
+        elif in_base:
+            application_map[field] = "base"
+        else:
+            application_map[field] = "partner"
+    if unknown_keys:
         return _emit_invalid_query(
             args=args,
             timer=timer,
             resolved=base,
-            exc=exc,
+            exc=_InvalidQuery(
+                "unknown_field",
+                (
+                    f"restriction fields {unknown_keys!r} are not in "
+                    "either operand's heading. DataJoint silently drops "
+                    "unknown-attribute restrictions, which would return "
+                    "the wrong-shape relation."
+                ),
+                unknown_fields=unknown_keys,
+                base_heading=list(base_heading_names),
+                partner_heading=list(partner_heading_names),
+            ),
+            src_root=src_root_used,
+        )
+    try:
+        _validate_blob_restrictions(base_keys, base_heading_attrs)
+        _validate_blob_restrictions(partner_keys, partner_heading_attrs)
+    except _InvalidQuery as exc:
+        return _emit_invalid_query(
+            args=args, timer=timer, resolved=base, exc=exc,
             src_root=src_root_used,
         )
 
@@ -2161,8 +2258,10 @@ def _cmd_find_instance_setop(
 
     timer.mark("query")
     try:
-        if restriction:
-            base_rel = base_rel & restriction
+        if base_keys:
+            base_rel = base_rel & base_keys
+        if partner_keys:
+            partner_rel = partner_rel & partner_keys
         if op == "intersect":
             result = base_rel & partner_rel.proj()
         elif op == "except":
@@ -2210,6 +2309,7 @@ def _cmd_find_instance_setop(
         "set_op_form": _set_op_canonical_form(op),
         "shared_attributes": shared,
         "restriction": restriction,
+        "restriction_applied_to": application_map,
         "fields": fetch_fields,
         "mode": "count" if args.count else "rows",
     }

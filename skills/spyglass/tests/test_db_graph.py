@@ -2306,6 +2306,201 @@ def fixture_e_fakes_join_validates_output_fields(
     return True
 
 
+def fixture_e_fakes_intersect_secondary_only_overlap_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """Intersect with only-secondary-field overlap is refused at preflight.
+
+    ``L & R.proj()`` projects R to its primary key, so the actual
+    operator's shared-attribute set is ``L.heading.names ∩
+    R.heading.primary_key``. A pair sharing only a non-PK field
+    (``label``) would pass a naive ``heading.names`` overlap check
+    yet fail at query time with an opaque DataJoint error. The
+    preflight must use the right overlap — pinned here.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        (tmp / "secondary_share.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "class A(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('a_id',),",
+                    "        names=('a_id', 'label'),",
+                    "        attributes={'a_id': 'int', 'label': 'varchar(32)'},",
+                    "    )",
+                    "    _rows = [{'a_id': 1, 'label': 'x'}]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                    "",
+                    "class B(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('b_id',),",
+                    "        names=('b_id', 'label'),",
+                    "        attributes={'b_id': 'int', 'label': 'varchar(32)'},",
+                    "    )",
+                    "    _rows = [{'b_id': 99, 'label': 'x'}]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                    "",
+                ]
+            )
+        )
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "secondary_share",
+                "--class",
+                "secondary_share:A",
+                "--intersect",
+                "secondary_share:B",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2 (no_shared_attributes), got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "secondary-only payload")
+    if payload is None:
+        return False
+    if payload.get("error", {}).get("kind") != "no_shared_attributes":
+        print(
+            f"  [FAIL] error.kind != 'no_shared_attributes': "
+            f"{payload.get('error', {})!r}"
+        )
+        return False
+    print(
+        "  [ok] intersect with only-secondary-field overlap refused at "
+        "preflight (overlap checked against R.proj()'s PK)"
+    )
+    return True
+
+
+def fixture_e_fakes_setop_restriction_routes_to_partner(
+    args: argparse.Namespace,
+) -> bool:
+    """A partner-only --key is applied to R, not the base.
+
+    Restricts ``--join Right --key right_only=r2``: ``right_only`` is
+    only on Right's heading. Without narrower-owner routing, the
+    restriction would be applied to Left and refused as unknown_field.
+    The fixture asserts both the routing
+    (``query.restriction_applied_to`` maps the field to "partner")
+    and that the join returns the correctly-restricted row.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_setop_sandbox(tmp)
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakesetop",
+                "--class",
+                "fakesetop:Left",
+                "--join",
+                "fakesetop:Right",
+                "--key",
+                "right_only=r2",
+                "--fields",
+                "id,label,left_only,right_only",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "partner-routed payload")
+    if payload is None:
+        return False
+    routing = payload.get("query", {}).get("restriction_applied_to", {})
+    if routing.get("right_only") != "partner":
+        print(
+            f"  [FAIL] right_only not routed to partner: {routing!r}"
+        )
+        return False
+    rows = payload.get("rows", [])
+    if len(rows) != 1 or rows[0].get("id") != 2:
+        print(f"  [FAIL] join+restriction did not narrow to id=2: {rows!r}")
+        return False
+    print(
+        "  [ok] --key right_only=r2 routed to partner; join returned "
+        "id=2 only"
+    )
+    return True
+
+
+def fixture_e_fakes_setop_failure_carries_set_op_context(
+    args: argparse.Namespace,
+) -> bool:
+    """Failure payloads from set-op invocations carry set-op fields.
+
+    A non-existent partner class triggers a not_found in the resolver.
+    The error payload must include ``query.set_op``,
+    ``set_op_partner``, and ``set_op_form`` so an LLM can act on
+    failed evidence without re-deriving the operation from CLI args.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_setop_sandbox(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakesetop",
+                "--class",
+                "fakesetop:Left",
+                "--intersect",
+                "fakesetop:NonexistentRight",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 4:
+        print(f"  [FAIL] expected rc=4 (not_found), got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "set-op failure payload")
+    if payload is None:
+        return False
+    query = payload.get("query", {})
+    if query.get("set_op") != "intersect":
+        print(f"  [FAIL] query.set_op missing: {query!r}")
+        return False
+    if query.get("set_op_partner") != "fakesetop:NonexistentRight":
+        print(f"  [FAIL] query.set_op_partner missing: {query!r}")
+        return False
+    if query.get("set_op_form") != "L & R.proj()":
+        print(
+            f"  [FAIL] query.set_op_form drift: "
+            f"{query.get('set_op_form')!r}"
+        )
+        return False
+    print(
+        "  [ok] set-op failure payload carries set_op + partner + "
+        "canonical form"
+    )
+    return True
+
+
 def fixture_e_fakes_zero_overlap_set_op_refused(
     args: argparse.Namespace,
 ) -> bool:
@@ -3942,6 +4137,9 @@ FIXTURES = [
     fixture_e_fakes_intersect_returns_shared_keys,
     fixture_e_fakes_except_returns_left_minus_right,
     fixture_e_fakes_join_validates_output_fields,
+    fixture_e_fakes_intersect_secondary_only_overlap_refused,
+    fixture_e_fakes_setop_restriction_routes_to_partner,
+    fixture_e_fakes_setop_failure_carries_set_op_context,
     fixture_e_fakes_zero_overlap_set_op_refused,
     fixture_e_fakes_group_by_table_eval19_shape,
     fixture_e_fakes_group_by_explicit_fields,
