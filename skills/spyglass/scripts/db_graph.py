@@ -686,12 +686,23 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "source_root",
         "db",
         "query",
+        # All three list fields are emitted on every path payload —
+        # ``--to`` populates ``hops`` and leaves ``nodes`` / ``edges``
+        # empty; ``--up`` / ``--down`` do the inverse. An LLM consumer
+        # can read fixed field names without mode-conditional
+        # branching.
         "hops",
         "nodes",
         "edges",
         "max_depth",
         "truncated",
         "truncated_at_depth",
+        # ``incomplete`` distinguishes "searched and no path exists"
+        # (hops empty, incomplete false) from "the traversal could
+        # not finish" (hops empty, incomplete true). ``errors``
+        # carries the per-node breakdown.
+        "incomplete",
+        "errors",
         "timings_ms",
     ],
     "info": [
@@ -1259,10 +1270,27 @@ def cmd_info(args: argparse.Namespace) -> int:
                     "with a larger cap."
                 ),
                 (
-                    "Per-node `error` records walk failures local to "
-                    "that node (DataJoint round-trip raised). The walk "
-                    "continues; one bad node does not abort the whole "
-                    "result."
+                    "ALWAYS check `incomplete` before concluding `--to` "
+                    "found no path: `hops: []` with `incomplete: false` "
+                    "means the BFS finished and no parent→child chain "
+                    "exists, but `hops: []` with `incomplete: true` "
+                    "means the traversal hit failures and the answer "
+                    "is unknown. The `errors` array lists which nodes' "
+                    "neighbor lookups raised."
+                ),
+                (
+                    "For `--up` / `--down` walks, per-node `error` is "
+                    "also surfaced on individual nodes; `incomplete` "
+                    "is true iff any node failed. The walk continues "
+                    "past a failed node — one bad metadata round-trip "
+                    "does not abort the whole result."
+                ),
+                (
+                    "All three list fields (`hops`, `nodes`, `edges`) "
+                    "appear on every payload. `--to` populates `hops` "
+                    "only; `--up` / `--down` populate `nodes` + "
+                    "`edges` only. The unused arrays are empty, not "
+                    "absent."
                 ),
                 (
                     "Returns DataJoint full table names. To map back "
@@ -2916,17 +2944,31 @@ def _bfs_walk(
 
 def _bfs_path(
     from_name: str, to_name: str, max_depth: int
-) -> tuple[list[dict], bool, int | None]:
+) -> tuple[list[dict], bool, int | None, list[dict], bool]:
     """Find a runtime parent→child path from ``from_name`` to ``to_name``.
 
-    Returns ``(hops, truncated, truncated_at_depth)``. ``hops`` is empty
-    when no path was found within ``max_depth``; otherwise it is the
-    sequence of full-table names from ``from_name`` to ``to_name``.
+    Returns ``(hops, truncated, truncated_at_depth, errors, incomplete)``.
+
+    * ``hops`` is empty when no path was found within ``max_depth``;
+      otherwise it is the sequence of full-table names from
+      ``from_name`` to ``to_name``.
+    * ``errors`` is a list of ``{"full_table_name", "error"}`` entries
+      for every node whose ``children()`` lookup raised. The walk
+      continues past those nodes — one bad neighbor lookup does not
+      abort the whole traversal.
+    * ``incomplete`` is ``True`` iff any neighbor lookup raised. This
+      is the discriminator between "searched and no path exists"
+      (``hops: [], incomplete: false``) and "the traversal was
+      incomplete" (``hops: [], incomplete: true``). An LLM consuming
+      the payload should treat the latter as "the tool does not know"
+      rather than "no path."
     """
     parent_of: dict[str, str | None] = {from_name: None}
     queue: list[tuple[str, int]] = [(from_name, 0)]
     truncated = False
     truncated_at_depth: int | None = None
+    errors: list[dict] = []
+    incomplete = False
     while queue:
         name, depth = queue.pop(0)
         if name == to_name:
@@ -2940,7 +2982,7 @@ def _bfs_path(
                 {"full_table_name": p, "depth": i}
                 for i, p in enumerate(chain)
             ]
-            return hops, False, None
+            return hops, truncated, truncated_at_depth, errors, incomplete
         if depth >= max_depth:
             if not truncated:
                 truncated = True
@@ -2948,12 +2990,14 @@ def _bfs_path(
             continue
         children, err = _path_neighbors(name, direction="children")
         if err is not None:
+            errors.append({"full_table_name": name, "error": err})
+            incomplete = True
             continue
         for child in children:
             if child not in parent_of:
                 parent_of[child] = name
                 queue.append((child, depth + 1))
-    return [], truncated, truncated_at_depth
+    return [], truncated, truncated_at_depth, errors, incomplete
 
 
 def _resolve_path_class(
@@ -3044,9 +3088,13 @@ def cmd_path(args: argparse.Namespace) -> int:
                 resolved=from_resolved,
             )
         timer.mark("query")
-        hops, truncated, truncated_at_depth = _bfs_path(
-            from_full, to_full, args.max_depth
-        )
+        (
+            hops,
+            truncated,
+            truncated_at_depth,
+            errors,
+            incomplete,
+        ) = _bfs_path(from_full, to_full, args.max_depth)
         payload = _stamp_envelope("path", source_root=from_resolved.src_root)
         payload["db"] = _build_db_envelope()
         payload["query"] = {
@@ -3060,10 +3108,23 @@ def cmd_path(args: argparse.Namespace) -> int:
             "to_full_table_name": to_full,
             "mode": "to",
         }
+        # Always emit hops / nodes / edges even when one mode produces
+        # only a subset, so an LLM can read fixed field names without
+        # mode-conditional branching. ``--to`` populates ``hops``;
+        # ``--up`` / ``--down`` populate ``nodes`` + ``edges``.
         payload["hops"] = hops
+        payload["nodes"] = []
+        payload["edges"] = []
         payload["max_depth"] = args.max_depth
         payload["truncated"] = truncated
         payload["truncated_at_depth"] = truncated_at_depth
+        # ``incomplete`` is the canonical "the traversal could not
+        # finish" flag. Distinct from ``hops: []`` alone, which on a
+        # complete walk means "no path exists." LLMs consuming the
+        # payload should always check ``incomplete`` before drawing
+        # the "no path" conclusion.
+        payload["incomplete"] = incomplete
+        payload["errors"] = errors
         payload["timings_ms"] = timer.finalize()
         print(json.dumps(payload))
         return EXIT_OK
@@ -3093,6 +3154,16 @@ def cmd_path(args: argparse.Namespace) -> int:
     nodes, edges, truncated, truncated_at_depth = _bfs_walk(
         full_name, direction=direction, max_depth=args.max_depth
     )
+    # ``incomplete`` for walks: True iff any node accumulated a per-node
+    # error from a failed neighbor lookup. Mirrors the ``--to`` flag so
+    # an LLM can use the same "always check before concluding" rule
+    # across all path modes.
+    walk_errors = [
+        {"full_table_name": n["full_table_name"], "error": n["error"]}
+        for n in nodes
+        if n.get("error")
+    ]
+    incomplete = bool(walk_errors)
     payload = _stamp_envelope("path", source_root=resolved.src_root)
     payload["db"] = _build_db_envelope()
     payload["query"] = {
@@ -3103,11 +3174,15 @@ def cmd_path(args: argparse.Namespace) -> int:
         "full_table_name": full_name,
         "mode": walk_kind,
     }
+    # Always emit hops / nodes / edges (see --to branch above for why).
+    payload["hops"] = []
     payload["nodes"] = nodes
     payload["edges"] = edges
     payload["max_depth"] = args.max_depth
     payload["truncated"] = truncated
     payload["truncated_at_depth"] = truncated_at_depth
+    payload["incomplete"] = incomplete
+    payload["errors"] = walk_errors
     payload["timings_ms"] = timer.finalize()
     print(json.dumps(payload))
     return EXIT_OK

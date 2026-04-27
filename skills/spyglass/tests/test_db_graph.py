@@ -4786,6 +4786,158 @@ def fixture_g_fakes_path_max_depth_truncates(
     return True
 
 
+def fixture_g_fakes_path_to_incomplete_when_traversal_errors(
+    args: argparse.Namespace,
+) -> bool:
+    """``--to`` distinguishes "no path exists" from "traversal incomplete".
+
+    Builds the A → B → C chain, then patches the fake datajoint
+    FreeTable so ``children()`` raises for ``fakepath.a``. The BFS
+    starts at A, fails to expand it, and reports ``hops: []`` —
+    indistinguishable from "no path" without the new ``incomplete``
+    discriminator. The fixture asserts ``incomplete: true`` plus an
+    ``errors`` entry pointing at the failed node, so an LLM can tell
+    the two cases apart.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_path_sandbox(tmp)
+        # Append a poison module that monkeypatches FreeTable.children
+        # to raise when called on fakepath.a. Importing this module
+        # via --import installs the monkeypatch before db_graph's
+        # path BFS calls FreeTable.
+        (tmp / "poison_fakepath_a.py").write_text(
+            "\n".join(
+                [
+                    "import datajoint as dj",
+                    "",
+                    "_orig_children = dj.FreeTable.children",
+                    "",
+                    "def _patched_children(self):",
+                    "    if self.full_table_name == 'fakepath.a':",
+                    "        raise RuntimeError("
+                    "'synthetic neighbor lookup failure for fakepath.a')",
+                    "    return _orig_children(self)",
+                    "",
+                    "dj.FreeTable.children = _patched_children",
+                ]
+            )
+        )
+        rc, out, err = _run_db_graph(
+            [
+                "path",
+                "--to",
+                "fakepath:A",
+                "fakepath:C",
+                "--import",
+                "fakepath",
+                "--import",
+                "poison_fakepath_a",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "path --to incomplete payload")
+    if payload is None:
+        return False
+    if payload.get("hops") != []:
+        print(
+            f"  [FAIL] hops should be empty (BFS could not reach C): "
+            f"{payload.get('hops')!r}"
+        )
+        return False
+    if payload.get("incomplete") is not True:
+        print(
+            f"  [FAIL] incomplete should be True (BFS hit a failure): "
+            f"{payload.get('incomplete')!r}"
+        )
+        return False
+    errors = payload.get("errors", [])
+    err_names = [e.get("full_table_name") for e in errors]
+    if "fakepath.a" not in err_names:
+        print(
+            f"  [FAIL] errors should include fakepath.a; got "
+            f"{err_names!r}"
+        )
+        return False
+    print(
+        "  [ok] path --to: traversal failure at fakepath.a → hops:[], "
+        "incomplete:true, errors lists the failed node"
+    )
+    return True
+
+
+def fixture_g_fakes_path_walk_incomplete_when_neighbor_errors(
+    args: argparse.Namespace,
+) -> bool:
+    """``--down`` walks set incomplete=true when a node's children() raises."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        _setup_path_sandbox(tmp)
+        (tmp / "poison_fakepath_b.py").write_text(
+            "\n".join(
+                [
+                    "import datajoint as dj",
+                    "",
+                    "_orig_children = dj.FreeTable.children",
+                    "",
+                    "def _patched_children(self):",
+                    "    if self.full_table_name == 'fakepath.b':",
+                    "        raise RuntimeError("
+                    "'synthetic neighbor lookup failure for fakepath.b')",
+                    "    return _orig_children(self)",
+                    "",
+                    "dj.FreeTable.children = _patched_children",
+                ]
+            )
+        )
+        rc, out, _ = _run_db_graph(
+            [
+                "path",
+                "--down",
+                "fakepath:A",
+                "--import",
+                "fakepath",
+                "--import",
+                "poison_fakepath_b",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "path walk-incomplete payload")
+    if payload is None:
+        return False
+    if not payload.get("incomplete"):
+        print(
+            f"  [FAIL] incomplete should be True: "
+            f"{payload.get('incomplete')!r}"
+        )
+        return False
+    errors = payload.get("errors", [])
+    err_names = [e.get("full_table_name") for e in errors]
+    if "fakepath.b" not in err_names:
+        print(
+            f"  [FAIL] errors should include fakepath.b; got "
+            f"{err_names!r}"
+        )
+        return False
+    nodes_by_name = {n["full_table_name"]: n for n in payload.get("nodes", [])}
+    if not nodes_by_name.get("fakepath.b", {}).get("error"):
+        print("  [FAIL] node fakepath.b should have a non-null error")
+        return False
+    print(
+        "  [ok] path --down: per-node error + top-level errors + "
+        "incomplete=true on neighbor failure"
+    )
+    return True
+
+
 def fixture_g_path_advertised_in_info(
     args: argparse.Namespace,
 ) -> bool:
@@ -5024,6 +5176,8 @@ FIXTURES = [
     fixture_g_fakes_path_up_walks_ancestors,
     fixture_g_fakes_path_down_walks_descendants,
     fixture_g_fakes_path_max_depth_truncates,
+    fixture_g_fakes_path_to_incomplete_when_traversal_errors,
+    fixture_g_fakes_path_walk_incomplete_when_neighbor_errors,
     fixture_g_path_advertised_in_info,
     fixture_g_eval_path_session_descendants,
     # Batch D — live Spyglass evals
