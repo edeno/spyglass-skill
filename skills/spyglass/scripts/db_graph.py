@@ -64,6 +64,7 @@ import argparse
 import importlib
 import inspect
 import json
+import math
 import os
 import sys
 import time
@@ -1693,8 +1694,6 @@ def _parse_scalar_value(raw: str) -> str | int | float | bool:
     # ``Infinity``, which break LLM consumers that pipe through
     # strict JSON parsers. Refuse them here so the contract stays
     # ``allow_nan=False``-compatible end-to-end.
-    import math
-
     if not math.isfinite(parsed_float):
         raise _InvalidQuery(
             "non_finite_restriction",
@@ -1743,8 +1742,36 @@ def _parse_key_args(
                     field=field,
                 )
             if flag == "--key-json":
+                # ``parse_constant`` fires on bare ``NaN``, ``Infinity``,
+                # and ``-Infinity`` tokens — Python's ``json.loads``
+                # accepts them by default, but the tool's contract is
+                # strict-JSON end-to-end, and DataJoint cannot restrict
+                # on non-finite floats. Reject at parse time so the
+                # error surfaces as a structured invalid_query rather
+                # than as a downstream serialization failure. Bind the
+                # loop's ``field`` / ``value`` as defaults so the
+                # closure captures the current iteration, not the
+                # final loop value.
+                def _refuse_constant(
+                    token: str,
+                    *,
+                    field: str = field,
+                    value: str = value,
+                ) -> object:
+                    raise _InvalidQuery(
+                        "non_finite_restriction",
+                        (
+                            f"--key-json {field}=... contains the JSON "
+                            f"constant {token!r}; DataJoint cannot "
+                            "restrict on NaN / Inf and the value would "
+                            "emit non-strict JSON."
+                        ),
+                        field=field,
+                        received=value,
+                    )
+
                 try:
-                    parsed = json.loads(value)
+                    parsed = json.loads(value, parse_constant=_refuse_constant)
                 except json.JSONDecodeError as exc:
                     raise _InvalidQuery(
                         "malformed_key",
@@ -1769,10 +1796,46 @@ def _parse_key_args(
                         field=field,
                         received=value,
                     )
+                # ``json.loads`` with the default ``parse_float=float``
+                # also accepts numerics like ``1e999`` that overflow to
+                # ``inf`` after parsing. Walk the structure so a
+                # non-finite buried inside an object/array still gets
+                # refused.
+                _refuse_non_finite(parsed, field=field, received=value)
                 out[field] = parsed
             else:
                 out[field] = _parse_scalar_value(value)
     return out
+
+
+def _refuse_non_finite(value: object, *, field: str, received: str) -> None:
+    """Raise ``_InvalidQuery`` if ``value`` contains a non-finite float.
+
+    ``json.loads`` accepts overflow literals (``1e999`` → ``inf``) even
+    with the default float parser, and ``parse_constant`` only catches
+    bare ``NaN`` / ``Infinity`` tokens. Walk objects and arrays so a
+    non-finite value at any depth is refused rather than emitted in the
+    payload as non-strict JSON.
+    """
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise _InvalidQuery(
+                "non_finite_restriction",
+                (
+                    f"--key-json {field}=... contains a non-finite "
+                    f"float ({value}); DataJoint cannot restrict on "
+                    "NaN / Inf and the value would emit non-strict JSON."
+                ),
+                field=field,
+                received=received,
+            )
+        return
+    if isinstance(value, dict):
+        for v in value.values():
+            _refuse_non_finite(v, field=field, received=received)
+    elif isinstance(value, list):
+        for v in value:
+            _refuse_non_finite(v, field=field, received=received)
 
 
 def _parse_fields_arg(fields_raw: str) -> list[str]:
@@ -1899,8 +1962,6 @@ def _safe_serialize_value(value: object) -> object:
         return value
     if isinstance(value, float):
         # NaN / inf are not JSON-representable; substitute structured envelope.
-        import math
-
         if math.isnan(value) or math.isinf(value):
             return {
                 "_unserializable": True,
@@ -2260,9 +2321,18 @@ def _cmd_find_instance_merge(
             fetched_rows: list[dict] = []
             truncated = False
         else:
-            # Fetch limit+1 master-key tuples from the restricted part
-            # to detect truncation in one round-trip.
-            fetched_master_keys = restricted_part.fetch(
+            # Paginate from the master-key PROJECTION of the restricted
+            # part — projecting collapses duplicate part rows that share
+            # a master key, so an underfilled page can never hide
+            # distinct master IDs that would have fit under ``--limit``.
+            # (Paginating raw part rows would: 150 part rows for the
+            # same merge_id followed by one row for a different
+            # merge_id would fill the page with the first merge_id and
+            # silently drop the second.)
+            distinct_master_keys_rel = restricted_part.proj(
+                *master_key_fields
+            )
+            fetched_master_keys = distinct_master_keys_rel.fetch(
                 *master_key_fields, as_dict=True, limit=args.limit + 1
             )
             truncated = len(fetched_master_keys) > args.limit

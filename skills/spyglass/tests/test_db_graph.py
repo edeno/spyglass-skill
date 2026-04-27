@@ -2116,6 +2116,183 @@ def fixture_d_fakes_merge_ids_dedup_when_part_rows_share_master(
     return True
 
 
+def fixture_d_fakes_merge_rows_pagination_dedupes_master_keys(
+    args: argparse.Namespace,
+) -> bool:
+    """Merge ``rows`` mode paginates DISTINCT master keys, not raw part
+    rows. A duplicate-heavy part can otherwise hide distinct master
+    IDs that would have fit under ``--limit``.
+
+    Fixture: 150 part rows for ``m-1`` followed by a single part row
+    for ``m-2``. With the old behavior, paginating raw part rows
+    fills the page with m-1 (limit=100) and silently drops m-2 from
+    the user-visible rows / merge_ids. Expectation:
+
+    * ``count == 2`` (true distinct master count).
+    * ``len(rows) == 2`` (both m-1 and m-2 returned).
+    * ``len(merge_ids) == 2`` (both deduped master keys).
+    * ``truncated`` is False because the distinct master set fits.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.prepare_sandbox(tmp)
+        part_rows = ", ".join(
+            [
+                f"{{'merge_id': 'm-1', 'subject_id': 'aj80', "
+                f"'epoch': '{i:02d}'}}"
+                for i in range(150)
+            ]
+            + [
+                "{'merge_id': 'm-2', 'subject_id': 'aj80', 'epoch': '01'}"
+            ]
+        )
+        (tmp / "fakemerge_skew.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual, Part",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "class MasterMerge(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('merge_id',),",
+                    "        names=('merge_id',),",
+                    "        attributes={'merge_id': 'uuid'},",
+                    "    )",
+                    "    _rows = [",
+                    "        {'merge_id': 'm-1'}, {'merge_id': 'm-2'},",
+                    "    ]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                    "",
+                    "class PartA(Part):",
+                    "    master = MasterMerge",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('merge_id', 'epoch'),",
+                    "        names=('merge_id', 'subject_id', 'epoch'),",
+                    "        attributes={",
+                    "            'merge_id': 'uuid',",
+                    "            'subject_id': 'varchar(8)',",
+                    "            'epoch': 'varchar(32)',",
+                    "        },",
+                    "    )",
+                    f"    _rows = [{part_rows}]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                ]
+            )
+        )
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakemerge_skew",
+                "--merge-master",
+                "fakemerge_skew:MasterMerge",
+                "--part",
+                "fakemerge_skew:PartA",
+                "--key",
+                "subject_id=aj80",
+                "--fields",
+                "KEY",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "merge skew payload")
+    if payload is None:
+        return False
+    if payload.get("count") != 2:
+        print(f"  [FAIL] count != 2: {payload.get('count')!r}")
+        return False
+    rows = payload.get("rows", [])
+    row_ids = sorted({r.get("merge_id") for r in rows})
+    if row_ids != ["m-1", "m-2"]:
+        print(
+            f"  [FAIL] rows hide distinct master IDs: row_ids={row_ids!r}"
+        )
+        return False
+    merge_ids = payload.get("merge", {}).get("merge_ids", [])
+    mid_values = sorted({m.get("merge_id") for m in merge_ids})
+    if mid_values != ["m-1", "m-2"]:
+        print(
+            f"  [FAIL] merge_ids hide distinct master IDs: {mid_values!r}"
+        )
+        return False
+    if payload.get("truncated"):
+        print(
+            f"  [FAIL] distinct master set fits under --limit; "
+            f"truncated should be False, got "
+            f"{payload.get('truncated')!r}"
+        )
+        return False
+    print(
+        "  [ok] merge rows mode paginates distinct master keys "
+        "(150×m-1 + 1×m-2 → both surfaced under default --limit)"
+    )
+    return True
+
+
+def fixture_c_keyjson_non_finite_value_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """``--key-json`` rejects NaN, Infinity, ``-Infinity``, and overflow
+    literals (``1e999``) at any depth.
+
+    ``json.loads`` accepts these by default, but the tool's contract is
+    strict-JSON end-to-end and DataJoint cannot restrict on non-finite
+    floats. Pin all four shapes so a future relaxation cannot let
+    non-finite values through silently.
+    """
+    cases = [
+        ("x=NaN", "NaN"),
+        ("x=Infinity", "Infinity"),
+        ("x=-Infinity", "-Infinity"),
+        ("x=1e999", "overflow literal 1e999"),
+        ('x={"nested":NaN}', "nested NaN"),
+    ]
+    for value, label in cases:
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--class",
+                "json:JSONDecoder",
+                "--key-json",
+                value,
+            ],
+            python_env=args.python_env,
+        )
+        if rc != 2:
+            print(f"  [FAIL] {label}: expected rc=2, got {rc}")
+            return False
+        payload = _parse_json_or_fail(out, f"non-finite payload for {label}")
+        if payload is None:
+            return False
+        if payload.get("error", {}).get("kind") != "non_finite_restriction":
+            print(
+                f"  [FAIL] {label}: error.kind != 'non_finite_restriction': "
+                f"{payload.get('error', {})!r}"
+            )
+            return False
+    print(
+        "  [ok] --key-json refuses NaN / Infinity / -Infinity / 1e999 / "
+        "nested NaN with kind=non_finite_restriction"
+    )
+    return True
+
+
 def fixture_d_fakes_merge_master_only_field_silent_no_op_refused(
     args: argparse.Namespace,
 ) -> bool:
@@ -5573,6 +5750,7 @@ FIXTURES = [
     fixture_d_fakes_merge_routes_part_only_field_to_part,
     fixture_d_fakes_merge_count_unbounded_by_limit,
     fixture_d_fakes_merge_ids_dedup_when_part_rows_share_master,
+    fixture_d_fakes_merge_rows_pagination_dedupes_master_keys,
     fixture_d_fakes_merge_master_only_field_silent_no_op_refused,
     fixture_d_fakes_merge_part_master_mismatch_exits_3,
     fixture_d_fakes_merge_count_only,
@@ -5625,6 +5803,7 @@ FIXTURES = [
     fixture_c_blob_restriction_refused,
     fixture_c_null_key_value_refused,
     fixture_c_null_keyjson_value_refused,
+    fixture_c_keyjson_non_finite_value_refused,
     fixture_c_fields_key_mixed_with_explicit_fields_refused,
     fixture_c_malformed_key_argument_refused,
     fixture_c_unknown_fetch_field_refused,
