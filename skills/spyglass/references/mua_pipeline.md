@@ -16,12 +16,12 @@ Detects multi-unit high-synchrony events (population bursts) from sorted spike d
 from spyglass.mua.v1 import MuaEventsV1, MuaEventsParameters
 ```
 
-MUA detection uses the same `ripple_detection` library as ripple detection (`multiunit_HSE_detector`), so the caveat about estimating the detection baseline on enough data applies here too — see [ripple_pipeline.md](ripple_pipeline.md) for the same shape of gotcha.
+MUA detection uses the same `ripple_detection` library as ripple detection (`multiunit_HSE_detector`). `MuaEventsV1.make()` runs the detector only over samples inside `detection_interval` (`mua/v1/mua.py:100, 111`); the z-score baseline and event-rate threshold are estimated on those samples. Too-short, sparse-spike, or otherwise unrepresentative `detection_interval` choices skew the z-scoring and the resulting event set — pick an interval long enough that the baseline statistics are stable, and don't reuse one that overlaps poorly with the spike data. Same shape of gotcha as ripple detection — see [ripple_pipeline.md](ripple_pipeline.md).
 
 **Prerequisites** — `MuaEventsV1` depends on three populated upstream tables, plus a named detection interval:
 
 - `SortedSpikesGroup` — sorted spikes aggregated into a group, see [spikesorting_v1_pipeline.md](spikesorting_v1_pipeline.md).
-- `PositionOutput` — per-session position merge key, see [position_pipeline.md](position_pipeline.md).
+- A populated `PositionOutput` row (the FK is renamed to `pos_merge_id` — see "renamed FKs" below). `pos_merge_id` identifies one specific computed position row, including its **source / interval / params**, not just the session — restrict by the full upstream key (e.g. `nwb_file_name + interval_list_name + trodes_pos_params_name` for Trodes, or the equivalent DLC tuple) when fetching the merge_id, not by `nwb_file_name` alone. The source must also be one whose `fetch1_dataframe()` returns a `speed` or `head_speed` column — `MuaEventsV1.get_speed()` reads `"speed" if "speed" in position_info.columns else "head_speed"` (`mua/v1/mua.py:144-150`). `TrodesPosV1` and `DLCPosV1` qualify; `ImportedPose` does not (it exposes `fetch_pose_dataframe()` instead). See [position_pipeline.md](position_pipeline.md).
 - `IntervalList` — a named interval (passed as `detection_interval`, FK-renamed from `interval_list_name`).
 
 ## Pipeline Flow
@@ -62,7 +62,7 @@ Source: [`src/spyglass/mua/v1/mua.py`](https://github.com/LorenFrankLab/spyglass
 
 ## Canonical Example
 
-Mirrors `50_MUA_Detection.ipynb`. Assumes `SortedSpikesGroup` and `PositionOutput` (via Trodes or DLC) are already populated.
+Mirrors `50_MUA_Detection.ipynb`. Assumes `SortedSpikesGroup` and `PositionOutput` are already populated. The PositionOutput source must be one whose `fetch1_dataframe()` returns a `speed` or `head_speed` column — `TrodesPosV1` or `DLCPosV1` (see prerequisites above for why `ImportedPose` doesn't qualify).
 
 ```python
 from spyglass.mua.v1 import MuaEventsV1, MuaEventsParameters
