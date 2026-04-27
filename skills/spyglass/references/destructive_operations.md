@@ -27,7 +27,7 @@ Build the restricted relation; do not call the destructive helper yet.
 - `print(len(rel_to_delete))` — row count.
 - If the count is `0`, stop. The restriction didn't match what the user thinks it did; almost always a bug in the PK fields.
 - If the count is *unexpectedly large*, stop and ask whether the restriction is right before proceeding.
-- For merge tables, also preview the affected part tables (`(MergeTable & key).parts()`, then inspect each part via `merge_get_part`).
+- For merge tables, preview the affected part rows. **`(MergeTable & key).parts()` is NOT restriction-aware** — `parts()` returns every declared part regardless of the restriction (DataJoint structural metadata; see `utils/dj_merge_tables.py:95`). Use `MergeTable().merge_restrict(key)` (returns the union of restricted parts as a DataJoint relation) or `MergeTable().merge_get_part(key)` (returns the specific part class for a single matched row), and count rows on each.
 
 ### Phase 2 — Report
 

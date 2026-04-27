@@ -33,7 +33,7 @@ worked example with `len(...)` demonstration, plus the canonical
 
 ## 2. Too-loose restriction + `fetch1()`
 
-`{"nwb_file_name": f}` alone usually matches many rows — every interval, every param set, every pipeline version for that session. `fetch1()`, `merge_get_part()`, and `fetch1_dataframe()` all raise "expected one row, got N" under an under-specified restriction. The decoding-only `DecodingOutput.fetch_results()` shares this behavior since it wraps `fetch1()` internally — but it is decoding-specific, not a universal helper.
+`{"nwb_file_name": f}` alone usually matches many rows — every interval, every param set, every pipeline version for that session. `fetch1()`, `merge_get_part()`, and `fetch1_dataframe()` all raise `DataJointError: expected one row, got N` under an under-specified restriction. `DecodingOutput.fetch_results()` raises a *different* error class for the same diagnostic shape — `ValueError: Ambiguous entry...` — because it routes through `merge_restrict_class` (`utils/dj_merge_tables.py:770`), not `fetch1()`. Same fix, different exception type to pattern-match on.
 
 **Fix.** Add enough primary-key fields to pick exactly one row. Discovery pattern: restrict loosely first, inspect with `.fetch(as_dict=True)` or `MergeTable.merge_restrict(key)`, then build a fully-specified key. Full footgun and fix: [datajoint_api.md](datajoint_api.md).
 

@@ -165,7 +165,7 @@ Two non-obvious behaviors:
 - **"Session already exists"**: pass `reinsert=True`, or delete the existing `Nwbfile` row first.
 - **Device/probe not in lookup table**: pre-insert `ProbeType`, `Probe`, `DataAcquisitionDevice` etc. with `skip_duplicates=True` before ingestion.
 - **Partial ingestion after failure**: if `rollback_on_fail=False` (default) and something failed midway, some tables have entries and some don't. Easiest recovery: `rollback_on_fail=True` on a retry, or manually delete the `Nwbfile` entry and its downstream cascades.
-- **Extension not registered**: NWB extensions (`ndx-franklab-novela`, `ndx-pose`) must be importable. They're installed with Spyglass's core deps.
+- **Extension not registered**: NWB extensions (`ndx-franklab-novela`, `ndx-optogenetics`, `ndx-ophys-devices`, `ndx-pose`; see `pyproject.toml:53-56`) must be importable. They're installed with Spyglass's core deps.
 - **"A different version of X.nwb has already been placed"** or
   **"downloaded but did not pass checksum"**: DataJoint tracks
   content-hash for external-store files. Deleting the NWB with plain

@@ -31,7 +31,7 @@ data = lfp_series.data[:]
 timestamps = lfp_series.timestamps[:]
 ```
 
-NWB extensions used: `ndx-franklab-novela` (Franklab metadata), `ndx-pose` (pose estimation data).
+NWB extensions used (current `pyproject.toml:53-56`): `ndx-franklab-novela>=0.2.4` (Franklab metadata), `ndx-optogenetics==0.3.0`, `ndx-ophys-devices`, `ndx-pose` (pose estimation data).
 
 ### SpikeInterface
 

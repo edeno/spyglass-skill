@@ -399,8 +399,9 @@ import pynwb   # and whatever else uses HDF5
 ```
 
 The separate "`pynwb` version too old" failure in the same area —
-`AttributeError` on `TimeSeries.get_timestamps` — needs `pynwb>=2.5.0`
-(check `pyproject.toml` / `setup.cfg` for the current floor). Upgrade
-your env (`pip install -U pynwb`) if you're on 2.2.x.
+`AttributeError` on `TimeSeries.get_timestamps` — needs the floor
+specified in `pyproject.toml` (currently `pynwb>=3.1.3` at line 65;
+verify on your install). Upgrade your env (`pip install -U pynwb`)
+if you're below the floor.
 
 For more troubleshooting guidance, see `docs/src/GettingStarted/TROUBLESHOOTING.md` and `docs/src/GettingStarted/DATABASE.md` in the repository.

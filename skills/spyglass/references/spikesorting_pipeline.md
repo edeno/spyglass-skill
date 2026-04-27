@@ -37,6 +37,15 @@ Use v1 for new work. If you're reading v0 code or querying existing v0 sortings,
 
 End-to-end v1 flow: recording → artifact detection (optional) → sorting → curation → publish to `SpikeSortingOutput`. Each step uses the `insert_selection()` classmethod convention to generate UUIDs and validate keys — calling `.insert1()` directly on a v1 Selection table skips that validation.
 
+**Return-value gotcha — `insert_selection` is rerun-tolerant.** Both
+`SpikeSortingRecordingSelection.insert_selection` and
+`SpikeSortingSelection.insert_selection` return a single key **dict**
+when they insert a fresh row, but a **list of dicts** when a matching
+row is already present (`recording.py:176-182`,
+`sorting.py:222-228`). Splatting the result with `**rec_key` blows up
+on rerun. Normalize to a single dict before reuse — pull the first
+element when the function returned a list.
+
 ```python
 from spyglass.spikesorting.v1 import (
     SortGroup,
@@ -46,40 +55,43 @@ from spyglass.spikesorting.v1 import (
 )
 from spyglass.spikesorting.spikesorting_merge import SpikeSortingOutput
 
+def _one(result):
+    """Normalize insert_selection's (dict | list[dict]) return to a dict."""
+    return result[0] if isinstance(result, list) else result
+
 # 1. Group electrodes by shank (warning: overwrites existing groups for
 #    this session — cascades to downstream sorts; see doc #11 gotcha).
 SortGroup().set_group_by_shank(nwb_file_name=nwb_file)
 
 # 2. Recording preprocessing
-rec_key = SpikeSortingRecordingSelection.insert_selection({
+rec_key = _one(SpikeSortingRecordingSelection.insert_selection({
     "nwb_file_name": nwb_file, "sort_group_id": 0,
     "interval_list_name": interval_name,
     "preproc_param_name": "default", "team_name": "my_team",
-})
+}))
 SpikeSortingRecording.populate(rec_key)
 
 # 3. Sort. `sorter_params` is sorter-specific — mountainsort5 params do
 #    NOT interchange with kilosort / ironclust. Use the paired defaults
 #    in SpikeSorterParameters.
-sort_key = SpikeSortingSelection.insert_selection({
+sort_key = _one(SpikeSortingSelection.insert_selection({
     **rec_key,                # carries interval_list_name already
     "sorter": "mountainsort4",
     "sorter_param_name": "franklab_tetrode_hippocampus_30KHz",
-})
+}))
 SpikeSorting.populate(sort_key)
 
-# 4. Register an initial curation (no edits — just anchors the sort_id)
-curation_id = CurationV1.insert_curation(
-    sorting_id=sort_key["sorting_id"], description="initial"
+# 4. Register an initial curation (no edits — just anchors the sort_id).
+#    `insert_curation` returns the FULL key dict, not a scalar id
+#    (`spikesorting/v1/curation.py:117-128`).
+curation_key = CurationV1.insert_curation(
+    sorting_id=sort_key["sorting_id"], description="initial",
 )
 
 # 5. Publish to the merge table. `insert` takes a LIST of dicts (not a
 #    bare dict — that raises TypeError). Use `part_name` to pick which
 #    part table's parent to look the row up in.
-merge_insert_key = (CurationV1 & {"sorting_id": sort_key["sorting_id"],
-                                   "curation_id": curation_id}).fetch(
-    "KEY", as_dict=True
-)
+merge_insert_key = (CurationV1 & curation_key).fetch("KEY", as_dict=True)
 SpikeSortingOutput.insert(merge_insert_key, part_name="CurationV1")
 
 # 6. Downstream: get spike times via the merge
@@ -282,14 +294,13 @@ metrics even if `insert_curation` didn't store them.**
 `CurationV1.insert_curation(..., labels=None)` writes no
 `curation_label` column to the analysis NWB. Downstream,
 `FigURLCurationSelection.generate_curation_uri` reads that column
-unconditionally and raises `KeyError: 'curation_label'`.
+and — when it's absent — raises `ValueError: Sorting object must have
+a 'curation_label' column ...` (`spikesorting/v1/figurl_curation.py:87-93`).
 
-Workaround: pass explicit labels to `insert_curation`, OR generate
+Workaround: pass explicit labels to `insert_curation` (an empty
+labels dict per unit is enough to materialize the column), OR generate
 figurl only from a curation that has metrics attached (i.e. one
-inserted from `MetricCuration`). On a Spyglass that initializes
-`curation_label` unconditionally (check `CurationV1.insert_curation`
-in `spikesorting/v1/curation.py`), the workaround is unnecessary —
-upgrade if your install still raises on this path.
+inserted from `MetricCuration`).
 
 ## Step 5: Quality Metrics (Optional)
 

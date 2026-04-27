@@ -138,8 +138,15 @@ from spyglass.common.common_interval import (
     intervals_by_length,       # filter by min/max duration
 )
 
-# Example: ripple intervals AND task intervals, ≥ 50 ms only
-ripples = (RippleTimesV1 & key).fetch1("ripple_times")
+# Example: ripple intervals AND task intervals, ≥ 50 ms only.
+# `RippleTimesV1` stores the ripple intervals as an NWB object — only
+# `ripple_times_object_id` is on the heading (`ripple/v1/ripple.py:189`);
+# the per-row dataframe comes via `fetch1_dataframe()` /
+# `fetch_dataframe()` (`ripple.py:240, 245`), each row of which has
+# `start_time` / `end_time` columns. Convert to (start, end) pairs
+# before passing into `interval_list_intersect`.
+ripple_df = (RippleTimesV1 & key).fetch1_dataframe()
+ripples = ripple_df[["start_time", "end_time"]].to_numpy()
 task = (IntervalList & {"nwb_file_name": f, "interval_list_name": "run1"}
         ).fetch1("valid_times")
 

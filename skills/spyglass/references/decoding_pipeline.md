@@ -255,10 +255,14 @@ from spyglass.decoding.v1.waveform_features import (
 ### Running Clusterless Decoding
 
 ```python
+# decoding_param_name is version-suffixed at module-import time
+# (decoding/v1/core.py:48). Build it from the runtime version constant
+# rather than hard-coding a bare prefix.
+from non_local_detector import __version__ as non_local_detector_version
 selection_key = {
     "waveform_features_group_name": features_group_name,
     "position_group_name": position_group_name,
-    "decoding_param_name": "contfrag_clusterless",
+    "decoding_param_name": f"contfrag_clusterless_{non_local_detector_version}",
     "encoding_interval": encoding_interval_name,
     "decoding_interval": decoding_interval_name,
     "estimate_decoding_params": 0,

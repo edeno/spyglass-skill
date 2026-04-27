@@ -131,12 +131,14 @@ Loads shared schemas for graph traversal (needed for `restrict_by` across schema
 Populate computed table entries. Defined at `src/spyglass/utils/mixins/populate.py:48` as a superset of `datajoint.Table.populate` that adds before/after upstream-hash checking and parallel process support.
 
 Kwargs the mixin handles directly (popped before delegating to DataJoint):
-- `processes` (default `1`) — number of worker processes. Only honored when the table sets `_parallel_make = True` on the class; otherwise falls through to single-process populate. Must use `use_transaction=True` with `processes > 1` (enforced; otherwise raises `RuntimeError`).
+- `processes` (default `1`) — number of worker processes. Routes two ways depending on the class flag at `populate.py:95`:
+  - **`_parallel_make = False` (the default), transaction mode on** → passed through to `datajoint.Table.populate` via `kwargs["processes"] = processes`; DataJoint's own pool runs the parallelism. (Confirmed at `populate.py:95-98`.)
+  - **`_parallel_make = True`, `processes > 1`** → mixin uses its own `NonDaemonPool` so child processes can themselves spawn pools (needed when `make()` calls multiprocessing internally). Must run under `use_transaction=True`; otherwise raises `RuntimeError`.
 - `use_transaction` (default: class `_use_transaction`, usually `True`) — wraps each `make()` in a DB transaction so a mid-populate failure rolls back cleanly. Set `False` only for tables with long-running `make()` bodies that can't hold a transaction; then the mixin does a manual upstream-hash check and deletes any rows that were inserted into a table whose parents changed during the run.
 
 Kwargs passed through to `datajoint.Table.populate`:
 - `reserve_jobs=True` — acquire a row in the `~jobs` table before each `make()` so parallel workers don't duplicate work. Required when running multiple `populate()` processes in different terminals against the same table.
-- `suppress_errors=True` — continue on `make()` exceptions, logging into `~jobs` instead of raising. Pair with a follow-up `Table().fetch_jobs(status="error")` to inspect failures.
+- `suppress_errors=True` — continue on `make()` exceptions, logging into `~jobs` instead of raising. Inspect failures via DataJoint's job-table API: `(schema.jobs & {"table_name": "<table>", "status": "error"})` (no `Table().fetch_jobs(...)` helper exists in Spyglass).
 - `display_progress=True` — show a tqdm bar over the key set.
 - `limit=N` — process at most N keys from the key source.
 - Positional `*restrictions` — each is applied to `key_source` before fetching keys to populate.

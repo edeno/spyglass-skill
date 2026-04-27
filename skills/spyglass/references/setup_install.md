@@ -211,10 +211,12 @@ Frank Lab.
 - Renaming the conda env: edit the `name:` field at the top of
   `environments/environment.yml` before running `mamba env create`;
   the default name is `spyglass`.
-- If you use `numba`-backed code (e.g. ripple detection, some
-  decoding paths) on numpy >= 1.24, pin `numpy<1.24` until the
-  relevant numba version catches up. `environment.yml` handles this;
-  piecemeal pip installs don't.
+- `numpy` is unpinned in current Spyglass (`pyproject.toml:58`,
+  `environments/environment.yml:26`). The historical `numpy<1.24`
+  numba-compat workaround is no longer applied at the env-file level;
+  if a numba-dependent module (ripple detection, some decoding paths)
+  raises a numba-vs-numpy ABI error, check that module's own pin or
+  upgrade it rather than reaching for `numpy<1.24` blindly.
 - Validate after install: `python scripts/validate.py`.
 
 ## Installer and Validator Scripts
