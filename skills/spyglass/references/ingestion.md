@@ -38,8 +38,16 @@ Before calling `insert_sessions`:
 ```python
 from spyglass.common import ProbeType
 
+# `probe_description` is required (`common/common_device.py:344`); the
+# canonical insert in 02_Insert_Data.ipynb provides it. Omitting it
+# raises a DataJointError on the insert.
 ProbeType.insert1(
-    {"probe_type": "128c-4s6mm", "manufacturer": "Lawrence Livermore National Lab", "num_shanks": 4},
+    {
+        "probe_type": "128c-4s6mm",
+        "probe_description": "128 channel polymer probe, 4 shanks, 6mm",
+        "manufacturer": "Lawrence Livermore National Lab",
+        "num_shanks": 4,
+    },
     skip_duplicates=True,
 )
 ```
@@ -109,7 +117,7 @@ The default is **permissive**: errors are logged, and ingestion continues across
 - **Pre-inserting lookup rows**: `ProbeType.insert1(..., skip_duplicates=True)` — idempotent, safe to re-run.
 - **Re-running Selection inserts** during pipeline development.
 
-It is **not** appropriate for raw data ingestion. `insert_sessions` uses `reinsert=True` instead, which explicitly intends to overwrite an existing Nwbfile entry. Using `skip_duplicates` on raw data silently masks real errors.
+It is **not** appropriate for raw data ingestion. `insert_sessions` does NOT accept `skip_duplicates` — passing it raises `TypeError: unexpected keyword argument 'skip_duplicates'` (see SKILL.md Core Directives + common_mistakes.md #3). Use `reinsert=True` for re-ingestion of a file that's already in `Nwbfile`.
 
 ## Inspecting After Ingestion
 
@@ -150,7 +158,10 @@ To overwrite an existing ingestion:
 sgi.insert_sessions("my_session.nwb", reinsert=True)
 ```
 
-**Before reinserting**, delete existing downstream entries — otherwise foreign keys will block the replacement. Review the delete implications carefully (see the destructive ops warning in SKILL.md).
+**What `reinsert=True` actually does.** `insert_sessions` checks whether `Nwbfile & {nwb_file_name: ...}` already exists; if so AND `reinsert=True`, it calls `query.delete(safemode=False)` on the Nwbfile row first, then re-copies and re-runs `populate_all_common` (`data_import/insert_sessions.py:73-92`). If `reinsert=False` and the file already exists, it warns and **skips** — does NOT raise. So:
+
+- `reinsert=True` is **destructive**: the cascade deletes every downstream row that FKs the Nwbfile (Session, IntervalList rows for this file, all populate-tier outputs). Cautious-delete protections apply (the deletion runs through SpyglassMixin's cautious_delete flow); permission failures or missing `Session.Experimenter` linkage can stop the delete partway. Inspect with `(Session.descendants() & {nwb_file_name: ...})` first; back up `analysis/` files if you want them.
+- `reinsert=False` (default) on an already-ingested file is a no-op with a warning. Don't expect re-ingestion behavior unless you pass `reinsert=True` explicitly.
 
 ### Delete Quirks (read before deleting a Session)
 
@@ -164,7 +175,7 @@ Two non-obvious behaviors:
 - **File not found**: `insert_sessions` looks in `$SPYGLASS_RAW_DIR`. Confirm the file is there and `SPYGLASS_BASE_DIR` is set correctly — `python skills/spyglass/scripts/verify_spyglass_env.py --check base_dir_resolved --check subdirs_exist_writable` reports both in one call.
 - **"Session already exists"**: pass `reinsert=True`, or delete the existing `Nwbfile` row first.
 - **Device/probe not in lookup table**: pre-insert `ProbeType`, `Probe`, `DataAcquisitionDevice` etc. with `skip_duplicates=True` before ingestion.
-- **Partial ingestion after failure**: if `rollback_on_fail=False` (default) and something failed midway, some tables have entries and some don't. Easiest recovery: `rollback_on_fail=True` on a retry, or manually delete the `Nwbfile` entry and its downstream cascades.
+- **Partial ingestion after failure**: if `rollback_on_fail=False` (default) and something failed midway, some tables have entries and some don't. **Recovery is not a one-liner** — `insert_sessions(..., reinsert=False)` on a file already in `Nwbfile` is a no-op with a warning (see "What `reinsert=True` actually does" above), so simply re-running won't pick up where it left off. Inspect first: `(Nwbfile & {nwb_file_name: ...})`, then `Session.descendants() & {nwb_file_name: ...}` to see what landed. Then either (a) rerun with `reinsert=True, rollback_on_fail=True` to delete-and-redo cleanly, or (b) manually delete only the stale downstream rows and let the next populate fill them in. Both are destructive — read the destructive-ops warning in SKILL.md before either.
 - **Extension not registered**: NWB extensions (`ndx-franklab-novela`, `ndx-optogenetics`, `ndx-ophys-devices`, `ndx-pose`; see `pyproject.toml:53-56`) must be importable. They're installed with Spyglass's core deps.
 - **"A different version of X.nwb has already been placed"** or
   **"downloaded but did not pass checksum"**: DataJoint tracks
@@ -209,9 +220,24 @@ Two non-obvious behaviors:
   reference/probe metadata only when the NWB ElectrodeGroup uses the
   `ndx_franklab_novela.Probe` device. For a generic
   `pynwb.ecephys.ElectrodeGroup`, it falls back to default values
-  (commonly `-1`) silently. Fix: convert the NWB to use
-  `ndx_franklab_novela.Probe`, or patch the Electrode rows directly
-  via DataJoint `insert(..., allow_direct_insert=True)`.
+  (commonly `-1`) silently. The right fixes, in order of preference:
+  - **Fix the NWB.** Rewrite the file to use `ndx_franklab_novela.Probe`
+    so the make() handler picks up the per-electrode metadata, then
+    re-ingest with `reinsert=True` (destructive — see "What
+    `reinsert=True` actually does" above).
+  - **Use the supported config / metadata override before
+    re-ingestion** if your install exposes one (consult
+    `02_Insert_Data.ipynb` and `common_ephys.Electrode.make` on the
+    install). This avoids hand-editing rows that downstream tables
+    already FK to.
+  - **Don't** patch already-ingested rows via
+    `Electrode.insert(..., allow_direct_insert=True)` as a routine
+    fix. Direct-update of a row that downstream tables FK to is
+    risky scientific-data guidance: any populated table whose
+    `make()` already used the `-1` value won't be re-run, so the
+    inconsistency persists. If you genuinely need the in-place
+    edit, inspect the descendants first and confirm with the user
+    before proceeding.
 
 ## Probe / electrode conflicts from the NWB
 
@@ -222,7 +248,7 @@ table. The symptom depends on which invariant your NWB breaks:
 | Symptom | What's wrong in the NWB |
 |---|---|
 | `PopulateException: Probe type properties ... do not match` | Multiple physical probes share the same `probe_type` / `description`, so Spyglass collapses them to one row |
-| `IntegrityError (_electrode_ibfk_2 ...)` | Electrode `name` / `id` is not globally unique across probes (current `common_ephys.Electrode` enforces uniqueness on `name`; verify with `code_graph.py describe Electrode`) |
+| `IntegrityError (_electrode_ibfk_2 ...)` | The IntegrityError comes from `Electrode`'s composite FK to `Probe.Electrode`, not from `Electrode.name` itself: `Electrode` keys on `(nwb_file_name, electrode_group_name, electrode_id)` and `name` is a **secondary** attribute (`common/common_ephys.py:73-79`). The triggering condition is usually that the NWB electrodes table assigns the same (probe, electrode_id) to electrodes belonging to physically different probes, or that `Probe.Electrode` rows are missing for the (probe_id, probe_electrode) tuple the row tries to FK. Verify with `code_graph.py describe Electrode` and inspect `(Probe.Electrode & {"probe_id": ...})` for the row you're inserting. |
 | DataJoint formatting error on `Probe.Electrode() & key` / `NaN` in queries | `rel_x` / `rel_y` / `rel_z` is NaN or None in the NWB electrodes table |
 | `AssertionError: ChannelSliceRecording: channel ids are not all in parents` | NWB electrodes table has a `channel_name` column; SpikeInterface >=0.99 reads that column instead of `electrode_id` |
 
@@ -255,22 +281,24 @@ sure Spyglass is on a version that handles it (confirm by searching
 - Rows silently missing for some epochs
 - `KeyError: 0` on a multi-row task table
 - `ValueError: could not convert string to float` for tags like `'custom_name'`
-- Tag `'2'` double-matching `'02_r1'` AND `'03_s2'` on versions where
-  the numeric-tag comparison was substring-based (current implementation
-  in `src/spyglass/common/common_task.py` uses exact matching)
+- Tag `'2'` double-matching multiple intervals (e.g. `'02_r1'` AND `'12_s2'`) — current `get_epoch_interval_name` (`common/common_task.py:315-355`) uses **substring** checks for the zero-padded forms (`str(epoch).zfill(2) in interval`), not exact matching. The two-digit-only-match prioritization helps the `'1'` vs `'12'` case, but unique-match isn't guaranteed; the method emits a warning and returns `None` when ambiguous.
 
 **Required NWB shape.**
 
-- `nwbfile.epochs.tags` — numeric strings. Spyglass ≥0.5.6
-  (`get_epoch_interval_name` in `src/spyglass/common/common_task.py`)
-  matches flexibly: it tries exact, 2-digit zero-padded, and 3-digit
-  zero-padded forms in turn, so `'1'`, `'01'`, and `'001'` all match
-  an interval named `'01'` (or `'001'`). Zero-padding is a *convention*
-  in modern Spyglass, not a hard requirement; the older Spyglass
-  versions did require strict zero-padding, so if the user is on an
-  older release this is still the typical fix.
+- `nwbfile.epochs.tags` — numeric strings. `get_epoch_interval_name`
+  tries exact match first, then two-digit zero-padded substring, then
+  three-digit zero-padded substring (`common/common_task.py:315-355`).
+  `'1'`, `'01'`, and `'001'` all match an interval named `'01'` (or
+  `'001'`). Zero-padding is a *convention* in modern Spyglass, not a
+  hard requirement; older versions did require strict zero-padding,
+  so if the user is on an older release this is still the typical
+  fix.
 - `nwbfile.processing['tasks'].task_table.task_epochs` — numeric
-  values, with row count matching the epoch count.
+  values per row. **One task-table row can carry a list of multiple
+  epoch numbers**: `_process_task_epochs` loops over each row's
+  `task_epochs` field (`common/common_task.py:172-194, 277-301`), so
+  one task row legitimately produces multiple `TaskEpoch` rows. Don't
+  expect task-row count to equal epoch count.
 
 **Check before ingest.**
 
