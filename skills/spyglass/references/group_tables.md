@@ -77,9 +77,15 @@ from spyglass.spikesorting.analysis.v1.group import (
 )
 
 # 1. Discover the merge keys for the unit sets you want to group.
+#    `SortedSpikesGroup.Units` FKs `SpikeSortingOutput.proj(
+#    spikesorting_merge_id='merge_id')` (`spikesorting/analysis/v1/group.py:73`),
+#    so each `keys` entry must carry `spikesorting_merge_id`, NOT
+#    `merge_id` — `create_group` splats the dict straight into the part
+#    (`group.py:97-103`). Project the renamed column when fetching.
 nwb_file = "j1620210710_.nwb"
 candidate_units = (
     SpikeSortingOutput.merge_restrict({"nwb_file_name": nwb_file})
+    .proj(spikesorting_merge_id="merge_id")
     .fetch("KEY", as_dict=True)
 )
 print(len(candidate_units), "candidate unit sets")

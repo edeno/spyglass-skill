@@ -219,18 +219,25 @@ The v1 spike sorting pipeline uses `insert_selection()` class methods instead of
 # Set up SortGroup (groups electrodes by probe shank)
 SortGroup().set_group_by_shank(nwb_file_name=nwb_file)
 
-# Selection — insert_selection() generates a recording_id UUID
-recording_key = SpikeSortingRecordingSelection.insert_selection({
+# Selection — insert_selection() generates a recording_id UUID on
+# fresh insert. Note that on rerun, when a matching row already
+# exists, it returns a list of dicts instead of a single dict
+# (`spikesorting/v1/recording.py:176-182`); normalize before
+# splatting downstream.
+def _one(result):
+    return result[0] if isinstance(result, list) else result
+
+recording_key = _one(SpikeSortingRecordingSelection.insert_selection({
     "nwb_file_name": nwb_file, "sort_group_id": 0,
     "interval_list_name": interval_name, "preproc_param_name": "default",
     "team_name": "my_team",
-})
+}))
 
 # Populate
 SpikeSortingRecording.populate(recording_key)
 ```
 
-The same `insert_selection()` + `populate()` pattern applies to `ArtifactDetection`, `SpikeSorting`, `MetricCuration`, and other v1 stages.
+The same `insert_selection()` + `populate()` pattern applies to `ArtifactDetection`, `SpikeSorting`, `MetricCuration`, and other v1 stages — each carries the same dict-vs-list return shape on rerun.
 
 ## Step 2: Artifact Detection (Optional)
 
@@ -388,12 +395,16 @@ from spyglass.spikesorting.analysis.v1.group import SortedSpikesGroup, UnitSelec
 ### Key Methods
 
 ```python
-# Create a group
+# Create a group. `keys` are inserted directly into the part table
+# `SortedSpikesGroup.Units`, which FKs
+# `SpikeSortingOutput.proj(spikesorting_merge_id='merge_id')`
+# (`spikesorting/analysis/v1/group.py:73, 97-103`). Each entry must
+# therefore use the renamed key, NOT raw `merge_id`.
 SortedSpikesGroup().create_group(
     group_name='HPC_02_r1',
     nwb_file_name=nwb_file,
     unit_filter_params_name='all_units',
-    keys=merge_keys  # list of SpikeSortingOutput merge_ids
+    keys=[{"spikesorting_merge_id": merge_id} for merge_id in merge_ids],
 )
 
 # Fetch spike times with unit filtering

@@ -25,7 +25,11 @@ Upstream project (FigURL itself, for questions beyond Spyglass integration): <ht
 ## Spike Sorting Curation via FigURL
 
 ```python
-from spyglass.spikesorting.v1 import FigURLCurationSelection, FigURLCuration
+from spyglass.spikesorting.v1 import (
+    CurationV1,
+    FigURLCurationSelection,
+    FigURLCuration,
+)
 ```
 
 ### Workflow
