@@ -20,7 +20,9 @@ from spyglass.position import PositionOutput
 
 ## Canonical Example (Trodes)
 
-Minimal end-to-end flow for LED-based tracking. DLC and imported-pose sources follow the same 3-step shape (params → selection → populate → fetch via merge). Everything below this expands on the pieces.
+Minimal end-to-end flow for LED-based tracking. **DLC follows the same 3-step shape** (params → selection → populate → fetch via merge); the populate handlers for both `TrodesPosV1.make` and `DLCPosV1.make` insert the resulting row into `PositionOutput` via `PositionOutput._merge_insert(...)` automatically (`position/v1/position_trodes_position.py:241`, `position_dlc_selection.py:85`).
+
+**Imported pose is the exception.** `ImportedPose` is a `dj.Manual` table (`position/v1/imported_pose.py:18`) populated by `ImportedPose().insert_from_nwbfile(nwb_file_name, ...)` (`imported_pose.py:47, 105`), which inserts the `IntervalList`, `ImportedPose`, and `ImportedPose.BodyPart` rows from the source NWB. There is **no params/selection step** and **no automatic `PositionOutput._merge_insert`** — to surface an imported-pose entry through the merge layer you have to insert into `PositionOutput.ImportedPose` yourself (or operate directly on `ImportedPose`). See "Imported Pose" below for the manual-import flow.
 
 ```python
 from spyglass.position import PositionOutput
@@ -59,9 +61,15 @@ position_df = (PositionOutput & merge_key).fetch1_dataframe()
 
 ### Key Methods on PositionOutput
 
-- `fetch1_dataframe()` — Returns DataFrame with position_x, position_y, orientation, velocity columns. Index is timestamps.
-- `fetch_pose_dataframe()` — Returns multi-bodypart pose data (DLC/imported sources only). No bodypart filter argument — returns all bodyparts.
-- `fetch_video_path(key=dict())` — Returns video file path associated with this position entry.
+`PositionOutput.fetch1_dataframe()` (defined at `position/position_merge.py:81`) and `PositionOutput.fetch_video_path()` (`position_merge.py:110`) are dispatchers — they delegate to the source class. What you get back depends on which part the merge entry resolves to:
+
+| Method | TrodesPosV1 | DLCPosV1 | ImportedPose |
+| --- | --- | --- | --- |
+| `fetch1_dataframe()` | DataFrame: position_x, position_y, orientation, velocity_x, velocity_y, speed | same as Trodes | **not implemented** — `ImportedPose` exposes `fetch_pose_dataframe(key)` (`position/v1/imported_pose.py:110`) instead. Calling `PositionOutput.fetch1_dataframe()` against an imported-pose merge entry routes to a method that doesn't exist on the part. |
+| `fetch_video_path(key=dict())` | video path (`position/v1/position_trodes_position.py:278`) | video path (`position/v1/position_dlc_selection.py:315`) | **not implemented** — `ImportedPose` has no `fetch_video_path`. |
+| `fetch_pose_dataframe(key)` | not present | per-bodypart DLC pose | per-bodypart imported pose (`imported_pose.py:110`) |
+
+In short: for Trodes/DLC, use the merge-level `fetch1_dataframe` / `fetch_video_path`. For imported pose, work through `ImportedPose.fetch_pose_dataframe(key)` directly (or via `PositionOutput.ImportedPose` part rows, if you've inserted them).
 
 ## Pipeline 1: Trodes LED Tracking
 
@@ -151,15 +159,19 @@ DLCOrientationParams → DLCOrientationSelection → DLCOrientation
 ```python
 from spyglass.position.v1 import (
     BodyPart, DLCProject,
-    DLCModel, DLCModelParams, DLCModelSource,
+    DLCModel, DLCModelParams, DLCModelSelection, DLCModelSource,
     DLCPoseEstimation, DLCPoseEstimationSelection,
-    DLCSmoothInterp, DLCSmoothInterpParams,
+    DLCSmoothInterp, DLCSmoothInterpParams, DLCSmoothInterpSelection,
     DLCSmoothInterpCohort, DLCSmoothInterpCohortSelection,
-    DLCCentroid, DLCCentroidParams,
-    DLCOrientation, DLCOrientationParams,
+    DLCCentroid, DLCCentroidParams, DLCCentroidSelection,
+    DLCOrientation, DLCOrientationParams, DLCOrientationSelection,
     DLCPosSelection, DLCPosV1,
 )
 ```
+
+(All four `*Selection` classes are exported from
+`spyglass.position.v1`'s `__init__.py` — they appear in the pipeline
+flow above and are required by their respective `populate` calls.)
 
 ### Key DLC invariants
 
@@ -185,12 +197,21 @@ convert_epoch_interval_name_to_position_interval_name(
 )
 ```
 
-For DLC-only sessions (no Trodes-derived position), there's no
-`'pos N valid times'` IntervalList to match against; insert the
-`RawPosition` / `PositionSource` rows first. Older releases required
-the Trodes path to exist; current Spyglass handles the DLC-only case
-via `convert_epoch_interval_name_to_position_interval_name` in
-`src/spyglass/common/common_behav.py`.
+**DLC-only sessions** (no Trodes-derived position). The mapping helper
+`convert_epoch_interval_name_to_position_interval_name` only recognizes
+interval names of the form `pos N valid times`
+(`common/common_behav.py:944`); when none are present it inserts a
+*null* map row rather than raising
+(`common/common_behav.py:886`). Two paths exist:
+
+- **Raw position is available for the session.** Populate
+  `PositionSource` / `RawPosition` first so the `pos N valid times`
+  intervals exist, then the mapper can resolve them.
+- **Genuinely DLC-only.** Pose estimation can still proceed:
+  `DLCPoseEstimation` falls back to the source video's timestamps when
+  the mapper returns no position-interval name
+  (`position/v1/position_dlc_pose_estimation.py:255`). You don't need
+  to invent a `RawPosition` row to make DLC populate run.
 
 **Gotcha — DLC env vars must be set in the kernel, not just
 `~/.bashrc`.** IDEs / SSH sessions frequently don't source the login
@@ -280,19 +301,44 @@ itself may have a per-project cap independent of Spyglass.
 
 ## Pipeline 3: Imported Pose
 
-For pre-computed pose data stored in NWB files.
+For pre-computed pose data stored in NWB files. **This is a
+manual-import path, not a populate path** — there is no parameters
+table, no selection table, and no `make()` handler. The
+`insert_from_nwbfile` method (defined at `position/v1/imported_pose.py:47`,
+implementation at `:105`) inserts the IntervalList, the master row,
+and the per-bodypart part rows from the source NWB.
 
 ```python
 from spyglass.position.v1.imported_pose import ImportedPose
+
+# 1. Pull pose rows from the source NWB.
+ImportedPose().insert_from_nwbfile(nwb_file)
+
+# 2. Fetch back the per-bodypart pose dataframe directly from
+#    ImportedPose. PositionOutput.fetch1_dataframe / fetch_video_path
+#    do NOT route through here — see the method-table above.
+key = {"nwb_file_name": nwb_file, "interval_list_name": "<imported>"}
+pose_df = ImportedPose().fetch_pose_dataframe(key)
 ```
 
-**ImportedPose** (Manual)
+**ImportedPose** (Manual; `position/v1/imported_pose.py:18`)
 
 - Key: `nwb_file_name`, `interval_list_name`
 - Part table: `ImportedPose.BodyPart` (key adds `part_name`)
 - Methods:
-  - `insert_from_nwbfile(nwb_file_name)` — Import from NWB
-  - `fetch_pose_dataframe(key=None)` — Get pose DataFrame
+  - `insert_from_nwbfile(nwb_file_name, ...)` — manual NWB import
+    (inserts IntervalList + master + BodyPart rows)
+  - `fetch_pose_dataframe(key=None)` — per-bodypart pose dataframe
+
+**Surfacing through `PositionOutput`.** `insert_from_nwbfile` does NOT
+auto-insert into the merge layer (contrast with `TrodesPosV1.make` /
+`DLCPosV1.make` which call `PositionOutput._merge_insert(...)`
+explicitly: `position/v1/position_trodes_position.py:241`,
+`position_dlc_selection.py:85`). If a downstream consumer needs the
+imported pose to appear under `PositionOutput.ImportedPose`, you have
+to call `PositionOutput.insert([key], part_name="ImportedPose")`
+yourself. Most analyses can read directly from `ImportedPose`; route
+through the merge only when the consumer FKs to `PositionOutput`.
 
 ## Common Patterns
 
