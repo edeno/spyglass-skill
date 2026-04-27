@@ -20,14 +20,17 @@ from spyglass.behavior.v1.moseq import (
 )
 ```
 
-MoSeq is an **optional dependency** — install with `pip install spyglass-neuro[moseq-cpu]` or `[moseq-gpu]`. Without it, imports from `spyglass.behavior.v1.moseq` fail with `ModuleNotFoundError: keypoint_moseq`. `PoseGroup` itself lives in `spyglass.behavior.v1.core` and does not require `keypoint_moseq`.
+MoSeq is an **optional dependency** — install with `pip install 'spyglass-neuro[moseq-cpu]'` or `'spyglass-neuro[moseq-gpu]'` (quote the extras spec; zsh globs unquoted square brackets). Without it, imports from `spyglass.behavior.v1.moseq` fail with `ModuleNotFoundError: keypoint_moseq`. `PoseGroup` itself lives in `spyglass.behavior.v1.core` and does not require `keypoint_moseq`.
 
 The pipeline has two phases that are always run in order: **train** a model on a pose group, then **apply** the trained model to pose data (which may be inside or outside the training set).
 
 ## Pipeline Flow
 
 ```text
-PositionOutput (merge, DLC or Trodes pose) ──┐
+PositionOutput (merge — pose-bearing sources only: DLC, ImportedPose,
+or other parts that implement fetch_pose_dataframe + fetch_video_path;
+NOT TrodesPosV1, whose fetch_pose_dataframe raises NotImplementedError
+at position/v1/position_trodes_position.py:274) ──┐
                                              │
                                              ▼
                     PoseGroup  ◄──── PoseGroup.Pose — one row per video/merge_id
@@ -48,11 +51,11 @@ PositionOutput (merge, DLC or Trodes pose) ──┐
 
 ## Key Tables
 
-**PoseGroup** (Manual) — `core.py`
+**PoseGroup** (Manual) — `behavior/v1/core.py:16`
 
-- Key: `pose_group_name`
+- Key: `pose_group_name` only — **PoseGroup is global, not session-scoped** (`core.py:19-23`). The same `pose_group_name` cannot coexist for two different datasets; pick names that won't collide across sessions / cohorts (e.g. `subjectA_run1_v1`).
 - Part table: `PoseGroup.Pose` — one row per `PositionOutput` merge entry joined in (via `pose_merge_id`).
-- Helpers: `create_group(group_name, merge_ids, bodyparts)` inserts master + part rows in one call; `fetch_pose_datasets(key, format_for_moseq=True)` returns the arrays MoSeq wants; `fetch_video_paths(key)` returns the videos for grid-movie generation.
+- Helpers: `create_group(group_name, merge_ids, bodyparts)` inserts master + part rows in one call; `fetch_pose_datasets(key, format_for_moseq=True)` returns a **tuple `(coordinates, confidences)`** — both are arrays keyed by video, NOT a dict (`core.py:101, 164`); `fetch_video_paths(key)` returns the videos for grid-movie generation.
 
 **MoseqModelParams** (Lookup) — `moseq.py`
 
@@ -138,6 +141,6 @@ syllable_df = (MoseqSyllable & label_key).fetch1_dataframe()
 
 ## Dependency: keypoint_moseq
 
-Optional dependency (`pip install spyglass-neuro[moseq-cpu]` or `[moseq-gpu]`).
+Optional dependency (`pip install 'spyglass-neuro[moseq-cpu]'` or `'spyglass-neuro[moseq-gpu]'` — quote the extras spec for zsh).
 
 - `keypoint_moseq` (imported as `kpms`) — motion sequencing from keypoint data. Used internally by `MoseqModel.make()` (project setup, format conversion, PCA, AR-HMM fitting) and `MoseqSyllable.make()` (applying a fit model to new data). You do not normally call `kpms` directly from skill code; `PoseGroup.fetch_pose_datasets(format_for_moseq=True)` produces the arrays the pipeline needs.
