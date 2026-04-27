@@ -40,20 +40,27 @@ from spyglass.decoding.v1.clusterless import (
 # (`(DecodingParameters & 'decoding_param_name LIKE "contfrag_clusterless%"').fetch1("decoding_param_name")`)
 # or import the version constant alongside.
 
-# 1. Selection + populate
+# 1. Selection + populate. `nwb_file_name` is REQUIRED — it is
+#    inherited transitively through both `UnitWaveformFeaturesGroup`
+#    and `PositionGroup` (`decoding/v1/clusterless.py:83`,
+#    `decoding/v1/core.py:130`); without it the insert raises FK
+#    failures. `estimate_decoding_params` defaults to 1 in the table
+#    definition (`clusterless.py:90`); set it explicitly to 0 if you
+#    want the fixed-parameter path.
 from non_local_detector import __version__ as non_local_detector_version
 selection_key = {
+    "nwb_file_name": nwb_file,                # required — inherited via the groups
     "waveform_features_group_name": features_group_name,
     "position_group_name": position_group_name,
     "decoding_param_name": f"contfrag_clusterless_{non_local_detector_version}",
     "encoding_interval": encoding_interval_name,
     "decoding_interval": decoding_interval_name,
-    "estimate_decoding_params": 0,  # 1 lets the decoder estimate params
-                                     # from the encoding interval; times
-                                     # outside intervals are marked -1
-                                     # and excluded from fit/output (see
-                                     # src/spyglass/decoding/v1/
-                                     # clusterless.py:266-289).
+    "estimate_decoding_params": 0,  # explicit; table default is 1.
+                                     # Branches in the make() handler
+                                     # (`clusterless.py:289` true branch
+                                     # vs `:333` false branch) are very
+                                     # different — see "estimate vs
+                                     # fixed parameters" below.
 }
 ClusterlessDecodingSelection.insert1(selection_key, skip_duplicates=True)
 ClusterlessDecodingV1.populate(selection_key)
@@ -84,7 +91,7 @@ model = DecodingOutput.fetch_model(selection_key)
 | -------- | --------- | ------------- |
 | `fetch_results(key)` | xarray.Dataset | Posterior probabilities and metadata |
 | `fetch_model(key)` | Classifier | Fitted non_local_detector model |
-| `fetch_environments(key)` | list[TrackGraph] | Track graph environments |
+| `fetch_environments(key)` | list of `non_local_detector` Environment objects | Returns `classifier.environments` after `initialize_environments()` (`decoding/v1/clusterless.py:475-514`). These are non_local_detector `Environment` objects, NOT `TrackGraph` rows; access track-graph data via attributes (`environments[0].track_graph`, `.edge_order`, `.edge_spacing`). See `clusterless.py:757, 778` for downstream usage. |
 | `fetch_position_info(key)` | (DataFrame, list) | Position data + variable names |
 | `fetch_linear_position_info(key)` | DataFrame | Linearized position projected onto track graph |
 | `fetch_spike_data(key, filter_by_interval)` | list | Spike times (+ features for clusterless) |
@@ -104,9 +111,24 @@ results = DecodingOutput.fetch_results(key)
 
 # Key coordinates:
 # - time: timestamps
-# - state_bins: position bin centers
-# - states: discrete state labels
-# - interval_labels: (time,) — 0,1,2,... for intervals; -1 outside intervals
+# - state_bins: STACKED state-and-position index (NOT a plain position
+#   coordinate). Each entry is a (state, position) pair. The non_local_detector
+#   visualization unstacks it before extracting position
+#   (`decoding/decoding_merge.py:148-153`):
+#     posterior = (results.acausal_posterior
+#         .unstack("state_bins")
+#         .drop_sel(state=["Local", "No-Spike"], errors="ignore")
+#         .sum("state"))
+#   Treating state_bins directly as position-bin centers will cross-mix
+#   discrete states (e.g. local vs continuous) and produce a misleading
+#   MAP trace.
+# - states: discrete state labels (e.g. "Continuous", "Fragmented",
+#   "Local", "No-Spike", depending on the chosen DecodingParameters)
+# - interval_labels: (time,) — interval index when
+#   estimate_decoding_params=1 marks times outside intervals as -1; in
+#   the fixed-parameter (=0) path the make() handler concatenates
+#   per-interval results so this coordinate's shape depends on the
+#   branch taken
 ```
 
 ### Working with Results
@@ -115,9 +137,16 @@ results = DecodingOutput.fetch_results(key)
 # Filter to specific decoding interval
 interval_0 = results.where(results.interval_labels == 0, drop=True)
 
-# Get decoded position (MAP estimate)
-import numpy as np
-decoded_pos = results.acausal_posterior.idxmax(dim='state_bins')
+# Get decoded position (MAP estimate). Unstack state_bins first, sum
+# over discrete state, then idxmax over the resulting position index —
+# DON'T idxmax over the raw stacked state_bins.
+position_posterior = (
+    results.acausal_posterior
+    .unstack("state_bins")
+    .drop_sel(state=["Local", "No-Spike"], errors="ignore")
+    .sum("state")
+)
+decoded_pos = position_posterior.idxmax(dim="position")
 
 # Get actual position for comparison
 position_df, var_names = DecodingOutput.fetch_position_info(key)
@@ -143,7 +172,11 @@ decoding_kwargs  = NULL : LONGBLOB      # additional keyword arguments
 **`decoding_params` and `decoding_kwargs` are SIBLING top-level attributes**, not nested inside one another. This matters when inserting a custom param set — a common mistake is to nest `decoding_kwargs` inside `decoding_params`, which silently discards the runtime kwargs.
 
 - `decoding_params` — classifier constructor kwargs (model architecture, state bins, transitions). Consumed as `ClusterlessDetector(**decoding_params)` inside `make_compute`.
-- `decoding_kwargs` — runtime kwargs passed through to the classifier call. In the `estimate_decoding_params=False` branch (the default) they're split by `get_valid_kwargs` into fit and predict kwargs; in the `True` branch they're passed to `estimate_parameters`. Spyglass passes the dict through; the specific keyword names the installed `non_local_detector` recognizes (commonly `n_chunks`, `cache_likelihood`) are documented in that package — verify against the installed signatures if a kwarg appears to be ignored or rejected.
+- `decoding_kwargs` — runtime kwargs passed through to the classifier call. The `make()` handler has two branches gated on `estimate_decoding_params` (table default `1`; both `clusterless.py:90` and `sorted_spikes.py:55`):
+  - **True branch (`clusterless.py:289`)** — Baum-Welch. Treats times outside decoding intervals as missing via an `is_missing` mask and assigns `interval_labels` from that mask; `decoding_kwargs` flow to `estimate_parameters`.
+  - **False branch (`clusterless.py:333`)** — fixed-parameter. Predicts only on non-empty decoding intervals and concatenates those outputs; `decoding_kwargs` are split by `get_valid_kwargs` into fit and predict kwargs.
+
+  Spyglass passes the dict through; the specific keyword names the installed `non_local_detector` recognizes (commonly `n_chunks`, `cache_likelihood`) are documented in that package — verify against the installed signatures if a kwarg appears to be ignored or rejected.
 
 Canonical insert shape for an OOM-conscious clusterless variant:
 
@@ -348,11 +381,25 @@ plt.show()
 # See all decoding for a session
 DecodingOutput.merge_restrict({'nwb_file_name': nwb_file})
 
-# Get specific decoding
-merge_key = DecodingOutput.merge_get_part({
-    'nwb_file_name': nwb_file,
-    'decoding_param_name': 'default_decoding',
-}).fetch1("KEY")
+# Get a specific decoding entry. Build the key from a real
+# DecodingParameters row name — the stock defaults are version-
+# suffixed (`decoding/v1/core.py:48`, e.g.
+# f"contfrag_clusterless_{non_local_detector_version}") — and
+# include enough fields to pick exactly one parent row, otherwise
+# `merge_get_part` raises `ValueError: Ambiguous entry...` via
+# `merge_restrict_class` (see § DecodingOutput Merge Table). A full
+# selection_key (the one used at populate time) is the safest:
+from non_local_detector import __version__ as non_local_detector_version
+selection_key = {
+    "nwb_file_name": nwb_file,
+    "waveform_features_group_name": features_group_name,
+    "position_group_name": position_group_name,
+    "decoding_param_name": f"contfrag_clusterless_{non_local_detector_version}",
+    "encoding_interval": encoding_interval_name,
+    "decoding_interval": decoding_interval_name,
+    "estimate_decoding_params": 0,
+}
+merge_key = DecodingOutput.merge_get_part(selection_key).fetch1("KEY")
 ```
 
 ## JAX / XLA OOM on long sessions
@@ -363,7 +410,7 @@ bytes` from JAX during `ClusterlessDecodingV1.populate` /
 `(n_time, n_state_bins)` (e.g. `(3384862, 1926)` = 24 GiB) on an 80 GB
 A100.
 
-**Tuning knobs** (set on `DecodingParameters`). Use the canonical insert shape from [§ DecodingParameters (Lookup)](#decodingparameters-lookup) — `decoding_params` and `decoding_kwargs` as sibling top-level attrs. For the OOM case, populate `decoding_kwargs` with `{'n_chunks': 10, 'cache_likelihood': False}` — these are the intended OOM knobs reached via the default `estimate_decoding_params=False` branch; the installed `non_local_detector` is what ultimately consumes them, so verify against its signatures if either is ignored.
+**Tuning knobs** (set on `DecodingParameters`). Use the canonical insert shape from [§ DecodingParameters (Lookup)](#decodingparameters-lookup) — `decoding_params` and `decoding_kwargs` as sibling top-level attrs. For the OOM case, populate `decoding_kwargs` with `{'n_chunks': 10, 'cache_likelihood': False}`. These knobs reach the classifier via the False branch of `estimate_decoding_params` (table default is `1`; you must set this to `0` explicitly on the selection row to take the False branch); the installed `non_local_detector` is what ultimately consumes them, so verify against its signatures if either is ignored.
 
 Also set the JAX memory fraction at the top of the populate script:
 
