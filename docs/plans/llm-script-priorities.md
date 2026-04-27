@@ -1,9 +1,33 @@
 # Bundled scripts — LLM priority ranking
 
 **Date:** 2026-04-22
-**Status:** Draft — ordering for implementation sequencing.
+**Status:** Revised 2026-04-27 after `code_graph.py` and `db_graph.py`.
 
 Ranks the scripts from [bundled-scripts-issue.md](bundled-scripts-issue.md) by **how much they multiply LLM effectiveness**, not by general user utility. When LLM priority diverges from user priority (usually: admin/workflow tools score lower for LLMs), the LLM perspective wins here because the skill's target user is Claude invoking them.
+
+## Current recommendation
+
+Do **not** implement the old "next three scripts" list as written. The
+source-only `code_graph.py` and runtime `db_graph.py` now cover the highest
+value structural facts: table existence, source dependencies, runtime
+headings, row counts, merge IDs, set operations, and source/runtime
+disagreement. The next work should consolidate those tools, add evals that
+force agents to use them, and only add a new script when the failure mode is
+not already covered by either graph.
+
+Immediate order:
+
+1. Update references and evals so table/key/method/DAG claims are
+   proof-carrying: `code_graph.py` for source facts, `db_graph.py` for runtime
+   facts.
+2. Keep `verify_spyglass_env.py` and `scrub_dj_config.py` stable and
+   secret-safe; do not retrofit their JSON shape unless a real consumer needs
+   a shared envelope.
+3. Consider `map_si_to_spyglass.py` next, because SpikeInterface API drift is
+   not solved by either graph tool.
+4. Defer `visualize_schema_neighborhood.py`, `fetch_merge_row.py`,
+   `cardinality_check.py`, and most row-debugging helpers until evals or real
+   user sessions show that `db_graph.py`/`code_graph.py` are too awkward.
 
 ## Scoring criteria
 
@@ -15,32 +39,37 @@ Five things make a script LLM-grade. Weights descending:
 4. **Bounded runtime.** A hard timeout means the LLM can invoke the script in an autonomous loop without worrying about hangs. Scripts without `--timeout` on network calls score lower.
 5. **Replaces multi-step reconstruction.** Each script call that subsumes N context-burning rounds (`.parents()` + `.children()` + `.describe()` + follow-up queries → one Mermaid graph) is worth N in saved tokens and reduced failure-to-converge risk.
 
-## Tier 1 — Ship first (highest LLM leverage)
+## Tier 1 — Consolidate first (highest LLM leverage)
 
-These close the most context-burning failure modes. Each prevents a recurring LLM wrong-answer pattern.
+These are the shipped or near-term surfaces that should receive eval,
+reference, and README attention before adding more scripts.
 
 | Script | Status | Why it's Tier 1 |
 | --- | --- | --- |
-| **`describe_params.py`** | unshipped | Closes the **#1 hallucination vector** in the skill: LLMs can't see `*Params` Lookup contents and invent names from training data. One invocation returns ground truth for every Params row feeding a pipeline, with usage counts. Highest single expected lift. |
-| **`visualize_schema_neighborhood.py`** | unshipped | Mermaid output is LLM-native. Replaces 3+ round-trips (`.parents()`, `.children()`, `.describe()`) with one structured graph. Unblocks agent reasoning about any unfamiliar table. |
-| **`map_si_to_spyglass.py`** | unshipped | Closes a specific, high-probability hallucination: SpikeInterface API drift (`WaveformExtractor` ↔ `SortingAnalyzer` across the 0.100 boundary). Prevents agents from pasting stale code from training data. Best implemented as a tiny script over a YAML catalog. |
+| `code_graph.py` | **shipped** | Source-only identity and dependency evidence: class existence, versioned source location, FK path, node kind, method ownership, and heuristic warnings. It is the main antidote to invented source claims. |
+| `db_graph.py` | **shipped / PR-ready** | Runtime database evidence: actual table headings, row counts, merge IDs, set operations, custom-table imports, and source/runtime divergence. It is the main antidote to invented keys, attributes, and row-state claims. |
 | `verify_spyglass_env.py` | **shipped** | Seven checks + JSON output + bounded timeout = LLM-ideal. Env assumptions become cite-able evidence instead of "trust me." |
 | `scrub_dj_config.py` | **shipped** | Safe ground-truth read of DB config. Closes the password-leak-into-context hallucination-adjacent hazard. |
+| **`map_si_to_spyglass.py`** | candidate | Still valuable because SpikeInterface API drift (`WaveformExtractor` ↔ `SortingAnalyzer`) is an external-package compatibility problem, not a source/runtime graph problem. Best implemented as a tiny script over a YAML catalog. |
 
-**Next-3 recommendation for implementation:** `describe_params.py`, `visualize_schema_neighborhood.py`, `map_si_to_spyglass.py`. All three close hallucination vectors that no other script addresses; all three have modest implementation cost.
+**Next implementation recommendation:** do the consolidation/eval work first.
+If one new script is still justified after that, start with
+`map_si_to_spyglass.py`.
 
-## Tier 2 — Ship second (high-value structured ground truth)
+## Tier 2 — Reconsider after graph-tool evals
 
-Not hallucination-blockers, but each gives the LLM ground truth it would otherwise have to reconstruct.
+These may still be useful, but they should not be built until evals show the
+two graph tools are insufficient or too clumsy for the task.
 
 | Script | Why it's Tier 2 |
 | --- | --- |
-| **`session_summary.py`** | "What's in this session?" is the first question every interaction starts with. Walks the 5 merge masters in one call; replaces manual session-orientation rounds. |
-| **`pipeline_provenance.py`** | "What produced this result?" is reproducibility bedrock. Structured dependency + params chain lets an LLM answer "is this result trustworthy" without improvising. |
+| **`describe_params.py`** | Parameter rows remain important, but `db_graph.py describe` / `find-instance` already expose headings and rows. Build this only if parameter evals show repeated awkward multi-call patterns or unsafe blob handling that a narrow script would solve. |
+| **`session_summary.py`** | "What's in this session?" may justify a convenience wrapper, but first test whether a small set of `db_graph.py` merge-master calls plus a reference template is enough. |
+| **`pipeline_provenance.py`** | Reproducibility is central, but provenance spans source DAG, runtime rows, parameter blobs, files, and merge parts. It should likely be a higher-level composition over existing tools, not an early standalone script. |
 | **`check_analysis_files.py`** | Thin wrapper over `AnalysisNwbfile.check_all_files()`. Ground truth about "is the data actually on disk?" — a question the LLM otherwise can't answer reliably without running fetch and catching FileNotFoundError. |
 | **`trace_restriction.py`** | Thin wrapper over `RestrGraph` / `TableChain`. "What does this restriction affect across the DAG?" in structured form. |
 | **`generate_selection_inserts.py`** | Retires the "reconstruct Selection-chain from tutorial cells" pattern that every new user runs into. Code-gen, not evidence, so slightly lower than pure-ground-truth scripts; but the per-pipeline chains are easy for LLMs to get off-by-one, so retiring that reconstruction is high value. |
-| **`fetch_merge_row.py`** | Retires Common Mistake #1 (merge chain reconstruction). The script gets the `merge_get_part → fetch1('KEY') → (Master & ...)` sequence right so the LLM doesn't have to. |
+| **`fetch_merge_row.py`** | Mostly superseded by merge-aware `db_graph.py find-instance`. Revisit only if evals show agents still misuse merge masters after the new routing prose. |
 
 ## Tier 3 — High-value in specific scenarios
 
@@ -67,7 +96,8 @@ Useful to humans; LLMs rarely benefit proportionally.
 | --- | --- |
 | `disk_usage_report.py` | Lab-admin tool. LLMs rarely triage storage decisions; humans do. Ship when a lab admin asks. |
 | `fetch_figurl_labels.py` | Workflow automation (UI → DB). Closes human toil, doesn't give the LLM new reasoning power. |
-| `cardinality_check.py` | Teaching-oriented; likely folds into a code block in [feedback_loops.md](../../skills/spyglass/references/feedback_loops.md) rather than shipping as a bundled script. |
+| `visualize_schema_neighborhood.py` | Mostly superseded by `code_graph.py path --up/--down` and `db_graph.py path`. Mermaid output is nice, but not enough to justify a duplicate graph surface without eval pressure. |
+| `cardinality_check.py` | Teaching-oriented; `db_graph.py find-instance --count --fields KEY` covers the useful evidence. Keep the pattern in [feedback_loops.md](../../skills/spyglass/references/feedback_loops.md) rather than shipping a separate CLI. |
 
 ## Reference-only helpers — already maxed-out leverage
 
@@ -93,6 +123,10 @@ LLM-tier placement above is conditional on these being met. A Tier-1 script with
 
 ## How to use this ranking
 
-- **Next three PRs:** ship Tier 1 unshipped items (`describe_params.py`, `visualize_schema_neighborhood.py`, `map_si_to_spyglass.py`) before anything in Tier 2+.
+- **Next PRs:** consolidate `code_graph.py` / `db_graph.py` documentation,
+  add evals that require proof-carrying answers, and keep existing scripts
+  stable.
+- **Next new script:** only `map_si_to_spyglass.py` is clearly outside the
+  graph tools' scope today.
 - **Backlog grooming:** when a Tier 3 script's triggering scenario appears in a real user interaction, promote to next-up; otherwise hold.
 - **New proposals:** score against the five criteria above before adding to the issue list. Tier 4-shaped scripts (admin / workflow) are still valid but should carry a clear "humans first, not LLMs" note so future contributors don't conflate utility with LLM leverage.

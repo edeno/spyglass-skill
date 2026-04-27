@@ -1,10 +1,23 @@
 # Implementation plan - `db_graph.py` (DB-resolved Spyglass inspection)
 
 **Date drafted:** 2026-04-26
-**Last revised:** 2026-04-26 (critique pass on branch `db-graph`)
-**Status:** Draft - ready for review
+**Last revised:** 2026-04-27 (post-implementation planning cleanup)
+**Status:** Implemented / PR-ready; retained as implementation record.
+Current behavior lives in `skills/spyglass/scripts/db_graph.py`,
+`skills/spyglass/tests/test_db_graph.py`, `skills/spyglass/scripts/README.md`,
+and `skills/spyglass/references/feedback_loops.md`. This plan explains the
+design rationale and should not be treated as the user-facing contract.
 **Predecessor:** [db-graph-decision-record.md](db-graph-decision-record.md)
 **Target PR:** separate PR after the source-only `code_graph.py` work on `master`
+
+## Current implementation note
+
+The shipped tool now includes the MVP plus follow-on runtime `describe` and
+`path` surfaces, fake-backed tests, source/runtime comparison guidance, safe
+serialization for blob-like values, non-finite restriction refusal, pagination
+guards, and machine-readable `info --json`. Live Spyglass tests are optional
+because they are slow and environment-dependent; the default gate remains the
+fake-backed suite plus static validation.
 
 ## Summary
 
