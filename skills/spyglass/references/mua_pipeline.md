@@ -20,7 +20,7 @@ MUA detection uses the same `ripple_detection` library as ripple detection (`mul
 
 **Prerequisites** — `MuaEventsV1` depends on three populated upstream tables, plus a named detection interval:
 
-- `SortedSpikesGroup` — sorted spikes aggregated into a group, see [spikesorting_pipeline.md](spikesorting_pipeline.md).
+- `SortedSpikesGroup` — sorted spikes aggregated into a group, see [spikesorting_v1_pipeline.md](spikesorting_v1_pipeline.md).
 - `PositionOutput` — per-session position merge key, see [position_pipeline.md](position_pipeline.md).
 - `IntervalList` — a named interval (passed as `detection_interval`, FK-renamed from `interval_list_name`).
 

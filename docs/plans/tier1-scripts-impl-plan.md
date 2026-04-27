@@ -453,7 +453,7 @@ Per-script routing, plus a two-line `scripts/README.md` update after each PR.
 
 ### `map_si_to_spyglass.py` routing
 
-- [`spikesorting_pipeline.md` § Step 3](../../skills/spyglass/references/spikesorting_pipeline.md) — one-line pointer: "Unsure which SI API to call for waveform extraction in this env? `python skills/spyglass/scripts/map_si_to_spyglass.py --topic waveform_extraction`."
+- [`spikesorting_v1_pipeline.md` § Step 3](../../skills/spyglass/references/spikesorting_v1_pipeline.md) — one-line pointer: "Unsure which SI API to call for waveform extraction in this env? `python skills/spyglass/scripts/map_si_to_spyglass.py --topic waveform_extraction`."
 - [`dependencies.md`](../../skills/spyglass/references/dependencies.md) — new short subsection "SpikeInterface API drift" citing the script as the canonical lookup.
 
 ### `visualize_schema_neighborhood.py` routing
@@ -466,7 +466,7 @@ Per-script routing, plus a two-line `scripts/README.md` update after each PR.
 
 Every pipeline reference adds a one-line pointer at its params-table section:
 
-- [`spikesorting_pipeline.md`](../../skills/spyglass/references/spikesorting_pipeline.md)
+- [`spikesorting_v1_pipeline.md`](../../skills/spyglass/references/spikesorting_v1_pipeline.md)
 - [`lfp_pipeline.md`](../../skills/spyglass/references/lfp_pipeline.md)
 - [`position_pipeline.md`](../../skills/spyglass/references/position_pipeline.md)
 - [`decoding_pipeline.md`](../../skills/spyglass/references/decoding_pipeline.md)
@@ -498,7 +498,7 @@ Four atomic PRs; envelope first so new scripts depend on it from day 1.
 ### PR B — `map_si_to_spyglass.py` (~1 day)
 
 1. Script + YAML catalog + tests.
-2. `dependencies.md` + `spikesorting_pipeline.md` routing.
+2. `dependencies.md` + `spikesorting_v1_pipeline.md` routing.
 3. Validator check #2 (si_catalog paths resolve).
 4. Commit: `scripts: add map_si_to_spyglass (SI API version mapping)`.
 

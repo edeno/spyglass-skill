@@ -149,7 +149,7 @@ Addresses the maintainer asks: *"What custom tables use data from DecodingOutput
 
 **94. `workflow-position-post-sort-ingest`** — tier `workflow-position`, stage `pipeline-usage`, difficulty `medium`.
 - Prompt: "I just ran `SpikeSortingV1.populate()` and it finished. What's next in the chain if I want clusterless decoding?"
-- Route: `spikesorting_pipeline.md` + `decoding_pipeline.md`.
+- Route: `spikesorting_v1_pipeline.md` + `decoding_pipeline.md`.
 - Required: `CurationV1`, `SpikeSortingOutput`, `UnitWaveformFeaturesGroup` *or* equivalent, `ClusterlessDecodingSelection`. Behavioral: "Identifies `CurationV1` (initial) as the mandatory next step, not optional"; "Calls out the merge insert into `SpikeSortingOutput` as a separate step".
 
 **95. `recovery-populate-partial-electrodes`** — tier `workflow-recovery`, stage `runtime-debugging`, difficulty `hard`.
@@ -192,7 +192,7 @@ Addresses: *"What animals have prefrontal recordings and ran on the wtrack?"* an
 
 **101. `compound-sorted-spikes-across-sort-groups`** — tier `compound`, stage `pipeline-authoring`, difficulty `hard`.
 - Prompt: "I want to make a custom table that uses the spikes from all the tetrode sort groups in my data. How do I wire it up so I don't have to list every `sort_group_id` by hand?"
-- Route: `custom_pipeline_authoring.md` (new GroupTables section) + `spikesorting_pipeline.md`.
+- Route: `custom_pipeline_authoring.md` (new GroupTables section) + `spikesorting_v1_pipeline.md`.
 - Required: `SortedSpikesGroup`, `SpikeSortingOutput`, `UnitSelectionParams`. Forbidden: `sort_group_id: blob` (stuffing a list into one column). Behavioral: "Routes to `SortedSpikesGroup` as the existing abstraction; doesn't build a new aggregation from scratch"; "Explains that the downstream custom table FKs to `SortedSpikesGroup`, not to each `SpikeSortingOutput` row individually".
 
 ### Batch D — group tables & custom analysis (IDs 102–105)
@@ -201,7 +201,7 @@ Addresses: *"how can I make it easier to get all the hippocampal spike data?"*, 
 
 **102. `sorted-spikes-group-hippocampal`** — tier `disambiguation`, stage `pipeline-usage`, difficulty `medium`.
 - Prompt: "I'm tired of manually joining across tetrode sort groups every time I want all my hippocampal spikes. How do I make this easier?"
-- Route: new GroupTables section in `custom_pipeline_authoring.md` + `spikesorting_pipeline.md`.
+- Route: new GroupTables section in `custom_pipeline_authoring.md` + `spikesorting_v1_pipeline.md`.
 - Required: `SortedSpikesGroup`, `UnitSelectionParams`, `BrainRegion`. Forbidden: "just write a function that loops over sort_groups" (missing the DataJoint abstraction). Behavioral: "Recommends creating a `SortedSpikesGroup` restricted to hippocampal tetrodes, inserting a single group row, and FKing downstream analyses to the group name"; "Explains why the group-name key is reusable across analyses".
 
 **103. `group-tables-concept`** — tier `table-classification`, stage `framework-concepts`, difficulty `medium`.
@@ -293,7 +293,7 @@ Current `counterfactual` tier has 4 evals, one of which (eval 68) is a parameter
 
 **118. `counterfactual-sort-interval-change`** — tier `counterfactual`, stage `parameter-understanding`, difficulty `hard`.
 - Prompt: "If I shorten the `sort_interval` on one `SpikeSortingRecordingSelection` row to half its original length, which downstream rows change? Can the old curation still be reused?"
-- Route: `spikesorting_pipeline.md`.
+- Route: `spikesorting_v1_pipeline.md`.
 - Required: `SpikeSortingRecording`, `SpikeSorting`, `CurationV1`, `new recording_id` *or* `new row`. Forbidden: "yes, the old curation still applies". Behavioral: "Recognizes that changing `sort_interval` produces a different recording hash → new `recording_id` → old `CurationV1` rows pin the old recording and cannot transfer"; "Recommends inserting as a new selection rather than editing the existing row".
 
 **119. `counterfactual-decoding-bin-size`** — tier `counterfactual`, stage `parameter-understanding`, difficulty `hard`.

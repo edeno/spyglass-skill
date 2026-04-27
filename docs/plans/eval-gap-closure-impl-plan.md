@@ -273,7 +273,7 @@ Each subsection lists the prompt verbatim, the routing target, and the discrimin
 
 ## Phase B — parameter understanding (priority, evals 58–62)
 
-**General-knowledge dependency note.** Evals 58 and 62 are fully backed by skill content (Nyquist note in [lfp_pipeline.md:122](../../skills/spyglass/references/lfp_pipeline.md), `set_group_by_electrode` clusterless conflict in [spikesorting_pipeline.md](../../skills/spyglass/references/spikesorting_pipeline.md)). Evals 59, 60, and 61 partially rely on the model's general signal-processing / ML knowledge — the references mention the parameters but don't fully document direction-of-tradeoff. This is intentional: parameter-semantics evals test whether the skill primes the model to apply general knowledge in the Spyglass parameter context. They are *not* skill-content sentinels and should not be expected to swing on small reference edits.
+**General-knowledge dependency note.** Evals 58 and 62 are fully backed by skill content (Nyquist note in [lfp_pipeline.md:122](../../skills/spyglass/references/lfp_pipeline.md), `set_group_by_electrode` clusterless conflict in [spikesorting_v1_pipeline.md](../../skills/spyglass/references/spikesorting_v1_pipeline.md)). Evals 59, 60, and 61 partially rely on the model's general signal-processing / ML knowledge — the references mention the parameters but don't fully document direction-of-tradeoff. This is intentional: parameter-semantics evals test whether the skill primes the model to apply general knowledge in the Spyglass parameter context. They are *not* skill-content sentinels and should not be expected to swing on small reference edits.
 
 ### Eval 58 — `param-target-sampling-rate`
 
@@ -323,7 +323,7 @@ Each subsection lists the prompt verbatim, the routing target, and the discrimin
 
 - **stage / tier / difficulty:** `parameter-understanding` / `parameter-semantics` / `hard`
 - **prompt:** "`SortGroup().set_group_by_electrode()` — what grouping does this produce and why does the clusterless pipeline complain about non-unique contact positions when I use it?"
-- **routes to:** [spikesorting_pipeline.md](../../skills/spyglass/references/spikesorting_pipeline.md), [decoding_pipeline.md](../../skills/spyglass/references/decoding_pipeline.md).
+- **routes to:** [spikesorting_v1_pipeline.md](../../skills/spyglass/references/spikesorting_v1_pipeline.md), [decoding_pipeline.md](../../skills/spyglass/references/decoding_pipeline.md).
 - **required_substrings:** `one electrode per group`, `contact_positions`, `set_group_by_shank`
 - **forbidden_substrings:** `set_group_by_electrode is correct for clusterless`
 - **behavioral_checks:**
@@ -394,7 +394,7 @@ Each subsection lists the prompt verbatim, the routing target, and the discrimin
 - **stage / tier / difficulty:** `pipeline-usage` / `workflow-position` / `medium`
 - **prompt:** "I just inserted into `SpikeSortingSelection` without errors. What's the next table I populate, and after that, what's the next?"
 - **required_substrings:** `SpikeSorting.populate(`, `CurationV1`, `MetricCuration`
-- **behavioral_checks:** Gives an ordered next-N list (SpikeSorting.populate → curation entry → MetricCuration → CurationV1, or equivalent v1 path); routes to [spikesorting_pipeline.md](../../skills/spyglass/references/spikesorting_pipeline.md).
+- **behavioral_checks:** Gives an ordered next-N list (SpikeSorting.populate → curation entry → MetricCuration → CurationV1, or equivalent v1 path); routes to [spikesorting_v1_pipeline.md](../../skills/spyglass/references/spikesorting_v1_pipeline.md).
 - Discriminator note: bare `SpikeSorting` (substring-matches the prompt's `SpikeSortingSelection`) and bare `populate` (echoes prompt) removed; replaced with the full method call (`SpikeSorting.populate(` — note: the v1 class name is `SpikeSorting`, not `SpikeSortingV1`; verified in [validate_skill.py KNOWN_CLASSES](../../skills/spyglass/scripts/validate_skill.py)) and the next-step table name `MetricCuration` (a non-echoed discriminator that forces ordered enumeration). The trailing paren in `SpikeSorting.populate(` prevents accidental match against `SpikeSortingSelection.populate(`.
 
 ### Eval 71 — `workflow-next-after-dlcmodeltraining`
