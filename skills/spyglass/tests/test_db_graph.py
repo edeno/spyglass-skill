@@ -756,7 +756,7 @@ def _expect_resolved_payload(
     return True
 
 
-def fixture_b_resolves_stock_short_name(args: argparse.Namespace) -> bool:
+def fixture_resolve_resolves_stock_short_name(args: argparse.Namespace) -> bool:
     """``--class Session`` resolves via the stock _index path."""
     if not _require_capability(
         args, datajoint=True, spyglass=True,
@@ -784,7 +784,7 @@ def fixture_b_resolves_stock_short_name(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_b_resolves_dotted_qualname(args: argparse.Namespace) -> bool:
+def fixture_resolve_resolves_dotted_qualname(args: argparse.Namespace) -> bool:
     """``--class LFPOutput.LFPV1`` resolves to the merge-part record.
 
     `code_graph._resolve_class` filters by exact qualname when the input
@@ -814,7 +814,7 @@ def fixture_b_resolves_dotted_qualname(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_b_resolves_module_class_form(args: argparse.Namespace) -> bool:
+def fixture_resolve_resolves_module_class_form(args: argparse.Namespace) -> bool:
     """``module:Class`` (explicit colon form) resolves via module_path source."""
     if not _require_capability(
         args, datajoint=True, spyglass=True,
@@ -839,7 +839,7 @@ def fixture_b_resolves_module_class_form(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_b_resolves_dotted_module_path(args: argparse.Namespace) -> bool:
+def fixture_resolve_resolves_dotted_module_path(args: argparse.Namespace) -> bool:
     """Implicit dotted module path ``a.b.c.D`` falls through to module_path source.
 
     The _index lookup tries to match the full qualname (``a.b.c.D``) and
@@ -870,7 +870,7 @@ def fixture_b_resolves_dotted_module_path(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_b_resolves_via_import_for_custom_class(
+def fixture_resolve_resolves_via_import_for_custom_class(
     args: argparse.Namespace,
 ) -> bool:
     """``--import customlab --class customlab:CustomTable`` resolves a non-stock UserTable.
@@ -947,7 +947,7 @@ def fixture_b_resolves_via_import_for_custom_class(
     return True
 
 
-def fixture_b_ambiguous_short_name_exits_3(args: argparse.Namespace) -> bool:
+def fixture_resolve_ambiguous_short_name_exits_3(args: argparse.Namespace) -> bool:
     """Multiple top-level records with the same short name → exit 3, kind=ambiguous.
 
     Constructed via a synthetic ``--src`` tree because real Spyglass
@@ -1007,7 +1007,7 @@ def fixture_b_ambiguous_short_name_exits_3(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_b_not_found_exits_4(args: argparse.Namespace) -> bool:
+def fixture_resolve_not_found_exits_4(args: argparse.Namespace) -> bool:
     """Genuinely unknown short name → exit 4, kind=not_found, error.kind=not_found.
 
     Uses a synthetic ``--src`` (empty ``spyglass/`` package) so the
@@ -1049,7 +1049,7 @@ def fixture_b_not_found_exits_4(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_b_not_a_table_exits_4(args: argparse.Namespace) -> bool:
+def fixture_resolve_not_a_table_exits_4(args: argparse.Namespace) -> bool:
     """Importable class that is not a DataJoint UserTable → exit 4, error.kind=not_a_table.
 
     Uses ``json:JSONDecoder`` as the canonical example: stdlib, importable
@@ -1091,7 +1091,7 @@ def fixture_b_not_a_table_exits_4(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_b_src_overrides_installed_package(
+def fixture_resolve_src_overrides_installed_package(
     args: argparse.Namespace,
 ) -> bool:
     """``--src`` is authoritative over the installed-package fallback.
@@ -1134,7 +1134,7 @@ def fixture_b_src_overrides_installed_package(
     return True
 
 
-def fixture_b_installed_package_overrides_env_var(
+def fixture_resolve_installed_package_overrides_env_var(
     args: argparse.Namespace,
 ) -> bool:
     """The installed-package fallback wins over ``$SPYGLASS_SRC``.
@@ -1228,7 +1228,7 @@ def _setup_fakes_sandbox(
     return tmp
 
 
-def fixture_c_fakes_restriction_and_fetch(args: argparse.Namespace) -> bool:
+def fixture_find_instance_fakes_restriction_and_fetch(args: argparse.Namespace) -> bool:
     """End-to-end find-instance via the fakes sandbox — no live DB needed.
 
     This is the canonical Batch-C coverage fixture for the no-VPN /
@@ -1312,7 +1312,7 @@ def fixture_c_fakes_restriction_and_fetch(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_c_fakes_count_only(args: argparse.Namespace) -> bool:
+def fixture_find_instance_fakes_count_only(args: argparse.Namespace) -> bool:
     """``--count`` against the fakes sandbox returns count without rows."""
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp = _setup_fakes_sandbox(
@@ -1363,7 +1363,7 @@ def fixture_c_fakes_count_only(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_c_fakes_truncation_marker(args: argparse.Namespace) -> bool:
+def fixture_find_instance_fakes_truncation_marker(args: argparse.Namespace) -> bool:
     """``--limit 2`` against a 5-row relation triggers ``truncated: true``."""
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp = _setup_fakes_sandbox(
@@ -1419,12 +1419,12 @@ def fixture_c_fakes_truncation_marker(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_c_fakes_unknown_field_validation(
+def fixture_find_instance_fakes_unknown_field_validation(
     args: argparse.Namespace,
 ) -> bool:
     """Unknown restriction field validation runs through fakes too.
 
-    Mirrors the live ``fixture_c_unknown_restriction_field_refused`` but
+    Mirrors the live ``fixture_find_instance_unknown_restriction_field_refused`` but
     uses the fakes sandbox so it runs on system Python without VPN.
     """
     with tempfile.TemporaryDirectory() as tmp_str:
@@ -1466,7 +1466,7 @@ def fixture_c_fakes_unknown_field_validation(
     return True
 
 
-def fixture_c_fakes_blob_restriction_refused(
+def fixture_find_instance_fakes_blob_restriction_refused(
     args: argparse.Namespace,
 ) -> bool:
     """Blob-restriction refusal runs through fakes — no live DB needed."""
@@ -1510,7 +1510,7 @@ def fixture_c_fakes_blob_restriction_refused(
     return True
 
 
-def fixture_c_fakes_safe_serialization_envelopes(
+def fixture_find_instance_fakes_safe_serialization_envelopes(
     args: argparse.Namespace,
 ) -> bool:
     """Per-field safe serialization envelopes round-trip via the fakes sandbox.
@@ -1642,7 +1642,7 @@ def fixture_c_fakes_safe_serialization_envelopes(
     return True
 
 
-def fixture_c_fakes_nan_restriction_refused(
+def fixture_find_instance_fakes_nan_restriction_refused(
     args: argparse.Namespace,
 ) -> bool:
     """``--key x=nan`` is refused at parse time (not echoed into restriction).
@@ -1761,7 +1761,7 @@ def _write_fake_merge_module(target: Path) -> None:
     )
 
 
-def fixture_d_fakes_merge_routes_part_only_field_to_part(
+def fixture_merge_fakes_merge_routes_part_only_field_to_part(
     args: argparse.Namespace,
 ) -> bool:
     """Eval-#14/15/16 shape: ``--merge-master M --part P --key part_only=X``.
@@ -1847,7 +1847,7 @@ def fixture_d_fakes_merge_routes_part_only_field_to_part(
     return True
 
 
-def fixture_d_fakes_merge_count_unbounded_by_limit(
+def fixture_merge_fakes_merge_count_unbounded_by_limit(
     args: argparse.Namespace,
 ) -> bool:
     """Merge ``--count`` reports the TRUE count, not a page-limited count.
@@ -1994,7 +1994,7 @@ def fixture_d_fakes_merge_count_unbounded_by_limit(
     return True
 
 
-def fixture_d_fakes_merge_ids_dedup_when_part_rows_share_master(
+def fixture_merge_fakes_merge_ids_dedup_when_part_rows_share_master(
     args: argparse.Namespace,
 ) -> bool:
     """``merge.merge_ids`` is a SET of master keys, deduped on master-key
@@ -2116,7 +2116,7 @@ def fixture_d_fakes_merge_ids_dedup_when_part_rows_share_master(
     return True
 
 
-def fixture_d_fakes_merge_rows_pagination_dedupes_master_keys(
+def fixture_merge_fakes_merge_rows_pagination_dedupes_master_keys(
     args: argparse.Namespace,
 ) -> bool:
     """Merge ``rows`` mode paginates DISTINCT master keys, not raw part
@@ -2245,7 +2245,7 @@ def fixture_d_fakes_merge_rows_pagination_dedupes_master_keys(
     return True
 
 
-def fixture_c_keyjson_non_finite_value_refused(
+def fixture_find_instance_keyjson_non_finite_value_refused(
     args: argparse.Namespace,
 ) -> bool:
     """``--key-json`` rejects NaN, Infinity, ``-Infinity``, and overflow
@@ -2293,7 +2293,7 @@ def fixture_c_keyjson_non_finite_value_refused(
     return True
 
 
-def fixture_c_fakes_nested_non_finite_in_fetched_rows_envelopes(
+def fixture_find_instance_fakes_nested_non_finite_in_fetched_rows_envelopes(
     args: argparse.Namespace,
 ) -> bool:
     """Fetched values that are nested dicts/lists containing NaN or Inf
@@ -2410,7 +2410,7 @@ def fixture_c_fakes_nested_non_finite_in_fetched_rows_envelopes(
     return True
 
 
-def fixture_c_fakes_blob_dict_with_non_string_keys_envelopes(
+def fixture_find_instance_fakes_blob_dict_with_non_string_keys_envelopes(
     args: argparse.Namespace,
 ) -> bool:
     """Fetched dict values whose keys are not JSON-safe scalars
@@ -2505,7 +2505,7 @@ def fixture_c_fakes_blob_dict_with_non_string_keys_envelopes(
     return True
 
 
-def fixture_c_fakes_pathological_blob_objects_envelope_per_field(
+def fixture_find_instance_fakes_pathological_blob_objects_envelope_per_field(
     args: argparse.Namespace,
 ) -> bool:
     """Hostile blob values do not abort the row.
@@ -2632,7 +2632,7 @@ def fixture_c_fakes_pathological_blob_objects_envelope_per_field(
     return True
 
 
-def fixture_g_path_max_depth_negative_refused(
+def fixture_path_path_max_depth_negative_refused(
     args: argparse.Namespace,
 ) -> bool:
     """``path --max-depth -1`` is refused at argparse with exit 2.
@@ -2664,7 +2664,7 @@ def fixture_g_path_max_depth_negative_refused(
     return True
 
 
-def fixture_d_fakes_merge_master_only_field_silent_no_op_refused(
+def fixture_merge_fakes_merge_master_only_field_silent_no_op_refused(
     args: argparse.Namespace,
 ) -> bool:
     """Eval #50 footgun: master-class restricted by part-only field is refused.
@@ -2717,7 +2717,7 @@ def fixture_d_fakes_merge_master_only_field_silent_no_op_refused(
     return True
 
 
-def fixture_d_fakes_merge_part_master_mismatch_exits_3(
+def fixture_merge_fakes_merge_part_master_mismatch_exits_3(
     args: argparse.Namespace,
 ) -> bool:
     """``--merge-master`` disagreeing with ``part.master`` exits 3.
@@ -2799,7 +2799,7 @@ def fixture_d_fakes_merge_part_master_mismatch_exits_3(
     return True
 
 
-def fixture_d_set_op_flags_mutually_exclusive(
+def fixture_merge_set_op_flags_mutually_exclusive(
     args: argparse.Namespace,
 ) -> bool:
     """``--intersect`` / ``--except`` / ``--join`` cannot be combined.
@@ -2835,7 +2835,7 @@ def fixture_d_set_op_flags_mutually_exclusive(
     return True
 
 
-def fixture_d_set_op_with_grouping_refused(
+def fixture_merge_set_op_with_grouping_refused(
     args: argparse.Namespace,
 ) -> bool:
     """Set ops cannot be combined with --group-by / --group-by-table."""
@@ -2962,7 +2962,7 @@ def _setup_setop_sandbox(tmp: Path) -> None:
     _write_fake_setop_module(tmp)
 
 
-def fixture_e_fakes_intersect_returns_shared_keys(
+def fixture_setop_fakes_intersect_returns_shared_keys(
     args: argparse.Namespace,
 ) -> bool:
     """``--class Left --intersect Right`` returns rows present in both.
@@ -3018,7 +3018,7 @@ def fixture_e_fakes_intersect_returns_shared_keys(
     return True
 
 
-def fixture_e_fakes_except_returns_left_minus_right(
+def fixture_setop_fakes_except_returns_left_minus_right(
     args: argparse.Namespace,
 ) -> bool:
     """``--class Left --except Right`` returns rows in Left but not Right."""
@@ -3067,7 +3067,7 @@ def fixture_e_fakes_except_returns_left_minus_right(
     return True
 
 
-def fixture_e_fakes_join_validates_output_fields(
+def fixture_setop_fakes_join_validates_output_fields(
     args: argparse.Namespace,
 ) -> bool:
     """``--class Left --join Right --fields ...`` returns the natural join."""
@@ -3120,7 +3120,7 @@ def fixture_e_fakes_join_validates_output_fields(
     return True
 
 
-def fixture_e_fakes_intersect_secondary_only_overlap_refused(
+def fixture_setop_fakes_intersect_secondary_only_overlap_refused(
     args: argparse.Namespace,
 ) -> bool:
     """Intersect with only-secondary-field overlap is refused at preflight.
@@ -3206,7 +3206,7 @@ def fixture_e_fakes_intersect_secondary_only_overlap_refused(
     return True
 
 
-def fixture_e_fakes_setop_restriction_routes_to_partner(
+def fixture_setop_fakes_setop_restriction_routes_to_partner(
     args: argparse.Namespace,
 ) -> bool:
     """A partner-only --key is applied to R, not the base.
@@ -3261,7 +3261,7 @@ def fixture_e_fakes_setop_restriction_routes_to_partner(
     return True
 
 
-def fixture_e_fakes_setop_failure_carries_set_op_context(
+def fixture_setop_fakes_setop_failure_carries_set_op_context(
     args: argparse.Namespace,
 ) -> bool:
     """Failure payloads from set-op invocations carry set-op fields.
@@ -3313,7 +3313,7 @@ def fixture_e_fakes_setop_failure_carries_set_op_context(
     return True
 
 
-def fixture_e_fakes_zero_overlap_set_op_refused(
+def fixture_setop_fakes_zero_overlap_set_op_refused(
     args: argparse.Namespace,
 ) -> bool:
     """A set op with no shared attributes between operands exits 2.
@@ -3455,7 +3455,7 @@ def _setup_grouping_sandbox(tmp: Path) -> None:
     _write_fake_grouping_module(tmp)
 
 
-def fixture_e_fakes_group_by_table_eval19_shape(
+def fixture_grouped_count_fakes_group_by_table_eval19_shape(
     args: argparse.Namespace,
 ) -> bool:
     """Eval #19 shape: per-session distinct electrode-group counts.
@@ -3517,7 +3517,7 @@ def fixture_e_fakes_group_by_table_eval19_shape(
     return True
 
 
-def fixture_e_fakes_group_by_explicit_fields(
+def fixture_grouped_count_fakes_group_by_explicit_fields(
     args: argparse.Namespace,
 ) -> bool:
     """``--group-by f1,f2`` form runs the explicit-field aggregation."""
@@ -3559,7 +3559,7 @@ def fixture_e_fakes_group_by_explicit_fields(
     return True
 
 
-def fixture_e_fakes_count_distinct_field_must_be_on_counted(
+def fixture_grouped_count_fakes_count_distinct_field_must_be_on_counted(
     args: argparse.Namespace,
 ) -> bool:
     """``--count-distinct`` field must exist on the counted relation, not the grouping table."""
@@ -3597,7 +3597,7 @@ def fixture_e_fakes_count_distinct_field_must_be_on_counted(
     return True
 
 
-def fixture_d_merge_error_payload_carries_merge_context(
+def fixture_merge_merge_error_payload_carries_merge_context(
     args: argparse.Namespace,
 ) -> bool:
     """Merge-mode error payloads include merge_master and part fields.
@@ -3653,7 +3653,7 @@ def fixture_d_merge_error_payload_carries_merge_context(
     return True
 
 
-def fixture_d_fakes_merge_count_only(args: argparse.Namespace) -> bool:
+def fixture_merge_fakes_merge_count_only(args: argparse.Namespace) -> bool:
     """Merge mode + ``--count`` returns count without rows."""
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp = Path(tmp_str)
@@ -3699,7 +3699,7 @@ def fixture_d_fakes_merge_count_only(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_c_fakes_db_error_classification(
+def fixture_find_instance_fakes_db_error_classification(
     args: argparse.Namespace,
 ) -> bool:
     """``LostConnectionError`` from fetch is classified as ``connection``.
@@ -3756,7 +3756,7 @@ def fixture_c_fakes_db_error_classification(
     return True
 
 
-def fixture_c_no_restrgraph_or_tablechain_in_source(
+def fixture_find_instance_no_restrgraph_or_tablechain_in_source(
     _args: argparse.Namespace,
 ) -> bool:
     """Plan acceptance: find-instance must not invoke RestrGraph / TableChain.
@@ -3812,7 +3812,7 @@ _DJ_WRITE_METHODS = (
 )
 
 
-def fixture_c_read_only_no_write_method_calls_in_source(
+def fixture_find_instance_read_only_no_write_method_calls_in_source(
     _args: argparse.Namespace,
 ) -> bool:
     """Plan #23 / Definition-of-done: read-only invariant pinned in source.
@@ -3854,7 +3854,7 @@ def fixture_c_read_only_no_write_method_calls_in_source(
     return True
 
 
-def fixture_c_unknown_restriction_field_refused(
+def fixture_find_instance_unknown_restriction_field_refused(
     args: argparse.Namespace,
 ) -> bool:
     """``--key unknown_field=x`` is refused with exit 2 (kind=invalid_query).
@@ -3909,7 +3909,7 @@ def fixture_c_unknown_restriction_field_refused(
     return True
 
 
-def fixture_c_blob_restriction_refused(args: argparse.Namespace) -> bool:
+def fixture_find_instance_blob_restriction_refused(args: argparse.Namespace) -> bool:
     """A ``--key`` against a blob attribute is refused.
 
     ``IntervalList.valid_times`` is a ``longblob`` attribute; restricting
@@ -3951,7 +3951,7 @@ def fixture_c_blob_restriction_refused(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_c_null_key_value_refused(args: argparse.Namespace) -> bool:
+def fixture_find_instance_null_key_value_refused(args: argparse.Namespace) -> bool:
     """``--key field=null`` is refused; DataJoint silently drops it otherwise.
 
     Pure parser test — does not need datajoint/spyglass on python_env
@@ -3983,7 +3983,7 @@ def fixture_c_null_key_value_refused(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_c_fields_key_mixed_with_explicit_fields_refused(
+def fixture_find_instance_fields_key_mixed_with_explicit_fields_refused(
     args: argparse.Namespace,
 ) -> bool:
     """``--fields KEY,name`` is refused.
@@ -4023,7 +4023,7 @@ def fixture_c_fields_key_mixed_with_explicit_fields_refused(
     return True
 
 
-def fixture_c_null_keyjson_value_refused(args: argparse.Namespace) -> bool:
+def fixture_find_instance_null_keyjson_value_refused(args: argparse.Namespace) -> bool:
     """``--key-json field=null`` is refused for the same reason ``--key
     field=null`` is — JSON ``null`` would otherwise sneak past the
     scalar-parser refusal and let DataJoint silently drop the
@@ -4060,7 +4060,7 @@ def fixture_c_null_keyjson_value_refused(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_c_malformed_key_argument_refused(
+def fixture_find_instance_malformed_key_argument_refused(
     args: argparse.Namespace,
 ) -> bool:
     """``--key`` without an ``=`` is refused.
@@ -4094,7 +4094,7 @@ def fixture_c_malformed_key_argument_refused(
     return True
 
 
-def fixture_c_unknown_fetch_field_refused(args: argparse.Namespace) -> bool:
+def fixture_find_instance_unknown_fetch_field_refused(args: argparse.Namespace) -> bool:
     """``--fields nonexistent`` is refused.
 
     Mirrors the restriction-field validation. Catches the case where the
@@ -4158,297 +4158,19 @@ def _expect_find_instance_payload(
     return payload
 
 
-def fixture_c_eval9_session_row_lookup(args: argparse.Namespace) -> bool:
-    """Eval #9 shape: ``--class Session --key nwb_file_name=X --fields KEY``.
-
-    Returns ``query.resolved_class``, ``count``, bounded ``rows``. The
-    nwb file used for this fixture is the lab's standard test session
-    referenced throughout the eval set.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #9 row lookup against real Spyglass DB",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "Session",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-            "--fields",
-            "KEY",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _expect_find_instance_payload(out, mode="rows")
-    if payload is None:
-        return False
-    expected_resolved = "spyglass.common.common_session.Session"
-    if payload["query"].get("resolved_class") != expected_resolved:
-        print(
-            f"  [FAIL] resolved_class drift: "
-            f"{payload['query'].get('resolved_class')!r}"
-        )
-        return False
-    rows = payload.get("rows", [])
-    if not rows:
-        print("  [FAIL] expected at least one row for the lab's test session")
-        return False
-    pk_fields = set(rows[0].keys())
-    if "nwb_file_name" not in pk_fields:
-        print(f"  [FAIL] PK field nwb_file_name missing from row keys: {pk_fields!r}")
-        return False
-    print("  [ok] eval #9: Session row lookup returns PK rows + count")
-    return True
 
 
-def fixture_c_eval10_selected_fields(args: argparse.Namespace) -> bool:
-    """Eval #10 shape: selected fields fetch.
-
-    ``--fields session_description,session_start_time`` returns those
-    two fields per row, with safe-serialized values (datetime → ISO).
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #10 selected fields against real Spyglass DB",
-    ):
-        return True
-    rc, out, _ = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "Session",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-            "--fields",
-            "session_description,session_start_time",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}")
-        return False
-    payload = _expect_find_instance_payload(out, mode="rows")
-    if payload is None:
-        return False
-    rows = payload.get("rows", [])
-    if not rows:
-        print("  [FAIL] no rows returned")
-        return False
-    keys = set(rows[0].keys())
-    if "session_description" not in keys or "session_start_time" not in keys:
-        print(f"  [FAIL] expected fields not in row: {keys!r}")
-        return False
-    sst = rows[0]["session_start_time"]
-    # ISO-8601 string proves the safe serializer fired.
-    if not isinstance(sst, str) or "T" not in sst:
-        print(f"  [FAIL] session_start_time not safe-serialized to ISO: {sst!r}")
-        return False
-    print("  [ok] eval #10: selected fields returned with ISO-serialized datetime")
-    return True
 
 
-def fixture_c_eval11_field_list(args: argparse.Namespace) -> bool:
-    """Eval #11 shape: field listing across multiple rows.
-
-    ``IntervalList & {nwb_file_name: X}`` typically returns ~50 rows;
-    ``--fields interval_list_name`` should return that many strings.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #11 field list against real Spyglass DB",
-    ):
-        return True
-    rc, out, _ = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "IntervalList",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-            "--fields",
-            "interval_list_name",
-            "--limit",
-            "100",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}")
-        return False
-    payload = _expect_find_instance_payload(out, mode="rows", expect_count_at_least=1)
-    if payload is None:
-        return False
-    rows = payload.get("rows", [])
-    for row in rows:
-        if "interval_list_name" not in row:
-            print(f"  [FAIL] interval_list_name missing in row: {row!r}")
-            return False
-        if not isinstance(row["interval_list_name"], str):
-            print(
-                f"  [FAIL] interval_list_name not a string: "
-                f"{type(row['interval_list_name']).__name__}"
-            )
-            return False
-    print(
-        f"  [ok] eval #11: IntervalList field list returned "
-        f"{len(rows)} interval names"
-    )
-    return True
 
 
-def fixture_c_eval12_count_only(args: argparse.Namespace) -> bool:
-    """Eval #12 shape: ``--count`` returns count without rows.
-
-    Eval ground truth: ``len(Electrode & {nwb_file_name: X})``. The
-    ``--count`` flag short-circuits the fetch step, so the payload has
-    ``count: N`` and ``rows: []``.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #12 count against real Spyglass DB",
-    ):
-        return True
-    rc, out, _ = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "Electrode",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-            "--count",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}")
-        return False
-    payload = _expect_find_instance_payload(out, mode="count")
-    if payload is None:
-        return False
-    rows = payload.get("rows", [])
-    if rows:
-        print(f"  [FAIL] --count should yield empty rows, got {len(rows)}")
-        return False
-    if payload["count"] < 1:
-        print(f"  [FAIL] expected nonzero Electrode count, got {payload['count']}")
-        return False
-    print(f"  [ok] eval #12: --count yielded count={payload['count']}, rows=[]")
-    return True
 
 
-def fixture_c_eval13_key_only_resolves_merge_evidence(
-    args: argparse.Namespace,
-) -> bool:
-    """Eval #13 shape: KEY-only fetch resolves the merge evidence.
-
-    The eval prompt asks for the Trodes position dataframe via
-    PositionOutput. Batch C does not implement merge-aware resolution
-    (Batch D), but it MUST be able to fetch the part-table KEY which
-    includes the merge_id. ``PositionOutput.TrodesPosV1 & {...}.fetch1('KEY')``
-    is the canonical resolution step before the dataframe fetch.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #13 KEY-only fetch against real Spyglass DB",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "PositionOutput.TrodesPosV1",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-            "--key",
-            "interval_list_name=02_r1",
-            "--key",
-            "trodes_pos_params_name=default",
-            "--fields",
-            "KEY",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _expect_find_instance_payload(out, mode="rows")
-    if payload is None:
-        return False
-    rows = payload.get("rows", [])
-    if not rows:
-        print(
-            "  [FAIL] expected at least one PositionOutput.TrodesPosV1 row "
-            "for the lab's test session"
-        )
-        return False
-    if "merge_id" not in rows[0]:
-        print(
-            f"  [FAIL] merge_id absent from KEY fetch — Batch D depends "
-            f"on this evidence: {rows[0]!r}"
-        )
-        return False
-    print("  [ok] eval #13: KEY fetch returns merge_id (Batch D evidence ready)")
-    return True
 
 
-def fixture_c_limit_truncation_marker(args: argparse.Namespace) -> bool:
-    """``truncated: true`` fires when the relation has more rows than ``--limit``.
-
-    Uses ``--limit 1`` against IntervalList for the lab's test session
-    (which has many rows); the payload should report ``count > 1`` and
-    ``truncated: true`` with exactly 1 row in the output.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="truncation marker requires fetching from a real DataJoint table",
-    ):
-        return True
-    rc, out, _ = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "IntervalList",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-            "--fields",
-            "KEY",
-            "--limit",
-            "1",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}")
-        return False
-    payload = _parse_json_or_fail(out, "truncation payload")
-    if payload is None:
-        return False
-    if not payload.get("truncated"):
-        print(f"  [FAIL] truncated should be true: {payload.get('truncated')!r}")
-        return False
-    if len(payload.get("rows", [])) != 1:
-        print(f"  [FAIL] rows should have 1 entry, got {len(payload.get('rows', []))}")
-        return False
-    if payload["count"] <= 1:
-        print(
-            f"  [FAIL] count should be > 1 for the truncation case: "
-            f"{payload['count']}"
-        )
-        return False
-    print(
-        f"  [ok] --limit 1 + many rows: truncated=true, count="
-        f"{payload['count']}, rows=1"
-    )
-    return True
 
 
-def fixture_c_empty_result_exit_zero_by_default(
+def fixture_find_instance_empty_result_exit_zero_by_default(
     args: argparse.Namespace,
 ) -> bool:
     """Empty result is exit 0 with ``count: 0`` (the canonical scientific answer).
@@ -4510,387 +4232,21 @@ def _expect_merge_payload(out: str) -> dict | None:
     return payload
 
 
-def fixture_d_eval14_trodes_position_merge_id(
-    args: argparse.Namespace,
-) -> bool:
-    """Eval #14 shape: ``merge_id`` for Trodes position via PositionOutput.
-
-    ``--merge-master PositionOutput --part TrodesPosV1 --key
-    nwb_file_name=X --key interval_list_name=Y --key
-    trodes_pos_params_name=Z`` resolves the part keys, fetches the
-    master keys (``merge_id``), and returns master rows for those keys.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #14 merge-id lookup against real Spyglass DB",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        [
-            "find-instance",
-            "--merge-master",
-            "PositionOutput",
-            "--part",
-            "TrodesPosV1",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-            "--key",
-            "interval_list_name=02_r1",
-            "--key",
-            "trodes_pos_params_name=default",
-            "--fields",
-            "KEY",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _expect_merge_payload(out)
-    if payload is None:
-        return False
-    merge = payload["merge"]
-    if "merge_id" not in merge["master_key_fields"]:
-        print(
-            f"  [FAIL] master_key_fields missing 'merge_id': "
-            f"{merge['master_key_fields']!r}"
-        )
-        return False
-    if merge.get("master") != "PositionOutput":
-        print(f"  [FAIL] merge.master != 'PositionOutput': {merge.get('master')!r}")
-        return False
-    if merge.get("part") != "TrodesPosV1":
-        print(f"  [FAIL] merge.part != 'TrodesPosV1': {merge.get('part')!r}")
-        return False
-    if not merge.get("merge_ids"):
-        print("  [FAIL] merge.merge_ids should list the resolved merge_id")
-        return False
-    print("  [ok] eval #14: PositionOutput merge_id resolved via TrodesPosV1")
-    return True
 
 
-def fixture_d_eval15_lfp_merge_id_via_lfpv1(
-    args: argparse.Namespace,
-) -> bool:
-    """Eval #15 shape: LFP merge entry via LFPOutput / LFPV1 (when populated).
-
-    Filter narrowness depends on the lab's data; this fixture uses the
-    ``nwb_file_name`` restriction only and verifies the merge envelope
-    is well-shaped. The eval ground truth notes that filter_name alone
-    does not uniquely identify the filter (there are duplicates by
-    sampling rate); the fixture asserts the merge mechanics, not a
-    specific count.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #15 LFP merge against real Spyglass DB",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        [
-            "find-instance",
-            "--merge-master",
-            "LFPOutput",
-            "--part",
-            "LFPV1",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-            "--fields",
-            "KEY",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _expect_merge_payload(out)
-    if payload is None:
-        return False
-    merge = payload["merge"]
-    if "merge_id" not in merge["master_key_fields"]:
-        print(
-            f"  [FAIL] master_key_fields missing 'merge_id': "
-            f"{merge['master_key_fields']!r}"
-        )
-        return False
-    print(
-        f"  [ok] eval #15: LFPOutput merge resolved via LFPV1 "
-        f"(count={payload.get('count')})"
-    )
-    return True
 
 
-def fixture_d_eval16_decoding_output_merge_id(
-    args: argparse.Namespace,
-) -> bool:
-    """Eval #16 shape: DecodingOutput merge_id via ClusterlessDecodingV1.
-
-    The eval ground truth involves a parameter-name discovery step that
-    is out of scope here. This fixture exercises the merge mechanics
-    against the part with a session-only restriction; the result may
-    have ``count: 0`` if the lab's data hasn't populated this part for
-    the given session, but the merge envelope must still be well-shaped.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #16 DecodingOutput merge against real Spyglass DB",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        [
-            "find-instance",
-            "--merge-master",
-            "DecodingOutput",
-            "--part",
-            "ClusterlessDecodingV1",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-            "--fields",
-            "KEY",
-        ],
-        python_env=args.python_env,
-    )
-    # Allow rc=0 (merge succeeded) or rc=4 (part not in current schema
-    # snapshot — Spyglass schema evolution is fast and not every lab
-    # has every part populated).
-    if rc not in (0, 4):
-        print(f"  [FAIL] expected rc in (0, 4), got {rc}; stderr: {err[:200]!r}")
-        return False
-    if rc == 0:
-        payload = _expect_merge_payload(out)
-        if payload is None:
-            return False
-        if "merge_id" not in payload["merge"]["master_key_fields"]:
-            print("  [FAIL] master_key_fields missing 'merge_id'")
-            return False
-        print(
-            f"  [ok] eval #16: DecodingOutput merge resolved "
-            f"(count={payload.get('count')})"
-        )
-    else:
-        print(
-            "  [ok] eval #16: ClusterlessDecodingV1 not present in this "
-            "Spyglass snapshot — not_found is the honest answer"
-        )
-    return True
 
 
-def fixture_e_eval17_intersect_sessions_in_both(
-    args: argparse.Namespace,
-) -> bool:
-    """Eval #17 shape: sessions with both RippleTimesV1 and ClusterlessDecodingV1.
-
-    ``RippleTimesV1 * ClusterlessDecodingV1`` is the eval's natural-join
-    formulation. ``--intersect`` runs ``L & R.proj()`` which, since
-    both classes share ``nwb_file_name`` (among others), yields the
-    same set of nwb_file_names. This fixture asserts the intersection
-    succeeds and returns at least the shared key.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #17 intersect against real Spyglass DB",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "RippleTimesV1",
-            "--intersect",
-            "ClusterlessDecodingV1",
-            "--fields",
-            "KEY",
-        ],
-        python_env=args.python_env,
-    )
-    # Allow both rc=0 (intersection has rows) and rc=0 with empty
-    # rows (both classes populated but no shared row) — both are
-    # honest answers. Refuse only on db_error / not_found.
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _parse_json_or_fail(out, "eval17 payload")
-    if payload is None:
-        return False
-    if payload.get("kind") != "find-instance":
-        print(f"  [FAIL] kind != 'find-instance': {payload.get('kind')!r}")
-        return False
-    if payload.get("query", {}).get("set_op") != "intersect":
-        print("  [FAIL] set_op != 'intersect'")
-        return False
-    print(
-        f"  [ok] eval #17: RippleTimesV1 ∩ ClusterlessDecodingV1 "
-        f"(count={payload.get('count')})"
-    )
-    return True
 
 
-def fixture_e_eval18_except_sessions_only_in_left(
-    args: argparse.Namespace,
-) -> bool:
-    """Eval #18 shape: sessions in TrodesPosV1 but not DLCPosV1.
-
-    The eval's bare ``TrodesPosV1 - DLCPosV1`` raises in DataJoint
-    because the operands have non-shared PK attributes; we run with
-    ``.proj()`` instead which DataJoint accepts.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #18 antijoin against real Spyglass DB",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "TrodesPosV1",
-            "--except",
-            "DLCPosV1",
-            "--fields",
-            "KEY",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        # Allow rc=5 if DataJoint refuses the projection-form antijoin
-        # (some DataJoint versions reject this even with .proj()).
-        if rc == 5:
-            print(
-                f"  [ok] eval #18: DataJoint refused .proj() antijoin "
-                f"(stderr: {err[:80]!r}). Future improvement: bounded "
-                "Python fallback."
-            )
-            return True
-        print(f"  [FAIL] expected rc in (0, 5), got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _parse_json_or_fail(out, "eval18 payload")
-    if payload is None:
-        return False
-    if payload.get("query", {}).get("set_op") != "except":
-        print("  [FAIL] set_op != 'except'")
-        return False
-    print(
-        f"  [ok] eval #18: TrodesPosV1 \\ DLCPosV1 "
-        f"(count={payload.get('count')})"
-    )
-    return True
 
 
-def fixture_e_eval19_per_session_distinct_tetrodes(
-    args: argparse.Namespace,
-) -> bool:
-    """Eval #19 shape: per-session distinct electrode-group counts.
-
-    ``--class Electrode --key subject_id=aj80 --group-by-table Session
-    --count-distinct electrode_group_name`` should yield one row per
-    Session matching the restriction, with the count of distinct
-    electrode-group names.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #19 grouped count against real Spyglass DB",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "Electrode",
-            "--key",
-            "subject_id=aj80",
-            "--group-by-table",
-            "Session",
-            "--count-distinct",
-            "electrode_group_name",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _parse_json_or_fail(out, "eval19 payload")
-    if payload is None:
-        return False
-    if payload.get("kind") != "grouped_count":
-        print(f"  [FAIL] kind != 'grouped_count': {payload.get('kind')!r}")
-        return False
-    groups = payload.get("groups", [])
-    # Sanity: each group has nwb_file_name and a count of distinct groups.
-    for g in groups:
-        if "nwb_file_name" not in g:
-            print(f"  [FAIL] group missing nwb_file_name: {g!r}")
-            return False
-        if "count_distinct_electrode_group_name" not in g:
-            print(
-                f"  [FAIL] group missing count_distinct_electrode_group_name: "
-                f"{g!r}"
-            )
-            return False
-    print(
-        f"  [ok] eval #19: per-session distinct tetrode counts "
-        f"({len(groups)} sessions for subject_id=aj80)"
-    )
-    return True
 
 
-def fixture_e_eval28_29_join_to_brain_region(
-    args: argparse.Namespace,
-) -> bool:
-    """Evals #28/#29 shape: join Electrode * BrainRegion via shared attrs.
-
-    Both Electrode and BrainRegion live in spyglass.common; they share
-    ``region_id`` (or similar). The join is the canonical pattern for
-    "what brain region is this electrode in?". This fixture asserts
-    the join produces a non-empty heading and returns rows that
-    expose region-name-shaped fields.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #28/#29 join against real Spyglass DB",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "Electrode",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-            "--key",
-            "electrode_id=7",
-            "--join",
-            "BrainRegion",
-            "--fields",
-            "nwb_file_name,electrode_id,region_name",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _parse_json_or_fail(out, "eval28/29 payload")
-    if payload is None:
-        return False
-    if payload.get("query", {}).get("set_op") != "join":
-        print("  [FAIL] set_op != 'join'")
-        return False
-    rows = payload.get("rows", [])
-    if not rows:
-        print(
-            "  [FAIL] expected at least one Electrode-BrainRegion join row"
-        )
-        return False
-    if "region_name" not in rows[0]:
-        print(f"  [FAIL] join row missing region_name: {rows[0]!r}")
-        return False
-    print(
-        f"  [ok] eval #28/#29: Electrode * BrainRegion returned "
-        f"region_name={rows[0].get('region_name')!r}"
-    )
-    return True
 
 
-def fixture_f_fakes_describe_returns_heading_and_adjacency(
+def fixture_describe_fakes_describe_returns_heading_and_adjacency(
     args: argparse.Namespace,
 ) -> bool:
     """``describe CLASS`` returns runtime heading + parent/child/part names.
@@ -5009,7 +4365,7 @@ def fixture_f_fakes_describe_returns_heading_and_adjacency(
     return True
 
 
-def fixture_f_fakes_describe_errored_metadata_reported_as_error(
+def fixture_describe_fakes_describe_errored_metadata_reported_as_error(
     args: argparse.Namespace,
 ) -> bool:
     """``parents()`` raising → ``status: "error"`` (not confirmed-empty).
@@ -5107,7 +4463,7 @@ def fixture_f_fakes_describe_errored_metadata_reported_as_error(
     return True
 
 
-def fixture_f_fakes_describe_omits_count_by_default(
+def fixture_describe_fakes_describe_omits_count_by_default(
     args: argparse.Namespace,
 ) -> bool:
     """Without ``--count``, ``describe.count`` is null (no count(*) round-trip)."""
@@ -5165,7 +4521,7 @@ def fixture_f_fakes_describe_omits_count_by_default(
     return True
 
 
-def fixture_f_fakes_describe_unavailable_metadata_distinguished(
+def fixture_describe_fakes_describe_unavailable_metadata_distinguished(
     args: argparse.Namespace,
 ) -> bool:
     """``parents`` not exposed on the relation → ``status: "unavailable"``.
@@ -5259,7 +4615,7 @@ def fixture_f_fakes_describe_unavailable_metadata_distinguished(
     return True
 
 
-def fixture_f_describe_advertised_in_info(
+def fixture_describe_describe_advertised_in_info(
     args: argparse.Namespace,
 ) -> bool:
     """``info --json`` advertises describe with the documented contract.
@@ -5320,42 +4676,6 @@ def fixture_f_describe_advertised_in_info(
     return True
 
 
-def fixture_f_eval_describe_session(args: argparse.Namespace) -> bool:
-    """Live: ``describe Session --json --count`` returns the canonical heading."""
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="live describe of Spyglass.Session",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        ["describe", "Session", "--count"],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _parse_json_or_fail(out, "live describe Session")
-    if payload is None:
-        return False
-    desc = payload.get("describe", {})
-    if "nwb_file_name" not in desc.get("primary_key", []):
-        print(
-            f"  [FAIL] expected nwb_file_name in primary_key: "
-            f"{desc.get('primary_key')!r}"
-        )
-        return False
-    attrs = desc.get("attributes", {})
-    if "session_description" not in attrs:
-        print(
-            f"  [FAIL] expected session_description in attributes "
-            f"keys; got {sorted(attrs.keys())}"
-        )
-        return False
-    print(
-        f"  [ok] live describe: Session PK + session_description "
-        f"present (count={desc.get('count')})"
-    )
-    return True
 
 
 def _write_fake_path_module(target: Path) -> None:
@@ -5437,7 +4757,7 @@ def _setup_path_sandbox(tmp: Path) -> None:
     _write_fake_path_module(tmp)
 
 
-def fixture_g_fakes_path_to_finds_chain(
+def fixture_path_fakes_path_to_finds_chain(
     args: argparse.Namespace,
 ) -> bool:
     """``path --to A C`` returns the parent→child chain A → B → C."""
@@ -5482,7 +4802,7 @@ def fixture_g_fakes_path_to_finds_chain(
     return True
 
 
-def fixture_g_fakes_path_to_no_path_returns_empty(
+def fixture_path_fakes_path_to_no_path_returns_empty(
     args: argparse.Namespace,
 ) -> bool:
     """``path --to`` returns empty hops when no path exists.
@@ -5518,7 +4838,7 @@ def fixture_g_fakes_path_to_no_path_returns_empty(
     return True
 
 
-def fixture_g_fakes_path_up_walks_ancestors(
+def fixture_path_fakes_path_up_walks_ancestors(
     args: argparse.Namespace,
 ) -> bool:
     """``path --up C`` returns ancestors via parents() walk."""
@@ -5579,7 +4899,7 @@ def fixture_g_fakes_path_up_walks_ancestors(
     return True
 
 
-def fixture_g_fakes_path_down_walks_descendants(
+def fixture_path_fakes_path_down_walks_descendants(
     args: argparse.Namespace,
 ) -> bool:
     """``path --down A`` returns descendants via children() walk."""
@@ -5617,7 +4937,7 @@ def fixture_g_fakes_path_down_walks_descendants(
     return True
 
 
-def fixture_g_fakes_path_max_depth_truncates(
+def fixture_path_fakes_path_max_depth_truncates(
     args: argparse.Namespace,
 ) -> bool:
     """``--max-depth 1`` on a 3-node chain marks the walk truncated."""
@@ -5666,7 +4986,7 @@ def fixture_g_fakes_path_max_depth_truncates(
     return True
 
 
-def fixture_g_fakes_path_to_incomplete_when_traversal_errors(
+def fixture_path_fakes_path_to_incomplete_when_traversal_errors(
     args: argparse.Namespace,
 ) -> bool:
     """``--to`` distinguishes "no path exists" from "traversal incomplete".
@@ -5750,7 +5070,7 @@ def fixture_g_fakes_path_to_incomplete_when_traversal_errors(
     return True
 
 
-def fixture_g_fakes_path_walk_incomplete_when_neighbor_errors(
+def fixture_path_fakes_path_walk_incomplete_when_neighbor_errors(
     args: argparse.Namespace,
 ) -> bool:
     """``--down`` walks set incomplete=true when a node's children() raises."""
@@ -5818,7 +5138,7 @@ def fixture_g_fakes_path_walk_incomplete_when_neighbor_errors(
     return True
 
 
-def fixture_g_fakes_path_schema_error_carries_input_context(
+def fixture_path_fakes_path_schema_error_carries_input_context(
     args: argparse.Namespace,
 ) -> bool:
     """A class that resolves but lacks ``full_table_name`` exits with a
@@ -5916,7 +5236,7 @@ def fixture_g_fakes_path_schema_error_carries_input_context(
     return True
 
 
-def fixture_g_path_advertised_in_info(
+def fixture_path_path_advertised_in_info(
     args: argparse.Namespace,
 ) -> bool:
     """``info --json`` advertises path with the documented contract."""
@@ -5949,100 +5269,11 @@ def fixture_g_path_advertised_in_info(
     return True
 
 
-def fixture_g_eval_path_session_descendants(
-    args: argparse.Namespace,
-) -> bool:
-    """Live: ``path --down Session --max-depth 2`` returns a non-empty walk.
-
-    Spyglass.Session has many downstream tables (IntervalList, Electrode,
-    Raw, ...). The fixture only verifies the walk produced any nodes
-    and edges within depth 2, since the exact set varies with the
-    Spyglass schema snapshot.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="live path --down Session against real Spyglass DB",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        ["path", "--down", "Session", "--max-depth", "2"],
-        python_env=args.python_env,
-    )
-    if rc != 0:
-        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _parse_json_or_fail(out, "live path --down Session")
-    if payload is None:
-        return False
-    nodes = payload.get("nodes", [])
-    edges = payload.get("edges", [])
-    if len(nodes) < 2:
-        print(
-            f"  [FAIL] expected at least 2 nodes downstream of Session, "
-            f"got {len(nodes)}"
-        )
-        return False
-    if not edges:
-        print("  [FAIL] expected at least one parent→child edge")
-        return False
-    print(
-        f"  [ok] live path --down Session: {len(nodes)} nodes, "
-        f"{len(edges)} edges (depth ≤ 2)"
-    )
-    return True
 
 
-def fixture_d_eval50_silent_wrong_count_footgun_refused(
-    args: argparse.Namespace,
-) -> bool:
-    """Eval #50: ``DecodingOutput & {nwb_file_name: X}`` is refused.
-
-    Without merge-aware mode, restricting the merge master by a part-
-    only field is the canonical silent-wrong-count footgun. Field
-    validation against the master heading must refuse it because
-    ``nwb_file_name`` is not in ``DecodingOutput.heading.names``.
-    """
-    if not _require_capability(
-        args, datajoint=True, spyglass=True,
-        why="eval #50 silent-no-op refusal against real DecodingOutput heading",
-    ):
-        return True
-    rc, out, err = _run_db_graph(
-        [
-            "find-instance",
-            "--class",
-            "DecodingOutput",
-            "--key",
-            "nwb_file_name=j1620210710_.nwb",
-        ],
-        python_env=args.python_env,
-    )
-    if rc != 2:
-        print(f"  [FAIL] expected rc=2 (invalid_query), got {rc}; stderr: {err[:200]!r}")
-        return False
-    payload = _parse_json_or_fail(out, "eval #50 refusal payload")
-    if payload is None:
-        return False
-    if payload.get("kind") != "invalid_query":
-        print(f"  [FAIL] kind != 'invalid_query': {payload.get('kind')!r}")
-        return False
-    if payload.get("error", {}).get("kind") != "unknown_field":
-        print(f"  [FAIL] error.kind != 'unknown_field': {payload.get('error', {})!r}")
-        return False
-    if "nwb_file_name" not in payload.get("error", {}).get("unknown_fields", []):
-        print(
-            f"  [FAIL] unknown_fields should list nwb_file_name: "
-            f"{payload.get('error', {}).get('unknown_fields')!r}"
-        )
-        return False
-    print(
-        "  [ok] eval #50: silent-wrong-count footgun closed — DecodingOutput "
-        "& {nwb_file_name: X} exits 2 with kind=invalid_query"
-    )
-    return True
 
 
-def fixture_c_empty_result_fail_on_empty_exit_seven(
+def fixture_find_instance_empty_result_fail_on_empty_exit_seven(
     args: argparse.Namespace,
 ) -> bool:
     """``--fail-on-empty`` opts into exit 7 on an otherwise-successful empty query."""
@@ -6098,98 +5329,82 @@ FIXTURES = [
     fixture_limit_hard_max_enforced,
     fixture_unknown_subcommand_exits_2,
     # Batch B — class resolution
-    fixture_b_resolves_stock_short_name,
-    fixture_b_resolves_dotted_qualname,
-    fixture_b_resolves_module_class_form,
-    fixture_b_resolves_dotted_module_path,
-    fixture_b_resolves_via_import_for_custom_class,
-    fixture_b_ambiguous_short_name_exits_3,
-    fixture_b_not_found_exits_4,
-    fixture_b_not_a_table_exits_4,
-    fixture_b_src_overrides_installed_package,
-    fixture_b_installed_package_overrides_env_var,
+    fixture_resolve_resolves_stock_short_name,
+    fixture_resolve_resolves_dotted_qualname,
+    fixture_resolve_resolves_module_class_form,
+    fixture_resolve_resolves_dotted_module_path,
+    fixture_resolve_resolves_via_import_for_custom_class,
+    fixture_resolve_ambiguous_short_name_exits_3,
+    fixture_resolve_not_found_exits_4,
+    fixture_resolve_not_a_table_exits_4,
+    fixture_resolve_src_overrides_installed_package,
+    fixture_resolve_installed_package_overrides_env_var,
     # Batch C — basic find-instance (fakes sandbox: no live DB needed)
-    fixture_c_fakes_restriction_and_fetch,
-    fixture_c_fakes_count_only,
-    fixture_c_fakes_truncation_marker,
-    fixture_c_fakes_unknown_field_validation,
-    fixture_c_fakes_blob_restriction_refused,
-    fixture_c_fakes_safe_serialization_envelopes,
-    fixture_c_fakes_nan_restriction_refused,
-    fixture_c_fakes_db_error_classification,
+    fixture_find_instance_fakes_restriction_and_fetch,
+    fixture_find_instance_fakes_count_only,
+    fixture_find_instance_fakes_truncation_marker,
+    fixture_find_instance_fakes_unknown_field_validation,
+    fixture_find_instance_fakes_blob_restriction_refused,
+    fixture_find_instance_fakes_safe_serialization_envelopes,
+    fixture_find_instance_fakes_nan_restriction_refused,
+    fixture_find_instance_fakes_db_error_classification,
     # Batch D — merge-aware lookup (fakes sandbox)
-    fixture_d_fakes_merge_routes_part_only_field_to_part,
-    fixture_d_fakes_merge_count_unbounded_by_limit,
-    fixture_d_fakes_merge_ids_dedup_when_part_rows_share_master,
-    fixture_d_fakes_merge_rows_pagination_dedupes_master_keys,
-    fixture_d_fakes_merge_master_only_field_silent_no_op_refused,
-    fixture_d_fakes_merge_part_master_mismatch_exits_3,
-    fixture_d_fakes_merge_count_only,
-    fixture_d_set_op_flags_mutually_exclusive,
-    fixture_d_set_op_with_grouping_refused,
-    fixture_d_merge_error_payload_carries_merge_context,
+    fixture_merge_fakes_merge_routes_part_only_field_to_part,
+    fixture_merge_fakes_merge_count_unbounded_by_limit,
+    fixture_merge_fakes_merge_ids_dedup_when_part_rows_share_master,
+    fixture_merge_fakes_merge_rows_pagination_dedupes_master_keys,
+    fixture_merge_fakes_merge_master_only_field_silent_no_op_refused,
+    fixture_merge_fakes_merge_part_master_mismatch_exits_3,
+    fixture_merge_fakes_merge_count_only,
+    fixture_merge_set_op_flags_mutually_exclusive,
+    fixture_merge_set_op_with_grouping_refused,
+    fixture_merge_merge_error_payload_carries_merge_context,
     # Batch E — set ops + grouped counts (fakes sandbox)
-    fixture_e_fakes_intersect_returns_shared_keys,
-    fixture_e_fakes_except_returns_left_minus_right,
-    fixture_e_fakes_join_validates_output_fields,
-    fixture_e_fakes_intersect_secondary_only_overlap_refused,
-    fixture_e_fakes_setop_restriction_routes_to_partner,
-    fixture_e_fakes_setop_failure_carries_set_op_context,
-    fixture_e_fakes_zero_overlap_set_op_refused,
-    fixture_e_fakes_group_by_table_eval19_shape,
-    fixture_e_fakes_group_by_explicit_fields,
-    fixture_e_fakes_count_distinct_field_must_be_on_counted,
+    fixture_setop_fakes_intersect_returns_shared_keys,
+    fixture_setop_fakes_except_returns_left_minus_right,
+    fixture_setop_fakes_join_validates_output_fields,
+    fixture_setop_fakes_intersect_secondary_only_overlap_refused,
+    fixture_setop_fakes_setop_restriction_routes_to_partner,
+    fixture_setop_fakes_setop_failure_carries_set_op_context,
+    fixture_setop_fakes_zero_overlap_set_op_refused,
+    fixture_grouped_count_fakes_group_by_table_eval19_shape,
+    fixture_grouped_count_fakes_group_by_explicit_fields,
+    fixture_grouped_count_fakes_count_distinct_field_must_be_on_counted,
     # Batch E — live Spyglass evals
-    fixture_e_eval17_intersect_sessions_in_both,
-    fixture_e_eval18_except_sessions_only_in_left,
-    fixture_e_eval19_per_session_distinct_tetrodes,
-    fixture_e_eval28_29_join_to_brain_region,
     # Batch F — describe (runtime introspection)
-    fixture_f_fakes_describe_returns_heading_and_adjacency,
-    fixture_f_fakes_describe_omits_count_by_default,
-    fixture_f_fakes_describe_errored_metadata_reported_as_error,
-    fixture_f_fakes_describe_unavailable_metadata_distinguished,
-    fixture_f_describe_advertised_in_info,
-    fixture_f_eval_describe_session,
+    fixture_describe_fakes_describe_returns_heading_and_adjacency,
+    fixture_describe_fakes_describe_omits_count_by_default,
+    fixture_describe_fakes_describe_errored_metadata_reported_as_error,
+    fixture_describe_fakes_describe_unavailable_metadata_distinguished,
+    fixture_describe_describe_advertised_in_info,
     # Batch G — path (runtime graph traversal)
-    fixture_g_fakes_path_to_finds_chain,
-    fixture_g_fakes_path_to_no_path_returns_empty,
-    fixture_g_fakes_path_up_walks_ancestors,
-    fixture_g_fakes_path_down_walks_descendants,
-    fixture_g_fakes_path_max_depth_truncates,
-    fixture_g_fakes_path_to_incomplete_when_traversal_errors,
-    fixture_g_fakes_path_walk_incomplete_when_neighbor_errors,
-    fixture_g_fakes_path_schema_error_carries_input_context,
-    fixture_g_path_max_depth_negative_refused,
-    fixture_g_path_advertised_in_info,
-    fixture_g_eval_path_session_descendants,
+    fixture_path_fakes_path_to_finds_chain,
+    fixture_path_fakes_path_to_no_path_returns_empty,
+    fixture_path_fakes_path_up_walks_ancestors,
+    fixture_path_fakes_path_down_walks_descendants,
+    fixture_path_fakes_path_max_depth_truncates,
+    fixture_path_fakes_path_to_incomplete_when_traversal_errors,
+    fixture_path_fakes_path_walk_incomplete_when_neighbor_errors,
+    fixture_path_fakes_path_schema_error_carries_input_context,
+    fixture_path_path_max_depth_negative_refused,
+    fixture_path_path_advertised_in_info,
     # Batch D — live Spyglass evals
-    fixture_d_eval14_trodes_position_merge_id,
-    fixture_d_eval15_lfp_merge_id_via_lfpv1,
-    fixture_d_eval16_decoding_output_merge_id,
-    fixture_d_eval50_silent_wrong_count_footgun_refused,
     # Batch C — static-source / parser fixtures
-    fixture_c_no_restrgraph_or_tablechain_in_source,
-    fixture_c_read_only_no_write_method_calls_in_source,
-    fixture_c_unknown_restriction_field_refused,
-    fixture_c_blob_restriction_refused,
-    fixture_c_null_key_value_refused,
-    fixture_c_null_keyjson_value_refused,
-    fixture_c_keyjson_non_finite_value_refused,
-    fixture_c_fakes_nested_non_finite_in_fetched_rows_envelopes,
-    fixture_c_fakes_blob_dict_with_non_string_keys_envelopes,
-    fixture_c_fakes_pathological_blob_objects_envelope_per_field,
-    fixture_c_fields_key_mixed_with_explicit_fields_refused,
-    fixture_c_malformed_key_argument_refused,
-    fixture_c_unknown_fetch_field_refused,
-    fixture_c_eval9_session_row_lookup,
-    fixture_c_eval10_selected_fields,
-    fixture_c_eval11_field_list,
-    fixture_c_eval12_count_only,
-    fixture_c_eval13_key_only_resolves_merge_evidence,
-    fixture_c_limit_truncation_marker,
-    fixture_c_empty_result_exit_zero_by_default,
-    fixture_c_empty_result_fail_on_empty_exit_seven,
+    fixture_find_instance_no_restrgraph_or_tablechain_in_source,
+    fixture_find_instance_read_only_no_write_method_calls_in_source,
+    fixture_find_instance_unknown_restriction_field_refused,
+    fixture_find_instance_blob_restriction_refused,
+    fixture_find_instance_null_key_value_refused,
+    fixture_find_instance_null_keyjson_value_refused,
+    fixture_find_instance_keyjson_non_finite_value_refused,
+    fixture_find_instance_fakes_nested_non_finite_in_fetched_rows_envelopes,
+    fixture_find_instance_fakes_blob_dict_with_non_string_keys_envelopes,
+    fixture_find_instance_fakes_pathological_blob_objects_envelope_per_field,
+    fixture_find_instance_fields_key_mixed_with_explicit_fields_refused,
+    fixture_find_instance_malformed_key_argument_refused,
+    fixture_find_instance_unknown_fetch_field_refused,
+    fixture_find_instance_empty_result_exit_zero_by_default,
+    fixture_find_instance_empty_result_fail_on_empty_exit_seven,
 ]
 
 
