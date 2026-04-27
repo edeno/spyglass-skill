@@ -117,9 +117,21 @@ trodes_pos_params_name = "default"
 # sources and make `fetch1` raise. Resolve `lfp_merge_id` from the
 # concrete LFP source (typically `LFPOutput.LFPV1`) and include
 # `target_interval_list_name` so the band is unambiguous.
+# `LFPOutput.LFPV1`'s upstream key is `LFPSelection`'s full PK
+# (`nwb_file_name`, `lfp_electrode_group_name`,
+# `target_interval_list_name`, `filter_name`, `filter_sampling_rate`).
+# Restricting only by `nwb_file_name` + `target_interval_list_name`
+# can match multiple LFP rows (different electrode groups or filter
+# presets) and make `fetch1` ambiguous. Reuse the exact key that
+# was used to populate `LFPV1` upstream (the same `key` from
+# `lfp_pipeline.md` Step 2 — `lfp_electrode_group_name`,
+# `filter_name`, `filter_sampling_rate` included).
 lfp_merge_id = (LFPOutput.LFPV1 & {
     "nwb_file_name": nwb_file_name,
+    "lfp_electrode_group_name": lfp_electrode_group_name,
     "target_interval_list_name": ripple_target_interval,
+    "filter_name": "LFP 0-400 Hz",
+    "filter_sampling_rate": filter_sampling_rate,  # raw rate, e.g. 30000
 }).fetch1("merge_id")
 lfp_band_key = (LFPBandV1 & {
     "nwb_file_name": nwb_file_name,
