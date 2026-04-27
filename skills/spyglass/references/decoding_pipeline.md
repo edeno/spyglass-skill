@@ -33,9 +33,12 @@ from spyglass.decoding.v1.clusterless import (
 # Prereqs (not shown here): UnitWaveformFeaturesGroup + PositionGroup rows
 # created upstream; a DecodingParameters row whose name is the version-
 # suffixed default (e.g. "contfrag_clusterless_v1.2.0"); encoding_interval_name
-# and decoding_interval_name exist in IntervalList. Stock defaults are
-# inserted at module-import time keyed on
-# f"<shape>_<source>_{non_local_detector_version}" — see decoding/v1/core.py:48.
+# and decoding_interval_name exist in IntervalList. Stock default names are
+# defined in DecodingParameters.contents keyed on
+# f"<shape>_<source>_{non_local_detector_version}" (`decoding/v1/core.py:48`),
+# but they are NOT auto-inserted at module import — call
+# `DecodingParameters().insert_default()` (`decoding/v1/core.py:68`) once,
+# or query the table to confirm a matching row before insert.
 # Don't hard-code a bare "contfrag_clusterless"; query DecodingParameters first
 # (`(DecodingParameters & 'decoding_param_name LIKE "contfrag_clusterless%"').fetch1("decoding_param_name")`)
 # or import the version constant alongside.
@@ -288,11 +291,16 @@ from spyglass.decoding.v1.waveform_features import (
 ### Running Clusterless Decoding
 
 ```python
-# decoding_param_name is version-suffixed at module-import time
-# (decoding/v1/core.py:48). Build it from the runtime version constant
+# decoding_param_name is version-suffixed in DecodingParameters.contents
+# (`decoding/v1/core.py:48`). Build it from the runtime version constant
 # rather than hard-coding a bare prefix.
 from non_local_detector import __version__ as non_local_detector_version
+# `nwb_file_name` is REQUIRED — inherited transitively through both
+# `UnitWaveformFeaturesGroup` and `PositionGroup`
+# (`decoding/v1/clusterless.py:83`, `decoding/v1/core.py:130`).
+# Omitting it under-specifies the FK and the insert raises.
 selection_key = {
+    "nwb_file_name": nwb_file_name,
     "waveform_features_group_name": features_group_name,
     "position_group_name": position_group_name,
     "decoding_param_name": f"contfrag_clusterless_{non_local_detector_version}",
@@ -356,15 +364,29 @@ position_df, var_names = DecodingOutput.fetch_position_info(key)
 # Plot posterior
 fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
 
-posterior = results.acausal_posterior.values
+# `state_bins` is a stacked (state, position) coordinate — plotting
+# `acausal_posterior.values` directly mixes state and position rows
+# on one axis. Mirror the merge-table visualization helper
+# (`decoding/decoding_merge.py:148`): unstack `state_bins`, drop the
+# discrete states (`Local`, `No-Spike`) so only the continuous
+# trajectory states remain, sum across remaining states, and
+# renormalize over position. The result is a (time, position)
+# posterior that is safe to imshow with a "Position" axis label.
+posterior = (
+    results.acausal_posterior.unstack("state_bins")
+    .drop_sel(state=["Local", "No-Spike"], errors="ignore")
+    .sum("state")
+)
+posterior = posterior / posterior.sum("position")
 time = results.time.values
+position_bins = posterior["position"].values
 
 axes[0].imshow(
-    posterior.T, aspect='auto',
-    extent=[time[0], time[-1], 0, posterior.shape[1]],
+    posterior.values.T, aspect='auto',
+    extent=[time[0], time[-1], position_bins[0], position_bins[-1]],
     origin='lower', cmap='hot'
 )
-axes[0].set_ylabel('Position Bin')
+axes[0].set_ylabel('Position')
 axes[0].set_title('Posterior Probability')
 
 # Plot actual position
@@ -437,7 +459,7 @@ confirm.
 
 ## Storage
 
-Results are saved as files in `{SPYGLASS_ANALYSIS_DIR}/{nwb_file_name}/`:
+Results are saved as files in `{SPYGLASS_ANALYSIS_DIR}/{stripped_nwb_file_name}/`, where `stripped_nwb_file_name` is `key["nwb_file_name"]` with the trailing `_.nwb` removed (`decoding/v1/clusterless.py:430`, `decoding/v1/sorted_spikes.py:373`):
 
 - `.nc` files — xarray Dataset with posteriors
 - `.pkl` files — Pickled classifier model
