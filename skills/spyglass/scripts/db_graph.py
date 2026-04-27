@@ -1957,6 +1957,13 @@ def _safe_serialize_value(value: object) -> object:
     → ``{type:"ndarray", shape, dtype}``, datetime → ISO-8601, NumPy
     scalars → Python scalars, everything else falls back to ``repr`` if
     ``json.dumps`` cannot handle it.
+
+    Recurses through dicts, lists, and tuples so nested non-finite
+    floats (e.g. ``{"payload": {"nested": float("nan")}}``) get the
+    same structured ``_unserializable`` envelope that top-level
+    NaN / Inf scalars do — otherwise the payload would emit
+    non-strict ``NaN`` / ``Infinity`` literals and break LLM
+    consumers piping through ``allow_nan=False`` parsers.
     """
     if value is None or isinstance(value, (str, int, bool)):
         return value
@@ -1969,6 +1976,10 @@ def _safe_serialize_value(value: object) -> object:
                 "value": str(value),
             }
         return value
+    if isinstance(value, dict):
+        return {k: _safe_serialize_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_safe_serialize_value(v) for v in value]
     if isinstance(value, (bytes, bytearray, memoryview)):
         return {
             "_unserializable": True,

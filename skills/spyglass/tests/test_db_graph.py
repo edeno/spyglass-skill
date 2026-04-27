@@ -2293,6 +2293,123 @@ def fixture_c_keyjson_non_finite_value_refused(
     return True
 
 
+def fixture_c_fakes_nested_non_finite_in_fetched_rows_envelopes(
+    args: argparse.Namespace,
+) -> bool:
+    """Fetched values that are nested dicts/lists containing NaN or Inf
+    must get the same ``_unserializable`` envelope as top-level
+    non-finite scalars. Otherwise the payload emits non-strict
+    ``NaN`` / ``Infinity`` literals and breaks LLM consumers piping
+    through ``json.loads(..., parse_constant=...)`` or
+    ``json.dumps(..., allow_nan=False)`` parsers.
+
+    Fixture has one row with ``payload = {"nested": NaN}`` and
+    ``arr = [1, Infinity]``. Expectations:
+
+    * rc=0 (per-field substitution must not abort the payload).
+    * The emitted JSON round-trips through
+      ``json.dumps(..., allow_nan=False)`` (the strict-JSON contract).
+    * ``rows[0]['payload']['nested']`` and ``rows[0]['arr'][1]`` are
+      both the structured envelope (``_unserializable: true``,
+      ``type: "float"``).
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.prepare_sandbox(tmp)
+        (tmp / "fakenest.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "class T(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('id',),",
+                    "        names=('id', 'payload', 'arr'),",
+                    "        attributes={",
+                    "            'id': 'int',",
+                    "            'payload': 'longblob',",
+                    "            'arr': 'longblob',",
+                    "        },",
+                    "    )",
+                    "    _rows = [",
+                    "        {'id': 1,",
+                    "         'payload': {'nested': float('nan')},",
+                    "         'arr': [1, float('inf')]},",
+                    "    ]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                ]
+            )
+        )
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakenest",
+                "--class",
+                "fakenest:T",
+                "--fields",
+                "id,payload,arr",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(
+            f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}"
+        )
+        return False
+    payload = _parse_json_or_fail(out, "nested non-finite payload")
+    if payload is None:
+        return False
+    # Strict-JSON round-trip: this fails if any NaN / Inf leaked through.
+    try:
+        json.dumps(payload, allow_nan=False)
+    except ValueError as exc:
+        print(f"  [FAIL] payload is not strict JSON: {exc}")
+        return False
+    rows = payload.get("rows", [])
+    if not rows:
+        print(f"  [FAIL] expected 1 row, got {len(rows)}")
+        return False
+    nested = rows[0].get("payload", {}).get("nested")
+    arr = rows[0].get("arr", [])
+    if not (
+        isinstance(nested, dict)
+        and nested.get("_unserializable")
+        and nested.get("type") == "float"
+    ):
+        print(
+            f"  [FAIL] nested NaN not enveloped: {nested!r}"
+        )
+        return False
+    if len(arr) < 2:
+        print(f"  [FAIL] arr too short: {arr!r}")
+        return False
+    second = arr[1]
+    if not (
+        isinstance(second, dict)
+        and second.get("_unserializable")
+        and second.get("type") == "float"
+    ):
+        print(
+            f"  [FAIL] list-nested Inf not enveloped: {second!r}"
+        )
+        return False
+    print(
+        "  [ok] nested NaN/Inf inside dict and list payloads "
+        "envelope-substituted; payload round-trips strict JSON"
+    )
+    return True
+
+
 def fixture_d_fakes_merge_master_only_field_silent_no_op_refused(
     args: argparse.Namespace,
 ) -> bool:
@@ -5804,6 +5921,7 @@ FIXTURES = [
     fixture_c_null_key_value_refused,
     fixture_c_null_keyjson_value_refused,
     fixture_c_keyjson_non_finite_value_refused,
+    fixture_c_fakes_nested_non_finite_in_fetched_rows_envelopes,
     fixture_c_fields_key_mixed_with_explicit_fields_refused,
     fixture_c_malformed_key_argument_refused,
     fixture_c_unknown_fetch_field_refused,
