@@ -809,6 +809,28 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 
 
+def _nonnegative_int(raw: str) -> int:
+    """argparse ``type=`` validator: parse ``raw`` as an int >= 0.
+
+    Raises ``argparse.ArgumentTypeError`` on negatives and on values
+    that are not parseable ints. Used by ``path --max-depth`` because
+    a negative depth was previously accepted and produced a payload
+    with ``truncated: true``, ``truncated_at_depth: 0``, and an
+    empty walk — surface-level "safe" but nonsensical for the caller.
+    """
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"expected a non-negative integer, got {raw!r}"
+        ) from exc
+    if value < 0:
+        raise argparse.ArgumentTypeError(
+            f"must be >= 0, got {value}"
+        )
+    return value
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(__doc__ or "").split("\n\n")[0],
@@ -919,11 +941,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_path.add_argument(
         "--max-depth",
-        type=int,
+        type=_nonnegative_int,
         default=8,
         help=(
-            "Cap walk depth (default 8). Truncation is reported in "
-            "the payload's `truncated_at_depth` field."
+            "Cap walk depth (default 8). Must be >= 0; "
+            "``--max-depth 0`` returns just the start node. Truncation "
+            "is reported in the payload's `truncated_at_depth` field."
         ),
     )
     p_path.add_argument("--src", default=None, help="Spyglass source root override.")
@@ -1949,7 +1972,23 @@ def _validate_fetch_fields(
         )
 
 
-def _safe_serialize_value(value: object) -> object:
+def _safe_repr(value: object) -> str:
+    """``repr(value)`` that tolerates objects whose ``__repr__`` raises.
+
+    Pathological blob values (custom classes deserialized from a
+    longblob) can have ``__repr__`` implementations that themselves
+    throw. Returning a placeholder lets the per-field envelope still
+    serialize rather than bubbling the failure up to ``json.dumps``.
+    """
+    try:
+        return repr(value)
+    except Exception as exc:
+        return f"<unrepresentable: {type(value).__name__}: {exc!r}>"
+
+
+def _safe_serialize_value(
+    value: object, _seen: set[int] | None = None
+) -> object:
     """Coerce DataJoint fetch values to JSON-safe forms, per-field.
 
     Per the plan: per-field substitution, never aborting the whole
@@ -1964,6 +2003,12 @@ def _safe_serialize_value(value: object) -> object:
     NaN / Inf scalars do — otherwise the payload would emit
     non-strict ``NaN`` / ``Infinity`` literals and break LLM
     consumers piping through ``allow_nan=False`` parsers.
+
+    ``_seen`` tracks ``id()`` of containers currently being walked so
+    cyclic blob values (a list/dict that references itself) emit a
+    ``_unserializable`` envelope instead of recursing forever. The
+    set is fresh per top-level call (one per row field) so it never
+    leaks across rows.
     """
     if value is None or isinstance(value, (str, int, bool)):
         return value
@@ -1976,26 +2021,45 @@ def _safe_serialize_value(value: object) -> object:
                 "value": str(value),
             }
         return value
-    if isinstance(value, dict):
-        # ``json.dumps`` only accepts ``str / int / float / bool / None``
-        # as object keys. DataJoint longblob values can deserialize
-        # arbitrary Python objects (tuples, frozensets, custom classes
-        # ...), and a single bad key elsewhere in the payload would
-        # abort serialization for the whole row. Envelope the dict
-        # rather than recursing when any key is not JSON-safe.
-        if all(
-            isinstance(k, (str, int, float, bool)) or k is None
-            for k in value.keys()
-        ):
-            return {k: _safe_serialize_value(v) for k, v in value.items()}
-        return {
-            "_unserializable": True,
-            "type": "dict",
-            "length": len(value),
-            "key_types": sorted({type(k).__name__ for k in value.keys()}),
-        }
-    if isinstance(value, (list, tuple)):
-        return [_safe_serialize_value(v) for v in value]
+    if isinstance(value, (dict, list, tuple)):
+        seen = _seen if _seen is not None else set()
+        ident = id(value)
+        if ident in seen:
+            return {
+                "_unserializable": True,
+                "type": type(value).__name__,
+                "reason": "cycle",
+            }
+        seen.add(ident)
+        try:
+            if isinstance(value, dict):
+                # ``json.dumps`` only accepts
+                # ``str / int / float / bool / None`` as object keys.
+                # DataJoint longblob values can deserialize arbitrary
+                # Python objects (tuples, frozensets, custom classes
+                # ...), and a single bad key elsewhere in the payload
+                # would abort serialization for the whole row.
+                # Envelope the dict rather than recursing when any
+                # key is not JSON-safe.
+                if all(
+                    isinstance(k, (str, int, float, bool)) or k is None
+                    for k in value.keys()
+                ):
+                    return {
+                        k: _safe_serialize_value(v, seen)
+                        for k, v in value.items()
+                    }
+                return {
+                    "_unserializable": True,
+                    "type": "dict",
+                    "length": len(value),
+                    "key_types": sorted(
+                        {type(k).__name__ for k in value.keys()}
+                    ),
+                }
+            return [_safe_serialize_value(v, seen) for v in value]
+        finally:
+            seen.discard(ident)
     if isinstance(value, (bytes, bytearray, memoryview)):
         return {
             "_unserializable": True,
@@ -2023,7 +2087,7 @@ def _safe_serialize_value(value: object) -> object:
             # picks up the float-NaN/Inf envelope path; otherwise
             # ``value.item()`` returns a Python float that ``json.dumps``
             # serializes as the non-strict ``NaN`` literal.
-            return _safe_serialize_value(value.item())
+            return _safe_serialize_value(value.item(), _seen)
         if isinstance(value, np.ndarray):
             return {
                 "_unserializable": True,
@@ -2032,14 +2096,16 @@ def _safe_serialize_value(value: object) -> object:
                 "dtype": str(value.dtype),
             }
     # Last resort: repr so the payload still serializes. Mark it so the
-    # LLM does not interpret repr text as the actual value.
+    # LLM does not interpret repr text as the actual value. ``_safe_repr``
+    # tolerates objects whose ``__repr__`` raises so a single
+    # pathological blob cannot abort the row.
     try:
         json.dumps(value)
     except TypeError:
         return {
             "_unserializable": True,
             "type": type(value).__name__,
-            "repr": repr(value)[:200],
+            "repr": _safe_repr(value)[:200],
         }
     return value
 

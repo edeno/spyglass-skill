@@ -2505,6 +2505,165 @@ def fixture_c_fakes_blob_dict_with_non_string_keys_envelopes(
     return True
 
 
+def fixture_c_fakes_pathological_blob_objects_envelope_per_field(
+    args: argparse.Namespace,
+) -> bool:
+    """Hostile blob values do not abort the row.
+
+    Three pathological cases share a single fixture row:
+
+    * Object whose ``__repr__`` raises — the per-field repr fallback
+      must tolerate the exception so the dict-envelope still serializes.
+    * Cyclic list (``L = []; L.append(L)``).
+    * Cyclic dict (``D = {}; D["self"] = D``).
+
+    Each must produce a structured ``_unserializable`` envelope rather
+    than an unbounded recursion / ``RecursionError`` / unhandled
+    exception, and the entire payload must still round-trip through
+    ``json.dumps(..., allow_nan=False)``. Pins the
+    "per-field substitution, never aborting the whole payload"
+    serializer guarantee.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.prepare_sandbox(tmp)
+        (tmp / "fakehostile.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "class _Hostile:",
+                    "    def __repr__(self):",
+                    "        raise RuntimeError('repr explodes')",
+                    "",
+                    "cyclic_list = []",
+                    "cyclic_list.append(cyclic_list)",
+                    "cyclic_dict = {}",
+                    "cyclic_dict['self'] = cyclic_dict",
+                    "",
+                    "class T(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('id',),",
+                    "        names=('id', 'hostile', 'cyc_list', 'cyc_dict'),",
+                    "        attributes={",
+                    "            'id': 'int',",
+                    "            'hostile': 'longblob',",
+                    "            'cyc_list': 'longblob',",
+                    "            'cyc_dict': 'longblob',",
+                    "        },",
+                    "    )",
+                    "    _rows = [",
+                    "        {'id': 1, 'hostile': _Hostile(),",
+                    "         'cyc_list': cyclic_list,",
+                    "         'cyc_dict': cyclic_dict},",
+                    "    ]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                ]
+            )
+        )
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakehostile",
+                "--class",
+                "fakehostile:T",
+                "--fields",
+                "id,hostile,cyc_list,cyc_dict",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(
+            f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}"
+        )
+        return False
+    payload = _parse_json_or_fail(out, "hostile blob payload")
+    if payload is None:
+        return False
+    try:
+        json.dumps(payload, allow_nan=False)
+    except (ValueError, TypeError) as exc:
+        print(f"  [FAIL] payload is not strict JSON: {exc}")
+        return False
+    rows = payload.get("rows", [])
+    if not rows:
+        print("  [FAIL] expected 1 row, got 0")
+        return False
+    row = rows[0]
+    hostile = row.get("hostile")
+    if not (
+        isinstance(hostile, dict)
+        and hostile.get("_unserializable")
+        and "repr" in hostile
+    ):
+        print(f"  [FAIL] hostile-repr not enveloped: {hostile!r}")
+        return False
+    cyc_list = row.get("cyc_list")
+    if not (
+        isinstance(cyc_list, list)
+        and cyc_list
+        and isinstance(cyc_list[0], dict)
+        and cyc_list[0].get("reason") == "cycle"
+    ):
+        print(f"  [FAIL] cyclic list not enveloped: {cyc_list!r}")
+        return False
+    cyc_dict = row.get("cyc_dict")
+    if not (
+        isinstance(cyc_dict, dict)
+        and isinstance(cyc_dict.get("self"), dict)
+        and cyc_dict["self"].get("reason") == "cycle"
+    ):
+        print(f"  [FAIL] cyclic dict not enveloped: {cyc_dict!r}")
+        return False
+    print(
+        "  [ok] hostile-repr + cyclic list + cyclic dict each "
+        "envelope-substituted; row still serializes strict JSON"
+    )
+    return True
+
+
+def fixture_g_path_max_depth_negative_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """``path --max-depth -1`` is refused at argparse with exit 2.
+
+    Previously a negative depth produced ``rc=0``, ``truncated=true``,
+    ``truncated_at_depth=0``, and an empty walk — surface-level "safe"
+    but nonsensical output. Pin the rejection so a future relaxation
+    cannot silently let the bogus shape back through.
+
+    Pure parser test — does not need datajoint/spyglass on python_env.
+    """
+    rc, _out, err = _run_db_graph(
+        [
+            "path",
+            "--up",
+            "json:JSONDecoder",
+            "--max-depth",
+            "-1",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}")
+        return False
+    if "must be >= 0" not in err:
+        print(f"  [FAIL] expected '>= 0' message in stderr, got {err!r}")
+        return False
+    print("  [ok] --max-depth -1 refused at argparse with rc=2")
+    return True
+
+
 def fixture_d_fakes_merge_master_only_field_silent_no_op_refused(
     args: argparse.Namespace,
 ) -> bool:
@@ -6001,6 +6160,7 @@ FIXTURES = [
     fixture_g_fakes_path_to_incomplete_when_traversal_errors,
     fixture_g_fakes_path_walk_incomplete_when_neighbor_errors,
     fixture_g_fakes_path_schema_error_carries_input_context,
+    fixture_g_path_max_depth_negative_refused,
     fixture_g_path_advertised_in_info,
     fixture_g_eval_path_session_descendants,
     # Batch D — live Spyglass evals
@@ -6018,6 +6178,7 @@ FIXTURES = [
     fixture_c_keyjson_non_finite_value_refused,
     fixture_c_fakes_nested_non_finite_in_fetched_rows_envelopes,
     fixture_c_fakes_blob_dict_with_non_string_keys_envelopes,
+    fixture_c_fakes_pathological_blob_objects_envelope_per_field,
     fixture_c_fields_key_mixed_with_explicit_fields_refused,
     fixture_c_malformed_key_argument_refused,
     fixture_c_unknown_fetch_field_refused,
