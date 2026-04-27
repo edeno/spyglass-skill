@@ -878,6 +878,150 @@ def _bfs_walk_records(
     return nodes, edges, truncated
 
 
+def _record_path_to(
+    idx: _index.ClassIndex,
+    src_rec: _index.ClassRecord,
+    dst_rec: _index.ClassRecord,
+    max_depth: int,
+    log: _HeuristicLog | None = None,
+) -> tuple[
+    list[tuple[_index.ClassRecord, str, str]] | None,
+    bool,
+]:
+    """Record-keyed BFS for ``--to``. Returns ``(hops, truncated)``.
+
+    Walks upstream from ``dst_rec`` via :func:`_record_ancestors` until
+    ``src_rec`` is reached, then reconstructs the forward (src → dst)
+    path as a list of ``(record, kind, evidence)`` hops where the first
+    entry is ``(src_rec, "fk", <class-decl line>)`` and each subsequent
+    entry's ``record`` is the destination of the hop (the class whose
+    FK declaration carries the edge to the previous hop's record).
+
+    Visited set keys on ``ClassRecord`` itself (frozen, hashable), NOT
+    on qualname — so v0 and v1 classes that share a qualname (e.g.
+    both ``LFPBandSelection``) are distinct nodes in the BFS. This is
+    the difference from the qualname-based ``_bfs_to`` /
+    ``_edge_meta`` path: same-qualname collisions across packages
+    can't bleed into the rendered hop sequence here, because every
+    visited node is the actual record from ``--from-file`` /
+    ``--to-file`` disambiguation (or its record-resolved ancestor).
+
+    Returns ``(None, truncated)`` when no path is found within
+    ``max_depth``. ``truncated`` honestly reports whether at least one
+    node at the depth boundary had unvisited neighbors, so callers can
+    distinguish "no path exists in source" from "BFS hit the cap."
+    """
+    if src_rec == dst_rec:
+        # Trivial: already there. Single-hop "path" is just the source.
+        evidence = f"class {src_rec.name}({', '.join(src_rec.bases)}):"
+        return [(src_rec, "fk", evidence)], False
+
+    visited: set[_index.ClassRecord] = {dst_rec}
+    # next_hop_from[ancestor] = (forward_destination, kind, evidence)
+    # — i.e. starting at ``ancestor`` and stepping forward (toward
+    # dst_rec), the next hop lands on ``forward_destination`` and the
+    # edge's kind/evidence describe ``forward_destination``'s FK
+    # declaration pointing back at ``ancestor``. Populating this map
+    # while walking upstream lets us reconstruct the forward path
+    # without re-resolving any qualname.
+    next_hop_from: dict[
+        _index.ClassRecord, tuple[_index.ClassRecord, str, str]
+    ] = {}
+    queue: deque[tuple[_index.ClassRecord, int]] = deque([(dst_rec, 0)])
+    truncated = False
+    found = False
+    while queue:
+        rec, depth = queue.popleft()
+        if depth >= max_depth:
+            # Peek without expanding so the truncated flag honestly
+            # reports "more deeper would be visited if we kept going."
+            if not truncated:
+                peek = [a for a, _, _ in _record_ancestors(idx, rec, log=None)]
+                if any(a not in visited for a in peek):
+                    truncated = True
+            continue
+        for parent_rec, kind, evidence in _record_ancestors(idx, rec, log=log):
+            if parent_rec in visited:
+                continue
+            visited.add(parent_rec)
+            next_hop_from[parent_rec] = (rec, kind, evidence)
+            if parent_rec == src_rec:
+                found = True
+                # Don't break early — we still want to mark truncated
+                # honestly if other depth-cap branches exist. But we
+                # CAN stop expanding past this depth: the BFS guarantee
+                # says any further walk only finds longer paths to dst.
+                # Drain the queue without expanding deeper so truncated
+                # stays a faithful "would there be more?" signal.
+            queue.append((parent_rec, depth + 1))
+        if found and not queue:
+            break
+    if not found:
+        return None, truncated
+
+    # Reconstruct forward path src_rec -> ... -> dst_rec.
+    src_evidence = f"class {src_rec.name}({', '.join(src_rec.bases)}):"
+    hops: list[tuple[_index.ClassRecord, str, str]] = [
+        (src_rec, "fk", src_evidence),
+    ]
+    cur = src_rec
+    # Defensive cap on the reconstruction loop — the BFS guarantees
+    # acyclicity in next_hop_from (each record is added once), so
+    # this loop terminates in <= len(next_hop_from) + 1 steps. The
+    # cap exists so a future bug in next_hop_from population can't
+    # spin forever silently.
+    for _ in range(len(next_hop_from) + 1):
+        if cur == dst_rec:
+            return hops, False
+        if cur not in next_hop_from:
+            # Shouldn't happen: BFS reached src_rec, which means the
+            # chain dst_rec <- ... <- src_rec was fully populated.
+            raise RuntimeError(
+                f"_record_path_to: reconstruction broke at {cur.qualname!r} "
+                f"(record_id={_record_id(cur)}) — no forward hop recorded."
+            )
+        next_rec, kind, evidence = next_hop_from[cur]
+        hops.append((next_rec, kind, evidence))
+        cur = next_rec
+    raise RuntimeError(
+        f"_record_path_to: reconstruction did not terminate within "
+        f"{len(next_hop_from)} steps — likely a cycle in next_hop_from."
+    )
+
+
+def _record_path_payload(
+    idx: _index.ClassIndex,
+    src_rec: _index.ClassRecord,
+    dst_rec: _index.ClassRecord,
+    hops: list[tuple[_index.ClassRecord, str, str]],
+    max_depth: int,
+) -> dict:
+    """Build the path payload from record-keyed hops (no qualname round-trip).
+
+    Mirrors :func:`_path_to_payload`'s JSON shape but renders every hop
+    via :func:`_node_dict_from_record`, so file:line and record_id come
+    directly from the BFS-visited records — no fall-back to
+    ``by_qualname`` (which is the v0/v1 leakage source on the legacy
+    ``_path_to_payload`` path).
+    """
+    rendered: list[dict] = []
+    for rec, kind, evidence in hops:
+        node = _node_dict_from_record(rec, idx=idx)
+        node["kind"] = kind
+        node["evidence"] = evidence
+        rendered.append(node)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "kind": "path",
+        "from": _node_dict_from_record(src_rec, idx=idx),
+        "to": _node_dict_from_record(dst_rec, idx=idx),
+        "hops": rendered,
+        "max_depth": max_depth,
+        "truncated": False,
+        "truncated_at_depth": None,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Edge metadata (kind / evidence) lookup for rendering
 # ---------------------------------------------------------------------------
@@ -1250,7 +1394,6 @@ def _print_walk_human(payload: dict, walk_label: str) -> None:
 def cmd_path(args: argparse.Namespace) -> int:
     src_root = _index.resolve_src_root(args.src)
     idx = _index.scan(src_root)  # exits if src_root has no `spyglass/` package
-    bfs_parent_m = _path_graph(idx)
     json_out = bool(args.json)
     fail_on_heuristic = bool(getattr(args, "fail_on_heuristic", False))
     log = _HeuristicLog()
@@ -1309,10 +1452,15 @@ def cmd_path(args: argparse.Namespace) -> int:
         dst_rec = _resolve_or_emit(to_name, args.to_file)
         if isinstance(dst_rec, int):
             return dst_rec
-        path, truncated = _bfs_to(
-            bfs_parent_m, src_rec.qualname, dst_rec.qualname, args.max_depth,
+        # Record-aware BFS so v0/v1 same-qualname collisions don't
+        # leak across packages. Endpoint records come from the user's
+        # ``--from-file`` / ``--to-file`` disambiguation, and every
+        # intermediate hop is the actual ancestor record (visited set
+        # keyed on ``ClassRecord``, not qualname).
+        hops, truncated = _record_path_to(
+            idx, src_rec, dst_rec, args.max_depth, log=log,
         )
-        if path is None:
+        if hops is None:
             reason = f"no FK chain found within max-depth {args.max_depth}"
             if truncated:
                 reason += (
@@ -1325,8 +1473,8 @@ def cmd_path(args: argparse.Namespace) -> int:
                 # Match the happy-path shape so callers can iterate over
                 # `payload["from"]["file"]` regardless of whether a path was
                 # found. Bare strings would force every consumer to type-check.
-                "from": _node_dict(idx, src_rec.qualname, record=src_rec),
-                "to": _node_dict(idx, dst_rec.qualname, record=dst_rec),
+                "from": _node_dict_from_record(src_rec, idx=idx),
+                "to": _node_dict_from_record(dst_rec, idx=idx),
                 "max_depth": args.max_depth,
                 "truncated": truncated,
                 "truncated_at_depth": args.max_depth if truncated else None,
@@ -1343,12 +1491,9 @@ def cmd_path(args: argparse.Namespace) -> int:
                     )
 
             return _finish(payload, EXIT_OK, human_render=_no_path_human)
-        payload = _path_to_payload(idx, src_rec, dst_rec, path, log=log)
-        # Path payload also carries truncated/truncated_at_depth for shape
-        # consistency. A successful path is by definition NOT truncated.
-        payload["max_depth"] = args.max_depth
-        payload["truncated"] = False
-        payload["truncated_at_depth"] = None
+        payload = _record_path_payload(
+            idx, src_rec, dst_rec, hops, args.max_depth,
+        )
         return _finish(payload, EXIT_OK, human_render=_print_path_human)
 
     if args.up or args.down:

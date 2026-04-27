@@ -1829,6 +1829,106 @@ def fixture_path_edge_meta_walks_all_records_for_qualname(src_root: Path) -> boo
     return True
 
 
+def fixture_path_to_endpoint_pinning_keeps_intermediates_in_v1(
+    src_root: Path,
+) -> bool:
+    """``path --to`` is record-aware: when the user pins both endpoints
+    to v1 via ``--from-file`` / ``--to-file``, every intermediate hop
+    must come from a v1 record even when v0 declares a same-qualname
+    sibling that would have provided a shorter cross-package path.
+
+    Synthetic shape:
+
+    * ``Source`` (top of the chain) FKs into ``Mid``.
+    * v1 ``Mid`` FKs into v1 ``Sink``.
+    * v0 ``Mid`` shares the qualname ``Mid`` (different file, no
+      relevant FK) — qualname-keyed BFS would treat them as one node
+      and could pick the v0 record for rendering. The record-aware
+      BFS distinguishes them and stays in v1.
+
+    The fixture asserts every hop's ``file`` is under ``v1/`` (no
+    ``v0/`` leakage) and that ``record_id`` for the ``Mid`` hop
+    matches the v1 record specifically.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = _write_fakepipe(Path(tmp_str), {
+            "utils/dj_mixin.py": "class SpyglassMixin: pass\n",
+            "fakepipe/v1/source.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class Source(SpyglassMixin):
+                    definition = """
+                    source_id: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v1/mid.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class Mid(SpyglassMixin):
+                    definition = """
+                    -> Source
+                    mid_v1_id: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v1/sink.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class Sink(SpyglassMixin):
+                    definition = """
+                    -> Mid
+                    sink_id: int
+                    ---
+                    """
+            ''',
+            "fakepipe/v0/mid.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class Mid(SpyglassMixin):
+                    definition = """
+                    legacy_id: int
+                    ---
+                    """
+            ''',
+        })
+        rc, out, err = _run_code_graph([
+            "--src", str(tmp), "path", "--to", "Source", "Sink",
+            "--from-file", "spyglass/fakepipe/v1/source.py",
+            "--to-file", "spyglass/fakepipe/v1/sink.py",
+            "--json",
+        ])
+    if rc != 0:
+        print(f"  [FAIL] expected exit 0, got {rc}: stderr={err[:400]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "v0/v1 endpoint-pinning path")
+    if payload is None:
+        return False
+    if payload.get("kind") != "path":
+        print(f"  [FAIL] expected kind=path, got {payload.get('kind')!r}")
+        return False
+    hops = payload.get("hops", [])
+    files = [h.get("file", "") for h in hops]
+    leaks = [f for f in files if "fakepipe/v0/" in f]
+    if leaks:
+        print(
+            f"  [FAIL] v0 leakage in hop files: {leaks!r} "
+            f"(full hop sequence: {files!r})"
+        )
+        return False
+    mid_hops = [h for h in hops if h.get("qualname") == "Mid"]
+    if len(mid_hops) != 1:
+        print(f"  [FAIL] expected exactly one Mid hop, got {len(mid_hops)}")
+        return False
+    mid_file = mid_hops[0].get("file", "")
+    if "fakepipe/v1/mid.py" not in mid_file:
+        print(
+            f"  [FAIL] Mid hop did not pin to v1: file={mid_file!r}"
+        )
+        return False
+    print(
+        "  [ok] path --to: endpoint pinning kept all intermediates in v1 "
+        "(v0 same-qualname sibling did not leak)"
+    )
+    return True
+
+
 def fixture_path_hop_citation_matches_record_that_owns_edge(src_root: Path) -> bool:
     """When v0 and v1 share a qualname, the rendered ``file:line`` for an
     intermediate hop must come from the record that ACTUALLY owns the
@@ -2771,6 +2871,7 @@ FIXTURES = [
     fixture_path_down_excludes_v0_consumers_through_master,
     fixture_path_to_still_bridges_master_part,
     fixture_path_edge_meta_walks_all_records_for_qualname,
+    fixture_path_to_endpoint_pinning_keeps_intermediates_in_v1,
     fixture_path_hop_citation_matches_record_that_owns_edge,
     fixture_path_no_path_returns_kind_no_path,
     fixture_path_not_found_returns_exit_4,
