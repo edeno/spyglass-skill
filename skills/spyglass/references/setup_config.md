@@ -271,13 +271,23 @@ All directories are created automatically on first config load if they do not ex
 > or via `dj.config['custom']` before importing `spyglass.settings` —
 > the defaults will not match your zone.
 
-**Fresh-workstation setup — the one piece of state that doesn't travel
-with the source.** `dj.config['stores']` is machine-local (filesystem
-paths), so `git pull` or a fresh `pip install` leaves it unset on a
-new machine. Populate it by running the `config/dj_config.py` helper
-in the Spyglass repo (or the equivalent
-`SpyglassConfig.save_dj_config(...)` call), then
-`dj.config.save_global()`.
+**Fresh-workstation setup — the one piece of state that doesn't travel with the source.** `dj.config['stores']` is machine-local (filesystem paths), so `git pull` or a fresh `pip install` leaves it unset on a new machine. Populate it via either of:
+
+```bash
+python scripts/install.py --config-only --base-dir /path/to/spyglass_data
+```
+
+```python
+from spyglass.settings import SpyglassConfig
+SpyglassConfig(base_dir="/path/to/spyglass_data").save_dj_config(
+    save_method="global", base_dir="/path/to/spyglass_data",
+    database_user="<your-db-user>",
+)
+```
+
+`save_method="global"` writes `~/.datajoint_config.json` (no extra `dj.config.save_global()` needed). Avoid the legacy `config/dj_config.py` helper in the Spyglass repo — it passes `filename=` to `SpyglassConfig.save_dj_config` (now `output_filename=`, `src/spyglass/settings.py:388`), and crashes with no args by assigning `None` to `SPYGLASS_BASE_DIR` (`config/dj_config.py:8`).
+
+Verify with:
 
 Sanity check at session start:
 

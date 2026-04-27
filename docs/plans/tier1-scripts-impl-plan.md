@@ -112,7 +112,7 @@ Wraps `payload` in reproducibility metadata. Never raises — any resolver failu
 
 ### Resolver rules
 
-- `spyglass_version` — `importlib.metadata.version("spyglass-neurodata")`; fall back to `getattr(spyglass, "__version__", None)`; else `null`.
+- `spyglass_version` — `importlib.metadata.version("spyglass-neuro")`; fall back to `getattr(spyglass, "__version__", None)`; else `null`.
 - `spyglass_commit` — `subprocess.run(["git", "-C", path, "rev-parse", "--short", "HEAD"])` with `timeout=1`, only if Spyglass is importable AND the path is inside a git working tree. Else `null`.
 - `datajoint_version` — `importlib.metadata.version("datajoint")`; else `null`.
 - `python_version` — `".".join(map(str, sys.version_info[:3]))`. Never null.

@@ -129,7 +129,7 @@ def check_spyglass_importable() -> CheckResult:
         return CheckResult(
             name="spyglass_importable",
             status="skip",
-            message="spyglass not installed (pip install spyglass-neurodata)",
+            message="spyglass not installed (pip install spyglass-neuro)",
         )
     version = getattr(spyglass, "__version__", "unknown")
     file_attr = getattr(spyglass, "__file__", None)
@@ -317,12 +317,12 @@ def check_version_pins() -> CheckResult:
         )
 
     try:
-        requires = importlib.metadata.requires("spyglass-neurodata") or []
+        requires = importlib.metadata.requires("spyglass-neuro") or []
     except importlib.metadata.PackageNotFoundError:
         return CheckResult(
             name="version_pins",
             status="skip",
-            message="could not read spyglass-neurodata package metadata",
+            message="could not read spyglass-neuro package metadata",
         )
 
     try:
