@@ -1997,6 +1997,107 @@ def fixture_d_fakes_merge_part_master_mismatch_exits_3(
     return True
 
 
+def fixture_d_set_op_flags_rejected_until_batch_e(
+    args: argparse.Namespace,
+) -> bool:
+    """Batch E flags refused with exit 2 until the implementation lands.
+
+    ``--intersect`` / ``--except`` / ``--join`` are advertised in
+    ``info --json.subcommands.find-instance`` so an LLM can plan for
+    Batch E, but accepting them in the current build would silently
+    fall through to plain find-instance and emit a wrong-shape
+    response. Reject them at the parser layer until the real
+    implementation lands.
+    """
+    for flag, value in (
+        ("--intersect", "Foo"),
+        ("--except", "Foo"),
+        ("--join", "Foo"),
+    ):
+        rc, _, err = _run_db_graph(
+            [
+                "find-instance",
+                "--class",
+                "json:JSONDecoder",
+                flag,
+                value,
+            ],
+            python_env=args.python_env,
+        )
+        if rc != 2:
+            print(f"  [FAIL] {flag} {value}: expected rc=2, got {rc}")
+            return False
+        if "Batch E" not in err:
+            print(
+                f"  [FAIL] {flag} error did not mention Batch E: "
+                f"{err[-200:]!r}"
+            )
+            return False
+    print(
+        "  [ok] --intersect / --except / --join refused with exit 2 + "
+        "Batch E reference"
+    )
+    return True
+
+
+def fixture_d_merge_error_payload_carries_merge_context(
+    args: argparse.Namespace,
+) -> bool:
+    """Merge-mode error payloads include merge_master and part fields.
+
+    A failure during merge-mode resolution must surface BOTH the master
+    and the part the user named, not just one as ``query.class``. An
+    LLM consuming the payload can then re-issue with a corrected pair
+    without re-reading the original CLI invocation.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        # Don't write fakemerge.py — both classes will fail to resolve.
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--merge-master",
+                "fakemerge:NonexistentMaster",
+                "--part",
+                "fakemerge:NonexistentPart",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 4:
+        print(f"  [FAIL] expected rc=4 (not_found), got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "merge error payload")
+    if payload is None:
+        return False
+    query = payload.get("query", {})
+    if query.get("class") != "fakemerge:NonexistentMaster":
+        print(
+            f"  [FAIL] query.class did not fall back to merge_master: "
+            f"{query.get('class')!r}"
+        )
+        return False
+    if query.get("merge_master") != "fakemerge:NonexistentMaster":
+        print(
+            f"  [FAIL] query.merge_master missing: "
+            f"{query.get('merge_master')!r}"
+        )
+        return False
+    if query.get("part") != "fakemerge:NonexistentPart":
+        print(f"  [FAIL] query.part missing: {query.get('part')!r}")
+        return False
+    print(
+        "  [ok] merge-mode error payload carries class + merge_master + "
+        "part"
+    )
+    return True
+
+
 def fixture_d_fakes_merge_count_only(args: argparse.Namespace) -> bool:
     """Merge mode + ``--count`` returns count without rows."""
     with tempfile.TemporaryDirectory() as tmp_str:
@@ -3074,6 +3175,8 @@ FIXTURES = [
     fixture_d_fakes_merge_master_only_field_silent_no_op_refused,
     fixture_d_fakes_merge_part_master_mismatch_exits_3,
     fixture_d_fakes_merge_count_only,
+    fixture_d_set_op_flags_rejected_until_batch_e,
+    fixture_d_merge_error_payload_carries_merge_context,
     # Batch D — live Spyglass evals
     fixture_d_eval14_trodes_position_merge_id,
     fixture_d_eval15_lfp_merge_id_via_lfpv1,

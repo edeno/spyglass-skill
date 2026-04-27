@@ -1137,6 +1137,25 @@ def cmd_info(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _failure_query_block(args: argparse.Namespace) -> dict:
+    """Build the standard ``query`` block for failure payloads.
+
+    All emitters route through this helper so error payloads carry the
+    same context regardless of which classes the user named. In merge
+    mode we include ``merge_master`` and ``part`` so an LLM reading a
+    failure can see the full picture (the master *and* the part the
+    user supplied), not just the conflated ``query.class``.
+    ``args.class_name`` already falls back to ``args.merge_master`` in
+    main(), so ``query.class`` is non-null in merge mode.
+    """
+    query: dict[str, object] = {"class": args.class_name}
+    if args.merge_master:
+        query["merge_master"] = args.merge_master
+    if args.part:
+        query["part"] = args.part
+    return query
+
+
 def _record_summary(rec: _index.ClassRecord) -> dict:
     """Render a ``ClassRecord`` for the candidates list of an ambiguous payload.
 
@@ -1162,7 +1181,7 @@ def _emit_ambiguous(
     """Print the ambiguous-class payload, return exit 3."""
     payload = _stamp_envelope("ambiguous", source_root=src_root)
     payload["db"] = None
-    payload["query"] = {"class": args.class_name}
+    payload["query"] = _failure_query_block(args)
     payload["candidates"] = [_record_summary(r) for r in exc.candidates]
     payload["hint"] = (
         f"{exc.name!r} matches multiple records in the source index. "
@@ -1186,7 +1205,7 @@ def _emit_not_found(
     """Print the not_found payload, return exit 4."""
     payload = _stamp_envelope("not_found", source_root=src_root)
     payload["db"] = None
-    payload["query"] = {"class": args.class_name}
+    payload["query"] = _failure_query_block(args)
     payload["error"] = {
         "kind": "not_found",
         "message": f"class {exc.name!r} not found",
@@ -1213,11 +1232,10 @@ def _emit_not_a_table(
     """
     payload = _stamp_envelope("not_found", source_root=src_root)
     payload["db"] = None
-    payload["query"] = {
-        "class": args.class_name,
-        "module": exc.module,
-        "qualname": exc.qualname,
-    }
+    query = _failure_query_block(args)
+    query["module"] = exc.module
+    query["qualname"] = exc.qualname
+    payload["query"] = query
     payload["error"] = {
         "kind": "not_a_table",
         "message": (
@@ -1255,7 +1273,7 @@ def _emit_db_error(
     """
     payload = _stamp_envelope("db_error", source_root=src_root)
     payload["db"] = _build_db_envelope() if resolved is not None else None
-    query: dict[str, object] = {"class": args.class_name}
+    query: dict[str, object] = _failure_query_block(args)
     if resolved is not None:
         query.update(
             {
@@ -1630,7 +1648,7 @@ def _emit_invalid_query(
     """
     payload = _stamp_envelope("invalid_query", source_root=src_root)
     payload["db"] = _build_db_envelope() if resolved is not None else None
-    payload["query"] = {"class": args.class_name}
+    payload["query"] = _failure_query_block(args)
     if resolved is not None:
         payload["query"].update(
             {
@@ -1657,54 +1675,62 @@ def _emit_invalid_query(
 def _identify_master_key_fields(
     part_cls: object,
     master_cls: object,
-    part_heading,
+    _part_heading,
     master_heading,
 ) -> tuple[str, ...]:
     """Identify the part columns that link to the master.
 
-    Plan algorithm:
+    DataJoint sets ``Part.master`` on every Part class at
+    schema-decoration time. Spyglass tables rely on this attribute,
+    and lab/custom Parts that wrap Spyglass merges set it the same
+    way. Resolution policy:
 
-    1. ``part_cls.master`` attribute — DataJoint sets this on every Part
-       class at schema-decoration time. If it equals the user-supplied
-       master class, return the master's primary-key tuple as the link
-       fields. If it disagrees, raise ``_MergeLinkUndecidable``: the
-       user named the wrong master.
-    2. (Skipped — heading.foreign_keys inspection varies by DataJoint
-       version; the ``part.master`` attribute is canonical for Spyglass.)
-    3. PK-name overlap as last resort. Accepts the shared field set
-       only when non-empty; never fabricates a single-name guess.
+    1. If ``part_cls.master`` is set and equals the user-supplied
+       master class, return ``master_heading.primary_key`` as the
+       link-field tuple.
+    2. If ``part_cls.master`` is set but disagrees, raise
+       ``_MergeLinkUndecidable``: the user named the wrong master,
+       and silently using their pick would defeat the structural
+       check.
+    3. If ``part_cls.master`` is absent, refuse with
+       ``_MergeLinkUndecidable`` rather than fall back to a shared-PK
+       heuristic. The plan explicitly excluded the
+       single-shared-PK-name case as a false-positive risk for
+       custom/lab classes (see docs/plans/db-graph-impl-plan.md
+       merge-master section); when in doubt, force the user to
+       configure ``master`` on the Part. ``heading.foreign_keys``
+       inspection is intentionally NOT used because the shape varies
+       by DataJoint version.
 
     Raises ``_MergeLinkUndecidable`` (exit 3 ambiguous-shaped payload)
-    when neither structural source produces an unambiguous answer.
-    The payload includes the master and part qualnames so an LLM can
-    pick a different pair without re-reading source.
+    in cases 2 and 3. The hint includes a fix suggestion so an LLM
+    can act on it without re-reading source.
+
+    ``part_heading`` is unused today (kept in the signature for the
+    future heading.foreign_keys path).
     """
     declared_master = getattr(part_cls, "master", None)
-    if declared_master is not None:
-        if declared_master is master_cls:
-            return tuple(master_heading.primary_key)
-        master_name = getattr(master_cls, "__name__", str(master_cls))
-        declared_name = getattr(declared_master, "__name__", str(declared_master))
+    if declared_master is None:
         raise _MergeLinkUndecidable(
-
-                f"part.master ({declared_name!r}) disagrees with "
-                f"--merge-master ({master_name!r}); the user named the "
-                "wrong master for this part. Use --merge-master with the "
-                f"class the part actually points to ({declared_name!r})."
-
+            "part class has no `.master` attribute. Spyglass Part "
+            "tables and lab/custom Parts that wrap Spyglass merges "
+            "should set `master = <MasterClass>` on the Part class "
+            "(DataJoint does this automatically when the Part is a "
+            "nested class of the master). If this is genuinely not a "
+            "DataJoint Part, do not use --merge-master/--part — use "
+            "--class with a direct restriction instead."
         )
-    shared = tuple(
-        sorted(set(part_heading.primary_key) & set(master_heading.primary_key))
+    if declared_master is master_cls:
+        return tuple(master_heading.primary_key)
+    master_name = getattr(master_cls, "__name__", str(master_cls))
+    declared_name = getattr(
+        declared_master, "__name__", str(declared_master)
     )
-    if shared:
-        return shared
     raise _MergeLinkUndecidable(
-
-            "no structural link between part and master could be "
-            "identified: part has no .master attribute and no shared "
-            "primary-key fields. The part may not actually be a part "
-            "of this master."
-
+        f"part.master ({declared_name!r}) disagrees with "
+        f"--merge-master ({master_name!r}); the user named the "
+        "wrong master for this part. Use --merge-master with the "
+        f"class the part actually points to ({declared_name!r})."
     )
 
 
@@ -2217,6 +2243,12 @@ def main() -> int:
                 "--class is required (or use --merge-master MASTER --part PART "
                 "for merge-aware lookup)"
             )
+        # In merge mode, ``args.class_name`` is what shared emitters
+        # print as ``query.class``. Default it to merge_master so error
+        # payloads always carry a non-null class identifier even when
+        # the user did not pass --class.
+        if args.merge_master and not args.class_name:
+            args.class_name = args.merge_master
         if args.group_by and args.group_by_table:
             parser.error(
                 "--group-by and --group-by-table are mutually exclusive; "
@@ -2231,6 +2263,39 @@ def main() -> int:
             parser.error(
                 "--count-distinct requires --group-by FIELDS or "
                 "--group-by-table CLASS"
+            )
+        # Batch E (set ops + grouped counts) is not yet implemented;
+        # reject the flags loudly until the implementation lands.
+        # Argparse exposes the flags so ``info --json`` can advertise
+        # the planned surface, but accepting them silently and
+        # falling through to a basic find-instance call would emit a
+        # plausible-looking but wrong payload — exactly the kind of
+        # silent-no-op footgun this tool exists to close.
+        unimplemented_flags = []
+        if args.intersect:
+            unimplemented_flags.append(f"--intersect {args.intersect}")
+        if args.except_class:
+            unimplemented_flags.append(f"--except {args.except_class}")
+        if args.join:
+            unimplemented_flags.append(f"--join {args.join}")
+        if args.group_by:
+            unimplemented_flags.append(f"--group-by {args.group_by}")
+        if args.group_by_table:
+            unimplemented_flags.append(
+                f"--group-by-table {args.group_by_table}"
+            )
+        if args.count_distinct:
+            unimplemented_flags.append(
+                f"--count-distinct {args.count_distinct}"
+            )
+        if unimplemented_flags:
+            parser.error(
+                "set-op and grouped-count flags are not yet implemented "
+                "(Batch E per docs/plans/db-graph-impl-plan.md): "
+                f"{', '.join(unimplemented_flags)}. The flags are "
+                "advertised in `info --json` so an LLM can plan for "
+                "Batch E, but accepting them silently in this build "
+                "would emit a plausible-looking wrong-shape payload."
             )
         return cmd_find_instance(args)
     # Argparse's `required=True` on the subparsers makes this unreachable
