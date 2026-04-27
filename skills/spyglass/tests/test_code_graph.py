@@ -1829,6 +1829,100 @@ def fixture_path_edge_meta_walks_all_records_for_qualname(src_root: Path) -> boo
     return True
 
 
+def fixture_describe_parts_anchor_to_master_record_for_same_qualname(
+    src_root: Path,
+) -> bool:
+    """`describe` resolves nested parts via same-package preference
+    anchored on the user-resolved master record, NOT via a bare
+    qualname lookup that returns the first matching record in the
+    index.
+
+    Real-Spyglass repro:
+    ``code_graph.py describe LFPBandSelection
+    --file spyglass/lfp/analysis/v1/lfp_band.py`` returned the
+    legacy ``common/common_ephys.py:624`` part because the v0 and
+    v1 trees both declare ``LFPBandSelection.LFPBandElectrode`` and
+    the bare lookup picks the first hit.
+
+    Synthetic shape: ``Master`` declared in v0 and v1, each with a
+    same-named nested ``Master.Inner`` part. Pinning the v1 master
+    via ``--file`` must yield the v1 part; pinning the v0 master
+    must yield the v0 part.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = _write_fakepipe(Path(tmp_str), {
+            "utils/dj_mixin.py": "class SpyglassMixin: pass\n",
+            "fakepipe/v0/master.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class Master(SpyglassMixin):
+                    definition = """
+                    legacy_id: int
+                    ---
+                    """
+                    class Inner(SpyglassMixin):
+                        definition = """
+                        -> master
+                        legacy_inner_id: int
+                        ---
+                        """
+            ''',
+            "fakepipe/v1/master.py": '''
+                from spyglass.utils.dj_mixin import SpyglassMixin
+                class Master(SpyglassMixin):
+                    definition = """
+                    new_id: int
+                    ---
+                    """
+                    class Inner(SpyglassMixin):
+                        definition = """
+                        -> master
+                        new_inner_id: int
+                        ---
+                        """
+            ''',
+        })
+
+        def _describe(file_hint: str) -> dict | None:
+            rc, out, err = _run_code_graph([
+                "--src", str(tmp), "describe", "Master",
+                "--file", file_hint, "--json",
+            ])
+            if rc != 0:
+                print(f"  [FAIL] {file_hint}: rc={rc}, stderr={err[:300]!r}")
+                return None
+            return _parse_json_or_fail(out, f"describe payload ({file_hint})")
+
+        v1_payload = _describe("spyglass/fakepipe/v1/master.py")
+        v0_payload = _describe("spyglass/fakepipe/v0/master.py")
+        if v1_payload is None or v0_payload is None:
+            return False
+
+        for label, payload, expected_dir in [
+            ("v1", v1_payload, "fakepipe/v1/"),
+            ("v0", v0_payload, "fakepipe/v0/"),
+        ]:
+            parts = payload.get("parts", [])
+            if len(parts) != 1:
+                print(
+                    f"  [FAIL] {label}: expected 1 part, got {len(parts)}: "
+                    f"{parts!r}"
+                )
+                return False
+            part_file = parts[0].get("file", "")
+            if expected_dir not in part_file:
+                print(
+                    f"  [FAIL] {label} master anchored on {expected_dir} "
+                    f"but part resolved to {part_file!r} — same-package "
+                    "preference not applied"
+                )
+                return False
+    print(
+        "  [ok] describe parts: v0 master -> v0 part, v1 master -> v1 part "
+        "(same-qualname collision resolved via anchor)"
+    )
+    return True
+
+
 def fixture_path_to_endpoint_pinning_keeps_intermediates_in_v1(
     src_root: Path,
 ) -> bool:
@@ -2991,6 +3085,7 @@ FIXTURES = [
     fixture_path_down_excludes_v0_consumers_through_master,
     fixture_path_to_still_bridges_master_part,
     fixture_path_edge_meta_walks_all_records_for_qualname,
+    fixture_describe_parts_anchor_to_master_record_for_same_qualname,
     fixture_path_to_endpoint_pinning_keeps_intermediates_in_v1,
     fixture_path_to_warnings_are_path_local_not_search_global,
     fixture_path_hop_citation_matches_record_that_owns_edge,

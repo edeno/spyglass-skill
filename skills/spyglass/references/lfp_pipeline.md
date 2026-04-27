@@ -27,8 +27,16 @@ from spyglass.lfp import LFPOutput, LFPElectrodeGroup
 Minimal end-to-end flow: define an electrode group, run FIR filtering via `LFPV1`, fetch the filtered LFP as a DataFrame. Everything below expands on pieces of this.
 
 ```python
+import numpy as np
+from spyglass.common import FirFilterParameters, Raw
 from spyglass.lfp import LFPOutput, LFPElectrodeGroup
 from spyglass.lfp.v1 import LFPSelection, LFPV1
+
+# 0. Make sure the standard FIR filter rows exist. The canonical
+#    "LFP 0-400 Hz" filter ships at both 20 kHz and 30 kHz sampling
+#    rates and is inserted by this helper (`common/common_filter.py:577`).
+#    The notebook 30_LFP.py:67 calls this before any LFPSelection.insert1.
+FirFilterParameters().create_standard_filters()
 
 # 1. Define which electrodes go into this LFP
 LFPElectrodeGroup.create_lfp_electrode_group(
@@ -37,15 +45,25 @@ LFPElectrodeGroup.create_lfp_electrode_group(
     electrode_list=[0, 1, 2, 3],
 )
 
-# 2. Insert selection + populate — target_interval_list_name must already
-#    exist in IntervalList, otherwise LFPSelection.insert1 raises a
-#    cryptic FK error. Use (IntervalList & {"nwb_file_name": nwb_file}) to
-#    confirm the interval is there first.
+# 2. Insert selection + populate. Two correctness gates here:
+#    (a) target_interval_list_name must already exist in IntervalList,
+#        otherwise LFPSelection.insert1 raises a cryptic FK error. Use
+#        `(IntervalList & {"nwb_file_name": nwb_file})` to confirm
+#        first.
+#    (b) `filter_sampling_rate` must match the raw recording's
+#        sampling rate — `LFPV1.make()` fetches it from `Raw` and
+#        looks up `FirFilterParameters` by that rate
+#        (`lfp/v1/lfp.py:72-75, 107-109`). 30000 below is correct
+#        only when Raw rounds to 30 kHz; for a 20 kHz recording use
+#        20000. Derive it instead of hard-coding.
+raw_sampling_rate = int(np.round(
+    (Raw & {"nwb_file_name": nwb_file}).fetch1("sampling_rate")
+))
 key = {"nwb_file_name": nwb_file,
        "lfp_electrode_group_name": "my_lfp_group",
        "target_interval_list_name": "02_r1",
        "filter_name": "LFP 0-400 Hz",
-       "filter_sampling_rate": 30000,
+       "filter_sampling_rate": raw_sampling_rate,
        "target_sampling_rate": 1000}
 LFPSelection.insert1(key, skip_duplicates=True)
 LFPV1.populate(key)
@@ -166,23 +184,42 @@ from spyglass.lfp.v1 import (
 )
 ```
 
-**LFPArtifactDetectionParameters** (Manual)
+**LFPArtifactDetectionParameters** (Manual; `lfp/v1/lfp_artifact.py:26`)
 
 - Key: `artifact_params_name`
-- Default presets:
+- Default presets exist as data on the class but are NOT auto-inserted at schema creation. Call `LFPArtifactDetectionParameters().insert_default()` (`lfp_artifact.py:73`) before referencing any of them. Available presets:
   - `"default_difference"` — Amplitude threshold detection
   - `"default_difference_ref"` — With common-mode referencing
   - `"default_mad"` — Median absolute deviation method
   - `"none"` — No artifact detection
 
-**LFPArtifactDetection** (Computed)
+**LFPArtifactDetectionSelection** (Manual; `lfp_artifact.py:145`)
+
+- Pairs an `LFPOutput` merge entry (the LFP being scanned) with an `artifact_params_name` row. Required step before `LFPArtifactDetection.populate()`.
+
+**LFPArtifactDetection** (Computed; defined in `lfp/v1/lfp_artifact.py`)
 
 - Detects artifacts and creates clean interval lists
 - Outputs: `artifact_times` (array), `artifact_removed_valid_times` (array), `artifact_removed_interval_list_name`
 
 ```python
-# Get clean intervals after artifact removal
-clean_times = (LFPArtifactDetection & key).fetch1('artifact_removed_valid_times')
+# 0. Make sure the default preset rows exist.
+LFPArtifactDetectionParameters().insert_default()
+
+# 1. Pick which LFP entry to scan (the merge entry from Step 2 above).
+artifact_sel_key = {
+    **merge_key,                                  # carries lfp_merge_id
+    "artifact_params_name": "default_difference",
+}
+LFPArtifactDetectionSelection.insert1(artifact_sel_key, skip_duplicates=True)
+
+# 2. Populate.
+LFPArtifactDetection.populate(artifact_sel_key)
+
+# 3. Fetch the clean interval times.
+clean_times = (LFPArtifactDetection & artifact_sel_key).fetch1(
+    "artifact_removed_valid_times"
+)
 ```
 
 ## Step 4: Band Analysis (Phase/Power)
@@ -195,13 +232,14 @@ from spyglass.lfp.analysis.v1.lfp_band import LFPBandSelection, LFPBandV1
 
 **LFPBandSelection** (Manual)
 
+- FKs `LFPOutput.proj(lfp_merge_id='merge_id')` (`lfp/analysis/v1/lfp_band.py:25-26`), NOT `LFPV1` directly. Any merge entry pointing at any concrete LFP source (commonly an `LFPV1` part, but also `ImportedLFP` / `CommonLFP`) is a valid input — that's the point of the merge layer.
 - Key: includes `nwb_file_name`, `lfp_merge_id`, `filter_name`, `filter_sampling_rate`, `target_interval_list_name`, `lfp_band_sampling_rate`.
-- Part table: `LFPBandSelection.LFPBandElectrode` — per-electrode reference configuration.
+- Part table: `LFPBandSelection.LFPBandElectrode` (`lfp_band.py:34`) — per-electrode reference configuration.
 - Entry method (preferred over manual `insert1`): `set_lfp_band_electrodes(nwb_file_name, lfp_merge_id, electrode_list, filter_name, interval_list_name, reference_electrode_list, lfp_band_sampling_rate)`. Populates both the main table and the part table.
 
 **LFPBandV1** (Computed)
 
-- Applies band filter to already-filtered `LFPV1` output.
+- Applies a band filter to an `LFPOutput` merge entry (commonly one produced by `LFPV1`).
 - Key methods:
   - `fetch1_dataframe()` — band-filtered LFP
   - `compute_analytic_signal(electrode_list)` — Hilbert transform → complex amplitude
@@ -257,13 +295,21 @@ LFPBandSelection().set_lfp_band_electrodes(
 #    selection row across other sampling rates / intervals — exactly
 #    the partial-key footgun this skill warns about. Pull the FULL
 #    selection key after `set_lfp_band_electrodes()` and use it.
+#
+#    Note on filter_sampling_rate: the helper derives it from the
+#    parent LFP's sampling rate (`lfp_band.py:116, 216`) — passing it
+#    in the restriction is therefore optional in the common single-
+#    LFP-source case, but `fetch1("KEY")` requires the restriction to
+#    match exactly one row, so include the four keys below (which
+#    uniquely identify the just-inserted selection) and let
+#    `fetch1("KEY")` expand the result to the full PK.
 band_sel_key = (LFPBandSelection & {
     "nwb_file_name": nwb_file,
     "lfp_merge_id": lfp_merge_id,
     "filter_name": "Theta 5-11 Hz",
     "target_interval_list_name": "02_r1",
     "lfp_band_sampling_rate": 1000,
-}).fetch1("KEY")
+}).fetch1("KEY")  # expands to include filter_sampling_rate
 LFPBandV1.populate(band_sel_key, display_progress=True)
 
 # 5. Fetch + derived quantities — reuse the same full key.

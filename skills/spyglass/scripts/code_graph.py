@@ -1734,13 +1734,23 @@ def _describe_payload(
 
     # parts: list of nested ClassDef qualnames with file/line (so the agent
     # can navigate to each part's declaration without re-querying).
+    # Resolve each part anchored on the master record's file, NOT via a
+    # bare ``_record_for_qualname`` lookup — when v0 and v1 declare the
+    # same-named nested part (e.g. both `common_ephys.py` and
+    # `lfp/analysis/v1/lfp_band.py` define
+    # ``LFPBandSelection.LFPBandElectrode``), the bare qualname lookup
+    # returns the first match in the index regardless of which master
+    # we anchored on. ``_resolve_target_record(..., anchor_rec=rec)``
+    # applies the same same-package preference used elsewhere in this
+    # module (FK target resolution, parts-of-master, BFS), so the v1
+    # master gets the v1 part.
     part_kind = (
         "merge_part" if any(b in _index.MERGE_BASE_NAMES for b in rec.bases)
         else "nested_part"
     )
     parts_out = []
     for part_qn in rec.parts:
-        part_rec = _record_for_qualname(idx, part_qn)
+        part_rec = _resolve_target_record(idx, part_qn, anchor_rec=rec, log=None)
         parts_out.append({
             "name": part_qn.split(".")[-1],
             "qualname": part_qn,
