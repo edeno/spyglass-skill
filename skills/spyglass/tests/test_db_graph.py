@@ -14,19 +14,38 @@ Run::
         [--python-env PATH]
 
 Both flags are optional. ``--spyglass-src`` is parity with sibling test
-files; Batch A fixtures do not need a real Spyglass tree because they
-exercise ``info`` and the ``find-instance`` Batch-A stub. ``--python-env``
-defaults to ``sys.executable``; pass a Python with DataJoint installed
-when fixtures that exercise the real find-instance code path land in
-Batch C.
+files; the source-root only matters for fixtures that resolve stock
+Spyglass classes through the source index. ``--python-env`` defaults to
+``sys.executable``; pass a Python with DataJoint+Spyglass installed
+when running fixtures that exercise the real find-instance code path
+against either the live DB or a synthetic ``FakeRelation`` sandbox
+(both invoke the same resolver).
 
-Batch A scope
--------------
+Fixture groups (function-name prefixes):
 
-The fixtures here pin the **contract** (envelope, exit codes, info
-payload, lazy-import discipline) so Batch C cannot silently drift it
-when the real find-instance implementation lands. Each fixture has a
-descriptive name keyed to a plan acceptance bullet.
+* ``info_*`` — ``info --json`` contract, exit codes, payload envelopes.
+* ``resolve_*`` — class resolution (short name, dotted qualname,
+  ``module:Class``, ``--import``, ambiguity, not_found, src-root
+  selection).
+* ``find_instance_*`` — basic find-instance (restriction, fetch,
+  count, limit, truncation, empty-result exit codes, blob/null/non-
+  finite refusal, payload envelopes, source-only invariants).
+* ``merge_*`` — merge-aware lookup (master/part resolution,
+  restriction routing, master-key projection, dedup, count from full
+  restricted part, no-master-link refusal).
+* ``setop_*`` — ``--intersect`` / ``--except`` / ``--join``
+  (shared-attribute requirement, restriction routing, payload).
+* ``grouped_count_*`` — ``--group-by`` / ``--group-by-table`` +
+  ``--count-distinct``.
+* ``describe_*`` — runtime introspection (heading, parents/children/
+  parts, optional row count, status block).
+* ``path_*`` — runtime graph traversal (``--to`` / ``--up`` /
+  ``--down``, BFS depth, error annotation, incomplete marker).
+
+Most fixtures use a ``FakeRelation`` sandbox (see ``fakes.py``) so
+they exercise the real ``db_graph.py`` script under a synthetic
+DataJoint shim. A handful of resolution fixtures use the live
+DataJoint server when the python_env can import Spyglass.
 """
 
 from __future__ import annotations
@@ -182,7 +201,7 @@ def fixture_info_field_order_is_stable(args: argparse.Namespace) -> bool:
 def fixture_info_advertises_required_contract_fields(
     args: argparse.Namespace,
 ) -> bool:
-    """info exposes every field promised by the Batch A acceptance bullet.
+    """info exposes every field promised by the tool-contract spec.
 
     Plan acceptance: ``info --json`` exposes ``subcommands``, ``exit_codes``,
     ``payload_envelopes``, ``result_shapes``, ``security_profile``,
@@ -257,7 +276,7 @@ def fixture_info_payload_envelopes_pin_field_order(
 ) -> bool:
     """payload_envelopes lists each shape's top-level fields in stable order.
 
-    Batch C will lean on these envelopes to construct payloads; pinning
+    find-instance handlers lean on these envelopes when constructing success payloads; pinning
     them here ensures the implementer cannot silently reorder fields
     without the test catching it.
     """
@@ -569,7 +588,7 @@ def fixture_group_by_and_group_by_table_are_mutually_exclusive(
     """``--group-by`` and ``--group-by-table`` cannot both be supplied.
 
     The plan documents two grouping forms; combining them in one query
-    is not defined. Refusing now prevents a future Batch E implementation
+    is not defined. Refusing prevents a future set-op implementation
     from having to invent semantics under deadline pressure.
     """
     rc, _, err = _run_db_graph(
@@ -664,7 +683,6 @@ def fixture_unknown_subcommand_exits_2(args: argparse.Namespace) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Batch B fixtures: class resolution
 # ---------------------------------------------------------------------------
 
 
@@ -721,12 +739,12 @@ def _expect_resolved_payload(
 
     Used by every Batch-B fixture that wants to pin "this class went
     through this resolution path" without caring about the row data.
-    Batch C subsumes the Batch B endpoint: instead of
+    find-instance subsumes the resolution-only endpoint: instead of
     ``kind: "not_implemented"``, a successful resolution now produces
     ``kind: "find-instance"`` with real ``count``/``rows``. The provenance
     fields (``query.module``, ``query.qualname``, ``query.resolution_source``)
     remain the contract this helper pins. ``query.stage`` was a Batch-B
-    affordance and is gone in Batch C.
+    affordance and is gone now that find-instance is fully wired.
     """
     payload = _parse_json_or_fail(out, "find-instance resolved stdout")
     if payload is None:
@@ -756,7 +774,7 @@ def _expect_resolved_payload(
     return True
 
 
-def fixture_resolve_resolves_stock_short_name(args: argparse.Namespace) -> bool:
+def fixture_resolve_stock_short_name(args: argparse.Namespace) -> bool:
     """``--class Session`` resolves via the stock _index path."""
     if not _require_capability(
         args, datajoint=True, spyglass=True,
@@ -767,7 +785,6 @@ def fixture_resolve_resolves_stock_short_name(args: argparse.Namespace) -> bool:
         ["find-instance", "--class", "Session"],
         python_env=args.python_env,
     )
-    # Batch C makes the resolved-class endpoint go all the way through
     # to a real fetch — exit 0 with kind=find-instance. The provenance
     # check below pins the resolution path used to get there.
     if rc != 0:
@@ -784,7 +801,7 @@ def fixture_resolve_resolves_stock_short_name(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_resolve_resolves_dotted_qualname(args: argparse.Namespace) -> bool:
+def fixture_resolve_dotted_qualname(args: argparse.Namespace) -> bool:
     """``--class LFPOutput.LFPV1`` resolves to the merge-part record.
 
     `code_graph._resolve_class` filters by exact qualname when the input
@@ -814,7 +831,7 @@ def fixture_resolve_resolves_dotted_qualname(args: argparse.Namespace) -> bool:
     return True
 
 
-def fixture_resolve_resolves_module_class_form(args: argparse.Namespace) -> bool:
+def fixture_resolve_module_class_form(args: argparse.Namespace) -> bool:
     """``module:Class`` (explicit colon form) resolves via module_path source."""
     if not _require_capability(
         args, datajoint=True, spyglass=True,
@@ -839,7 +856,7 @@ def fixture_resolve_resolves_module_class_form(args: argparse.Namespace) -> bool
     return True
 
 
-def fixture_resolve_resolves_dotted_module_path(args: argparse.Namespace) -> bool:
+def fixture_resolve_dotted_module_path(args: argparse.Namespace) -> bool:
     """Implicit dotted module path ``a.b.c.D`` falls through to module_path source.
 
     The _index lookup tries to match the full qualname (``a.b.c.D``) and
@@ -870,7 +887,7 @@ def fixture_resolve_resolves_dotted_module_path(args: argparse.Namespace) -> boo
     return True
 
 
-def fixture_resolve_resolves_via_import_for_custom_class(
+def fixture_resolve_via_import_for_custom_class(
     args: argparse.Namespace,
 ) -> bool:
     """``--import customlab --class customlab:CustomTable`` resolves a non-stock UserTable.
@@ -1175,7 +1192,6 @@ def fixture_resolve_installed_package_overrides_env_var(
 
 
 # ---------------------------------------------------------------------------
-# Batch C fixtures: basic find-instance
 # ---------------------------------------------------------------------------
 
 
@@ -1761,7 +1777,7 @@ def _write_fake_merge_module(target: Path) -> None:
     )
 
 
-def fixture_merge_fakes_merge_routes_part_only_field_to_part(
+def fixture_merge_fakes_routes_part_only_field_to_part(
     args: argparse.Namespace,
 ) -> bool:
     """Eval-#14/15/16 shape: ``--merge-master M --part P --key part_only=X``.
@@ -1847,7 +1863,7 @@ def fixture_merge_fakes_merge_routes_part_only_field_to_part(
     return True
 
 
-def fixture_merge_fakes_merge_count_unbounded_by_limit(
+def fixture_merge_fakes_count_unbounded_by_limit(
     args: argparse.Namespace,
 ) -> bool:
     """Merge ``--count`` reports the TRUE count, not a page-limited count.
@@ -1994,7 +2010,7 @@ def fixture_merge_fakes_merge_count_unbounded_by_limit(
     return True
 
 
-def fixture_merge_fakes_merge_ids_dedup_when_part_rows_share_master(
+def fixture_merge_fakes_ids_dedup_when_part_rows_share_master(
     args: argparse.Namespace,
 ) -> bool:
     """``merge.merge_ids`` is a SET of master keys, deduped on master-key
@@ -2116,7 +2132,7 @@ def fixture_merge_fakes_merge_ids_dedup_when_part_rows_share_master(
     return True
 
 
-def fixture_merge_fakes_merge_rows_pagination_dedupes_master_keys(
+def fixture_merge_fakes_rows_pagination_dedupes_master_keys(
     args: argparse.Namespace,
 ) -> bool:
     """Merge ``rows`` mode paginates DISTINCT master keys, not raw part
@@ -2632,7 +2648,7 @@ def fixture_find_instance_fakes_pathological_blob_objects_envelope_per_field(
     return True
 
 
-def fixture_path_path_max_depth_negative_refused(
+def fixture_path_max_depth_negative_refused(
     args: argparse.Namespace,
 ) -> bool:
     """``path --max-depth -1`` is refused at argparse with exit 2.
@@ -2664,7 +2680,7 @@ def fixture_path_path_max_depth_negative_refused(
     return True
 
 
-def fixture_merge_fakes_merge_master_only_field_silent_no_op_refused(
+def fixture_merge_fakes_master_only_field_silent_no_op_refused(
     args: argparse.Namespace,
 ) -> bool:
     """Eval #50 footgun: master-class restricted by part-only field is refused.
@@ -2673,7 +2689,7 @@ def fixture_merge_fakes_merge_master_only_field_silent_no_op_refused(
     ``--class MasterMerge --key nwb_file_name=X`` would silently drop the
     nwb_file_name restriction (because that field is not on the master
     heading) and return the whole master table — the canonical
-    silent-wrong-count footgun. Field validation in Batch C closes
+    silent-wrong-count footgun. Field validation closes
     this: kind=invalid_query, error.kind=unknown_field, exit 2.
     """
     with tempfile.TemporaryDirectory() as tmp_str:
@@ -2717,7 +2733,7 @@ def fixture_merge_fakes_merge_master_only_field_silent_no_op_refused(
     return True
 
 
-def fixture_merge_fakes_merge_part_master_mismatch_exits_3(
+def fixture_merge_fakes_part_master_mismatch_exits_3(
     args: argparse.Namespace,
 ) -> bool:
     """``--merge-master`` disagreeing with ``part.master`` exits 3.
@@ -2799,7 +2815,7 @@ def fixture_merge_fakes_merge_part_master_mismatch_exits_3(
     return True
 
 
-def fixture_merge_set_op_flags_mutually_exclusive(
+def fixture_setop_flags_mutually_exclusive(
     args: argparse.Namespace,
 ) -> bool:
     """``--intersect`` / ``--except`` / ``--join`` cannot be combined.
@@ -2835,7 +2851,7 @@ def fixture_merge_set_op_flags_mutually_exclusive(
     return True
 
 
-def fixture_merge_set_op_with_grouping_refused(
+def fixture_setop_with_grouping_refused(
     args: argparse.Namespace,
 ) -> bool:
     """Set ops cannot be combined with --group-by / --group-by-table."""
@@ -2876,7 +2892,7 @@ def _write_fake_setop_module(target: Path) -> None:
     (target / "fakesetop.py").write_text(
         "\n".join(
             [
-                '"""Synthetic Left + Right tables for Batch E set-op fixtures."""',
+                '"""Synthetic Left + Right tables for set-op fixtures."""',
                 "from datajoint import Manual",
                 "from fakes import FakeHeading, FakeRelation",
                 "",
@@ -3206,7 +3222,7 @@ def fixture_setop_fakes_intersect_secondary_only_overlap_refused(
     return True
 
 
-def fixture_setop_fakes_setop_restriction_routes_to_partner(
+def fixture_setop_fakes_restriction_routes_to_partner(
     args: argparse.Namespace,
 ) -> bool:
     """A partner-only --key is applied to R, not the base.
@@ -3261,7 +3277,7 @@ def fixture_setop_fakes_setop_restriction_routes_to_partner(
     return True
 
 
-def fixture_setop_fakes_setop_failure_carries_set_op_context(
+def fixture_setop_fakes_failure_carries_set_op_context(
     args: argparse.Namespace,
 ) -> bool:
     """Failure payloads from set-op invocations carry set-op fields.
@@ -3597,7 +3613,7 @@ def fixture_grouped_count_fakes_count_distinct_field_must_be_on_counted(
     return True
 
 
-def fixture_merge_merge_error_payload_carries_merge_context(
+def fixture_merge_error_payload_carries_merge_context(
     args: argparse.Namespace,
 ) -> bool:
     """Merge-mode error payloads include merge_master and part fields.
@@ -3653,7 +3669,7 @@ def fixture_merge_merge_error_payload_carries_merge_context(
     return True
 
 
-def fixture_merge_fakes_merge_count_only(args: argparse.Namespace) -> bool:
+def fixture_merge_fakes_count_only(args: argparse.Namespace) -> bool:
     """Merge mode + ``--count`` returns count without rows."""
     with tempfile.TemporaryDirectory() as tmp_str:
         tmp = Path(tmp_str)
@@ -3766,7 +3782,7 @@ def fixture_find_instance_no_restrgraph_or_tablechain_in_source(
     ``RestrGraph`` / ``TableChain`` to document the discipline, and a
     naive substring grep would flag those. The AST walker only sees
     actual code references, which is the discipline we care about
-    pinning. Plan-cited so a future Batch E author cannot quietly
+    pinning. Pinned so a future set-op author cannot quietly
     delegate to those classes when implementing set operations.
     """
     import ast as _ast
@@ -4246,7 +4262,7 @@ def _expect_merge_payload(out: str) -> dict | None:
 
 
 
-def fixture_describe_fakes_describe_returns_heading_and_adjacency(
+def fixture_describe_fakes_returns_heading_and_adjacency(
     args: argparse.Namespace,
 ) -> bool:
     """``describe CLASS`` returns runtime heading + parent/child/part names.
@@ -4365,7 +4381,7 @@ def fixture_describe_fakes_describe_returns_heading_and_adjacency(
     return True
 
 
-def fixture_describe_fakes_describe_errored_metadata_reported_as_error(
+def fixture_describe_fakes_errored_metadata_reported_as_error(
     args: argparse.Namespace,
 ) -> bool:
     """``parents()`` raising → ``status: "error"`` (not confirmed-empty).
@@ -4463,7 +4479,7 @@ def fixture_describe_fakes_describe_errored_metadata_reported_as_error(
     return True
 
 
-def fixture_describe_fakes_describe_omits_count_by_default(
+def fixture_describe_fakes_omits_count_by_default(
     args: argparse.Namespace,
 ) -> bool:
     """Without ``--count``, ``describe.count`` is null (no count(*) round-trip)."""
@@ -4521,7 +4537,7 @@ def fixture_describe_fakes_describe_omits_count_by_default(
     return True
 
 
-def fixture_describe_fakes_describe_unavailable_metadata_distinguished(
+def fixture_describe_fakes_unavailable_metadata_distinguished(
     args: argparse.Namespace,
 ) -> bool:
     """``parents`` not exposed on the relation → ``status: "unavailable"``.
@@ -4615,7 +4631,7 @@ def fixture_describe_fakes_describe_unavailable_metadata_distinguished(
     return True
 
 
-def fixture_describe_describe_advertised_in_info(
+def fixture_describe_advertised_in_info(
     args: argparse.Namespace,
 ) -> bool:
     """``info --json`` advertises describe with the documented contract.
@@ -4688,7 +4704,7 @@ def _write_fake_path_module(target: Path) -> None:
     (target / "fakepath.py").write_text(
         "\n".join(
             [
-                '"""Synthetic A → B → C chain for Batch G path fixtures."""',
+                '"""Synthetic A → B → C chain for path fixtures."""',
                 "from datajoint import Manual, _TABLE_GRAPH",
                 "from fakes import FakeHeading, FakeRelation",
                 "",
@@ -4757,7 +4773,7 @@ def _setup_path_sandbox(tmp: Path) -> None:
     _write_fake_path_module(tmp)
 
 
-def fixture_path_fakes_path_to_finds_chain(
+def fixture_path_fakes_to_finds_chain(
     args: argparse.Namespace,
 ) -> bool:
     """``path --to A C`` returns the parent→child chain A → B → C."""
@@ -4802,7 +4818,7 @@ def fixture_path_fakes_path_to_finds_chain(
     return True
 
 
-def fixture_path_fakes_path_to_no_path_returns_empty(
+def fixture_path_fakes_to_no_path_returns_empty(
     args: argparse.Namespace,
 ) -> bool:
     """``path --to`` returns empty hops when no path exists.
@@ -4838,7 +4854,7 @@ def fixture_path_fakes_path_to_no_path_returns_empty(
     return True
 
 
-def fixture_path_fakes_path_up_walks_ancestors(
+def fixture_path_fakes_up_walks_ancestors(
     args: argparse.Namespace,
 ) -> bool:
     """``path --up C`` returns ancestors via parents() walk."""
@@ -4899,7 +4915,7 @@ def fixture_path_fakes_path_up_walks_ancestors(
     return True
 
 
-def fixture_path_fakes_path_down_walks_descendants(
+def fixture_path_fakes_down_walks_descendants(
     args: argparse.Namespace,
 ) -> bool:
     """``path --down A`` returns descendants via children() walk."""
@@ -4937,7 +4953,7 @@ def fixture_path_fakes_path_down_walks_descendants(
     return True
 
 
-def fixture_path_fakes_path_max_depth_truncates(
+def fixture_path_fakes_max_depth_truncates(
     args: argparse.Namespace,
 ) -> bool:
     """``--max-depth 1`` on a 3-node chain marks the walk truncated."""
@@ -4986,7 +5002,7 @@ def fixture_path_fakes_path_max_depth_truncates(
     return True
 
 
-def fixture_path_fakes_path_to_incomplete_when_traversal_errors(
+def fixture_path_fakes_to_incomplete_when_traversal_errors(
     args: argparse.Namespace,
 ) -> bool:
     """``--to`` distinguishes "no path exists" from "traversal incomplete".
@@ -5070,7 +5086,7 @@ def fixture_path_fakes_path_to_incomplete_when_traversal_errors(
     return True
 
 
-def fixture_path_fakes_path_walk_incomplete_when_neighbor_errors(
+def fixture_path_fakes_walk_incomplete_when_neighbor_errors(
     args: argparse.Namespace,
 ) -> bool:
     """``--down`` walks set incomplete=true when a node's children() raises."""
@@ -5138,7 +5154,7 @@ def fixture_path_fakes_path_walk_incomplete_when_neighbor_errors(
     return True
 
 
-def fixture_path_fakes_path_schema_error_carries_input_context(
+def fixture_path_fakes_schema_error_carries_input_context(
     args: argparse.Namespace,
 ) -> bool:
     """A class that resolves but lacks ``full_table_name`` exits with a
@@ -5236,7 +5252,7 @@ def fixture_path_fakes_path_schema_error_carries_input_context(
     return True
 
 
-def fixture_path_path_advertised_in_info(
+def fixture_path_advertised_in_info(
     args: argparse.Namespace,
 ) -> bool:
     """``info --json`` advertises path with the documented contract."""
@@ -5314,7 +5330,6 @@ def fixture_find_instance_empty_result_fail_on_empty_exit_seven(
 
 
 FIXTURES = [
-    # Batch A — info contract + cross-flag validation
     fixture_info_emits_valid_json,
     fixture_info_field_order_is_stable,
     fixture_info_advertises_required_contract_fields,
@@ -5328,18 +5343,16 @@ FIXTURES = [
     fixture_group_by_and_group_by_table_are_mutually_exclusive,
     fixture_limit_hard_max_enforced,
     fixture_unknown_subcommand_exits_2,
-    # Batch B — class resolution
-    fixture_resolve_resolves_stock_short_name,
-    fixture_resolve_resolves_dotted_qualname,
-    fixture_resolve_resolves_module_class_form,
-    fixture_resolve_resolves_dotted_module_path,
-    fixture_resolve_resolves_via_import_for_custom_class,
+    fixture_resolve_stock_short_name,
+    fixture_resolve_dotted_qualname,
+    fixture_resolve_module_class_form,
+    fixture_resolve_dotted_module_path,
+    fixture_resolve_via_import_for_custom_class,
     fixture_resolve_ambiguous_short_name_exits_3,
     fixture_resolve_not_found_exits_4,
     fixture_resolve_not_a_table_exits_4,
     fixture_resolve_src_overrides_installed_package,
     fixture_resolve_installed_package_overrides_env_var,
-    # Batch C — basic find-instance (fakes sandbox: no live DB needed)
     fixture_find_instance_fakes_restriction_and_fetch,
     fixture_find_instance_fakes_count_only,
     fixture_find_instance_fakes_truncation_marker,
@@ -5348,48 +5361,41 @@ FIXTURES = [
     fixture_find_instance_fakes_safe_serialization_envelopes,
     fixture_find_instance_fakes_nan_restriction_refused,
     fixture_find_instance_fakes_db_error_classification,
-    # Batch D — merge-aware lookup (fakes sandbox)
-    fixture_merge_fakes_merge_routes_part_only_field_to_part,
-    fixture_merge_fakes_merge_count_unbounded_by_limit,
-    fixture_merge_fakes_merge_ids_dedup_when_part_rows_share_master,
-    fixture_merge_fakes_merge_rows_pagination_dedupes_master_keys,
-    fixture_merge_fakes_merge_master_only_field_silent_no_op_refused,
-    fixture_merge_fakes_merge_part_master_mismatch_exits_3,
-    fixture_merge_fakes_merge_count_only,
-    fixture_merge_set_op_flags_mutually_exclusive,
-    fixture_merge_set_op_with_grouping_refused,
-    fixture_merge_merge_error_payload_carries_merge_context,
-    # Batch E — set ops + grouped counts (fakes sandbox)
+    fixture_merge_fakes_routes_part_only_field_to_part,
+    fixture_merge_fakes_count_unbounded_by_limit,
+    fixture_merge_fakes_ids_dedup_when_part_rows_share_master,
+    fixture_merge_fakes_rows_pagination_dedupes_master_keys,
+    fixture_merge_fakes_master_only_field_silent_no_op_refused,
+    fixture_merge_fakes_part_master_mismatch_exits_3,
+    fixture_merge_fakes_count_only,
+    fixture_setop_flags_mutually_exclusive,
+    fixture_setop_with_grouping_refused,
+    fixture_merge_error_payload_carries_merge_context,
     fixture_setop_fakes_intersect_returns_shared_keys,
     fixture_setop_fakes_except_returns_left_minus_right,
     fixture_setop_fakes_join_validates_output_fields,
     fixture_setop_fakes_intersect_secondary_only_overlap_refused,
-    fixture_setop_fakes_setop_restriction_routes_to_partner,
-    fixture_setop_fakes_setop_failure_carries_set_op_context,
+    fixture_setop_fakes_restriction_routes_to_partner,
+    fixture_setop_fakes_failure_carries_set_op_context,
     fixture_setop_fakes_zero_overlap_set_op_refused,
     fixture_grouped_count_fakes_group_by_table_eval19_shape,
     fixture_grouped_count_fakes_group_by_explicit_fields,
     fixture_grouped_count_fakes_count_distinct_field_must_be_on_counted,
-    # Batch E — live Spyglass evals
-    # Batch F — describe (runtime introspection)
-    fixture_describe_fakes_describe_returns_heading_and_adjacency,
-    fixture_describe_fakes_describe_omits_count_by_default,
-    fixture_describe_fakes_describe_errored_metadata_reported_as_error,
-    fixture_describe_fakes_describe_unavailable_metadata_distinguished,
-    fixture_describe_describe_advertised_in_info,
-    # Batch G — path (runtime graph traversal)
-    fixture_path_fakes_path_to_finds_chain,
-    fixture_path_fakes_path_to_no_path_returns_empty,
-    fixture_path_fakes_path_up_walks_ancestors,
-    fixture_path_fakes_path_down_walks_descendants,
-    fixture_path_fakes_path_max_depth_truncates,
-    fixture_path_fakes_path_to_incomplete_when_traversal_errors,
-    fixture_path_fakes_path_walk_incomplete_when_neighbor_errors,
-    fixture_path_fakes_path_schema_error_carries_input_context,
-    fixture_path_path_max_depth_negative_refused,
-    fixture_path_path_advertised_in_info,
-    # Batch D — live Spyglass evals
-    # Batch C — static-source / parser fixtures
+    fixture_describe_fakes_returns_heading_and_adjacency,
+    fixture_describe_fakes_omits_count_by_default,
+    fixture_describe_fakes_errored_metadata_reported_as_error,
+    fixture_describe_fakes_unavailable_metadata_distinguished,
+    fixture_describe_advertised_in_info,
+    fixture_path_fakes_to_finds_chain,
+    fixture_path_fakes_to_no_path_returns_empty,
+    fixture_path_fakes_up_walks_ancestors,
+    fixture_path_fakes_down_walks_descendants,
+    fixture_path_fakes_max_depth_truncates,
+    fixture_path_fakes_to_incomplete_when_traversal_errors,
+    fixture_path_fakes_walk_incomplete_when_neighbor_errors,
+    fixture_path_fakes_schema_error_carries_input_context,
+    fixture_path_max_depth_negative_refused,
+    fixture_path_advertised_in_info,
     fixture_find_instance_no_restrgraph_or_tablechain_in_source,
     fixture_find_instance_read_only_no_write_method_calls_in_source,
     fixture_find_instance_unknown_restriction_field_refused,

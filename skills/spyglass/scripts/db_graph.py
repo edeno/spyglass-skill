@@ -496,7 +496,7 @@ def resolve_class(
 ) -> _Resolved:
     """Resolve a user-supplied ``--class`` argument to a live DataJoint class.
 
-    Resolution order (per docs/plans/db-graph-impl-plan.md):
+    Resolution order:
 
     1. Run user ``--import MODULE`` statements first so any custom-table
        module is in ``sys.modules`` before the stock-name lookup or the
@@ -512,9 +512,10 @@ def resolve_class(
 
     Raises ``_ClassResolutionError`` subclasses on every failure mode.
     """
-    # Step 1: user --import. Failures here surface as not_found because
-    # the user's intent was "find this class via this module" — module
-    # import failure is a precondition, not a separate error class.
+    # User --import statements. Failures here surface as not_found
+    # because the user's intent was "find this class via this module"
+    # — module import failure is a precondition, not a separate
+    # error class.
     for mod_name in imports:
         try:
             importlib.import_module(mod_name)
@@ -524,7 +525,7 @@ def resolve_class(
                 hint=f"--import {mod_name!r} failed: {exc}",
             ) from exc
 
-    # Step 2: explicit `module:Class` form.
+    # Explicit `module:Class` form.
     if ":" in name:
         module_name, _, class_name = name.rpartition(":")
         if not module_name or not class_name:
@@ -536,12 +537,12 @@ def resolve_class(
             name, module_name, class_name, source="module_path"
         )
 
-    # Step 3: stock _index lookup (also handles dotted qualnames like
+    # Stock _index lookup (also handles dotted qualnames like
     # `LFPOutput.LFPV1` — see code_graph._resolve_class for the rules).
-    # Track failure modes separately so the not_found hint can name the
-    # specific recovery the user needs (rather than a generic message
-    # that mis-blames an unset --src when the user actually supplied a
-    # bogus one).
+    # Track failure modes separately so the not_found hint can name
+    # the specific recovery the user needs (rather than a generic
+    # message that mis-blames an unset --src when the user actually
+    # supplied a bogus one).
     src_root = _select_src_root(src)
     index_attempted = False
     src_root_invalid = False
@@ -568,15 +569,15 @@ def resolve_class(
             # commonly: user passed --src to a wrong directory.
             src_root_invalid = True
 
-    # Step 4: dotted module-path fallback (only if no `:`, since that
-    # branch already returned).
+    # Dotted module-path fallback (only if no `:`, since that branch
+    # already returned).
     if "." in name:
         module_name, _, class_name = name.rpartition(".")
         return _import_walk(
             name, module_name, class_name, source="module_path"
         )
 
-    # Step 5: genuine not_found. Pick the hint that describes what was
+    # Genuine not_found. Pick the hint that describes what was
     # actually tried, not a generic "no source root" message.
     if src_root_invalid:
         hint = (
@@ -2056,7 +2057,7 @@ def _safe_serialize_value(
                 # key is not JSON-safe.
                 if all(
                     isinstance(k, (str, int, float, bool)) or k is None
-                    for k in value.keys()
+                    for k in value
                 ):
                     return {
                         k: _safe_serialize_value(v, seen)
@@ -2067,7 +2068,7 @@ def _safe_serialize_value(
                     "type": "dict",
                     "length": len(value),
                     "key_types": sorted(
-                        {type(k).__name__ for k in value.keys()}
+                        {type(k).__name__ for k in value}
                     ),
                 }
             return [_safe_serialize_value(v, seen) for v in value]
@@ -2233,13 +2234,11 @@ def _identify_master_key_fields(
        check.
     3. If ``part_cls.master`` is absent, refuse with
        ``_MergeLinkUndecidable`` rather than fall back to a shared-PK
-       heuristic. The plan explicitly excluded the
-       single-shared-PK-name case as a false-positive risk for
-       custom/lab classes (see docs/plans/db-graph-impl-plan.md
-       merge-master section); when in doubt, force the user to
-       configure ``master`` on the Part. ``heading.foreign_keys``
-       inspection is intentionally NOT used because the shape varies
-       by DataJoint version.
+       heuristic. The single-shared-PK-name case is intentionally
+       excluded as a false-positive risk for custom/lab classes;
+       when in doubt, force the user to configure ``master`` on the
+       Part. ``heading.foreign_keys`` inspection is intentionally
+       NOT used because the shape varies by DataJoint version.
 
     Raises ``_MergeLinkUndecidable`` (exit 3 ambiguous-shaped payload)
     in cases 2 and 3. The hint includes a fix suggestion so an LLM
@@ -2589,8 +2588,7 @@ def _cmd_find_instance_setop(
     """Handle ``--intersect`` / ``--except`` / ``--join``.
 
     Thin wrapper around DataJoint operators after heading validation; this
-    does not implement a separate relational algebra. Algorithm per
-    docs/plans/db-graph-impl-plan.md:
+    does not implement a separate relational algebra:
 
     * intersect: ``L & R.proj()`` — DataJoint natural restriction along
       shared attribute names.
