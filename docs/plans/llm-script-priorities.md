@@ -23,9 +23,17 @@ Immediate order:
 2. Keep `verify_spyglass_env.py` and `scrub_dj_config.py` stable and
    secret-safe; do not retrofit their JSON shape unless a real consumer needs
    a shared envelope.
-3. Consider `map_si_to_spyglass.py` next, because SpikeInterface API drift is
-   not solved by either graph tool.
-4. Defer `visualize_schema_neighborhood.py`, `fetch_merge_row.py`,
+3. Consider two likely next factual helpers after graph-tool evals:
+   parameter inspection (`describe_params.py` / `trace_params.py`) and
+   lightweight NWB inspection (`inspect_nwb_lite.py`). Parameters live in
+   blobs and are interpreted in `make()` bodies, often by third-party
+   packages; NWB files are the file-backed evidence surface that the graph
+   tools cannot see, including both raw NWBs before ingestion and AnalysisNWB
+   files that store analysis results.
+4. Consider `map_si_to_spyglass.py` when SpikeInterface API drift shows up in
+   evals or user sessions; this is external-package compatibility, not a graph
+   question.
+5. Defer `visualize_schema_neighborhood.py`, `fetch_merge_row.py`,
    `cardinality_check.py`, and most row-debugging helpers until evals or real
    user sessions show that `db_graph.py`/`code_graph.py` are too awkward.
 
@@ -50,11 +58,14 @@ reference, and README attention before adding more scripts.
 | `db_graph.py` | **shipped / PR-ready** | Runtime database evidence: actual table headings, row counts, merge IDs, set operations, custom-table imports, and source/runtime divergence. It is the main antidote to invented keys, attributes, and row-state claims. |
 | `verify_spyglass_env.py` | **shipped** | Seven checks + JSON output + bounded timeout = LLM-ideal. Env assumptions become cite-able evidence instead of "trust me." |
 | `scrub_dj_config.py` | **shipped** | Safe ground-truth read of DB config. Closes the password-leak-into-context hallucination-adjacent hazard. |
+| **`describe_params.py` / `trace_params.py`** | likely next | Parameter rows are not just rows: values live in blobs, are consumed inside `make()`, and are often passed to third-party packages. This helper should produce an evidence packet tying params rows to consuming source locations and external call sites, not try to infer scientific meaning by itself. |
+| **`inspect_nwb_lite.py`** | candidate | Covers a different file-backed evidence surface: quickly summarize raw NWBs and AnalysisNWB files, including metadata, namespaces, processing modules, table shapes, dataset shapes, and object paths without loading array payloads into context. Useful before ingestion, when checking analysis outputs, and when comparing what the DB says to what is actually stored on disk. |
 | **`map_si_to_spyglass.py`** | candidate | Still valuable because SpikeInterface API drift (`WaveformExtractor` ↔ `SortingAnalyzer`) is an external-package compatibility problem, not a source/runtime graph problem. Best implemented as a tiny script over a YAML catalog. |
 
 **Next implementation recommendation:** do the consolidation/eval work first.
-If one new script is still justified after that, start with
-`map_si_to_spyglass.py`.
+If a new script is justified after that, pick between parameter inspection,
+NWB inspection, and SpikeInterface mapping based on the first failing eval/user
+workflow.
 
 ## Tier 2 — Reconsider after graph-tool evals
 
@@ -63,7 +74,6 @@ two graph tools are insufficient or too clumsy for the task.
 
 | Script | Why it's Tier 2 |
 | --- | --- |
-| **`describe_params.py`** | Parameter rows remain important, but `db_graph.py describe` / `find-instance` already expose headings and rows. Build this only if parameter evals show repeated awkward multi-call patterns or unsafe blob handling that a narrow script would solve. |
 | **`session_summary.py`** | "What's in this session?" may justify a convenience wrapper, but first test whether a small set of `db_graph.py` merge-master calls plus a reference template is enough. |
 | **`pipeline_provenance.py`** | Reproducibility is central, but provenance spans source DAG, runtime rows, parameter blobs, files, and merge parts. It should likely be a higher-level composition over existing tools, not an early standalone script. |
 | **`check_analysis_files.py`** | Thin wrapper over `AnalysisNwbfile.check_all_files()`. Ground truth about "is the data actually on disk?" — a question the LLM otherwise can't answer reliably without running fetch and catching FileNotFoundError. |
@@ -126,7 +136,8 @@ LLM-tier placement above is conditional on these being met. A Tier-1 script with
 - **Next PRs:** consolidate `code_graph.py` / `db_graph.py` documentation,
   add evals that require proof-carrying answers, and keep existing scripts
   stable.
-- **Next new script:** only `map_si_to_spyglass.py` is clearly outside the
-  graph tools' scope today.
+- **Next new script:** likely one of parameter inspection, lightweight NWB
+  inspection, or SpikeInterface mapping. Let evals/user sessions choose among
+  them.
 - **Backlog grooming:** when a Tier 3 script's triggering scenario appears in a real user interaction, promote to next-up; otherwise hold.
 - **New proposals:** score against the five criteria above before adding to the issue list. Tier 4-shaped scripts (admin / workflow) are still valid but should carry a clear "humans first, not LLMs" note so future contributors don't conflate utility with LLM leverage.

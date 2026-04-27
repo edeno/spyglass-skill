@@ -66,6 +66,15 @@ tools correctly**. The next baseline is not "skill vs. no skill"; it is
   - "Why is my query empty after changing params?" Expected behavior: combine
     source path evidence with runtime row/count checks and avoid inventing
     parameter names.
+  - "What does this parameter row actually affect?" Expected behavior: inspect
+    the parameter blob, identify the consuming `make()` source, and flag
+    third-party call sites rather than inferring from the parameter name.
+  - "Can I ingest this unfamiliar raw NWB?" Expected behavior: inspect file
+    metadata, namespaces, table shapes, and array shapes without reading array
+    payloads or assuming the DB already knows the file.
+  - "What did this AnalysisNWB output actually contain?" Expected behavior:
+    inspect processing modules, object paths, table/dataset shapes, and
+    extension namespaces without reading large payload values.
   - "My custom lab table is not in source." Expected behavior: use
     `db_graph.py --import` / runtime heading rather than `code_graph.py`.
   - "Source says the class exists, but the DB heading differs." Expected
@@ -124,6 +133,28 @@ outputs.
 
 This is Phase 1's first step. Do it before catalogs or new scripts.
 
+### 1.0.5 Parameter and NWB evidence probes
+
+**Why:** Two valuable evidence surfaces remain outside the graph tools.
+Parameters live in DB rows as blobs, but their effect is determined where
+`make()` reads those blobs and passes values into Spyglass or third-party
+functions. NWB files also carry facts the DB graph cannot see: raw files before
+ingestion and AnalysisNWB files containing analysis results. They may be too
+large to read into context. Both are common places where an agent otherwise
+guesses.
+
+**Deliverables:**
+
+- Add evals for parameter traceability: params row -> blob summary -> consuming
+  source location -> third-party call site -> uncertainty caveat.
+- Add evals for lightweight NWB inspection: raw file metadata, AnalysisNWB
+  processing modules/results, namespaces, table shapes, array shapes, object
+  paths, and no array payload values.
+- If evals show graph-tool + reference patterns are awkward, write narrow
+  plans for `describe_params.py` / `trace_params.py` and `inspect_nwb_lite.py`.
+- Keep both tools evidentiary. They should surface facts for the agent to cite,
+  not decide scientific validity or ingestion policy by themselves.
+
 ### 1.1 Quality-metrics ontology reference
 
 **Why:** Aim 2.1 asks for a formal mapping metric ↔ modality ↔ failure
@@ -170,11 +201,11 @@ reconstructs the others from scratch each time.
 prose. A YAML catalog serves both Claude (via the skill) and future
 programmatic consumers (Aim 1.2 APIs).
 
-**Current decision:** defer as a large static catalog until parameter evals
-prove it is needed. Prefer `db_graph.py` for live parameter rows and source
-reads for behavioral consequences. A catalog is still valuable for
-high-level parameter sensitivity labels, but it should not become a stale
-copy of live Params table contents.
+**Current decision:** defer as a large static catalog until parameter trace
+evals prove it is needed. Prefer live parameter inspection for row/blob facts
+and source reads for behavioral consequences. A catalog is still valuable for
+high-level parameter sensitivity labels, but it should not become a stale copy
+of live Params table contents.
 
 **Possible deliverables if revived:**
 

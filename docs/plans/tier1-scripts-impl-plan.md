@@ -10,8 +10,8 @@ Do **not** execute this plan as written.
 
 Since this draft, `code_graph.py` and `db_graph.py` became the primary
 LLM-facing factual tools. They cover most of the value this plan assigned to
-`visualize_schema_neighborhood.py`, `fetch_merge_row.py`, cardinality helpers,
-and much of `describe_params.py`:
+`visualize_schema_neighborhood.py`, `fetch_merge_row.py`, and cardinality
+helpers:
 
 - source DAG / table identity / method ownership -> `code_graph.py`
 - runtime heading / rows / counts / merge IDs / source-runtime disagreement ->
@@ -19,9 +19,14 @@ and much of `describe_params.py`:
 - environment/config checks -> existing `verify_spyglass_env.py` and
   `scrub_dj_config.py`
 
-The remaining defensible standalone item is `map_si_to_spyglass.py`, because
-SpikeInterface API compatibility is external-package drift rather than a
-Spyglass source/runtime graph question.
+Two parts of this draft remain defensible, but need fresh narrower plans:
+
+- `describe_params.py` / `trace_params.py`, because parameter values live in
+  blobs and their effect is determined where `make()` consumes the blob and
+  passes values into Spyglass or third-party functions. `db_graph.py` can show
+  the row; it does not explain the consumption path.
+- `map_si_to_spyglass.py`, because SpikeInterface API compatibility is
+  external-package drift rather than a Spyglass source/runtime graph question.
 
 Before reviving any part of this plan:
 
@@ -31,8 +36,9 @@ Before reviving any part of this plan:
    failure mode.
 3. Prefer a narrow reference template before adding a new CLI.
 
-The detailed design below is retained as historical context and as a possible
-starting point for a future `map_si_to_spyglass.py` PR.
+The detailed design below is retained as historical context. Use only the
+relevant pieces as starting material for fresh narrow plans; do not revive the
+combined three-script PR.
 
 ## Goals and non-goals
 
@@ -554,5 +560,5 @@ Each migration deletes the prototype and updates skill-reference citations to `p
 
 Do not start PR A. First land the graph-tool eval/reference consolidation
 described in [llm-script-priorities.md](llm-script-priorities.md). If a new
-script remains justified after that, split out a fresh narrow plan for
-`map_si_to_spyglass.py`.
+script remains justified after that, split out a fresh narrow plan for either
+parameter tracing or `map_si_to_spyglass.py`; do not revive this combined PR.
