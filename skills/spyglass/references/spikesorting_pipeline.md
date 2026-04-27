@@ -286,8 +286,10 @@ unconditionally and raises `KeyError: 'curation_label'`.
 
 Workaround: pass explicit labels to `insert_curation`, OR generate
 figurl only from a curation that has metrics attached (i.e. one
-inserted from `MetricCuration`). Tracked + fixed by #1530 — upgrade
-Spyglass if you're on an older release.
+inserted from `MetricCuration`). On a Spyglass that initializes
+`curation_label` unconditionally (check `CurationV1.insert_curation`
+in `spikesorting/v1/curation.py`), the workaround is unnecessary —
+upgrade if your install still raises on this path.
 
 ## Step 5: Quality Metrics (Optional)
 

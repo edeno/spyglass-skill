@@ -195,10 +195,14 @@ connection at import time (`ExportErrorLog` in `dj_helper_fn` pulled in
 a handshake). If `dj.config` wasn't valid yet — bad host, no password,
 wrong TLS — the import failed.
 
-**Fixed in Spyglass post-#1563** (merged 2026-04-09): `ExportErrorLog`
-moved out of `dj_helper_fn.py` to `common_usage.py`, breaking the
-circular dependency. Upgrade (`git pull && pip install -e .`) and the
-lazy-init fix applies.
+**Current Spyglass:** `ExportErrorLog` lives in
+`spyglass/common/common_usage.py` (verify with `code_graph.py describe
+--class ExportErrorLog`); `dj_helper_fn.py` imports it lazily inside
+the function body, so importing `spyglass.utils` no longer triggers a
+DataJoint handshake. If `code_graph.py describe` shows
+`ExportErrorLog` defined under `spyglass/utils/dj_helper_fn.py` (or
+imported at module top of `dj_helper_fn`), the install predates this
+fix — upgrade (`git pull && pip install -e .`).
 
 Workaround for older installs — populate `dj.config` BEFORE the first
 `from spyglass...`:
@@ -246,8 +250,10 @@ unset DLC_BASE_DIR DLC_PROJECT_PATH
 then re-import.
 
 Both modes are import-time, so neither can be fixed from a live
-Spyglass session — the fix goes through the raw DataJoint config or
-through upgrading Spyglass past #1563.
+Spyglass session — the fix goes through the raw DataJoint config, or
+through upgrading to a Spyglass that defines `ExportErrorLog` in
+`common_usage` and imports it lazily inside `dj_helper_fn` (verify
+with `code_graph.py describe --class ExportErrorLog`).
 
 ## `ImportError` / symbol-moved errors after `git pull` — editable-install drift
 
@@ -393,8 +399,8 @@ import pynwb   # and whatever else uses HDF5
 ```
 
 The separate "`pynwb` version too old" failure in the same area —
-`AttributeError` on `TimeSeries.get_timestamps` — was fixed by
-bumping the pin to `pynwb>=2.5.0` in #1384. Upgrade your env
-(`pip install -U pynwb`) if you're on 2.2.x.
+`AttributeError` on `TimeSeries.get_timestamps` — needs `pynwb>=2.5.0`
+(check `pyproject.toml` / `setup.cfg` for the current floor). Upgrade
+your env (`pip install -U pynwb`) if you're on 2.2.x.
 
 For more troubleshooting guidance, see `docs/src/GettingStarted/TROUBLESHOOTING.md` and `docs/src/GettingStarted/DATABASE.md` in the repository.

@@ -222,7 +222,7 @@ table. The symptom depends on which invariant your NWB breaks:
 | Symptom | What's wrong in the NWB |
 |---|---|
 | `PopulateException: Probe type properties ... do not match` | Multiple physical probes share the same `probe_type` / `description`, so Spyglass collapses them to one row |
-| `IntegrityError (_electrode_ibfk_2 ...)` | Electrode `name` / `id` is not globally unique across probes (post-#1454 uniqueness) |
+| `IntegrityError (_electrode_ibfk_2 ...)` | Electrode `name` / `id` is not globally unique across probes (current `common_ephys.Electrode` enforces uniqueness on `name`; verify with `code_graph.py describe --class Electrode`) |
 | DataJoint formatting error on `Probe.Electrode() & key` / `NaN` in queries | `rel_x` / `rel_y` / `rel_z` is NaN or None in the NWB electrodes table |
 | `AssertionError: ChannelSliceRecording: channel ids are not all in parents` | NWB electrodes table has a `channel_name` column; SpikeInterface >=0.99 reads that column instead of `electrode_id` |
 
@@ -283,4 +283,7 @@ with pynwb.NWBHDF5IO(path, 'r') as io:
 ```
 
 If any tag isn't numeric, rewrite the NWB before re-ingesting;
-Spyglass does not coerce. Tracked upstream in #1432 / #1443 / #1485.
+Spyglass does not coerce. (Verify the current behavior by reading the
+relevant `make()` body — if a future Spyglass version coerces tags,
+this caveat becomes moot; until the source coerces, the NWB-side fix
+is required.)
