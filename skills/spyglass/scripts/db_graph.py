@@ -649,6 +649,22 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "timings_ms",
         "groups",
     ],
+    # Batch F runtime introspection. ``describe`` carries the runtime
+    # heading + adjacency in a sub-block (vs the source-only fields
+    # ``code_graph.py describe`` exposes at the top level). The
+    # sub-block keeps the top-level shape compact and lets later
+    # batches extend the runtime view without churn.
+    "describe": [
+        "schema_version",
+        "kind",
+        "graph",
+        "authority",
+        "source_root",
+        "db",
+        "query",
+        "describe",
+        "timings_ms",
+    ],
     "info": [
         "schema_version",
         "kind",
@@ -780,6 +796,55 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_info.add_argument("--json", action="store_true", help="Emit JSON.")
+
+    # describe — Batch F runtime introspection. Smaller surface than
+    # `code_graph.py describe`: heading, parent/child/part class names,
+    # optional row count. Where ``code_graph.py describe`` is the
+    # canonical source-only view (definitions, body methods, mixin
+    # inheritance), ``db_graph.py describe`` is the runtime-truth
+    # view — useful when the source graph and live-DB schema disagree.
+    p_describe = sub.add_parser(
+        "describe",
+        help=(
+            "Runtime view: heading (PK / secondary attrs / types), "
+            "parent / child / part class names, optional row count."
+        ),
+        description=(
+            "Read-only runtime introspection of a DataJoint table. "
+            "Pulls heading + relationships from the live server (which "
+            "differs from `code_graph.py describe`'s source-only view "
+            "when the schema has drifted from the checked-out source)."
+        ),
+    )
+    p_describe.add_argument(
+        "class_name",
+        metavar="CLASS",
+        help="Class short name, dotted module path, or `module:Class`.",
+    )
+    p_describe.add_argument("--src", default=None, help="Spyglass source root override.")
+    p_describe.add_argument(
+        "--import",
+        dest="imports",
+        action="append",
+        default=[],
+        metavar="MODULE",
+        help=(
+            "Import a custom/lab module before class resolution "
+            "(repeatable). Pair with `module:Class` form."
+        ),
+    )
+    p_describe.add_argument(
+        "--count",
+        action="store_true",
+        help=(
+            "Include row count in the payload. Off by default because "
+            "describe is intended for schema introspection; counting "
+            "is a separate DB round-trip."
+        ),
+    )
+    p_describe.add_argument(
+        "--json", action="store_true", help="Emit JSON."
+    )
 
     # find-instance — full argparse surface so info advertises the planned
     # contract accurately. Implementation lands in Batch C+; this build
@@ -1034,6 +1099,42 @@ def cmd_info(args: argparse.Namespace) -> int:
                 ),
             ],
         },
+        "describe": {
+            "purpose": (
+                "Runtime introspection of a DataJoint table: heading "
+                "(primary_key / secondary_attributes / per-attribute "
+                "type), parent / child / part class names from the "
+                "live server, optional row count. The runtime-truth "
+                "sibling of `code_graph.py describe` (source-only)."
+            ),
+            "modes": {
+                "default": (
+                    "describe CLASS --json. Returns heading + "
+                    "adjacency. Row count omitted unless --count."
+                ),
+                "--count": (
+                    "Add a count(*) round-trip; the count goes into "
+                    "`describe.count`."
+                ),
+            },
+            "hints": [
+                (
+                    "Use when source and runtime disagree (eg schema "
+                    "drift), or for custom tables outside $SPYGLASS_SRC."
+                ),
+                (
+                    "Heading is the canonical source for restriction-"
+                    "field validation; describe surfaces it without "
+                    "running a query."
+                ),
+                (
+                    "parents / children / parts may be empty when the "
+                    "DataJoint version does not expose the method or "
+                    "the metadata round-trip fails — soft failure, "
+                    "rather than aborting the payload."
+                ),
+            ],
+        },
         "info": {
             "purpose": "This call: dump the tool's machine-readable contract.",
             "modes": {"--json": "Emit machine-readable JSON."},
@@ -1179,29 +1280,42 @@ def _failure_query_block(args: argparse.Namespace) -> dict:
     so ``query.class`` is non-null even when the user only supplied
     --merge-master/--part.
     """
+    # Use ``getattr`` defensively because ``_failure_query_block`` is
+    # also called from subcommands (``describe``) whose argparse
+    # namespace does not define the find-instance-only flags. Treating
+    # missing attrs as None keeps the helper a safe drop-in for any
+    # subcommand that wants standardized failure context.
     query: dict[str, object] = {"class": args.class_name}
-    if args.merge_master:
-        query["merge_master"] = args.merge_master
-    if args.part:
-        query["part"] = args.part
-    set_op_partner: str | None = None
+    merge_master = getattr(args, "merge_master", None)
+    part = getattr(args, "part", None)
+    intersect = getattr(args, "intersect", None)
+    except_class = getattr(args, "except_class", None)
+    join = getattr(args, "join", None)
+    group_by = getattr(args, "group_by", None)
+    group_by_table = getattr(args, "group_by_table", None)
+    count_distinct = getattr(args, "count_distinct", None)
+    if merge_master:
+        query["merge_master"] = merge_master
+    if part:
+        query["part"] = part
     set_op: str | None = None
-    if args.intersect:
-        set_op, set_op_partner = "intersect", args.intersect
-    elif args.except_class:
-        set_op, set_op_partner = "except", args.except_class
-    elif args.join:
-        set_op, set_op_partner = "join", args.join
+    set_op_partner: str | None = None
+    if intersect:
+        set_op, set_op_partner = "intersect", intersect
+    elif except_class:
+        set_op, set_op_partner = "except", except_class
+    elif join:
+        set_op, set_op_partner = "join", join
     if set_op is not None:
         query["set_op"] = set_op
         query["set_op_partner"] = set_op_partner
         query["set_op_form"] = _set_op_canonical_form(set_op)
-    if args.group_by:
-        query["group_by"] = args.group_by
-    if args.group_by_table:
-        query["group_by_table"] = args.group_by_table
-    if args.count_distinct:
-        query["count_distinct_field"] = args.count_distinct
+    if group_by:
+        query["group_by"] = group_by
+    if group_by_table:
+        query["group_by_table"] = group_by_table
+    if count_distinct:
+        query["count_distinct_field"] = count_distinct
     return query
 
 
@@ -2572,6 +2686,165 @@ def _cmd_find_instance_grouped_count(
 
 
 # ---------------------------------------------------------------------------
+# Subcommand: describe (Batch F — runtime introspection)
+# ---------------------------------------------------------------------------
+
+
+def _describe_attribute(name: str, attr: object, primary_key: tuple) -> dict:
+    """Render a DataJoint heading attribute as a JSON-friendly dict.
+
+    The real ``datajoint.heading.Attribute`` is a namedtuple with many
+    fields (type, nullable, default, autoincrement, numeric, string,
+    is_blob, is_uuid, ...). For Batch F we surface the few that an
+    LLM consuming the contract is likely to act on; extras can join
+    later without breaking the envelope.
+    """
+    return {
+        "type": getattr(attr, "type", None),
+        "in_primary_key": name in primary_key,
+        "nullable": getattr(attr, "nullable", None),
+    }
+
+
+def _safe_runtime_metadata(
+    rel: object, method_name: str
+) -> list:
+    """Call ``rel.parents()`` / ``children()`` / ``parts()`` defensively.
+
+    Some DataJoint versions and some test fakes do not expose every
+    method; some implementations require a connection round-trip and
+    raise opaque errors when the schema is drifting. The describe
+    contract treats missing relationship metadata as a soft failure —
+    the field is emitted as an empty list rather than aborting the
+    whole payload — so an LLM still sees the primary information
+    (heading, count) even when the runtime relationship graph is
+    unavailable.
+    """
+    fn = getattr(rel, method_name, None)
+    if fn is None:
+        return []
+    try:
+        result = fn()
+    except Exception:
+        return []
+    return list(result) if result is not None else []
+
+
+def cmd_describe(args: argparse.Namespace) -> int:
+    """Runtime introspection of a DataJoint table.
+
+    Read-only: instantiates the class (DataJoint cached heading; no
+    schema mutation), reads ``heading.primary_key`` /
+    ``heading.names`` / ``heading.attributes``, optionally calls
+    ``rel.parents()`` / ``children()`` / ``parts()`` for the
+    runtime-graph adjacency. Optional ``--count`` adds a count(*)
+    round-trip; off by default since describe is for schema work.
+
+    Failure modes are the same as find-instance: ambiguous=3,
+    not_found=4, not_a_table=4, datajoint_import=5. Heading or
+    metadata read errors surface as db_error with the
+    ``error.kind`` discriminator (connection / auth / schema /
+    runtime). Relationship metadata that cannot be retrieved emits
+    as an empty list rather than aborting the payload — softer than
+    the heading itself, which is genuinely required for describe to
+    be useful.
+    """
+    timer = _Timer()
+    src_root_used = _select_src_root(args.src)
+
+    timer.mark("resolve")
+    try:
+        resolved = resolve_class(
+            args.class_name, src=args.src, imports=tuple(args.imports)
+        )
+    except _AmbiguousClass as exc:
+        return _emit_ambiguous(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _NotADataJointTable as exc:
+        return _emit_not_a_table(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _DataJointUnavailable as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind="datajoint_import",
+            message=f"DataJoint is not importable: {exc.original}",
+            src_root=src_root_used,
+        )
+    except _ClassNotFound as exc:
+        return _emit_not_found(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+
+    timer.mark("heading")
+    try:
+        cls_callable = resolved.cls
+        rel = cls_callable()  # ty: ignore[call-non-callable]
+        heading = rel.heading
+        primary_key: tuple[str, ...] = tuple(heading.primary_key)
+        all_names: tuple[str, ...] = tuple(heading.names)
+        secondary_attributes = [
+            n for n in all_names if n not in primary_key
+        ]
+        attributes_block = {
+            n: _describe_attribute(n, heading.attributes.get(n), primary_key)
+            for n in all_names
+        }
+    except Exception as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind=_classify_dj_error(exc),
+            message=_scrub_secrets(str(exc)),
+            src_root=src_root_used,
+            resolved=resolved,
+        )
+
+    parents = _safe_runtime_metadata(rel, "parents")
+    children = _safe_runtime_metadata(rel, "children")
+    parts = _safe_runtime_metadata(rel, "parts")
+
+    count: int | None = None
+    if args.count:
+        timer.mark("query")
+        try:
+            count = len(rel)
+        except Exception as exc:
+            return _emit_db_error(
+                args=args,
+                timer=timer,
+                error_kind=_classify_dj_error(exc),
+                message=_scrub_secrets(str(exc)),
+                src_root=src_root_used,
+                resolved=resolved,
+            )
+
+    payload = _stamp_envelope("describe", source_root=resolved.src_root)
+    payload["db"] = _build_db_envelope()
+    payload["query"] = {
+        "class": args.class_name,
+        "resolved_class": f"{resolved.module}.{resolved.qualname}",
+        "module": resolved.module,
+        "qualname": resolved.qualname,
+        "resolution_source": resolved.source,
+    }
+    payload["describe"] = {
+        "primary_key": list(primary_key),
+        "secondary_attributes": secondary_attributes,
+        "attributes": attributes_block,
+        "parents": parents,
+        "children": children,
+        "parts": parts,
+        "count": count,
+    }
+    payload["timings_ms"] = timer.finalize()
+    print(json.dumps(payload))
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: find-instance (Batch C — basic restriction + fetch + count)
 # ---------------------------------------------------------------------------
 
@@ -2851,6 +3124,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.cmd == "info":
         return cmd_info(args)
+    if args.cmd == "describe":
+        return cmd_describe(args)
     if args.cmd == "find-instance":
         # Cross-flag validation that argparse cannot express. Keep these in
         # sync with `info --json`'s `subcommands.find-instance.hints` and

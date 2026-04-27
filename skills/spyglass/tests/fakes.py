@@ -104,9 +104,27 @@ class FakeRelation:
         *,
         heading: FakeHeading,
         rows: list[dict] | tuple[dict, ...] = (),
+        parents: tuple[str, ...] = (),
+        children: tuple[str, ...] = (),
+        parts: tuple[str, ...] = (),
     ) -> None:
         self.heading = heading
         self._rows: list[dict] = list(rows)
+        # Batch F describe metadata. Synthetic test classes can supply
+        # parent / child / part names so the describe handler's
+        # adjacency block round-trips through the fakes sandbox.
+        self._parents = tuple(parents)
+        self._children = tuple(children)
+        self._parts = tuple(parts)
+
+    def parents(self) -> list[str]:
+        return list(self._parents)
+
+    def children(self) -> list[str]:
+        return list(self._children)
+
+    def parts(self) -> list[str]:
+        return list(self._parts)
 
     def __and__(self, restriction) -> FakeRelation:
         # DataJoint's natural-restriction operator accepts:

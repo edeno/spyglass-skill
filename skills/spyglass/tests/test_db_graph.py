@@ -4000,6 +4000,237 @@ def fixture_e_eval28_29_join_to_brain_region(
     return True
 
 
+def fixture_f_fakes_describe_returns_heading_and_adjacency(
+    args: argparse.Namespace,
+) -> bool:
+    """``describe CLASS`` returns runtime heading + parent/child/part names.
+
+    Builds a synthetic class with a known heading and adjacency lists,
+    runs describe, and verifies every plan-required field appears in
+    the payload at the right shape.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        (tmp / "describetest.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "class Demo(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('id',),",
+                    "        names=('id', 'name', 'value'),",
+                    "        attributes={",
+                    "            'id': 'int',",
+                    "            'name': 'varchar(64)',",
+                    "            'value': 'float',",
+                    "        },",
+                    "    )",
+                    "    _rows = [",
+                    "        {'id': 1, 'name': 'a', 'value': 1.0},",
+                    "        {'id': 2, 'name': 'b', 'value': 2.0},",
+                    "    ]",
+                    "",
+                    "    def __new__(cls):",
+                    "        return FakeRelation(",
+                    "            heading=cls._heading_obj, rows=cls._rows,",
+                    "            parents=('schema.upstream_a', 'schema.upstream_b'),",
+                    "            children=('schema.downstream_x',),",
+                    "            parts=(),",
+                    "        )",
+                    "",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                    "",
+                ]
+            )
+        )
+        rc, out, err = _run_db_graph(
+            [
+                "describe",
+                "describetest:Demo",
+                "--import",
+                "describetest",
+                "--count",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "describe payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "describe":
+        print(f"  [FAIL] kind != 'describe': {payload.get('kind')!r}")
+        return False
+    desc = payload.get("describe", {})
+    if desc.get("primary_key") != ["id"]:
+        print(f"  [FAIL] primary_key drift: {desc.get('primary_key')!r}")
+        return False
+    if sorted(desc.get("secondary_attributes", [])) != ["name", "value"]:
+        print(
+            f"  [FAIL] secondary_attributes drift: "
+            f"{desc.get('secondary_attributes')!r}"
+        )
+        return False
+    attrs = desc.get("attributes", {})
+    if attrs.get("id", {}).get("in_primary_key") is not True:
+        print(f"  [FAIL] attributes.id.in_primary_key drift: {attrs.get('id')!r}")
+        return False
+    if attrs.get("name", {}).get("type") != "varchar(64)":
+        print(f"  [FAIL] attributes.name.type drift: {attrs.get('name')!r}")
+        return False
+    if sorted(desc.get("parents", [])) != [
+        "schema.upstream_a",
+        "schema.upstream_b",
+    ]:
+        print(f"  [FAIL] parents drift: {desc.get('parents')!r}")
+        return False
+    if desc.get("children") != ["schema.downstream_x"]:
+        print(f"  [FAIL] children drift: {desc.get('children')!r}")
+        return False
+    if desc.get("parts") != []:
+        print(f"  [FAIL] parts drift: {desc.get('parts')!r}")
+        return False
+    if desc.get("count") != 2:
+        print(f"  [FAIL] count != 2 (--count was passed): {desc.get('count')!r}")
+        return False
+    print(
+        "  [ok] describe: heading + adjacency + count round-trip via "
+        "fakes sandbox"
+    )
+    return True
+
+
+def fixture_f_fakes_describe_omits_count_by_default(
+    args: argparse.Namespace,
+) -> bool:
+    """Without ``--count``, ``describe.count`` is null (no count(*) round-trip)."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        (tmp / "describenocnt.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "class Tiny(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('id',),",
+                    "        names=('id',),",
+                    "        attributes={'id': 'int'},",
+                    "    )",
+                    "    _rows = []",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                ]
+            )
+        )
+        rc, out, _ = _run_db_graph(
+            [
+                "describe",
+                "describenocnt:Tiny",
+                "--import",
+                "describenocnt",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "describe-nocnt payload")
+    if payload is None:
+        return False
+    desc = payload.get("describe", {})
+    if desc.get("count") is not None:
+        print(
+            f"  [FAIL] count should be null without --count, got "
+            f"{desc.get('count')!r}"
+        )
+        return False
+    print("  [ok] describe without --count: describe.count is null")
+    return True
+
+
+def fixture_f_describe_advertised_in_info(
+    _args: argparse.Namespace,
+) -> bool:
+    """``info --json`` advertises describe with the documented contract.
+
+    Pins the contract surface so a future refactor can't quietly drop
+    the describe entry. info is the LLM's discovery channel.
+    """
+    src = _read_db_graph_source()
+    # Cheap source-text check to avoid spawning a subprocess.
+    if '"describe": {' not in src:
+        print("  [FAIL] info subcommands missing describe entry")
+        return False
+    if '"describe": [' not in src:
+        print("  [FAIL] payload_envelopes missing describe envelope")
+        return False
+    print(
+        "  [ok] info subcommand entry + describe envelope both present"
+    )
+    return True
+
+
+def fixture_f_eval_describe_session(args: argparse.Namespace) -> bool:
+    """Live: ``describe Session --json --count`` returns the canonical heading."""
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="live describe of Spyglass.Session",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        ["describe", "Session", "--count"],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "live describe Session")
+    if payload is None:
+        return False
+    desc = payload.get("describe", {})
+    if "nwb_file_name" not in desc.get("primary_key", []):
+        print(
+            f"  [FAIL] expected nwb_file_name in primary_key: "
+            f"{desc.get('primary_key')!r}"
+        )
+        return False
+    attrs = desc.get("attributes", {})
+    if "session_description" not in attrs:
+        print(
+            f"  [FAIL] expected session_description in attributes "
+            f"keys; got {sorted(attrs.keys())}"
+        )
+        return False
+    print(
+        f"  [ok] live describe: Session PK + session_description "
+        f"present (count={desc.get('count')})"
+    )
+    return True
+
+
 def fixture_d_eval50_silent_wrong_count_footgun_refused(
     args: argparse.Namespace,
 ) -> bool:
@@ -4149,6 +4380,11 @@ FIXTURES = [
     fixture_e_eval18_except_sessions_only_in_left,
     fixture_e_eval19_per_session_distinct_tetrodes,
     fixture_e_eval28_29_join_to_brain_region,
+    # Batch F — describe (runtime introspection)
+    fixture_f_fakes_describe_returns_heading_and_adjacency,
+    fixture_f_fakes_describe_omits_count_by_default,
+    fixture_f_describe_advertised_in_info,
+    fixture_f_eval_describe_session,
     # Batch D — live Spyglass evals
     fixture_d_eval14_trodes_position_merge_id,
     fixture_d_eval15_lfp_merge_id_via_lfpv1,
