@@ -165,9 +165,20 @@ When `describe`'s output reports the same shape on both versions, that's evidenc
 | Question shape | Graph | Where to look |
 | --- | --- | --- |
 | Source class / method / schema dependency (does method Y exist on class X? what FKs does X declare? what's the chain from A to B?) | **Code** | `code_graph.py` |
-| Row existence, merge IDs, user-inserted state, custom-table visibility, or runtime behavior diverging from source | **DB / session** | The user's analysis session (`Table.parents()`, `Table.descendants()`, `&` restrictions) — no source-only tool can answer these |
+| Row existence, counts, merge IDs, intersect / antijoin / join across populated tables, runtime heading vs source heading | **DB / session** | `db_graph.py` (read-only: `find-instance`, `describe`, `path`) — emits `graph: "db"` / `authority: "runtime-db"` so payloads can't be confused with source claims |
+| Custom table outside `$SPYGLASS_SRC` (lab repos, institute forks) | **DB / session** | `db_graph.py describe/find-instance/path --import <module> <module>:<Class>` — pick the subcommand by question shape: `describe` for "does it exist / what's its heading / what parents does runtime know?", `find-instance --class <module>:<Class>` for row evidence, `path --up`/`--down` for runtime adjacency. `--import` is required for any class outside `$SPYGLASS_SRC`; the explicit `module:Class` form bypasses `_index` lookup so the resolution works without a source tree of the user's repo |
 | What does method Y *do* inside its body? | (no graph) | Read the source — no tool substitutes |
 | Where is artifact / NWB object on disk? | **Disk** | `settings.py`, `AnalysisNwbfile.create(nwb_file_name)` in the user's session |
+
+**Try order for a runtime/DB question:**
+
+1. **For stock Spyglass classes**: `code_graph.py describe X` for source declarations (PK, FKs, body methods, mixin inheritance) — fast, no DB connection. **For custom classes outside `$SPYGLASS_SRC`** (lab repos, institute forks, external packages): skip step 1; the source index does not see them. Go straight to step 3 with `--import <module> <module>:<Class>`.
+2. `db_graph.py find-instance --class X --key f=v` for row evidence; merge masters → `--merge-master M --part P`; intersections / antijoins / per-group counts → `--intersect`/`--except`/`--join`/`--group-by-table` with `--count-distinct`.
+3. `db_graph.py describe X` when source and runtime disagree (schema drift) or for runtime-only relationships; check `describe.relationship_metadata_status.<rel>.status` before treating an empty list as "no parents/children/parts." (Pass `--import <module> <module>:<Class>` for custom classes.)
+4. `db_graph.py path --to A B` / `--up X` / `--down X` for runtime adjacency walks; check `incomplete` before concluding "no path" — empty `hops` plus `incomplete: true` means the traversal failed, not that no path exists.
+5. If `db_graph.py` returns exit `5` (DB error: connection, auth, schema, datajoint_import), fall back to user-session snippets and explain that the CLI cannot see notebook-only env vars or imports.
+
+**Exit-code-`5` divergence between the two graphs:** `code_graph.py` exit `5` means **heuristic refusal** (a same-qualname collision was resolved via same-package preference and `--fail-on-heuristic` was passed). `db_graph.py` exit `5` means **DB / session error** (with `error.kind` discriminating `connection` / `auth` / `schema` / `datajoint_import`). Same code number, different cause. The full delta is also surfaced in `db_graph.py info --json.comparison` so an LLM consuming both tools' contracts gets the explicit translation.
 
 `code_graph.py` is **source-only** — every JSON payload stamps `"graph": "code"` and `"authority": "source-only"` at the top level so an agent reading the output can't mistake it for runtime truth. When the source-graph answer disagrees with observed runtime behavior, the DB / session is authoritative.
 
@@ -185,15 +196,35 @@ Spyglass has at least three overlapping graphs. Hallucinations come from confusi
 
   Every output carries `file:line` plus an `evidence` source-line so the agent has a citation per claim, not a paraphrase. Add `--json` for machine-readable output (each node also carries a stable `record_id` of the form `<file>:<line>:<qualname>`, and a top-level `warnings` block lists any same-qualname collisions resolved by same-package preference). Exit codes: `0` = ok; `2` = usage error; `3` = user-supplied input ambiguous (re-run with `--from-file`/`--to-file`/`--file`); `4` = class/method not in the index; `5` = traversal needed a heuristic to disambiguate a same-qualname collision (only emitted when `--fail-on-heuristic` is passed, for validators that should refuse to guess).
 
-- **DB graph** — what DataJoint actually wired up at import time (`Table.parents()`, `Table.descendants()`, `dj.Diagram`). Authoritative for runtime behavior — the code graph is usually a faithful approximation, but dynamic part registration, runtime FK overrides, aliased-import resolution, and **custom tables defined outside `$SPYGLASS_SRC`** (lab-member analysis repos, institute forks, downstream pip packages) can make them diverge. Requires a DB connection AND that the user has imported the relevant modules in their Python session — DJ only knows about classes that have been imported.
+- **DB graph** — runtime relationship metadata DataJoint exposes from the live server. `db_graph.py path` walks it through `dj.FreeTable(dj.conn(), full_name).parents()` / `.children()`; `db_graph.py describe` reads heading + per-table `parents()` / `children()` / `parts()`. (The same primitives a notebook session reaches via `Table.parents()` / `Table.descendants()` / `dj.Diagram`.) Authoritative for runtime behavior — the code graph is usually a faithful approximation, but dynamic part registration, runtime FK overrides, aliased-import resolution, and **custom tables defined outside `$SPYGLASS_SRC`** (lab-member analysis repos, institute forks, downstream pip packages) can make them diverge. Requires a DB connection AND (for stock Spyglass classes) that the relevant Spyglass module is importable in the subprocess.
 
-  *Out of scope for this source-only skill — query in the user's analysis session directly. When the agent has DB access, ask the user to import the relevant module first, then call:*
+  ```bash
+  # Row evidence and merge-id resolution.
+  python skills/spyglass/scripts/db_graph.py find-instance --class Session --key nwb_file_name=X
+  python skills/spyglass/scripts/db_graph.py find-instance --merge-master PositionOutput --part TrodesPosV1 --key nwb_file_name=X --key interval_list_name=Y
 
-  ```python
-  from spyglass.lfp.v1 import LFPV1   # whatever module defines the class in question
-  LFPV1.parents()                      # list of parent-table qualnames
-  LFPV1.descendants()                  # full downstream cascade
+  # Set ops + grouped counts. Routes restrictions narrowest-owner-first;
+  # zero-shared-attribute ops are refused (no Cartesian-product accidents).
+  python skills/spyglass/scripts/db_graph.py find-instance --class TrodesPosV1 --except DLCPosV1 --fields KEY
+  python skills/spyglass/scripts/db_graph.py find-instance --class Electrode --key subject_id=aj80 --group-by-table Session --count-distinct electrode_group_name
+
+  # Runtime introspection: heading + parent/child/part metadata. Inspect
+  # `relationship_metadata_status` to distinguish "confirmed empty" from
+  # "metadata unavailable / errored."
+  python skills/spyglass/scripts/db_graph.py describe Session --count
+
+  # Runtime graph traversal — sibling of code_graph.py path. Check
+  # `incomplete` before concluding "no path"; check `truncated_at_depth`
+  # before assuming a walk hit every reachable node.
+  python skills/spyglass/scripts/db_graph.py path --down Session --max-depth 3
+
+  # Custom table outside $SPYGLASS_SRC (lab-member analysis repo). --import
+  # runs the user's module's normal import side effects; --class names the
+  # specific class (--import alone does NOT register a short name).
+  python skills/spyglass/scripts/db_graph.py find-instance --import labrepo.tables --class labrepo.tables:CustomCuration --key sorting_id=Z
   ```
+
+  Every payload stamps `graph: "db"` / `authority: "runtime-db"` so an LLM cannot mistake a runtime row for a source claim. JSON envelopes are advertised in `info --json.payload_envelopes`; the planned and emitted shapes match (no envelope drift).
 
 - **Disk graph** — where artifacts live on disk (raw NWBs at `$SPYGLASS_BASE_DIR/raw/`, analysis NWBs at `$SPYGLASS_BASE_DIR/analysis/<nwb_file_name>/`, kachery sandboxes, DLC project dirs). Authoritative for "where is the file?" Path conventions live in `settings.py` and `AnalysisNwbfile`.
 
@@ -203,4 +234,4 @@ For version-asymmetry questions ("is method Y on this class in v0 and v1?"), `co
 
 For behavior questions ("what does method Y do inside its body?"), read the source — no script substitutes for actually reading the function.
 
-**When the code-graph answer disagrees with observed runtime behavior, the DB graph is authoritative.** Specifically: if `code_graph.py describe MyTable` reports `not_found` but the user knows `MyTable` exists in their schema, the right fallback is "this is a custom table outside `$SPYGLASS_SRC` (lab-member or external-package code) — ask the user to import their analysis module and run `Table.descendants()`." (Rare alternative: the class lives inside `$SPYGLASS_SRC` but under a module layout `_index.py` doesn't walk — flag and have the user verify.) Don't conclude the table doesn't exist.
+**When the code-graph answer disagrees with observed runtime behavior, the DB graph is authoritative.** Specifically: if `code_graph.py describe MyTable` reports `not_found` but the user knows `MyTable` exists in their schema, the right fallback is `db_graph.py describe --import labrepo.tables labrepo.tables:MyTable` — the runtime resolver bypasses `_index` for explicit `module:Class` forms, so a custom table outside `$SPYGLASS_SRC` (lab-member or external-package code) resolves cleanly. (Note: `describe` takes the class as a positional argument, unlike `find-instance` which takes `--class`. `path` is positional too for `--up CLASS` / `--down CLASS`, and takes two positionals for `--to FROM TO`.) Rare alternative: the class lives inside `$SPYGLASS_SRC` but under a module layout `_index.py` doesn't walk — flag and have the user verify. Don't conclude the table doesn't exist.

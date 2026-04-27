@@ -1,8 +1,44 @@
 # Implementation plan — `map_si_to_spyglass`, `visualize_schema_neighborhood`, `describe_params`
 
 **Date:** 2026-04-22
-**Status:** Draft — ready to execute
+**Status:** Superseded / paused as of 2026-04-27.
 **Scope:** the three Tier-1 scripts from [llm-script-priorities.md](llm-script-priorities.md). Each closes a distinct LLM hallucination vector. Plan also lands the shared reproducibility envelope and retrofits the two already-shipped scripts to use it.
+
+## Current decision
+
+Do **not** execute this plan as written.
+
+Since this draft, `code_graph.py` and `db_graph.py` became the primary
+LLM-facing factual tools. They cover most of the value this plan assigned to
+`visualize_schema_neighborhood.py`, `fetch_merge_row.py`, and cardinality
+helpers:
+
+- source DAG / table identity / method ownership -> `code_graph.py`
+- runtime heading / rows / counts / merge IDs / source-runtime disagreement ->
+  `db_graph.py`
+- environment/config checks -> existing `verify_spyglass_env.py` and
+  `scrub_dj_config.py`
+
+Two parts of this draft remain defensible, but need fresh narrower plans:
+
+- `describe_params.py` / `trace_params.py`, because parameter values live in
+  blobs and their effect is determined where `make()` consumes the blob and
+  passes values into Spyglass or third-party functions. `db_graph.py` can show
+  the row; it does not explain the consumption path.
+- `map_si_to_spyglass.py`, because SpikeInterface API compatibility is
+  external-package drift rather than a Spyglass source/runtime graph question.
+
+Before reviving any part of this plan:
+
+1. Add evals that require proof-carrying answers from `code_graph.py` and
+   `db_graph.py`.
+2. Confirm the graph-tool route is insufficient or too awkward for the target
+   failure mode.
+3. Prefer a narrow reference template before adding a new CLI.
+
+The detailed design below is retained as historical context. Use only the
+relevant pieces as starting material for fresh narrow plans; do not revive the
+combined three-script PR.
 
 ## Goals and non-goals
 
@@ -522,4 +558,7 @@ Each migration deletes the prototype and updates skill-reference citations to `p
 
 ## Next step
 
-Start PR A. Everything else rebases on top once the envelope pattern is established.
+Do not start PR A. First land the graph-tool eval/reference consolidation
+described in [llm-script-priorities.md](llm-script-priorities.md). If a new
+script remains justified after that, split out a fresh narrow plan for either
+parameter tracing or `map_si_to_spyglass.py`; do not revive this combined PR.

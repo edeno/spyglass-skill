@@ -21,7 +21,7 @@
 **Original plan below; left as-is for design context.**
 
 **Date:** 2026-04-25
-**Status:** Draft — ready to execute
+**Status:** Historical — original pre-implementation draft.
 **Branch:** continue on `feature/inquiry-time-navigation` (currently holds only the parent plan, [inquiry-time-navigation-plan.md](inquiry-time-navigation-plan.md)).
 **Predecessors (still DRAFT, not merged to master at time of writing):**
 

@@ -103,21 +103,31 @@ A method, kwarg, column, or table name that sounds right given surrounding conve
 
 The failure mode is uniform: LLMs and humans alike pattern-match from similar contexts and guess a name that sounds consistent. The verification step takes seconds; the cost of shipping the wrong name can be weeks of downstream confusion.
 
-**Fix.** Before writing code or guidance that depends on a specific identifier, verify it against the source:
+**Fix.** Before writing code or guidance that depends on a specific identifier, verify it via the bundled scripts first; fall back to grep / `inspect` when the script can't speak to the question:
 
 ```bash
-# Does this method / kwarg / field actually exist?
+# Does this class / method / FK actually exist? (Source identity, fast, no DB.)
+python skills/spyglass/scripts/code_graph.py describe Cls --json
+python skills/spyglass/scripts/code_graph.py find-method the_method_name --json
+
+# Does this table / heading actually exist on the live server? (Runtime truth.)
+python skills/spyglass/scripts/db_graph.py describe Cls --json
+python skills/spyglass/scripts/db_graph.py find-instance --class Cls --key f=v --fields KEY
+
+# Fallback: method body, signature, blob-key shape — things the scripts don't surface.
 grep -rn "def the_method_name" src/spyglass/
-grep -rn "the_field_name" src/spyglass/
-
-# What's the real signature?
 python -c "import inspect; from spyglass.X import Cls; print(inspect.signature(Cls.method))"
-
-# What fields does this table actually declare?
-python -c "from spyglass.X import Table; print(Table.heading.primary_key); print(list(Table.heading.attributes.keys()))"
 ```
 
 If the symbol doesn't surface in at least one of those checks, assume it doesn't exist and rename. The skill validator enforces this for KNOWN_CLASSES, but field names in blob params, kwargs on lesser-known methods, and part-table attribute-access patterns all slip past it — those are exactly where the pattern-matching guesses hit hardest. Related active check: the validator's `check_evals_content` scans `evals/evals.json` `expected_output`, `behavioral_checks`, and `required_substrings` for method references that don't resolve; `forbidden_substrings` is intentionally skipped because those entries are wrong-by-design adversarial patterns the eval must reject. The corresponding check for reference prose runs via `check_methods`.
+
+**Before generating insert / fetch / populate code.** Code generation is where invented identifiers become executable damage. Run this five-step check; if any step is unavailable, mark the response a *template* and name the missing facts so the user can fill them in:
+
+1. **Verify the table / class exists.** `python skills/spyglass/scripts/code_graph.py describe <Class> --json` (source) or `python skills/spyglass/scripts/db_graph.py describe <Class> --json` (runtime).
+2. **Verify primary-key fields + attribute names + types.** Same `describe` calls — the heading is in `pk_fields` / `non_pk_fields` (code-graph) or `describe.primary_key` / `describe.attributes` (db-graph). Do not write a `--key` / `insert1` dict against names you have not just read.
+3. **Verify at least one upstream key or row count.** `python skills/spyglass/scripts/db_graph.py find-instance --class <Upstream> --key f=v --count` (or `--fields KEY` for a sample). Confirms the upstream row you'll FK into actually exists for the user's session.
+4. **Verify parameter-table names + heading fields via `describe`; verify blob/dict parameter keys separately.** Spyglass parameter sets (`*Parameters`, `*Params`, `<Pipeline>Selection`) are real DataJoint tables — `describe` confirms the table exists and lists its top-level heading attributes. **It does not see inside a blob / dict parameter payload**, which is exactly where `welch_nperseg`-style hallucinations land. To verify keys nested inside a blob params dict, read the source (the pipeline's `make()` or its parameter-builder helper), the existing rows (`fetch('param_dict')` on a populated row), or the docs — those are outside what the bundled scripts surface.
+5. **If a verification step cannot run** (no DB connection, custom-class outside `$SPYGLASS_SRC` and `--import` not provided, exit-5 from `db_graph.py`): mark the generated code as a *template*, list each unverified identifier explicitly, and tell the user which facts to fill in before running. Do not present an unverified template as ready-to-run code.
 
 ## 9. `*` refuses to join on a "dependent attribute"
 

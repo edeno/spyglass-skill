@@ -31,4 +31,4 @@ repos:
         language: system
         entry: scripts/pre-commit-validate.sh
         pass_filenames: false
-        files: '^skills/spyglass/(SKILL\.md|references/.*\.md|scripts/(validate_skill|_index|code_graph)\.py|tests/(test_validator_regressions|test_code_graph)\.py|evals/evals\.json)$'
+        files: '^skills/spyglass/(SKILL\.md|references/.*\.md|scripts/(validate_skill|_index|code_graph|db_graph)\.py|tests/(test_validator_regressions|test_code_graph|test_db_graph|fakes)\.py|evals/evals\.json)$'

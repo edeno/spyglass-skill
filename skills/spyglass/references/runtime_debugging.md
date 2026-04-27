@@ -83,6 +83,8 @@ Also helpful when available:
 
 If the user pastes only the final traceback line, ask for the full traceback before guessing. The real cause is typically several frames above the line they pasted.
 
+**Evidence shortcuts.** Before asking the user to paste table headings, parents, or row counts, try the bundled scripts: `python skills/spyglass/scripts/db_graph.py describe Cls --count --json` returns the runtime heading + parent / child / part adjacency + row count in one call; `python skills/spyglass/scripts/db_graph.py find-instance --class Cls --key f=v --count --json` confirms whether a specific key exists or how many rows match a partial restriction. Both run read-only against the live DB and emit JSON the user can paste back. For source-only declarations (FK definition, mixin-inherited methods), `python skills/spyglass/scripts/code_graph.py describe Cls --json` is faster and needs no DB.
+
 ## Core philosophy
 
 Always assume:
