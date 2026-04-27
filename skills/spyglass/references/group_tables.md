@@ -57,7 +57,7 @@ Same suffix conventions live nearby (`*Group` vs. `*Output`), and both involve a
 | | Merge table | Group table |
 |---|---|---|
 | Rows aggregated | Different *versions* of one analysis (v0 vs v1, sorter A vs sorter B). One row per version per upstream input. | Multiple upstream entities grouped into one named set. One row per member. |
-| PK shape on master | `merge_id` only | `(session, group_name)` — user-supplied |
+| PK shape on master | `merge_id` only | Per-table; user-supplied. `SortedSpikesGroup` keys on `(nwb_file_name, unit_filter_params_name, sorted_spikes_group_name)` (`spikesorting/analysis/v1/group.py:63-67` — note the `-> UnitSelectionParams` FK in the PK). `PositionGroup` keys on `(nwb_file_name, position_group_name)` only (`decoding/v1/core.py:130`). Downstream-FK or `create_group(...)` callers must supply the right tuple — `unit_filter_params_name` is required for SortedSpikesGroup and is a common omission. |
 | Downstream FK target | The master's `merge_id` (opaque UUID) | The group name (semantic, user-readable) |
 | Helper methods | `merge_get_part`, `merge_restrict`, `merge_get_parent`, `merge_delete` | `create_group()` instance method on the master |
 | Common landmines | Classmethod-discard on restricted relations, silent-no-op on `& {nwb_file_name: ...}` (see [merge_methods.md](merge_methods.md)) | Re-creating an existing group raises (or logs and returns) — must delete first; downstream-name reuse not enforced |
@@ -130,7 +130,7 @@ The decoding-selection insert then takes `group_key` as one foreign-key block; `
 
 ## Cross-references
 
-- [merge_methods.md](merge_methods.md) — sister concept; classmethod-discard rules also apply to any classmethod on a group's master (e.g., `SortedSpikesGroup.fetch_spike_data` is a classmethod).
+- [merge_methods.md](merge_methods.md) — sister concept. Classmethod-discard is the merge-table footgun where a restricted relation is silently dropped because the method is a `@classmethod` that ignores `self`. Group-master methods need to be checked individually: `SortedSpikesGroup.fetch_spike_data(key, time)` is a `@classmethod`, but it takes `key` as an explicit argument and routes through `get_fully_defined_key(key)` (`spikesorting/analysis/v1/group.py:142, 168`), so the merge-style classmethod-discard footgun doesn't apply there. The general rule still holds: don't rely on relation restrictions reaching the method body unless the method is documented as instance- or restriction-aware.
 - [common_tables.md](common_tables.md) — `Session`, the upstream FK every group masters references.
 - [spyglassmixin_methods.md](spyglassmixin_methods.md) — `cautious_delete` semantics apply to groups; deleting a group cascades to its part rows.
 - [decoding_pipeline.md](decoding_pipeline.md) — `SortedSpikesDecodingSelection` and `ClusterlessDecodingSelection` are the canonical downstream consumers.

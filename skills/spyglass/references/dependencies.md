@@ -50,7 +50,7 @@ unit_ids = sorting.get_unit_ids()
 spike_train = sorting.get_unit_spike_train(unit_id=0)
 ```
 
-Available sorters: mountainsort4, kilosort2, kilosort3, clusterless_thresholder, and others via SpikeInterface.
+Available sorters in current Spyglass `SpikeSorterParameters` defaults: `mountainsort4`, `mountainsort5`, `kilosort2_5`, `kilosort3`, `ironclust`, `clusterless_thresholder` (`spikesorting/v1/sorting.py:158-168, 446`). Note `kilosort2_5` (with the underscore-5), not `kilosort2`. Other sorters may be reachable through SpikeInterface but require their own per-sorter wrappers / params rows.
 
 ### SpikeInterface / Spyglass version coupling
 
@@ -156,15 +156,16 @@ interval_0 = results.where(results.interval_labels == 0, drop=True)
 | --------- | -------------- | --------------------- |
 | DeepLabCut | `[dlc]` | DLC position pipeline wraps it for pose estimation. Interact via Spyglass tables, not DLC directly |
 | keypoint_moseq | `[moseq-cpu]` or `[moseq-gpu]` | Behavior pipeline's MoSeq module for behavioral syllable discovery |
-| pynapple | — | Available via `fetch_pynapple()` on **NWB-backed tables only** (same FetchMixin gate as `fetch_nwb()` — selection / parameter / interval tables that don't FK to (Analysis)Nwbfile raise `NotImplementedError`) |
-| sortingview + kachery_cloud | — | FigURL curation UI for spike sorting; Kachery for NWB file sharing |
+| pynapple | NOT in `pyproject.toml` | `fetch_pynapple()` is wired through `FetchMixin` on NWB-backed tables (same gate as `fetch_nwb()`), but the `pynapple` package itself is not listed as a Spyglass install requirement. Install it explicitly (`pip install pynapple`) if you need this method. |
+| sortingview + kachery-cloud | core (`pyproject.toml:51, 68`) | FigURL curation UI for spike sorting; Kachery for NWB file sharing. Installed by Spyglass core, NOT optional. |
 
 ## Dependency Tiers
 
-| Tier | Packages | Required? |
+The boundary between "installed by Spyglass core" and "optional / extra-required" comes from `pyproject.toml`. Verify on your install with `pip show <package>` or by reading `pyproject.toml` directly — that file is the source of truth, this table is a routing aid.
+
+| Tier | Packages | Source |
 | ------ | ---------- | ----------- |
-| **Core** | datajoint, pynwb, hdmf, spikeinterface, probeinterface | Yes |
-| **Analysis** | non_local_detector, track_linearization, position_tools, ripple_detection, xarray | Yes |
-| **Pose Estimation** | deeplabcut | Optional (`[dlc]`) |
-| **Behavior** | keypoint_moseq | Optional (`[moseq-cpu/gpu]`) |
-| **Visualization/Sharing** | sortingview, kachery_cloud, pynapple | Optional |
+| **Core** (always installed) | datajoint, pynwb, hdmf, spikeinterface, probeinterface, **sortingview, kachery-cloud, kachery-client, kachery, non_local_detector, track_linearization, position_tools, ripple_detection, xarray, ndx-franklab-novela, ndx-optogenetics, ndx-ophys-devices, ndx-pose** | `pyproject.toml` `dependencies = [...]` |
+| **Pose Estimation** | deeplabcut | Optional install extra `[dlc]` |
+| **Behavior** | keypoint_moseq | Optional install extras `[moseq-cpu]` / `[moseq-gpu]` |
+| **Not installed by Spyglass** | pynapple | Required separately (`pip install pynapple`) when calling `fetch_pynapple()` |

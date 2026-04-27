@@ -241,8 +241,13 @@ Restrict by descendant attribute — searches **down** the dependency chain. Use
 # Find sessions that have specific position parameters
 Session() >> 'trodes_pos_params_name="default"'
 
-# Find sessions that have decoding results
-Session() >> 'decoding_param_name="default_decoding"'
+# Find sessions that have decoding results. `DecodingParameters`
+# ships defaults at module-import time keyed on
+# f"<shape>_<source>_{non_local_detector_version}"
+# (e.g. "contfrag_clusterless_v1.2.0"; see decoding/v1/core.py:48).
+# There is no "default_decoding" row — pick a real param-name
+# value (or use a LIKE pattern) for this restriction.
+Session() >> 'decoding_param_name LIKE "contfrag_clusterless%"'
 ```
 
 ### Explicit Restriction (`.restrict_by()`)
