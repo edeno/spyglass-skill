@@ -4,9 +4,11 @@ Covers the `_Merge`-base methods that live on merge master tables
 (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`,
 `LinearizedPositionOutput`), plus the projected-FK-rename pattern that
 merge tables force on downstream computed tables. For mixin-level
-methods that apply to every Spyglass table (`fetch_nwb`, `fetch_pynapple`,
-`cautious_delete`, `restrict_by`, `<<`/`>>`, helpers like `file_like` and
-`dict_to_pk`), see [spyglassmixin_methods.md](spyglassmixin_methods.md).
+methods (`cautious_delete`, `restrict_by`, `<<`/`>>`, `file_like`,
+`dict_to_pk`, ...) plus the **NWB-backed-table-only** `fetch_nwb` /
+`fetch_pynapple` (which raise `NotImplementedError` on tables without
+an `Nwbfile` / `AnalysisNwbfile` FK), see
+[spyglassmixin_methods.md](spyglassmixin_methods.md).
 
 ## Contents
 

@@ -290,7 +290,7 @@ AnalysisNwbfile().add_nwb_object(...)                      # fails
 
 **Constraint**: a table may reference only one AnalysisNwbfile table (either `common.common_nwbfile.AnalysisNwbfile` or a custom per-user one, not both). Spyglass validates this on declaration.
 
-**Discovering what already exists**: `AnalysisRegistry.get_all_classes()` (from `spyglass.common.common_nwbfile`) returns every registered `AnalysisNwbfile` subclass across schemas. Use it when auditing what other teams have already authored before adding your own, or when building cross-pipeline tools that need to iterate all analysis-file tables in the database.
+**Discovering what already exists**: import `AnalysisRegistry` from `spyglass.common` (re-exported from `spyglass.common.common_nwbfile`) and use the `all_classes` property — `AnalysisRegistry().all_classes` (`common_nwbfile.py:431`) returns every registered `AnalysisNwbfile` subclass across schemas as a `list[SpyglassAnalysis]`. For one specific team, `AnalysisRegistry().get_class("myteam")` (`common_nwbfile.py:396`) returns just that subclass. Use these when auditing what other teams have already authored before adding your own, or when building cross-pipeline tools that need to iterate all analysis-file tables. (The `AnalysisRegistry` class docstring lists a `get_all_classes()` method — that's stale; the actual surface is the `all_classes` property.)
 
 ## Merge Table Guardrail
 

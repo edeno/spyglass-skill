@@ -62,7 +62,7 @@ Spyglass pipelines take different interval-name fields, and two upstream tables 
 No universal `target_interval_list_name` exists. The field varies by pipeline:
 - `IntervalList.interval_list_name` — the primary key of the source table
 - `LFPSelection` / `LFPBandSelection` — `target_interval_list_name`
-- `SpikeSortingRecordingSelection` (v0) — `sort_interval_list_name` (FK projection from `SortInterval.sort_interval_name`; the selection table renames it)
+- `SpikeSortingRecordingSelection` (v0) — `sort_interval_name` (FKs `SortInterval` whose PK is `sort_interval_name` at `spikesorting_recording.py:241`). The downstream `SpikeSortingRecording` (computed) is what introduces `sort_interval_list_name` via `-> IntervalList.proj(sort_interval_list_name='interval_list_name')` at `spikesorting_recording.py:342`. Use `sort_interval_name` to restrict the selection; use `sort_interval_list_name` to restrict the recording or its consumers.
 - Artifact removal outputs — `artifact_removed_interval_list_name`
 - Decoding V1 — `encoding_interval` AND `decoding_interval` (two separate intervals, both projected from `IntervalList.interval_list_name`)
 

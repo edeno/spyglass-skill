@@ -150,7 +150,7 @@ Simple lookup tables referenced by Session.
 
 ### `Raw`
 
-- **Primary Key**: `nwb_file_name` (via Session), plus `interval_list_name` (via IntervalList)
+- **Primary Key**: `nwb_file_name` (inherited from Session). `interval_list_name` is a **dependent FK** to `IntervalList` (declared below the `---` divider), not part of the PK — see `common_ephys.py:276`. Verify with `code_graph.py describe Raw` (each attribute carries `in_pk: true|false`).
 - Entry point for raw ElectricalSeries. Upstream of LFP and spike sorting.
 - Use `Raw.describe()` for exact schema.
 

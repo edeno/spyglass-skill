@@ -197,12 +197,12 @@ wrong TLS — the import failed.
 
 **Current Spyglass:** `ExportErrorLog` lives in
 `spyglass/common/common_usage.py` (verify with `code_graph.py describe
---class ExportErrorLog`); `dj_helper_fn.py` imports it lazily inside
-the function body, so importing `spyglass.utils` no longer triggers a
-DataJoint handshake. If `code_graph.py describe` shows
-`ExportErrorLog` defined under `spyglass/utils/dj_helper_fn.py` (or
-imported at module top of `dj_helper_fn`), the install predates this
-fix — upgrade (`git pull && pip install -e .`).
+ExportErrorLog`); `dj_helper_fn.py` imports it lazily inside the
+function body, so importing `spyglass.utils` no longer triggers a
+DataJoint handshake. If `code_graph.py describe ExportErrorLog`
+shows it defined under `spyglass/utils/dj_helper_fn.py` (or imported
+at module top of `dj_helper_fn`), the install predates this fix —
+upgrade (`git pull && pip install -e .`).
 
 Workaround for older installs — populate `dj.config` BEFORE the first
 `from spyglass...`:
@@ -253,7 +253,7 @@ Both modes are import-time, so neither can be fixed from a live
 Spyglass session — the fix goes through the raw DataJoint config, or
 through upgrading to a Spyglass that defines `ExportErrorLog` in
 `common_usage` and imports it lazily inside `dj_helper_fn` (verify
-with `code_graph.py describe --class ExportErrorLog`).
+with `code_graph.py describe ExportErrorLog`).
 
 ## `ImportError` / symbol-moved errors after `git pull` — editable-install drift
 

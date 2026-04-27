@@ -44,7 +44,7 @@ A group table assigns the user's chosen subset a single name. Downstream selecti
 
 | Group table | Part table | Upstream entities grouped | Downstream consumers |
 |-------------|------------|---------------------------|----------------------|
-| `SortedSpikesGroup` (`spyglass/spikesorting/analysis/v1/group.py`) | `SortedSpikesGroup.Units` | merge keys from `SpikeSortingOutput` (one row per sorted unit set) | `SortedSpikesDecodingSelection`, `MuaEventsV1.Selection` |
+| `SortedSpikesGroup` (`spyglass/spikesorting/analysis/v1/group.py`) | `SortedSpikesGroup.Units` | merge keys from `SpikeSortingOutput` (one row per sorted unit set) | `SortedSpikesDecodingSelection`, `MuaEventsV1` (FKs `SortedSpikesGroup` directly at `mua/v1/mua.py:66`; no `MuaEventsV1.Selection` part exists) |
 | `PositionGroup` (`spyglass/decoding/v1/core.py`) | `PositionGroup.Position` | merge keys from `PositionOutput` (one row per position stream) | `SortedSpikesDecodingSelection`, `ClusterlessDecodingSelection` |
 | `UnitSelectionParams` (`spyglass/spikesorting/analysis/v1/group.py`) | — | label-filter parameters (e.g. `all_units`, `exclude_noise`) referenced from `SortedSpikesGroup`'s primary key | `SortedSpikesGroup` |
 
@@ -125,4 +125,4 @@ The decoding-selection insert then takes `group_key` as one foreign-key block; `
 - [common_tables.md](common_tables.md) — `Session`, the upstream FK every group masters references.
 - [spyglassmixin_methods.md](spyglassmixin_methods.md) — `cautious_delete` semantics apply to groups; deleting a group cascades to its part rows.
 - [decoding_pipeline.md](decoding_pipeline.md) — `SortedSpikesDecodingSelection` and `ClusterlessDecodingSelection` are the canonical downstream consumers.
-- [mua_pipeline.md](mua_pipeline.md) — `MuaEventsV1.Selection` consumes `SortedSpikesGroup`.
+- [mua_pipeline.md](mua_pipeline.md) — `MuaEventsV1` consumes `SortedSpikesGroup` directly (no `Selection` part).

@@ -25,7 +25,7 @@ manual.
 ## NWB Data Access
 
 ### `fetch_nwb(*attrs, **kwargs) -> list[dict]`
-Fetch NWB file objects for table entries. Automatically handles both raw `Nwbfile` and analysis `AnalysisNwbfile` sources. Downloads missing files from Dandi/Kachery if needed. Defined at `src/spyglass/utils/mixins/fetch.py:284`. Merge masters (`PositionOutput`, `LFPOutput`, etc.) override this with an extended signature that takes `restriction`, `multi_source`, and `return_merge_ids` kwargs — see [merge_methods.md § Data Fetching](merge_methods.md#data-fetching).
+Fetch NWB file objects for table entries. Defined at `src/spyglass/utils/mixins/fetch.py:284`. Resolves only on **NWB-backed tables** — `FetchMixin._nwb_table_tuple` (`fetch.py:79`) raises `NotImplementedError` when the table has no `Nwbfile` / `AnalysisNwbfile` FK and no `_nwb_table` attribute. Concretely: data tables (`LFPV1`, `TrodesPosV1`, `Raw`, `MetricCuration`, ...) work; selection / parameter / interval / config tables (`LFPSelection`, `LFPElectrodeGroup`, `IntervalList`, `SortInterval`, `LFPBandSelection`, `WaveformParameters`, ...) do NOT — they have no NWB to fetch. Decoding tables (`ClusterlessDecodingV1`, the SortedSpikes decoding equivalents) also do not use `fetch_nwb` — their analysis output is xarray netCDF (`.nc`) + a pickled classifier at a `filepath@analysis` external store; they expose `fetch_results()` (`xr.Dataset`), `fetch_model()`, `fetch_environments()` instead. See `decoding/v1/clusterless.py:99` and the surrounding fetchers. Handles both raw `Nwbfile` and analysis `AnalysisNwbfile` sources, and downloads missing files from Dandi / Kachery if needed. Merge masters (`PositionOutput`, `LFPOutput`, ...) override this with an extended signature that takes `restriction`, `multi_source`, and `return_merge_ids` kwargs — see [merge_methods.md § Data Fetching](merge_methods.md#data-fetching).
 
 ```python
 nwb_data = (LFPV1 & key).fetch_nwb()
@@ -33,7 +33,7 @@ nwb_data = (LFPV1 & key).fetch_nwb()
 ```
 
 ### `fetch_pynapple(*attrs, **kwargs)`
-Convert NWB data to pynapple objects for time series analysis.
+Convert NWB data to pynapple objects for time series analysis. Same NWB-backed-table gate as `fetch_nwb()` — same `NotImplementedError` from `FetchMixin._nwb_table_tuple` on selection / parameter / interval tables.
 
 ```python
 pynapple_obj = (Table & key).fetch_pynapple()

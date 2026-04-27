@@ -296,10 +296,12 @@ len(Table & restriction)
 
 ### Fetch NWB Objects (`.fetch_nwb()`)
 
-Available on all Spyglass tables via SpyglassMixin. Loads NWB data objects.
+Inherited via `SpyglassMixin` (from `FetchMixin`), but only resolves on **NWB-backed tables** — those that FK to `Nwbfile` / `AnalysisNwbfile` or set `_nwb_table = ...`. Calling it on a table without that FK (selection / parameter / interval / config tables) raises `NotImplementedError` from `FetchMixin._nwb_table_tuple`. Loads NWB data objects when available.
+
+**Exception — decoding tables.** `ClusterlessDecodingV1` (and the SortedSpikes decoding equivalents) store results as xarray netCDF (`.nc`) + a pickled classifier, not NWB. They expose dedicated `fetch_results()` / `fetch_model()` / `fetch_environments()` methods instead of `fetch_nwb()`. See `decoding/v1/clusterless.py:99` (results_path declaration) and the `fetch_results` method nearby.
 
 ```python
-# Fetch NWB objects for a table entry
+# Fetch NWB objects for a table entry (NWB-backed: LFPV1, TrodesPosV1, Raw, ...)
 nwb_objs = (LFPV1 & key).fetch_nwb()
 
 # Access data from NWB object
@@ -308,7 +310,7 @@ lfp_data = nwb_objs[0]['lfp']
 
 ### Fetch as Pynapple (`.fetch_pynapple()`)
 
-Convert NWB data to pynapple objects for time series analysis.
+Same NWB-backed-table gate as `fetch_nwb()`: resolves only on tables with an (Analysis)Nwbfile FK or `_nwb_table` attribute. Converts NWB data to pynapple objects for time series analysis.
 
 ```python
 pynapple_obj = (Table & key).fetch_pynapple()

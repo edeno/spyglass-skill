@@ -17,10 +17,12 @@ All Spyglass tables inherit from DataJoint table types (`dj.Manual`, `dj.Compute
 
 ### PyNWB + HDMF
 
-All raw and analysis data is stored in NWB files (HDF5-based). Tables reference NWB objects by `object_id`. The `fetch_nwb()` method on all tables loads NWB data.
+Most raw and analysis data is stored in NWB files (HDF5-based) — tables reference NWB objects by `object_id`. The `fetch_nwb()` method is inherited via `SpyglassMixin` (from `FetchMixin`) but only resolves on **NWB-backed tables** — those that FK to `Nwbfile` / `AnalysisNwbfile` or set `_nwb_table = ...`. Calling it elsewhere raises `NotImplementedError` from `FetchMixin._nwb_table_tuple` (see `src/spyglass/utils/mixins/fetch.py`). Selection / parameter / interval / config tables that don't carry an NWB FK do not support it.
+
+**Exception — decoding output is not NWB.** `ClusterlessDecodingV1` and the SortedSpikes decoding equivalents store results as `xarray` netCDF (`.nc`) at a `filepath@analysis` external store, with the classifier pickled alongside (`.pkl`). They expose dedicated fetchers: `fetch_results()` (`xr.Dataset`) at `decoding/v1/clusterless.py:453`, `fetch_model()` at `:470`, `fetch_environments()` at `:475` — not `fetch_nwb()`. The storage declaration is at `decoding/v1/clusterless.py:99` (`results_path: filepath@analysis`).
 
 ```python
-# Fetch NWB objects from a table
+# Fetch NWB objects from an NWB-backed table (e.g. LFPV1, TrodesPosV1, Raw)
 nwb_data = (Table & key).fetch_nwb()
 
 # Access data from NWB object
@@ -154,7 +156,7 @@ interval_0 = results.where(results.interval_labels == 0, drop=True)
 | --------- | -------------- | --------------------- |
 | DeepLabCut | `[dlc]` | DLC position pipeline wraps it for pose estimation. Interact via Spyglass tables, not DLC directly |
 | keypoint_moseq | `[moseq-cpu]` or `[moseq-gpu]` | Behavior pipeline's MoSeq module for behavioral syllable discovery |
-| pynapple | — | Available via `fetch_pynapple()` on all tables |
+| pynapple | — | Available via `fetch_pynapple()` on **NWB-backed tables only** (same FetchMixin gate as `fetch_nwb()` — selection / parameter / interval tables that don't FK to (Analysis)Nwbfile raise `NotImplementedError`) |
 | sortingview + kachery_cloud | — | FigURL curation UI for spike sorting; Kachery for NWB file sharing |
 
 ## Dependency Tiers

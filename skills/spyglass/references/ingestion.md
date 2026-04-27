@@ -222,7 +222,7 @@ table. The symptom depends on which invariant your NWB breaks:
 | Symptom | What's wrong in the NWB |
 |---|---|
 | `PopulateException: Probe type properties ... do not match` | Multiple physical probes share the same `probe_type` / `description`, so Spyglass collapses them to one row |
-| `IntegrityError (_electrode_ibfk_2 ...)` | Electrode `name` / `id` is not globally unique across probes (current `common_ephys.Electrode` enforces uniqueness on `name`; verify with `code_graph.py describe --class Electrode`) |
+| `IntegrityError (_electrode_ibfk_2 ...)` | Electrode `name` / `id` is not globally unique across probes (current `common_ephys.Electrode` enforces uniqueness on `name`; verify with `code_graph.py describe Electrode`) |
 | DataJoint formatting error on `Probe.Electrode() & key` / `NaN` in queries | `rel_x` / `rel_y` / `rel_z` is NaN or None in the NWB electrodes table |
 | `AssertionError: ChannelSliceRecording: channel ids are not all in parents` | NWB electrodes table has a `channel_name` column; SpikeInterface >=0.99 reads that column instead of `electrode_id` |
 
