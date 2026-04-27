@@ -978,10 +978,13 @@ def cmd_info(args: argparse.Namespace) -> int:
                 "rows": "Default. Returns up to --limit rows in `rows`.",
                 "count": "--count. Returns `count` only; `rows: []`.",
                 "merge": (
-                    "--merge-master MASTER --part PART. Restricts the part by "
-                    "user keys, resolves master keys via DataJoint structural "
-                    "metadata (part.master / heading.foreign_keys), returns "
-                    "master rows + part-evidence in `merge`."
+                    "--merge-master MASTER --part PART. Restricts the part "
+                    "by user keys, resolves master keys via the part's "
+                    "`.master` class attribute (DataJoint sets this on "
+                    "every Part at schema-decoration time), and returns "
+                    "master rows + part-evidence in `merge`. No shared-PK "
+                    "fallback: if `.master` is unset, the call is refused "
+                    "with exit 3 rather than guessing the link."
                 ),
                 "intersect/except/join": (
                     "--intersect / --except / --join CLASS. DB-side relational "
