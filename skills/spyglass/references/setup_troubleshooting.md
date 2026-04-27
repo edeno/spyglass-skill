@@ -4,7 +4,9 @@ Common errors during installation and first-run. For installation steps, see [se
 
 ## First-response diagnostic
 
-When a user reports something is "not working" vaguely — a `populate` silently skipping, a `fetch1` failing, a connection error — run `python skills/spyglass/scripts/verify_spyglass_env.py` first. It's a single command that checks DataJoint config, base-dir resolution and writability, subdir layout, DB connection (with a 10-second timeout so it doesn't hang), and version-pin drift. The output tells you which of those seven surfaces is actually broken before you start reading tracebacks. Pass `--json` if you want machine-parseable output; pass `--check <name>` to run one specific check.
+This file covers **install, import, config, connection, and base-dir** failures only — symptoms that surface before the user can run a normal Spyglass query at all. `populate` / `make` / `fetch1` failures, NumPy / pandas errors inside `make()`, and join-multiplicity issues belong to runtime debugging — see [runtime_debugging.md](runtime_debugging.md) and [common_mistakes.md](common_mistakes.md).
+
+When a user reports something is "not working" at install / import / connection time — a base-dir warning, a `dj.conn()` timeout, a missing-symbol `ImportError` after `git pull` — run `python skills/spyglass/scripts/verify_spyglass_env.py` first. It's a single command that checks DataJoint config, base-dir resolution and writability, subdir layout, DB connection (with a 10-second timeout so it doesn't hang), and version-pin drift. The output tells you which of those seven surfaces is actually broken before you start reading tracebacks. Pass `--json` if you want machine-parseable output; pass `--check <name>` to run one specific check.
 
 ## Contents
 

@@ -29,15 +29,9 @@ The installer handles conda environment creation, database setup, directory crea
 pip install spyglass-neuro
 ```
 
-This installs Spyglass and its core Python dependencies but does not create a conda environment or configure the database. You must set up `dj_local_conf.json` or environment variables manually.
+This installs Spyglass and its core Python dependencies but does not create a conda environment or configure the database. Set up DataJoint manually — most users put credentials in `~/.datajoint_config.json` (the path Spyglass's installer writes; see "What the installer actually does" below) or a per-project `dj_local_conf.json` next to your code; both are honored by DataJoint. Environment variables work too.
 
-Pure pip is not a substitute for `environment.yml`. Several Spyglass
-deps (`mountainsort4`, `ghostipy`, `pyfftw`) require binary components
-supplied by conda-forge, and `pip install spyglass-neuro` outside a
-conda env will typically fail when building `isosplit5` wheels or at
-runtime when `pyfftw` can't find its FFTW library. Use the
-automated installer or `mamba env create -f environments/environment.yml`
-+ `pip install -e .` unless you have a specific reason to avoid conda.
+Pure pip skips two things the conda path provides automatically: the environment itself and the DataJoint config. It is also less reliable for **optional / heavier pipeline extras** — components like spike-sorting binaries (`mountainsort4`, `ghostipy`) and FFT libraries (`pyfftw`) often need conda-forge binaries, and DLC has its own environment file (`environments/environment_dlc.yml`). Verify against the install you need: `pyproject.toml` lists what pure pip will install; the `environments/*.yml` files list the extras conda-forge provides. Use the automated installer or `mamba env create -f environments/environment.yml` + `pip install -e .` unless you have a specific reason to avoid conda.
 
 ### conda (from environment file)
 
@@ -182,7 +176,7 @@ To generate just the DataJoint config file without creating a conda environment:
 python scripts/install.py --config-only --remote --db-host db.lab.edu --db-user alice --base-dir ~/data
 ```
 
-This writes `dj_local_conf.json` (or updates `~/.datajoint_config.json`) containing a plaintext `database.password`. Once it exists, never `Read` / `cat` it — use `python skills/spyglass/scripts/scrub_dj_config.py` to inspect safely. See [setup_config.md](setup_config.md) § "Reading the config file safely".
+This writes `~/.datajoint_config.json` (the global DataJoint config). The installer's `run_config_only()` / `create_database_config()` helpers in `scripts/install.py` always target the home-directory file (`scripts/install.py:1407, 3070`), not a per-project `dj_local_conf.json`. The file contains a plaintext `database.password` — never `Read` / `cat` it; use `python skills/spyglass/scripts/scrub_dj_config.py` to inspect safely. See [setup_config.md](setup_config.md) § "Reading the config file safely".
 
 ### Lab Administrator Setup
 
