@@ -102,7 +102,13 @@ If later the analysis needs re-runnability with different params, upgrade to the
 
 ## Canonical Schema Skeleton
 
-Minimal authoring module. This compiles and follows every non-negotiable. Structure derived from the canonical example in `docs/src/ForDevelopers/Schema.md` lines 43–201; part-table syntax uses `SpyglassMixinPart` as documented in `docs/src/ForDevelopers/Classes.md` line 206.
+Minimal authoring template that follows every non-negotiable. The
+schema declarations are runnable as-is; the `make()` body uses two
+placeholder names (`result_array`, `part_rows`) that you fill in
+with your actual computation and per-unit dicts. Structure derived
+from the canonical example in `docs/src/ForDevelopers/Schema.md`
+lines 43–201; part-table syntax uses `SpyglassMixinPart` as
+documented in `docs/src/ForDevelopers/Classes.md` line 206.
 
 ```python
 import datajoint as dj
@@ -157,8 +163,15 @@ class MyAnalysis(SpyglassMixin, dj.Computed):
 
     def make(self, key):
         params = (MyAnalysisParams & key).fetch1("myanalysis_params")
-        # ... compute using upstream data + params ...
         nwb_file_name = (Session & key).fetch1("nwb_file_name")
+
+        # Replace these two placeholders with your actual computation:
+        #   result_array — the pandas/numpy/xarray object you want
+        #     stored as one NWB scratch table on the analysis NWB.
+        #   part_rows    — list of {**key, "unit_id": ..., "value": ...}
+        #     dicts, one per Unit row.
+        result_array = ...   # e.g. compute_my_metric(spike_times, params)
+        part_rows = [...]    # one dict per unit you analyzed
 
         # Builder context manages CREATE -> POPULATE -> REGISTER for you.
         # Do NOT mix builder with separate create()/add()/add_nwb_object()
@@ -170,6 +183,11 @@ class MyAnalysis(SpyglassMixin, dj.Computed):
             )
             analysis_file_name = builder.analysis_file_name
 
+        # Master insert must come BEFORE the part insert — DataJoint's
+        # FK from the part to its master rejects part rows otherwise.
+        # The master row carries the fields declared above the `---`
+        # divider on this Computed table (analysis_file_name +
+        # result_object_id), not the bare `key`.
         self.insert1({
             **key,
             "analysis_file_name": analysis_file_name,
@@ -177,8 +195,6 @@ class MyAnalysis(SpyglassMixin, dj.Computed):
         })
         self.Unit().insert(part_rows, skip_duplicates=True)
 ```
-
-Master insert must come before part inserts. Always call `self.insert1(key)` first.
 
 ## Extending an Existing Pipeline
 
@@ -198,15 +214,24 @@ class PosDerivedAnalysis(SpyglassMixin, dj.Computed):
     """
 
     def make(self, key):
-        # Option A: require a specific upstream source (safer)
+        # Option A: require a specific upstream source (safer).
         parent = PositionOutput().merge_get_parent(key)
         if parent.camel_name != "TrodesPosV1":
             raise ValueError("PosDerivedAnalysis requires TrodesPosV1")
         position_df = (PositionOutput & key).fetch1_dataframe()
         # ... compute ...
 
-        # Option B: accept any source (use fetch_data / fetch1_dataframe)
-        # position_df = (PositionOutput & key).fetch1_dataframe()
+        # Option B: accept multiple sources, but check each one's
+        # accessor surface. `PositionOutput.fetch1_dataframe()`
+        # delegates to the resolved part class
+        # (`position/position_merge.py:81`). Trodes / DLC parts
+        # implement it (returning `position_x`/`_y` + speed/orientation);
+        # `ImportedPose` does NOT — it exposes `fetch_pose_dataframe()`
+        # instead (`position/v1/imported_pose.py:110`). The same is true
+        # of `fetch_video_path()`. FK-ref'ing the merge master is
+        # general; per-source method availability is not. Either gate
+        # via merge_get_parent.camel_name (as in Option A), or branch
+        # on the parent class and call the appropriate accessor.
 ```
 
 Same pattern applies to `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, `LinearizedPositionOutput`.
@@ -216,18 +241,26 @@ Same pattern applies to `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, `Li
 When your analysis consumes raw/ingested data directly, FK-ref the relevant common table(s). A grouping table is often the first step.
 
 ```python
+# `ElectrodeGroup` is the per-probe-shank grouping row from
+# common_ephys (`common_ephys.py:30`); `Electrode` is the
+# individual electrode (`common_ephys.py:73`). Pick the one your
+# analysis groups: this example bundles whole electrode groups
+# (probes / shanks). To bundle individual electrodes instead, FK
+# `Electrode` and rename the part class accordingly.
 from spyglass.common import Session, IntervalList, ElectrodeGroup
 
 @schema
-class MyElectrodeGroup(SpyglassMixin, dj.Manual):
-    """Set of electrodes to analyze together."""
+class MyElectrodeGroupSet(SpyglassMixin, dj.Manual):
+    """A named set of probe-shank electrode groups to analyze together."""
 
     definition = """
     my_group_name: varchar(32)
     -> Session
     """
 
-    class Electrode(SpyglassMixinPart):
+    class ElectrodeGroup(SpyglassMixinPart):
+        """One row per `ElectrodeGroup` included in the set."""
+
         definition = """
         -> master
         -> ElectrodeGroup
@@ -236,7 +269,7 @@ class MyElectrodeGroup(SpyglassMixin, dj.Manual):
 @schema
 class MyRawAnalysis(SpyglassMixin, dj.Computed):
     definition = """
-    -> MyElectrodeGroup
+    -> MyElectrodeGroupSet
     -> IntervalList
     -> MyAnalysisParams
     ---
