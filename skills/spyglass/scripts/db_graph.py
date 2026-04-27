@@ -1977,7 +1977,23 @@ def _safe_serialize_value(value: object) -> object:
             }
         return value
     if isinstance(value, dict):
-        return {k: _safe_serialize_value(v) for k, v in value.items()}
+        # ``json.dumps`` only accepts ``str / int / float / bool / None``
+        # as object keys. DataJoint longblob values can deserialize
+        # arbitrary Python objects (tuples, frozensets, custom classes
+        # ...), and a single bad key elsewhere in the payload would
+        # abort serialization for the whole row. Envelope the dict
+        # rather than recursing when any key is not JSON-safe.
+        if all(
+            isinstance(k, (str, int, float, bool)) or k is None
+            for k in value.keys()
+        ):
+            return {k: _safe_serialize_value(v) for k, v in value.items()}
+        return {
+            "_unserializable": True,
+            "type": "dict",
+            "length": len(value),
+            "key_types": sorted({type(k).__name__ for k in value.keys()}),
+        }
     if isinstance(value, (list, tuple)):
         return [_safe_serialize_value(v) for v in value]
     if isinstance(value, (bytes, bytearray, memoryview)):

@@ -2410,6 +2410,101 @@ def fixture_c_fakes_nested_non_finite_in_fetched_rows_envelopes(
     return True
 
 
+def fixture_c_fakes_blob_dict_with_non_string_keys_envelopes(
+    args: argparse.Namespace,
+) -> bool:
+    """Fetched dict values whose keys are not JSON-safe scalars
+    (``str / int / float / bool / None``) get the structured
+    ``_unserializable`` envelope rather than crashing the payload at
+    ``json.dumps`` time.
+
+    DataJoint longblob values can deserialize arbitrary Python objects
+    (tuples, frozensets, custom classes), so a single bad key would
+    otherwise abort serialization for the whole row with
+    ``TypeError: keys must be str, int, float, bool or None, not
+    tuple``. Pin the envelope shape so a future refactor cannot
+    quietly regress to recursing into non-JSON-safe keys.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.prepare_sandbox(tmp)
+        (tmp / "fakebadkey.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "class T(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('id',),",
+                    "        names=('id', 'payload'),",
+                    "        attributes={",
+                    "            'id': 'int',",
+                    "            'payload': 'longblob',",
+                    "        },",
+                    "    )",
+                    "    _rows = [",
+                    "        {'id': 1, 'payload': {('a', 'b'): 3}},",
+                    "    ]",
+                    "    def __new__(cls):",
+                    "        return FakeRelation("
+                    "heading=cls._heading_obj, rows=cls._rows)",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                ]
+            )
+        )
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakebadkey",
+                "--class",
+                "fakebadkey:T",
+                "--fields",
+                "id,payload",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(
+            f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}"
+        )
+        return False
+    payload = _parse_json_or_fail(out, "tuple-key dict payload")
+    if payload is None:
+        return False
+    rows = payload.get("rows", [])
+    if not rows:
+        print("  [FAIL] expected 1 row, got 0")
+        return False
+    p = rows[0].get("payload")
+    if not (
+        isinstance(p, dict)
+        and p.get("_unserializable")
+        and p.get("type") == "dict"
+    ):
+        print(
+            f"  [FAIL] tuple-key dict not enveloped: {p!r}"
+        )
+        return False
+    if "tuple" not in p.get("key_types", []):
+        print(
+            f"  [FAIL] envelope key_types should include 'tuple': "
+            f"{p!r}"
+        )
+        return False
+    print(
+        "  [ok] dict with non-JSON-safe keys envelope-substituted "
+        "with type=dict + key_types=['tuple']"
+    )
+    return True
+
+
 def fixture_d_fakes_merge_master_only_field_silent_no_op_refused(
     args: argparse.Namespace,
 ) -> bool:
@@ -5922,6 +6017,7 @@ FIXTURES = [
     fixture_c_null_keyjson_value_refused,
     fixture_c_keyjson_non_finite_value_refused,
     fixture_c_fakes_nested_non_finite_in_fetched_rows_envelopes,
+    fixture_c_fakes_blob_dict_with_non_string_keys_envelopes,
     fixture_c_fields_key_mixed_with_explicit_fields_refused,
     fixture_c_malformed_key_argument_refused,
     fixture_c_unknown_fetch_field_refused,
