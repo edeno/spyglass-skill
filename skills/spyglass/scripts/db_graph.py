@@ -800,8 +800,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_fi.add_argument(
         "--class",
         dest="class_name",
-        required=True,
-        help="Class short name, dotted module path, or `module:Class`.",
+        default=None,
+        help=(
+            "Class short name, dotted module path, or `module:Class`. "
+            "Required for non-merge queries. In merge mode "
+            "(`--merge-master M --part P`), --class is optional and "
+            "ignored if supplied."
+        ),
     )
     p_fi.add_argument(
         "--src",
@@ -1645,6 +1650,299 @@ def _emit_invalid_query(
 
 
 # ---------------------------------------------------------------------------
+# Batch D — merge-aware lookup
+# ---------------------------------------------------------------------------
+
+
+def _identify_master_key_fields(
+    part_cls: object,
+    master_cls: object,
+    part_heading,
+    master_heading,
+) -> tuple[str, ...]:
+    """Identify the part columns that link to the master.
+
+    Plan algorithm:
+
+    1. ``part_cls.master`` attribute — DataJoint sets this on every Part
+       class at schema-decoration time. If it equals the user-supplied
+       master class, return the master's primary-key tuple as the link
+       fields. If it disagrees, raise ``_MergeLinkUndecidable``: the
+       user named the wrong master.
+    2. (Skipped — heading.foreign_keys inspection varies by DataJoint
+       version; the ``part.master`` attribute is canonical for Spyglass.)
+    3. PK-name overlap as last resort. Accepts the shared field set
+       only when non-empty; never fabricates a single-name guess.
+
+    Raises ``_MergeLinkUndecidable`` (exit 3 ambiguous-shaped payload)
+    when neither structural source produces an unambiguous answer.
+    The payload includes the master and part qualnames so an LLM can
+    pick a different pair without re-reading source.
+    """
+    declared_master = getattr(part_cls, "master", None)
+    if declared_master is not None:
+        if declared_master is master_cls:
+            return tuple(master_heading.primary_key)
+        master_name = getattr(master_cls, "__name__", str(master_cls))
+        declared_name = getattr(declared_master, "__name__", str(declared_master))
+        raise _MergeLinkUndecidable(
+
+                f"part.master ({declared_name!r}) disagrees with "
+                f"--merge-master ({master_name!r}); the user named the "
+                "wrong master for this part. Use --merge-master with the "
+                f"class the part actually points to ({declared_name!r})."
+
+        )
+    shared = tuple(
+        sorted(set(part_heading.primary_key) & set(master_heading.primary_key))
+    )
+    if shared:
+        return shared
+    raise _MergeLinkUndecidable(
+
+            "no structural link between part and master could be "
+            "identified: part has no .master attribute and no shared "
+            "primary-key fields. The part may not actually be a part "
+            "of this master."
+
+    )
+
+
+class _MergeLinkUndecidable(Exception):
+    """Master / part link cannot be identified unambiguously.
+
+    Maps to exit 3 (ambiguous family). Distinct from ``_AmbiguousClass``
+    because no source-index records are involved — the ambiguity is
+    structural in the DataJoint metadata.
+    """
+
+    exit_code: int = EXIT_AMBIGUOUS
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+def _emit_merge_link_undecidable(
+    *,
+    args: argparse.Namespace,
+    timer: _Timer,
+    master: _Resolved | None,
+    part: _Resolved | None,
+    exc: _MergeLinkUndecidable,
+    src_root: Path | None,
+) -> int:
+    """Emit an ambiguous-shaped payload for a merge-link failure, exit 3."""
+    payload = _stamp_envelope("ambiguous", source_root=src_root)
+    payload["db"] = _build_db_envelope()
+    query: dict[str, object] = {"class": args.merge_master or args.class_name}
+    if master is not None:
+        query["merge_master_resolved"] = f"{master.module}.{master.qualname}"
+    if part is not None:
+        query["part_resolved"] = f"{part.module}.{part.qualname}"
+    payload["query"] = query
+    # Empty candidates list — the ambiguity is structural, not
+    # source-index ambiguity. The hint carries the actionable info.
+    payload["candidates"] = []
+    payload["hint"] = exc.message
+    payload["timings_ms"] = timer.finalize()
+    print(json.dumps(payload))
+    return EXIT_AMBIGUOUS
+
+
+def _cmd_find_instance_merge(
+    args: argparse.Namespace,
+    *,
+    restriction: dict,
+    fetch_fields: list[str],
+    src_root_used: Path | None,
+    timer: _Timer,
+) -> int:
+    """Merge-aware find-instance: ``--merge-master MASTER --part PART``.
+
+    Closes the silent-wrong-count footgun structurally: restrictions
+    are applied to the part (whose heading carries the part-only
+    fields the user wants to filter on), the part-master link is
+    identified via DataJoint's structural metadata, and the master is
+    queried by the resolved key set rather than by the user's keys
+    directly. ``query.restriction`` echoes the user's keys verbatim;
+    the ``merge`` block records which class actually saw them.
+
+    Failure modes:
+
+    * Either class fails to resolve → kind=ambiguous / not_found /
+      not_a_table / db_error, exit 3 / 4 / 4 / 5 (Batch B paths).
+    * Restriction names a field absent from the part heading →
+      kind=invalid_query / error.kind=unknown_field, exit 2. This is
+      the eval #50 silent-wrong-count footgun.
+    * part.master disagrees with --merge-master → kind=ambiguous with
+      a structural hint, exit 3.
+    * No structural link identifiable → same.
+    """
+    timer.mark("resolve")
+    try:
+        master = resolve_class(
+            args.merge_master, src=args.src, imports=tuple(args.imports)
+        )
+        part = resolve_class(
+            args.part, src=args.src, imports=tuple(args.imports)
+        )
+    except _AmbiguousClass as exc:
+        return _emit_ambiguous(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _NotADataJointTable as exc:
+        return _emit_not_a_table(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _DataJointUnavailable as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind="datajoint_import",
+            message=f"DataJoint is not importable: {exc.original}",
+            src_root=src_root_used,
+        )
+    except _ClassNotFound as exc:
+        return _emit_not_found(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+
+    timer.mark("heading")
+    try:
+        master_callable = master.cls
+        part_callable = part.cls
+        master_rel = master_callable()  # ty: ignore[call-non-callable]
+        part_rel = part_callable()  # ty: ignore[call-non-callable]
+        master_heading = master_rel.heading
+        part_heading = part_rel.heading
+        part_heading_names: tuple[str, ...] = tuple(part_heading.names)
+        part_heading_attrs = dict(part_heading.attributes)
+    except Exception as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind=_classify_dj_error(exc),
+            message=_scrub_secrets(str(exc)),
+            src_root=src_root_used,
+            resolved=part,
+        )
+
+    # Validate restriction against the PART heading. This is the merge
+    # algorithm's central discipline: every user key must be a real
+    # part-heading attribute. Restrictions on master-only fields are
+    # caught here, not silently applied to the master and lost.
+    try:
+        _validate_restriction_fields(restriction, part_heading_names)
+        _validate_blob_restrictions(restriction, part_heading_attrs)
+        _validate_fetch_fields(fetch_fields, tuple(master_heading.names))
+    except _InvalidQuery as exc:
+        return _emit_invalid_query(
+            args=args,
+            timer=timer,
+            resolved=part,
+            exc=exc,
+            src_root=src_root_used,
+        )
+
+    # Identify the part→master link.
+    try:
+        master_key_fields = _identify_master_key_fields(
+            part.cls,
+            master.cls,
+            part_heading,
+            master_heading,
+        )
+    except _MergeLinkUndecidable as exc:
+        return _emit_merge_link_undecidable(
+            args=args, timer=timer, master=master, part=part,
+            exc=exc, src_root=src_root_used,
+        )
+
+    timer.mark("query")
+    try:
+        restricted_part = part_rel & restriction if restriction else part_rel
+        # Fetch master-key tuples from the restricted part to detect truncation.
+        fetched_master_keys = restricted_part.fetch(
+            *master_key_fields, as_dict=True, limit=args.limit + 1
+        )
+        truncated = len(fetched_master_keys) > args.limit
+        fetched_master_keys = fetched_master_keys[: args.limit]
+        master_keys_for_restrict = [
+            {k: r[k] for k in master_key_fields} for r in fetched_master_keys
+        ]
+        if master_keys_for_restrict:
+            master_restricted = master_rel & master_keys_for_restrict
+            count = len(master_restricted)
+            if not args.count:
+                fetched_rows = master_restricted.fetch(
+                    *fetch_fields, as_dict=True, limit=args.limit + 1
+                )
+                truncated = truncated or (len(fetched_rows) > args.limit)
+                fetched_rows = fetched_rows[: args.limit]
+            else:
+                fetched_rows = []
+        else:
+            count = 0
+            fetched_rows = []
+    except _InvalidQuery as exc:
+        return _emit_invalid_query(
+            args=args, timer=timer, resolved=part,
+            exc=exc, src_root=src_root_used,
+        )
+    except Exception as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind=_classify_dj_error(exc),
+            message=_scrub_secrets(str(exc)),
+            src_root=src_root_used,
+            resolved=part,
+        )
+
+    timer.mark("serialize")
+    serialized_rows = [
+        {k: _safe_serialize_value(v) for k, v in row.items()}
+        for row in fetched_rows
+    ]
+    serialized_merge_ids = [
+        {k: _safe_serialize_value(v) for k, v in r.items()}
+        for r in fetched_master_keys
+    ]
+
+    payload = _stamp_envelope(
+        "merge", source_root=master.src_root or part.src_root
+    )
+    payload["db"] = _build_db_envelope()
+    payload["query"] = {
+        "class": args.merge_master,
+        "merge_master_resolved": f"{master.module}.{master.qualname}",
+        "part_resolved": f"{part.module}.{part.qualname}",
+        "restriction": restriction,
+        "fields": fetch_fields,
+        "mode": "count" if args.count else "rows",
+    }
+    payload["merge"] = {
+        "master": args.merge_master,
+        "part": args.part,
+        "restriction_applied_to": "part",
+        "master_key_fields": list(master_key_fields),
+        "merge_ids": serialized_merge_ids,
+    }
+    payload["count"] = count
+    payload["limit"] = args.limit
+    payload["truncated"] = truncated
+    payload["incomplete"] = False
+    payload["timings_ms"] = timer.finalize()
+    payload["rows"] = serialized_rows
+
+    print(json.dumps(payload))
+    if count == 0 and args.fail_on_empty:
+        return EXIT_EMPTY
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # Subcommand: find-instance (Batch C — basic restriction + fetch + count)
 # ---------------------------------------------------------------------------
 
@@ -1696,6 +1994,20 @@ def cmd_find_instance(args: argparse.Namespace) -> int:
     # Step 1: now resolve src_root (may import spyglass for the
     # installed-package fallback) and resolve the class.
     src_root_used = _select_src_root(args.src)
+
+    # Merge-aware lookup branches off here. The merge handler shares
+    # the parser-fast-path above and the src_root resolution; from
+    # this point it has its own resolution + heading + restriction
+    # logic, returning a kind="merge" payload instead of "find-instance".
+    if args.merge_master:
+        return _cmd_find_instance_merge(
+            args,
+            restriction=restriction,
+            fetch_fields=fetch_fields,
+            src_root_used=src_root_used,
+            timer=timer,
+        )
+
     timer.mark("resolve")
     try:
         resolved = resolve_class(
@@ -1897,6 +2209,14 @@ def main() -> int:
         # so Batch C+ cannot drift into accepting malformed combinations.
         if bool(args.merge_master) != bool(args.part):
             parser.error("--merge-master and --part must be supplied together")
+        # One-of: --class XOR (--merge-master + --part). Merge mode names
+        # both classes via --merge-master/--part, so --class is optional;
+        # non-merge queries require --class.
+        if not args.merge_master and not args.class_name:
+            parser.error(
+                "--class is required (or use --merge-master MASTER --part PART "
+                "for merge-aware lookup)"
+            )
         if args.group_by and args.group_by_table:
             parser.error(
                 "--group-by and --group-by-table are mutually exclusive; "

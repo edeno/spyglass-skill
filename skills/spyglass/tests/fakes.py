@@ -106,15 +106,26 @@ class FakeRelation:
         self.heading = heading
         self._rows: list[dict] = list(rows)
 
-    def __and__(self, restriction: dict) -> FakeRelation:
-        # Callers pass dict restrictions per the type annotation; no
-        # runtime check (test fakes trust their callers — the type
-        # checker enforces the contract).
-        filtered = [
-            r
-            for r in self._rows
-            if all(r.get(k) == v for k, v in restriction.items())
-        ]
+    def __and__(self, restriction) -> FakeRelation:
+        # DataJoint accepts both dict (single AND-of-equalities) and
+        # list-of-dicts (OR-of-AND-of-equalities). The merge-aware
+        # path emits list-of-dicts when restricting the master by
+        # multiple resolved part keys.
+        if isinstance(restriction, list):
+            filtered = [
+                r
+                for r in self._rows
+                if any(
+                    all(r.get(k) == v for k, v in single.items())
+                    for single in restriction
+                )
+            ]
+        else:
+            filtered = [
+                r
+                for r in self._rows
+                if all(r.get(k) == v for k, v in restriction.items())
+            ]
         return FakeRelation(heading=self.heading, rows=filtered)
 
     def __len__(self) -> int:

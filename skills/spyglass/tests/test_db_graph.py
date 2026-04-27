@@ -1697,6 +1697,354 @@ def fixture_c_fakes_nan_restriction_refused(
     return True
 
 
+def _write_fake_merge_module(target: Path) -> None:
+    """Write a synthetic Master + Part module to ``target``.
+
+    The Part has ``master = MasterMerge`` set explicitly (DataJoint sets
+    this automatically on Part subclasses, but the fake datajoint shim
+    does not auto-wire it). Each part row carries a master_key field
+    (here ``merge_id``) plus the part-only restriction field
+    (``nwb_file_name``); each master row has just the merge_id.
+    """
+    (target / "fakemerge.py").write_text(
+        "\n".join(
+            [
+                '"""Synthetic Master + Part for merge-aware fixtures."""',
+                "from datajoint import Manual, Part",
+                "from fakes import FakeHeading, FakeRelation",
+                "",
+                "",
+                "class MasterMerge(Manual):",
+                "    _heading_obj = FakeHeading(",
+                "        primary_key=('merge_id',),",
+                "        names=('merge_id', 'source'),",
+                "        attributes={",
+                "            'merge_id': 'uuid',",
+                "            'source': 'varchar(32)',",
+                "        },",
+                "    )",
+                "    _rows = [",
+                "        {'merge_id': 'm-1', 'source': 'PartA'},",
+                "        {'merge_id': 'm-2', 'source': 'PartA'},",
+                "        {'merge_id': 'm-3', 'source': 'PartA'},",
+                "    ]",
+                "",
+                "    def __new__(cls):",
+                "        return FakeRelation(",
+                "            heading=cls._heading_obj, rows=cls._rows",
+                "        )",
+                "",
+                "    @property",
+                "    def heading(self):",
+                "        return self._heading_obj",
+                "",
+                "",
+                "class PartA(Part):",
+                "    master = MasterMerge",
+                "    _heading_obj = FakeHeading(",
+                "        primary_key=('merge_id',),",
+                "        names=('merge_id', 'nwb_file_name', 'epoch'),",
+                "        attributes={",
+                "            'merge_id': 'uuid',",
+                "            'nwb_file_name': 'varchar(64)',",
+                "            'epoch': 'varchar(32)',",
+                "        },",
+                "    )",
+                "    _rows = [",
+                "        {'merge_id': 'm-1', 'nwb_file_name': 'a.nwb', 'epoch': '01'},",
+                "        {'merge_id': 'm-2', 'nwb_file_name': 'a.nwb', 'epoch': '02'},",
+                "        {'merge_id': 'm-3', 'nwb_file_name': 'b.nwb', 'epoch': '01'},",
+                "    ]",
+                "",
+                "    def __new__(cls):",
+                "        return FakeRelation(",
+                "            heading=cls._heading_obj, rows=cls._rows",
+                "        )",
+                "",
+                "    @property",
+                "    def heading(self):",
+                "        return self._heading_obj",
+                "",
+            ]
+        )
+    )
+
+
+def fixture_d_fakes_merge_routes_part_only_field_to_part(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval-#14/15/16 shape: ``--merge-master M --part P --key part_only=X``.
+
+    The user supplies a key (``nwb_file_name``) that exists only on the
+    Part heading, not the Master. Without merge-aware routing, DataJoint
+    would silently drop the key when applied to the Master and return
+    the whole master table — the canonical wrong-count footgun.
+
+    Merge mode applies the restriction to the Part, fetches the master
+    keys (``merge_id``) from the restricted part, and queries the
+    master by those resolved keys. The fixture asserts:
+
+    * ``kind: "merge"``, exit 0.
+    * ``merge.restriction_applied_to == "part"``.
+    * ``merge.master_key_fields == ["merge_id"]``.
+    * ``merge.merge_ids`` lists the part-resolved master keys.
+    * ``rows`` are master rows for those merge_ids.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _write_fake_merge_module(tmp)
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakemerge",
+                "--merge-master",
+                "fakemerge:MasterMerge",
+                "--part",
+                "fakemerge:PartA",
+                "--key",
+                "nwb_file_name=a.nwb",
+                "--fields",
+                "KEY",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:300]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "merge routing payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "merge":
+        print(f"  [FAIL] kind != 'merge': {payload.get('kind')!r}")
+        return False
+    merge = payload.get("merge", {})
+    if merge.get("restriction_applied_to") != "part":
+        print(
+            f"  [FAIL] merge.restriction_applied_to != 'part': "
+            f"{merge.get('restriction_applied_to')!r}"
+        )
+        return False
+    if merge.get("master_key_fields") != ["merge_id"]:
+        print(
+            f"  [FAIL] merge.master_key_fields drift: "
+            f"{merge.get('master_key_fields')!r}"
+        )
+        return False
+    merge_ids = merge.get("merge_ids", [])
+    resolved_ids = sorted(r.get("merge_id") for r in merge_ids)
+    # The synthetic part has two rows with nwb_file_name=a.nwb (m-1, m-2).
+    if resolved_ids != ["m-1", "m-2"]:
+        print(f"  [FAIL] merge_ids drift: {resolved_ids!r}")
+        return False
+    rows = payload.get("rows", [])
+    row_ids = sorted(r.get("merge_id") for r in rows)
+    if row_ids != ["m-1", "m-2"]:
+        print(f"  [FAIL] master rows drift: {row_ids!r}")
+        return False
+    if payload.get("count") != 2:
+        print(f"  [FAIL] count != 2: {payload.get('count')!r}")
+        return False
+    print(
+        "  [ok] merge mode: part-only key routed to part, master "
+        "queried by resolved merge_ids"
+    )
+    return True
+
+
+def fixture_d_fakes_merge_master_only_field_silent_no_op_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval #50 footgun: master-class restricted by part-only field is refused.
+
+    Without ``--merge-master``/``--part``, the user's
+    ``--class MasterMerge --key nwb_file_name=X`` would silently drop the
+    nwb_file_name restriction (because that field is not on the master
+    heading) and return the whole master table — the canonical
+    silent-wrong-count footgun. Field validation in Batch C closes
+    this: kind=invalid_query, error.kind=unknown_field, exit 2.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _write_fake_merge_module(tmp)
+        rc, out, err = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakemerge",
+                "--class",
+                "fakemerge:MasterMerge",
+                "--key",
+                "nwb_file_name=a.nwb",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "silent_no_op refusal payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "invalid_query":
+        print(f"  [FAIL] kind != 'invalid_query': {payload.get('kind')!r}")
+        return False
+    if payload.get("error", {}).get("kind") != "unknown_field":
+        print(
+            f"  [FAIL] error.kind != 'unknown_field': "
+            f"{payload.get('error', {})!r}"
+        )
+        return False
+    print(
+        "  [ok] eval #50 footgun: master-class restricted by part-only "
+        "field exits 2 with kind=invalid_query"
+    )
+    return True
+
+
+def fixture_d_fakes_merge_part_master_mismatch_exits_3(
+    args: argparse.Namespace,
+) -> bool:
+    """``--merge-master`` disagreeing with ``part.master`` exits 3.
+
+    The synthetic Part declares ``master = MasterMerge``. If the user
+    supplies a different class as ``--merge-master``, the algorithm
+    must refuse rather than silently use the user's pick — the user
+    likely chose the wrong master.
+    """
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _write_fake_merge_module(tmp)
+        # Add a second master that PartA does NOT point at; supply it
+        # to --merge-master to trigger the mismatch.
+        (tmp / "fakemerge_other_master.py").write_text(
+            "\n".join(
+                [
+                    "from datajoint import Manual",
+                    "from fakes import FakeHeading, FakeRelation",
+                    "",
+                    "",
+                    "class OtherMaster(Manual):",
+                    "    _heading_obj = FakeHeading(",
+                    "        primary_key=('merge_id',),",
+                    "        names=('merge_id',),",
+                    "        attributes={'merge_id': 'uuid'},",
+                    "    )",
+                    "    _rows = []",
+                    "",
+                    "    def __new__(cls):",
+                    "        return FakeRelation(",
+                    "            heading=cls._heading_obj, rows=cls._rows",
+                    "        )",
+                    "",
+                    "    @property",
+                    "    def heading(self):",
+                    "        return self._heading_obj",
+                    "",
+                ]
+            )
+        )
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakemerge",
+                "--import",
+                "fakemerge_other_master",
+                "--merge-master",
+                "fakemerge_other_master:OtherMaster",
+                "--part",
+                "fakemerge:PartA",
+                "--key",
+                "nwb_file_name=a.nwb",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 3:
+        print(f"  [FAIL] expected rc=3 (ambiguous), got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "merge-mismatch payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "ambiguous":
+        print(f"  [FAIL] kind != 'ambiguous': {payload.get('kind')!r}")
+        return False
+    hint = payload.get("hint", "")
+    if "disagrees" not in hint:
+        print(f"  [FAIL] hint should mention disagreement: {hint!r}")
+        return False
+    print(
+        "  [ok] merge-master mismatch with part.master exits 3 "
+        "with structural hint"
+    )
+    return True
+
+
+def fixture_d_fakes_merge_count_only(args: argparse.Namespace) -> bool:
+    """Merge mode + ``--count`` returns count without rows."""
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        import fakes as _fakes_module
+
+        _fakes_module.build_fake_datajoint_sandbox(tmp)
+        fakes_path = Path(__file__).resolve().parent / "fakes.py"
+        (tmp / "fakes.py").write_text(fakes_path.read_text())
+        _write_fake_merge_module(tmp)
+        rc, out, _ = _run_db_graph(
+            [
+                "find-instance",
+                "--import",
+                "fakemerge",
+                "--merge-master",
+                "fakemerge:MasterMerge",
+                "--part",
+                "fakemerge:PartA",
+                "--key",
+                "nwb_file_name=a.nwb",
+                "--count",
+            ],
+            python_env=args.python_env,
+            extra_env={"PYTHONPATH": str(tmp)},
+        )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}")
+        return False
+    payload = _parse_json_or_fail(out, "merge count payload")
+    if payload is None:
+        return False
+    if payload.get("count") != 2:
+        print(f"  [FAIL] count != 2: {payload.get('count')!r}")
+        return False
+    if payload.get("rows") != []:
+        print(f"  [FAIL] --count must yield empty rows: {payload.get('rows')!r}")
+        return False
+    if payload.get("query", {}).get("mode") != "count":
+        print(
+            f"  [FAIL] query.mode != 'count': "
+            f"{payload.get('query', {}).get('mode')!r}"
+        )
+        return False
+    print("  [ok] merge mode + --count: count=2, rows=[]")
+    return True
+
+
 def fixture_c_fakes_db_error_classification(
     args: argparse.Namespace,
 ) -> bool:
@@ -2410,6 +2758,242 @@ def fixture_c_empty_result_exit_zero_by_default(
     return True
 
 
+def _expect_merge_payload(out: str) -> dict | None:
+    """Common assertions for a successful merge-aware find-instance call."""
+    payload = _parse_json_or_fail(out, "merge payload")
+    if payload is None:
+        return None
+    if payload.get("kind") != "merge":
+        print(f"  [FAIL] kind != 'merge': {payload.get('kind')!r}")
+        return None
+    merge = payload.get("merge", {})
+    if merge.get("restriction_applied_to") != "part":
+        print(
+            f"  [FAIL] merge.restriction_applied_to != 'part': "
+            f"{merge.get('restriction_applied_to')!r}"
+        )
+        return None
+    if not merge.get("master_key_fields"):
+        print(f"  [FAIL] merge.master_key_fields empty: {merge!r}")
+        return None
+    return payload
+
+
+def fixture_d_eval14_trodes_position_merge_id(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval #14 shape: ``merge_id`` for Trodes position via PositionOutput.
+
+    ``--merge-master PositionOutput --part TrodesPosV1 --key
+    nwb_file_name=X --key interval_list_name=Y --key
+    trodes_pos_params_name=Z`` resolves the part keys, fetches the
+    master keys (``merge_id``), and returns master rows for those keys.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #14 merge-id lookup against real Spyglass DB",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--merge-master",
+            "PositionOutput",
+            "--part",
+            "TrodesPosV1",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+            "--key",
+            "interval_list_name=02_r1",
+            "--key",
+            "trodes_pos_params_name=default",
+            "--fields",
+            "KEY",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _expect_merge_payload(out)
+    if payload is None:
+        return False
+    merge = payload["merge"]
+    if "merge_id" not in merge["master_key_fields"]:
+        print(
+            f"  [FAIL] master_key_fields missing 'merge_id': "
+            f"{merge['master_key_fields']!r}"
+        )
+        return False
+    if merge.get("master") != "PositionOutput":
+        print(f"  [FAIL] merge.master != 'PositionOutput': {merge.get('master')!r}")
+        return False
+    if merge.get("part") != "TrodesPosV1":
+        print(f"  [FAIL] merge.part != 'TrodesPosV1': {merge.get('part')!r}")
+        return False
+    if not merge.get("merge_ids"):
+        print("  [FAIL] merge.merge_ids should list the resolved merge_id")
+        return False
+    print("  [ok] eval #14: PositionOutput merge_id resolved via TrodesPosV1")
+    return True
+
+
+def fixture_d_eval15_lfp_merge_id_via_lfpv1(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval #15 shape: LFP merge entry via LFPOutput / LFPV1 (when populated).
+
+    Filter narrowness depends on the lab's data; this fixture uses the
+    ``nwb_file_name`` restriction only and verifies the merge envelope
+    is well-shaped. The eval ground truth notes that filter_name alone
+    does not uniquely identify the filter (there are duplicates by
+    sampling rate); the fixture asserts the merge mechanics, not a
+    specific count.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #15 LFP merge against real Spyglass DB",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--merge-master",
+            "LFPOutput",
+            "--part",
+            "LFPV1",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+            "--fields",
+            "KEY",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 0:
+        print(f"  [FAIL] expected rc=0, got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _expect_merge_payload(out)
+    if payload is None:
+        return False
+    merge = payload["merge"]
+    if "merge_id" not in merge["master_key_fields"]:
+        print(
+            f"  [FAIL] master_key_fields missing 'merge_id': "
+            f"{merge['master_key_fields']!r}"
+        )
+        return False
+    print(
+        f"  [ok] eval #15: LFPOutput merge resolved via LFPV1 "
+        f"(count={payload.get('count')})"
+    )
+    return True
+
+
+def fixture_d_eval16_decoding_output_merge_id(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval #16 shape: DecodingOutput merge_id via ClusterlessDecodingV1.
+
+    The eval ground truth involves a parameter-name discovery step that
+    is out of scope here. This fixture exercises the merge mechanics
+    against the part with a session-only restriction; the result may
+    have ``count: 0`` if the lab's data hasn't populated this part for
+    the given session, but the merge envelope must still be well-shaped.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #16 DecodingOutput merge against real Spyglass DB",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--merge-master",
+            "DecodingOutput",
+            "--part",
+            "ClusterlessDecodingV1",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+            "--fields",
+            "KEY",
+        ],
+        python_env=args.python_env,
+    )
+    # Allow rc=0 (merge succeeded) or rc=4 (part not in current schema
+    # snapshot — Spyglass schema evolution is fast and not every lab
+    # has every part populated).
+    if rc not in (0, 4):
+        print(f"  [FAIL] expected rc in (0, 4), got {rc}; stderr: {err[:200]!r}")
+        return False
+    if rc == 0:
+        payload = _expect_merge_payload(out)
+        if payload is None:
+            return False
+        if "merge_id" not in payload["merge"]["master_key_fields"]:
+            print("  [FAIL] master_key_fields missing 'merge_id'")
+            return False
+        print(
+            f"  [ok] eval #16: DecodingOutput merge resolved "
+            f"(count={payload.get('count')})"
+        )
+    else:
+        print(
+            "  [ok] eval #16: ClusterlessDecodingV1 not present in this "
+            "Spyglass snapshot — not_found is the honest answer"
+        )
+    return True
+
+
+def fixture_d_eval50_silent_wrong_count_footgun_refused(
+    args: argparse.Namespace,
+) -> bool:
+    """Eval #50: ``DecodingOutput & {nwb_file_name: X}`` is refused.
+
+    Without merge-aware mode, restricting the merge master by a part-
+    only field is the canonical silent-wrong-count footgun. Field
+    validation against the master heading must refuse it because
+    ``nwb_file_name`` is not in ``DecodingOutput.heading.names``.
+    """
+    if not _require_capability(
+        args, datajoint=True, spyglass=True,
+        why="eval #50 silent-no-op refusal against real DecodingOutput heading",
+    ):
+        return True
+    rc, out, err = _run_db_graph(
+        [
+            "find-instance",
+            "--class",
+            "DecodingOutput",
+            "--key",
+            "nwb_file_name=j1620210710_.nwb",
+        ],
+        python_env=args.python_env,
+    )
+    if rc != 2:
+        print(f"  [FAIL] expected rc=2 (invalid_query), got {rc}; stderr: {err[:200]!r}")
+        return False
+    payload = _parse_json_or_fail(out, "eval #50 refusal payload")
+    if payload is None:
+        return False
+    if payload.get("kind") != "invalid_query":
+        print(f"  [FAIL] kind != 'invalid_query': {payload.get('kind')!r}")
+        return False
+    if payload.get("error", {}).get("kind") != "unknown_field":
+        print(f"  [FAIL] error.kind != 'unknown_field': {payload.get('error', {})!r}")
+        return False
+    if "nwb_file_name" not in payload.get("error", {}).get("unknown_fields", []):
+        print(
+            f"  [FAIL] unknown_fields should list nwb_file_name: "
+            f"{payload.get('error', {}).get('unknown_fields')!r}"
+        )
+        return False
+    print(
+        "  [ok] eval #50: silent-wrong-count footgun closed — DecodingOutput "
+        "& {nwb_file_name: X} exits 2 with kind=invalid_query"
+    )
+    return True
+
+
 def fixture_c_empty_result_fail_on_empty_exit_seven(
     args: argparse.Namespace,
 ) -> bool:
@@ -2485,6 +3069,16 @@ FIXTURES = [
     fixture_c_fakes_safe_serialization_envelopes,
     fixture_c_fakes_nan_restriction_refused,
     fixture_c_fakes_db_error_classification,
+    # Batch D — merge-aware lookup (fakes sandbox)
+    fixture_d_fakes_merge_routes_part_only_field_to_part,
+    fixture_d_fakes_merge_master_only_field_silent_no_op_refused,
+    fixture_d_fakes_merge_part_master_mismatch_exits_3,
+    fixture_d_fakes_merge_count_only,
+    # Batch D — live Spyglass evals
+    fixture_d_eval14_trodes_position_merge_id,
+    fixture_d_eval15_lfp_merge_id_via_lfpv1,
+    fixture_d_eval16_decoding_output_merge_id,
+    fixture_d_eval50_silent_wrong_count_footgun_refused,
     # Batch C — static-source / parser fixtures
     fixture_c_no_restrgraph_or_tablechain_in_source,
     fixture_c_read_only_no_write_method_calls_in_source,
