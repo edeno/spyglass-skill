@@ -176,7 +176,7 @@ FirFilterParameters & 'filter_name LIKE "Theta%"'
 - **Primary Key**: `nwb_file_name`, `interval_list_name` (FKs to `Session` and `IntervalList`; `common_behav.py:34`).
 - Non-PK: `source` (e.g. `"trodes"`, `"dlc"`, `"imported"`), `import_file_name`.
 - Part table: `PositionSource.SpatialSeries` — one row per spatial series in the NWB file.
-- **Populated by `populate_all_common`** (`populate_all_common.py:159` defines the entry point; line 227 lists `PositionSource` in the table sequence and the function's table-name dispatch special-cases its key source down to just `nwb_file_name` since the per-session insert is idempotent across `interval_list_name`). The ingest path also populates it directly during `insert_sessions`. DLC-only sessions that lack a Trodes `'pos N valid times'` interval may skip insertion — see the DLC gotchas in [position_pipeline.md](position_pipeline.md).
+- **Populated by `populate_all_common`** (`populate_all_common.py:159` defines the entry point; line 227 lists `PositionSource` in the table sequence and the function's table-name dispatch special-cases its key source down to just `nwb_file_name` since the per-session insert is idempotent across `interval_list_name`). The ingest path also populates it directly during `insert_sessions`. DLC-only sessions that lack a Trodes `'pos N valid times'` interval may skip insertion — see the DLC gotchas in [position_dlc_v1_pipeline.md](position_dlc_v1_pipeline.md).
 
 ### `RawPosition`
 
