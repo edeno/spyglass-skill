@@ -24,8 +24,12 @@ Subcommands
   cost.
 * ``db_graph.py find-instance --class CLS [...]`` — bounded row lookup,
   count, merge-key resolution, conservative set ops, and grouped counts.
-  *Implementation lands in Batch C+ per docs/plans/db-graph-impl-plan.md;
-  this build (Batch A) ships the scaffold and contract only.*
+  *Through Batch B class resolution is implemented end-to-end; the
+  query stage (heading validation, restriction, fetch, set ops,
+  aggregation) lands in Batch C+ per
+  docs/plans/db-graph-impl-plan.md. A successfully-resolved query
+  returns ``kind: "not_implemented"`` with ``query.stage="resolved"``
+  until then.*
 
 Exit codes
 ----------
@@ -47,24 +51,42 @@ Exit codes
 Lazy-import discipline
 ----------------------
 
-Top-of-module imports stay stdlib + ``_index``. DataJoint and Spyglass are
-imported inside ``cmd_find_instance`` only, so ``info`` and parser-error
-paths run on a Python without DataJoint installed. This is the property
-that lets an LLM call ``info`` to introspect the tool before paying
-import + connection cost.
+Top-of-module imports stay stdlib + ``_index`` + ``code_graph``. Both
+co-located helpers are stdlib-only (no ``datajoint``, no ``spyglass``).
+DataJoint and Spyglass are imported only when the resolver actually
+needs them: ``importlib.import_module`` runs inside ``_import_walk``
+when a class needs to be retrieved, and the ``UserTable`` predicate
+inside ``_is_datajoint_user_table`` imports ``datajoint.user_tables``.
+Resolution paths that fail before the predicate (ambiguous, malformed
+input, missing module) never pay the DataJoint or Spyglass import cost,
+and ``info --json`` runs on a Python where neither is installed. This is
+the property that lets an LLM call ``info`` to introspect the tool
+before paying import + connection cost.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib
+import inspect
 import json
+import os
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
-# Co-located helper module; same directory as this script.
+# Co-located helper modules; same directory as this script. Both are stdlib-
+# only — no datajoint, no spyglass — so importing them does not violate the
+# "info runs on a Python without DataJoint installed" discipline. The
+# `code_graph` import is intentional: db_graph reuses code_graph's
+# class-resolution logic (`_resolve_class`) rather than duplicating the
+# same-qualname-disambiguation rules. The leading-underscore convention
+# marks it as module-private, but the cross-script reuse is sanctioned
+# by the implementation plan ("use the existing source-index helpers").
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _index  # noqa: E402  -- stdlib-only, no datajoint, no spyglass
+import _index  # noqa: E402
+import code_graph  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -199,6 +221,374 @@ class _Timer:
 
 
 # ---------------------------------------------------------------------------
+# Class resolution
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Resolved:
+    """Successful class-resolution result.
+
+    Carries enough provenance for the find-instance payload to cite which
+    resolution path won (so an LLM can see why a particular class was
+    chosen, especially when the same short name resolves to different
+    things via stock-index vs module-path).
+    """
+
+    # ``cls`` is a DataJoint ``UserTable`` subclass. Annotated as ``object``
+    # because the type checker cannot follow the ``_is_datajoint_user_table``
+    # runtime narrowing across the dataclass boundary; expressing this with
+    # a Protocol would require importing DataJoint at type-check time, which
+    # the lazy-import discipline forbids.
+    cls: object
+    name: str  # the user-supplied --class argument, verbatim
+    qualname: str  # dotted Spyglass qualname (e.g., "LFPOutput.LFPV1")
+    module: str  # importable Python module path
+    source: str  # "module_path" | "stock_index" | "imported_module"
+    src_root: Path | None  # populated when source == "stock_index"
+
+
+class _ClassResolutionError(Exception):
+    """Base for class-resolution failures.
+
+    Subclass declares `exit_code` and the structured payload bits the
+    find-instance handler should emit. Using exceptions rather than a
+    tagged union keeps the happy path readable and lets each error site
+    short-circuit at the point of failure.
+    """
+
+    exit_code: int = EXIT_NOT_FOUND
+
+
+class _AmbiguousClass(_ClassResolutionError):
+    exit_code = EXIT_AMBIGUOUS
+
+    def __init__(self, name: str, candidates: list) -> None:
+        super().__init__(f"{name!r} resolves to multiple classes")
+        self.name = name
+        self.candidates = candidates
+
+
+class _ClassNotFound(_ClassResolutionError):
+    exit_code = EXIT_NOT_FOUND
+
+    def __init__(
+        self,
+        name: str,
+        hint: str = "",
+        suggestions: tuple[str, ...] = (),
+    ) -> None:
+        super().__init__(f"{name!r} not found")
+        self.name = name
+        self.hint = hint
+        self.suggestions = tuple(suggestions)
+
+
+class _NotADataJointTable(_ClassResolutionError):
+    exit_code = EXIT_NOT_FOUND
+
+    def __init__(
+        self, name: str, qualname: str, module: str, actual_kind: str
+    ) -> None:
+        super().__init__(f"{qualname!r} is not a DataJoint table")
+        self.name = name
+        self.qualname = qualname
+        self.module = module
+        self.actual_kind = actual_kind
+
+
+class _DataJointUnavailable(_ClassResolutionError):
+    """DataJoint cannot be imported, blocking the UserTable predicate.
+
+    Distinct from ``_NotADataJointTable`` (class exists but is the wrong
+    type): this signals the runtime environment cannot run the type
+    check at all. Maps to the canonical exit-5 ``db_error`` shape with
+    ``error.kind="datajoint_import"`` so an LLM can distinguish "your
+    class is the wrong type" from "I can't even check the type."
+    """
+
+    exit_code = EXIT_DB
+
+    def __init__(self, name: str, original: ImportError) -> None:
+        super().__init__(f"DataJoint not importable: {original}")
+        self.name = name
+        self.original = original
+
+
+def _select_src_root(arg_src: str | None) -> Path | None:
+    """Pick a Spyglass source root, with installed-package fallback.
+
+    Plan order:
+
+    1. ``--src PATH`` if supplied (highest priority).
+    2. Installed-package parent: ``Path(spyglass.__file__).resolve().parent.parent``.
+       This is the directory containing the ``spyglass/`` package, which is
+       what ``_index.scan`` requires (it looks up ``src_root / "spyglass"``).
+    3. ``$SPYGLASS_SRC`` (lowest priority).
+
+    Returns ``None`` when none of the above resolve. The caller is then
+    free to skip the stock-index lookup and fall back to module-path
+    resolution — custom-table users who supply ``--import`` or
+    ``module:Class`` can still proceed without a Spyglass source tree.
+
+    Diverges intentionally from ``_index.resolve_src_root``, which exits
+    ``2`` instead of returning ``None`` and lacks the installed-package
+    fallback. The divergence is documented in ``info --json.comparison``.
+    """
+    if arg_src:
+        candidate = Path(arg_src).resolve()
+        if (candidate / "spyglass").is_dir():
+            return candidate
+        # User asked for a specific src_root that does not contain
+        # spyglass/ — fall through so the resolver can surface a clear
+        # error rather than silently swallowing the bogus path.
+        return candidate
+    try:
+        import spyglass
+
+        spyglass_file = getattr(spyglass, "__file__", None)
+        if spyglass_file is not None:
+            candidate = Path(spyglass_file).resolve().parent.parent
+            if (candidate / "spyglass").is_dir():
+                return candidate
+    except ImportError:
+        pass
+    env = os.environ.get("SPYGLASS_SRC")
+    if env:
+        return Path(env).resolve()
+    return None
+
+
+def _record_module_path(record: _index.ClassRecord) -> str:
+    """Convert ``ClassRecord.file`` (rel-to-src_root) to an importable module path.
+
+    ``file`` looks like ``"spyglass/common/common_session.py"``; output
+    is ``"spyglass.common.common_session"``. ``__init__.py`` files map
+    to the package itself.
+    """
+    f = record.file
+    if f.endswith(".py"):
+        f = f[:-3]
+    parts = f.split("/")
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts)
+
+
+def _is_datajoint_user_table(obj: object, *, name_hint: str) -> bool:
+    """Predicate for the DataJoint-table check.
+
+    Plan: ``inspect.isclass(cls) and issubclass(cls, UserTable)``.
+    Avoids ``isinstance(cls(), dj.Table)`` because instantiation can
+    connect to the database, which would defeat the no-DB guarantee of
+    class resolution.
+
+    ``UserTable`` is the public superclass for ``dj.Manual``, ``dj.Lookup``,
+    ``dj.Imported``, ``dj.Computed``, and ``dj.Part`` in the currently
+    installed DataJoint version (verified against
+    ``datajoint==0.14.6``).
+
+    Raises ``_DataJointUnavailable`` (exit 5 ``db_error``) when datajoint
+    cannot be imported — distinct from returning ``False`` (which means
+    the class loaded but is not a UserTable subclass, exit 4
+    ``not_a_table``). Keeping the import lazy means resolution paths that
+    fail before reaching the predicate (ambiguous, not_found,
+    malformed-input) do not pay the DataJoint import cost. ``name_hint``
+    propagates the user-supplied class name into the exception so the
+    payload can cite it.
+    """
+    try:
+        # IDE type-checker may not see conda site-packages; runtime path
+        # uses --python-env so this resolves correctly when invoked.
+        from datajoint.user_tables import UserTable  # ty: ignore[unresolved-import]
+    except ImportError as exc:
+        raise _DataJointUnavailable(name=name_hint, original=exc) from exc
+    return inspect.isclass(obj) and issubclass(obj, UserTable)
+
+
+def _import_walk(
+    user_name: str,
+    module_name: str,
+    qualname_tail: str,
+    *,
+    source: str,
+    src_root: Path | None = None,
+) -> _Resolved:
+    """Import ``module_name`` and walk the dotted ``qualname_tail`` to a class.
+
+    Used by every resolution path: stock-index lookup converts
+    ``ClassRecord`` to ``(module, qualname)`` and dispatches here;
+    explicit ``module:Class`` form passes them in directly; dotted
+    fallback splits on the last ``.`` and dispatches here.
+
+    Walking the qualname tail (rather than treating it as a flat
+    attribute name) lets a single import resolve nested classes like
+    ``LFPOutput.LFPV1`` — which is a part-table whose master class is
+    the importable top-level symbol.
+
+    Raises ``_ClassNotFound`` for missing module/attribute and
+    ``_NotADataJointTable`` when the resolved object is not a
+    ``UserTable`` subclass.
+    """
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as exc:
+        raise _ClassNotFound(
+            user_name,
+            hint=f"module {module_name!r} not importable: {exc}",
+        ) from exc
+
+    obj: object = module
+    for piece in qualname_tail.split("."):
+        try:
+            obj = getattr(obj, piece)
+        except AttributeError as exc:
+            raise _ClassNotFound(
+                user_name,
+                hint=(
+                    f"module {module_name!r} has no attribute path "
+                    f"{qualname_tail!r}; failed at {piece!r}"
+                ),
+            ) from exc
+
+    if not _is_datajoint_user_table(obj, name_hint=user_name):
+        actual_kind = (
+            obj.__name__ if inspect.isclass(obj) else type(obj).__name__
+        )
+        raise _NotADataJointTable(
+            name=user_name,
+            qualname=qualname_tail,
+            module=module_name,
+            actual_kind=actual_kind,
+        )
+
+    return _Resolved(
+        cls=obj,  # `_Resolved.cls` is annotated `object`; runtime is UserTable.
+        name=user_name,
+        qualname=qualname_tail,
+        module=module_name,
+        source=source,
+        src_root=src_root,
+    )
+
+
+def resolve_class(
+    name: str,
+    src: str | None = None,
+    imports: tuple[str, ...] | list[str] = (),
+) -> _Resolved:
+    """Resolve a user-supplied ``--class`` argument to a live DataJoint class.
+
+    Resolution order (per docs/plans/db-graph-impl-plan.md):
+
+    1. Run user ``--import MODULE`` statements first so any custom-table
+       module is in ``sys.modules`` before the stock-name lookup or the
+       module-path fallback runs.
+    2. Explicit ``module:Class`` syntax — split on ``:``, import, walk.
+    3. Stock-index lookup against ``--src`` / installed-package /
+       ``$SPYGLASS_SRC``. Reuses ``code_graph._resolve_class`` for the
+       same-qualname-disambiguation rules so the two CLIs report the
+       same set of ambiguity / not-found cases.
+    4. Dotted module-path fallback (``a.b.c.D`` → import ``a.b.c``,
+       getattr ``D``).
+    5. Otherwise raise ``_ClassNotFound``.
+
+    Raises ``_ClassResolutionError`` subclasses on every failure mode.
+    """
+    # Step 1: user --import. Failures here surface as not_found because
+    # the user's intent was "find this class via this module" — module
+    # import failure is a precondition, not a separate error class.
+    for mod_name in imports:
+        try:
+            importlib.import_module(mod_name)
+        except ImportError as exc:
+            raise _ClassNotFound(
+                name,
+                hint=f"--import {mod_name!r} failed: {exc}",
+            ) from exc
+
+    # Step 2: explicit `module:Class` form.
+    if ":" in name:
+        module_name, _, class_name = name.rpartition(":")
+        if not module_name or not class_name:
+            raise _ClassNotFound(
+                name,
+                hint=f"malformed module:Class form: {name!r}",
+            )
+        return _import_walk(
+            name, module_name, class_name, source="module_path"
+        )
+
+    # Step 3: stock _index lookup (also handles dotted qualnames like
+    # `LFPOutput.LFPV1` — see code_graph._resolve_class for the rules).
+    # Track failure modes separately so the not_found hint can name the
+    # specific recovery the user needs (rather than a generic message
+    # that mis-blames an unset --src when the user actually supplied a
+    # bogus one).
+    src_root = _select_src_root(src)
+    index_attempted = False
+    src_root_invalid = False
+    if src_root is not None:
+        if (src_root / "spyglass").is_dir():
+            index_attempted = True
+            idx = _index.scan(src_root)
+            record, error_kind, candidates = code_graph._resolve_class(name, idx)
+            if error_kind is None and record is not None:
+                module_name = _record_module_path(record)
+                return _import_walk(
+                    name,
+                    module_name,
+                    record.qualname,
+                    source="stock_index",
+                    src_root=src_root,
+                )
+            if error_kind == "ambiguous":
+                raise _AmbiguousClass(name, list(candidates))
+            # `error_kind == "not_found"` — fall through to module-path attempt.
+        else:
+            # `src_root` resolved (from --src, installed package, or env)
+            # but does not actually contain a `spyglass/` package. Most
+            # commonly: user passed --src to a wrong directory.
+            src_root_invalid = True
+
+    # Step 4: dotted module-path fallback (only if no `:`, since that
+    # branch already returned).
+    if "." in name:
+        module_name, _, class_name = name.rpartition(".")
+        return _import_walk(
+            name, module_name, class_name, source="module_path"
+        )
+
+    # Step 5: genuine not_found. Pick the hint that describes what was
+    # actually tried, not a generic "no source root" message.
+    if src_root_invalid:
+        hint = (
+            f"resolved source root {str(src_root)!r} does not contain "
+            "a 'spyglass/' package. If --src was supplied, point it at "
+            "the directory CONTAINING `spyglass/` (e.g. the `src/` dir "
+            "of an editable Spyglass checkout). Otherwise pass --import "
+            "MODULE plus module:Class (or a dotted module path) to "
+            "resolve a non-stock class without an _index lookup."
+        )
+    elif not index_attempted:
+        hint = (
+            "No Spyglass source root resolved: --src not given, "
+            "spyglass package not importable, $SPYGLASS_SRC unset. "
+            "Pass --src PATH, or use --import MODULE plus module:Class "
+            "(or a dotted module path) to resolve a non-stock class."
+        )
+    else:
+        hint = (
+            "Tried _index lookup against the resolved Spyglass source "
+            "root and found no records matching this short name. For a "
+            "custom or lab-specific class, use --import MODULE plus "
+            "module:Class (or a dotted module path) — --import alone "
+            "does not make a short name resolvable."
+        )
+    raise _ClassNotFound(name, hint=hint)
+
+
+# ---------------------------------------------------------------------------
 # Payload envelope catalogue (the contract surfaced by ``info``)
 # ---------------------------------------------------------------------------
 
@@ -274,6 +664,11 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "null_policy",
         "comparison",
     ],
+    # Error envelopes carry ``timings_ms`` because resolution-stage failures
+    # (ambiguous, not_found, not_a_table) still pay for the index scan, and
+    # the diagnostic value of seeing where time went outweighs the per-key
+    # cost. db_error is the canonical example; the others mirror it for
+    # contract symmetry.
     "not_found": [
         "schema_version",
         "kind",
@@ -283,6 +678,7 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "db",
         "query",
         "error",
+        "timings_ms",
     ],
     "ambiguous": [
         "schema_version",
@@ -294,6 +690,7 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "query",
         "candidates",
         "hint",
+        "timings_ms",
     ],
     "db_error": [
         "schema_version",
@@ -315,6 +712,7 @@ PAYLOAD_ENVELOPES: dict[str, list[str]] = {
         "db",
         "query",
         "error",
+        "timings_ms",
     ],
     # Build-time scaffolding shape: emitted by the find-instance stub
     # while implementation lands in Batch C+. Documenting it here keeps
@@ -402,7 +800,13 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="MODULE",
-        help="Import a custom/lab module before class resolution (repeatable).",
+        help=(
+            "Import a custom/lab module before class resolution "
+            "(repeatable). Pair with `--class module:Class` or a dotted "
+            "module path — --import alone does NOT make a short name "
+            "resolvable; the resolver still needs to know which symbol "
+            "in the module is the target."
+        ),
     )
     p_fi.add_argument(
         "--key",
@@ -574,6 +978,13 @@ def cmd_info(args: argparse.Namespace) -> int:
                     "Source resolution order: --src > installed `spyglass` "
                     "package parent > $SPYGLASS_SRC."
                 ),
+                (
+                    "--import MODULE is not a standalone resolution path: "
+                    "pair it with `--class module:Class` (or a dotted "
+                    "module path). --import alone runs the module's "
+                    "import side effects but does not register a short "
+                    "name."
+                ),
             ],
         },
         "info": {
@@ -594,7 +1005,9 @@ def cmd_info(args: argparse.Namespace) -> int:
             "such as --merge-master without --part)."
         ),
         "3": (
-            "class resolution ambiguous; re-run with module path or --import."
+            "class resolution ambiguous; re-run with a dotted qualname "
+            "(e.g. `Master.Part`) or `module:Class`. --import alone does "
+            "not disambiguate; pair it with module:Class."
         ),
         "4": (
             "class/table not found in the resolved source/runtime. Distinct "
@@ -697,44 +1110,213 @@ def cmd_info(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Subcommand: find-instance (Batch A scaffold; full impl lands in Batch C+)
+# Resolution-failure payload emitters (Batch B)
+# ---------------------------------------------------------------------------
+
+
+def _record_summary(rec: _index.ClassRecord) -> dict:
+    """Render a ``ClassRecord`` for the candidates list of an ambiguous payload.
+
+    Mirrors the agent-readable shape ``code_graph.py`` uses for
+    same-name candidates so the LLM can rely on a stable per-record
+    structure across both tools.
+    """
+    return {
+        "qualname": rec.qualname,
+        "file": rec.file,
+        "line": rec.line,
+        "tier": rec.tier,
+    }
+
+
+def _emit_ambiguous(
+    *,
+    args: argparse.Namespace,
+    timer: _Timer,
+    exc: _AmbiguousClass,
+    src_root: Path | None,
+) -> int:
+    """Print the ambiguous-class payload, return exit 3."""
+    payload = _stamp_envelope("ambiguous", source_root=src_root)
+    payload["db"] = None
+    payload["query"] = {"class": args.class_name}
+    payload["candidates"] = [_record_summary(r) for r in exc.candidates]
+    payload["hint"] = (
+        f"{exc.name!r} matches multiple records in the source index. "
+        "Re-run with a dotted qualname (e.g. `Master.Part`), the explicit "
+        "`module:Class` form, or `--import MODULE` plus `module:Class` "
+        "if this is a custom table — `--import` alone does not make a "
+        "short name resolvable."
+    )
+    payload["timings_ms"] = timer.finalize()
+    print(json.dumps(payload))
+    return EXIT_AMBIGUOUS
+
+
+def _emit_not_found(
+    *,
+    args: argparse.Namespace,
+    timer: _Timer,
+    exc: _ClassNotFound,
+    src_root: Path | None,
+) -> int:
+    """Print the not_found payload, return exit 4."""
+    payload = _stamp_envelope("not_found", source_root=src_root)
+    payload["db"] = None
+    payload["query"] = {"class": args.class_name}
+    payload["error"] = {
+        "kind": "not_found",
+        "message": f"class {exc.name!r} not found",
+        "hint": exc.hint,
+        "suggestions": list(exc.suggestions),
+    }
+    payload["timings_ms"] = timer.finalize()
+    print(json.dumps(payload))
+    return EXIT_NOT_FOUND
+
+
+def _emit_not_a_table(
+    *,
+    args: argparse.Namespace,
+    timer: _Timer,
+    exc: _NotADataJointTable,
+    src_root: Path | None,
+) -> int:
+    """Print the not-a-DataJoint-table payload, return exit 4.
+
+    Reuses the ``not_found`` envelope shape but distinguishes the case via
+    ``error.kind="not_a_table"`` so an LLM can tell "I couldn't find the
+    class" apart from "the class exists but is not a DataJoint table".
+    """
+    payload = _stamp_envelope("not_found", source_root=src_root)
+    payload["db"] = None
+    payload["query"] = {
+        "class": args.class_name,
+        "module": exc.module,
+        "qualname": exc.qualname,
+    }
+    payload["error"] = {
+        "kind": "not_a_table",
+        "message": (
+            f"{exc.qualname!r} from module {exc.module!r} is not a "
+            f"DataJoint table; got {exc.actual_kind!r}. "
+            "find-instance requires a class that subclasses "
+            "datajoint.user_tables.UserTable."
+        ),
+        "hint": "",
+        "suggestions": [],
+    }
+    payload["timings_ms"] = timer.finalize()
+    print(json.dumps(payload))
+    return EXIT_NOT_FOUND
+
+
+def _emit_db_error(
+    *,
+    args: argparse.Namespace,
+    timer: _Timer,
+    error_kind: str,
+    message: str,
+    src_root: Path | None,
+) -> int:
+    """Print the db_error payload, return exit 5.
+
+    ``error_kind`` discriminates the failure mode for the LLM: in Batch
+    B the only emitter site is ``datajoint_import`` (DataJoint not
+    installed); Batch C+ adds ``connection``, ``auth``, ``schema``.
+    """
+    payload = _stamp_envelope("db_error", source_root=src_root)
+    payload["db"] = None
+    payload["query"] = {"class": args.class_name}
+    payload["error"] = {
+        "kind": error_kind,
+        "message": message,
+    }
+    payload["timings_ms"] = timer.finalize()
+    print(json.dumps(payload))
+    return EXIT_DB
+
+
+# ---------------------------------------------------------------------------
+# Subcommand: find-instance (Batch B endpoint — class resolution only)
 # ---------------------------------------------------------------------------
 
 
 def cmd_find_instance(args: argparse.Namespace) -> int:
-    """Stub for Batch A: emit a structured 'not_implemented' error.
+    """Resolve the user-supplied class; query stage lands in Batch C+.
 
-    Argparse already validates the surface, so the stub focuses on
-    surfacing the contract failure cleanly: ``error.kind="not_implemented"``
-    with a pointer to ``info --json`` for the planned shape.
+    Batch B endpoint: every resolution failure reports its proper exit
+    code and structured payload (ambiguous=3, not_found=4, not_a_table=4,
+    datajoint_import=5). On success, the class has been resolved but the
+    query has not been executed; the payload uses ``kind:"not_implemented"``
+    with ``query.stage="resolved"`` and exit ``2``.
 
-    Replaced in Batch C with the real implementation. Tests for this stub
-    pin the envelope shape so Batch C does not silently drift the contract.
+    Batch C replaces the success branch with the real query; the failure
+    branches are stable across batches so fixtures pin them now.
+
+    Lazy-import discipline: DataJoint is imported only inside
+    ``_is_datajoint_user_table``, which runs after the resolver has
+    actually retrieved a class. Resolution paths that fail before the
+    predicate (ambiguous-class, malformed-input, missing-module) do not
+    pay the DataJoint import cost — meaningful for fixture turnaround
+    and for callers running with read-only or sandbox interpreters.
     """
     timer = _Timer()
-    # `kind: "not_implemented"` matches the `not_implemented` envelope
-    # documented in info --json.payload_envelopes. Distinct from the
-    # `db_error` envelope (which is for runtime DataJoint failures) so
-    # an LLM sees "build incomplete" vs "DB unavailable" as separate
-    # conditions.
-    payload = _stamp_envelope("not_implemented", source_root=None)
+    src_root_used = _select_src_root(args.src)
+
+    timer.mark("resolve")
+    try:
+        resolved = resolve_class(
+            args.class_name, src=args.src, imports=tuple(args.imports)
+        )
+    except _AmbiguousClass as exc:
+        return _emit_ambiguous(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _NotADataJointTable as exc:
+        return _emit_not_a_table(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+    except _DataJointUnavailable as exc:
+        return _emit_db_error(
+            args=args,
+            timer=timer,
+            error_kind="datajoint_import",
+            message=f"DataJoint is not importable: {exc.original}",
+            src_root=src_root_used,
+        )
+    except _ClassNotFound as exc:
+        return _emit_not_found(
+            args=args, timer=timer, exc=exc, src_root=src_root_used
+        )
+
+    # Resolution succeeded; query stage is Batch C+. Use the
+    # `not_implemented` envelope (the same shape Batch A used) but with
+    # `query.stage="resolved"` so a fixture can tell Batch B's
+    # resolved-but-not-queried case apart from Batch A's
+    # nothing-happened scaffold.
+    timer.stop()
+    payload = _stamp_envelope("not_implemented", source_root=resolved.src_root)
     payload["db"] = None
     payload["query"] = {
         "class": args.class_name,
-        "stage": "scaffold",
+        "resolved_class": f"{resolved.module}.{resolved.qualname}",
+        "module": resolved.module,
+        "qualname": resolved.qualname,
+        "resolution_source": resolved.source,
+        "stage": "resolved",
     }
     payload["error"] = {
         "kind": "not_implemented",
         "message": (
-            "find-instance is not implemented in this build (Batch A scaffold "
-            "per docs/plans/db-graph-impl-plan.md). The contract is stable; "
-            "see `db_graph.py info --json` for subcommand surface, exit "
-            "codes, and payload envelopes."
+            "find-instance class resolution succeeds (Batch B). The query "
+            "stage (heading validation, restriction, fetch) lands in Batch "
+            "C per docs/plans/db-graph-impl-plan.md."
         ),
         "next_batch": "Batch C (basic find-instance) per implementation plan.",
     }
     payload["timings_ms"] = timer.finalize()
-    print(json.dumps(payload), file=sys.stderr)
+    print(json.dumps(payload))
     return EXIT_USAGE
 
 

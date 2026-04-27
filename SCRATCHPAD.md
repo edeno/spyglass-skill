@@ -4,6 +4,64 @@ Working notes for the `db-graph` branch. Not committed-as-policy; this file is
 a single-developer scratch log so context survives session resets. Delete or
 fold into the PR description when the work lands.
 
+## Batch progress
+
+- **Batch A** (committed `0e9059c`): scaffold + contract. 13 fixtures.
+- **Batch B** (in progress): class resolution. +10 fixtures. Promotes
+  `cmd_find_instance` from kind=not_implemented stub to resolution-only
+  endpoint with proper exit codes for each failure mode.
+
+## Batch B implementation notes (2026-04-26)
+
+### Lazy-import refactor
+
+`cmd_find_instance` previously imported DataJoint at function entry to
+gate exit-5. That made every fixture pay DataJoint import cost (~3s)
+plus Spyglass init for resolved-class fixtures (~30s cold). Refactored
+so DataJoint imports inside `_is_datajoint_user_table` only — fixtures
+that fail before the predicate (ambiguous, malformed input, missing
+module) skip the import. Speeds the conda fixture suite ~3× and lets
+ambiguous/not-found fixtures pass on system Python without datajoint.
+
+**Failure-mode mapping after the refactor:**
+
+| Failure | When | Payload | Exit |
+| --- | --- | --- | --- |
+| Ambiguous short name | `_resolve_class` returns multiple records | `_AmbiguousClass` → `kind: ambiguous` | 3 |
+| Class not found | _index has no record AND no module-path fallback | `_ClassNotFound` → `kind: not_found, error.kind: not_found` | 4 |
+| Class loaded but not UserTable | Predicate returns False | `_NotADataJointTable` → `kind: not_found, error.kind: not_a_table` | 4 |
+| DataJoint not importable | Predicate raises `_DataJointUnavailable` | `kind: db_error, error.kind: datajoint_import` | 5 |
+| Resolved (Batch B endpoint) | Resolution succeeds, query stage pending | `kind: not_implemented, query.stage: resolved` | 2 |
+
+### `_select_src_root` precedence
+
+`--src` > installed-package parent (`Path(spyglass.__file__).resolve().parent.parent`) > `$SPYGLASS_SRC`.
+
+Bogus `--src` (no `spyglass/` subdir): we still return it; the resolver's
+`(src_root / "spyglass").is_dir()` check skips the `_index` lookup, falling
+through to module-path fallback or not_found. The `--src` precedence
+fixture proves bogus `--src` overrides installed package (gives not_found
+even when the installed Spyglass would have resolved the name).
+
+### Capability gating in tests
+
+Runner pre-computes `args.has_datajoint` / `args.has_spyglass` at startup.
+Resolved-class fixtures (`fixture_b_resolves_*`, `fixture_b_not_a_table_*`,
+precedence fixtures) skip cleanly when capabilities are missing. Ambiguous
+and not_found fixtures use synthetic `--src` trees so they pass on system
+Python with no capabilities — they exercise the resolver without ever
+reaching the predicate.
+
+### Performance notes
+
+Spyglass cold init is ~30-60s per find-instance subprocess that triggers
+real class import (DLC + spikeinterface get pulled in via Spyglass's
+`__init__.py`). Conda fixture suite total wall-clock: ~6-8 minutes.
+
+If subprocess startup ever becomes the bottleneck across batches, the
+plan calls for `batch` mode (read multiple queries from stdin in one
+process). Hold until evals demand it.
+
 ## Plan + branch
 
 - Plan: [docs/plans/db-graph-impl-plan.md](docs/plans/db-graph-impl-plan.md), committed at `5228d20`.
