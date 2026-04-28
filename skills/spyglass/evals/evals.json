@@ -5121,6 +5121,288 @@
         "Emphasizes the `dry_run=True` gate as a destructive-operations safety primitive — do NOT recommend running with `dry_run=False` without preview, regardless of which cleanup helper is used",
         "Does not invent a signature for the fabricated top-level function"
       ]
+    },
+    {
+      "id": 127,
+      "eval_name": "key-hygiene-singular-plural-typo",
+      "stage": "hallucination-resistance",
+      "tier": "schema-introspection",
+      "difficulty": "easy",
+      "prompt": "I ran `(TrodesPosParams & {'trodes_pos_param_name': 'default'}).fetch1()` and instead of restricting to the default row, it raised `DataJointError: fetch1 expected one tuple, found N`. Why doesn't the restriction work?",
+      "expected_output": "Singular/plural typo on the PK field. The actual field is `trodes_pos_params_name` (plural — verify with `python skills/spyglass/scripts/code_graph.py describe TrodesPosParams` or `TrodesPosParams.heading.primary_key` in a Python session). DataJoint silently drops restriction fields that aren't in the heading, so the `&` reduces to no restriction and `fetch1()` then sees every row in the table — raising `DataJointError: fetch1 expected one tuple, found N` rather than 'no match'. The fix is to correct the field name; `code_graph.py describe TrodesPosParams --json` gives the authoritative spelling. Routes to common_mistakes.md (silent-drop footgun) and datajoint_api.md.",
+      "assertions": {
+        "required_substrings": [
+          "trodes_pos_params_name",
+          "heading.primary_key"
+        ],
+        "expected_output_tables_exempt": [
+          "TrodesPosParams"
+        ],
+        "forbidden_substrings": [
+          "Set trodes_pos_param_name",
+          "trodes_pos_param_name is correct"
+        ],
+        "behavioral_checks": [
+          "Identifies the singular/plural typo (`trodes_pos_param_name` vs `trodes_pos_params_name`)",
+          "Uses `code_graph.py describe` if acting as the skill agent, or `Table.heading.primary_key` in the user's Python session — does not assert the field name from memory",
+          "Names the silent-drop semantics — DataJoint ignores unknown restriction keys without error"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `trodes_pos_params_name`.",
+        "Response contains substring `heading.primary_key`.",
+        "Response does not contain substring `Set trodes_pos_param_name`.",
+        "Response does not contain substring `trodes_pos_param_name is correct`.",
+        "Identifies the singular/plural typo (`trodes_pos_param_name` vs `trodes_pos_params_name`)",
+        "Uses `code_graph.py describe` if acting as the skill agent, or `Table.heading.primary_key` in the user's Python session — does not assert the field name from memory",
+        "Names the silent-drop semantics — DataJoint ignores unknown restriction keys without error"
+      ]
+    },
+    {
+      "id": 128,
+      "eval_name": "key-hygiene-blob-key-not-heading",
+      "stage": "parameter-understanding",
+      "tier": "parameter-semantics",
+      "difficulty": "medium",
+      "prompt": "I want to find every RippleParameters row whose `speed_threshold` is below 4.0. What restriction do I run?",
+      "expected_output": "`speed_threshold` is NOT a heading field on `RippleParameters` — it lives nested inside the `ripple_param_dict` longblob, under `ripple_param_dict[\"ripple_detection_params\"][\"speed_threshold\"]` (verify the blob shape via `ripple_pipeline.md` § RippleParameters or by reading an existing row: `(RippleParameters & {}).fetch('ripple_param_dict', limit=1, as_dict=True)[0]`). The consumer site is `RippleTimesV1.make` (`ripple/v1/ripple.py:204-223`), which is the authority for what's actually inside the blob. There is no DataJoint restriction shape that filters on a blob field — fetch all the rows, deserialize, and filter in Python:\n\n```python\nrows = RippleParameters.fetch(as_dict=True)\nmatches = [\n    r for r in rows\n    if r['ripple_param_dict']['ripple_detection_params']['speed_threshold'] < 4.0\n]\n```\n\nRoutes to feedback_loops.md (blob-shape varies per pipeline) and ripple_pipeline.md.",
+      "assertions": {
+        "required_substrings": [
+          "ripple_param_dict",
+          "ripple_detection_params",
+          "ripple_pipeline.md"
+        ],
+        "expected_output_tables_exempt": [
+          "RippleParameters",
+          "RippleTimesV1"
+        ],
+        "forbidden_substrings": [
+          "RippleParameters & {'speed_threshold'",
+          "RippleParameters & {\"speed_threshold\""
+        ],
+        "behavioral_checks": [
+          "Identifies `speed_threshold` as a blob field nested under `ripple_param_dict[\"ripple_detection_params\"]`, NOT a heading column",
+          "Routes blob shape verification to `RippleTimesV1.make` (the consumer) or to an actual fetched row, NOT to the table name alone",
+          "Recommends fetch-then-filter-in-Python rather than a DataJoint restriction on the blob field"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `ripple_param_dict`.",
+        "Response contains substring `ripple_detection_params`.",
+        "Response contains substring `ripple_pipeline.md`.",
+        "Response does not contain substring `RippleParameters & {'speed_threshold'`.",
+        "Response does not contain substring `RippleParameters & {\"speed_threshold\"`.",
+        "Identifies `speed_threshold` as a blob field nested under `ripple_param_dict[\"ripple_detection_params\"]`, NOT a heading column",
+        "Routes blob shape verification to `RippleTimesV1.make` (the consumer) or to an actual fetched row, NOT to the table name alone",
+        "Recommends fetch-then-filter-in-Python rather than a DataJoint restriction on the blob field"
+      ]
+    },
+    {
+      "id": 129,
+      "eval_name": "key-hygiene-merge-master-silent-no-op",
+      "stage": "common-mistakes",
+      "tier": "merge-table-gotchas",
+      "difficulty": "medium",
+      "prompt": "I checked my decoding row count with `len(DecodingOutput & {'nwb_file_name': 'j1620210710_.nwb'})` and got 2735, which is the whole table. Did the restriction fail?",
+      "expected_output": "Yes — silently. `DecodingOutput` is a merge master; its heading only exposes `(merge_id, source)` (see `decoding/decoding_merge.py` and merge_methods.md § Silent wrong-count footgun). DataJoint silently drops restriction fields that aren't in the heading, so `& {'nwb_file_name': ...}` reduces to no restriction and `len(...)` returns the entire master table. Verify with `code_graph.py describe DecodingOutput` (heading is just merge_id/source) or `DecodingOutput.heading.primary_key` in a session.\n\nUse a merge-aware helper instead:\n\n```python\nlen(DecodingOutput.merge_restrict({'nwb_file_name': 'j1620210710_.nwb'}))\n```\n\n`merge_restrict` walks the part tables to resolve attributes that aren't on the master. Routes to merge_methods.md and common_mistakes.md.",
+      "assertions": {
+        "required_substrings": [
+          "merge_restrict",
+          "merge_methods.md",
+          "merge_id"
+        ],
+        "expected_output_tables_exempt": [
+          "DecodingOutput"
+        ],
+        "forbidden_substrings": [
+          "the count is correct",
+          "the restriction worked"
+        ],
+        "behavioral_checks": [
+          "Identifies the silent no-op shape: merge master's heading is only `(merge_id, source)`, so unknown restriction keys are dropped without error",
+          "Recommends `merge_restrict` (or `merge_get_part`) as the fix; does NOT recommend rerunning the bare `& {nwb_file_name: ...}` form",
+          "Verifies the merge-master heading with `code_graph.py describe DecodingOutput` (agent tool) or `DecodingOutput.heading.primary_key` in the user's Python session, not invented merge-master fields"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `merge_restrict`.",
+        "Response contains substring `merge_methods.md`.",
+        "Response contains substring `merge_id`.",
+        "Response does not contain substring `the count is correct`.",
+        "Response does not contain substring `the restriction worked`.",
+        "Identifies the silent no-op shape: merge master's heading is only `(merge_id, source)`, so unknown restriction keys are dropped without error",
+        "Recommends `merge_restrict` (or `merge_get_part`) as the fix; does NOT recommend rerunning the bare `& {nwb_file_name: ...}` form",
+        "Verifies the merge-master heading with `code_graph.py describe DecodingOutput` (agent tool) or `DecodingOutput.heading.primary_key` in the user's Python session, not invented merge-master fields"
+      ]
+    },
+    {
+      "id": 130,
+      "eval_name": "key-hygiene-partial-populate-scope",
+      "stage": "pipeline-usage",
+      "tier": "disambiguation",
+      "difficulty": "medium",
+      "prompt": "I want to recompute RippleTimesV1 for my new ripple_param_name='tighter_thresh'. Is `RippleTimesV1.populate({'ripple_param_name': 'tighter_thresh'})` enough?",
+      "expected_output": "No — that restriction is partial-PK and will populate every (RippleLFPSelection, pos_merge_id) combination under the new params name, not just one downstream analysis. `RippleTimesV1`'s PK includes `RippleLFPSelection`, `RippleParameters`, AND `PositionOutput.proj(pos_merge_id='merge_id')` (`ripple/v1/ripple.py:182`). Verify the full PK with `code_graph.py describe RippleTimesV1` or `RippleTimesV1.heading.primary_key`.\n\nBuild a fully-scoped key:\n\n```python\npopulate_key = {\n    **rip_sel_key,                  # RippleLFPSelection PK\n    'ripple_param_name': 'tighter_thresh',\n    'pos_merge_id': pos_merge_id,   # specific PositionOutput merge_id\n}\nRippleTimesV1.populate(populate_key)\n```\n\nRoutes to destructive_operations.md (post-update populate scope) and ripple_pipeline.md.",
+      "assertions": {
+        "required_substrings": [
+          "RippleLFPSelection",
+          "pos_merge_id",
+          "ripple/v1/ripple.py"
+        ],
+        "expected_output_tables_exempt": [
+          "RippleTimesV1",
+          "RippleParameters",
+          "PositionOutput"
+        ],
+        "forbidden_substrings": [
+          "Yes, that's enough",
+          "the partial restriction is fine"
+        ],
+        "behavioral_checks": [
+          "Identifies the populate restriction as partial-PK and explains it runs over every combination of the missing PK fields",
+          "Names the missing PK fields explicitly (`RippleLFPSelection`, `pos_merge_id`)",
+          "Recommends building a fully-scoped `populate_key` with the missing fields included",
+          "Verifies the full PK with `code_graph.py describe RippleTimesV1` (agent tool) or `RippleTimesV1.heading.primary_key` in the user's Python session, not memory"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `RippleLFPSelection`.",
+        "Response contains substring `pos_merge_id`.",
+        "Response contains substring `ripple/v1/ripple.py`.",
+        "Response does not contain substring `Yes, that's enough`.",
+        "Response does not contain substring `the partial restriction is fine`.",
+        "Identifies the populate restriction as partial-PK and explains it runs over every combination of the missing PK fields",
+        "Names the missing PK fields explicitly (`RippleLFPSelection`, `pos_merge_id`)",
+        "Recommends building a fully-scoped `populate_key` with the missing fields included",
+        "Verifies the full PK with `code_graph.py describe RippleTimesV1` (agent tool) or `RippleTimesV1.heading.primary_key` in the user's Python session, not memory"
+      ]
+    },
+    {
+      "id": 131,
+      "eval_name": "key-hygiene-v0-v1-cross-version",
+      "stage": "hallucination-resistance",
+      "tier": "version-disambiguation",
+      "difficulty": "medium",
+      "prompt": "On v1's `SortGroup`, can I call `set_group_by_electrode_group(nwb_file_name)` like the v0 docs show?",
+      "expected_output": "No — `set_group_by_electrode_group` exists only on v0's `SortGroup` (`spyglass/spikesorting/v0/spikesorting_recording.py:94`). v1's `SortGroup` exposes only `set_group_by_shank` (`spyglass/spikesorting/v1/recording.py:51`); there is no electrode-group-grouping helper on v1. Verify by any of: (a) **agent tool** — `code_graph.py find-method set_group_by_electrode_group` returns the v0 owner only; (b) **source read** — grep `spyglass/spikesorting/v1/recording.py` for the method set on v1's `SortGroup`; (c) **Python session** — `from spyglass.spikesorting.v1.recording import SortGroup; [m for m in dir(SortGroup) if 'set_group' in m]`. Use `set_group_by_shank` for clusterless / waveform-based v1 workflows; do NOT port the v0 electrode-group pattern. Routes to spikesorting_v1_pipeline.md and spikesorting_v0_legacy.md.",
+      "assertions": {
+        "required_substrings": [
+          "set_group_by_shank",
+          "spikesorting_v1_pipeline.md",
+          "spikesorting/v1/recording.py"
+        ],
+        "expected_output_tables_exempt": [
+          "SortGroup"
+        ],
+        "forbidden_substrings": [
+          "Yes, you can use set_group_by_electrode_group on v1",
+          "v1's SortGroup also has set_group_by_electrode_group"
+        ],
+        "behavioral_checks": [
+          "States that `set_group_by_electrode_group` does NOT exist on v1's SortGroup",
+          "Names `set_group_by_shank` as the v1 alternative",
+          "Verifies with `code_graph.py find-method` (agent tool), a version-specific source read, or Python introspection on the imported v1 SortGroup — not memory",
+          "Cites distinct v0 and v1 source paths to anchor the version difference"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `set_group_by_shank`.",
+        "Response contains substring `spikesorting_v1_pipeline.md`.",
+        "Response contains substring `spikesorting/v1/recording.py`.",
+        "Response does not contain substring `Yes, you can use set_group_by_electrode_group on v1`.",
+        "Response does not contain substring `v1's SortGroup also has set_group_by_electrode_group`.",
+        "States that `set_group_by_electrode_group` does NOT exist on v1's SortGroup",
+        "Names `set_group_by_shank` as the v1 alternative",
+        "Verifies with `code_graph.py find-method` (agent tool), a version-specific source read, or Python introspection on the imported v1 SortGroup — not memory",
+        "Cites distinct v0 and v1 source paths to anchor the version difference"
+      ]
+    },
+    {
+      "id": 132,
+      "eval_name": "key-hygiene-custom-table-runtime-only",
+      "stage": "hallucination-resistance",
+      "tier": "schema-introspection",
+      "difficulty": "medium",
+      "prompt": "My lab has a custom `MyLabRipplePostprocess` table that wraps `RippleTimesV1`. It's defined in our internal package, not in the Spyglass repo. How do I find its primary key?",
+      "expected_output": "`code_graph.py` only walks `$SPYGLASS_SRC/spyglass/`, so it can't see lab-internal tables. Three paths, depending on context:\n\n1. **Agent path (bundled tool, if available).** If the skill environment has `db_graph.py` plus a DB connection, run `python skills/spyglass/scripts/db_graph.py describe MyLabRipplePostprocess` to read the runtime heading. Note this is a bundled skill tool, NOT a universal Spyglass user command — only available where the skill is installed.\n2. **User path (always available in a Python session).** Import the custom table from the lab package and read `MyLabRipplePostprocess.heading.primary_key` directly. This is the portable answer for the user's own Python/DataJoint session.\n3. **Source fallback.** Open the lab's package source and read the `definition = \"\"\"...\"\"\"` block for `MyLabRipplePostprocess` directly. Useful when neither the DB nor an importable copy is available.\n\nDo NOT guess the PK from the class name or from `RippleTimesV1`'s shape — custom wrappers commonly add their own fields, project parent FKs, or override the heading. Routes to merge_methods.md (custom-table caveats) and the script docstrings in `skills/spyglass/scripts/`.",
+      "assertions": {
+        "required_substrings": [
+          "heading.primary_key"
+        ],
+        "expected_output_tables_exempt": [
+          "MyLabRipplePostprocess",
+          "RippleTimesV1"
+        ],
+        "forbidden_substrings": [
+          "Use code_graph.py to find the primary key",
+          "Run code_graph.py describe MyLabRipplePostprocess"
+        ],
+        "behavioral_checks": [
+          "States that `code_graph.py` cannot see tables defined outside `$SPYGLASS_SRC`",
+          "Recommends runtime introspection through `db_graph.py` when available to the agent, or `MyLabRipplePostprocess.heading.primary_key` in the user's Python session; otherwise read the custom table's source definition directly",
+          "Does NOT guess the PK from the class name or assume it inherits `RippleTimesV1`'s shape",
+          "Treats this as a runtime-fact / custom-pipeline question, not a source-graph question"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `heading.primary_key`.",
+        "Response does not contain substring `Use code_graph.py to find the primary key`.",
+        "Response does not contain substring `Run code_graph.py describe MyLabRipplePostprocess`.",
+        "States that `code_graph.py` cannot see tables defined outside `$SPYGLASS_SRC`",
+        "Recommends runtime introspection through `db_graph.py` when available to the agent, or `MyLabRipplePostprocess.heading.primary_key` in the user's Python session; otherwise read the custom table's source definition directly",
+        "Does NOT guess the PK from the class name or assume it inherits `RippleTimesV1`'s shape",
+        "Treats this as a runtime-fact / custom-pipeline question, not a source-graph question"
+      ]
+    },
+    {
+      "id": 133,
+      "eval_name": "key-hygiene-discovery-before-fetch",
+      "stage": "pipeline-usage",
+      "tier": "disambiguation",
+      "difficulty": "easy",
+      "prompt": "Give me code to fetch the LFP for my session.",
+      "expected_output": "Under-specified prompt — multiple keys are needed to uniquely identify an LFP row. Either ask the user OR show discovery code first. The model should NOT hand back a bare `(LFPV1 & {'nwb_file_name': ...}).fetch1_dataframe()` without verifying cardinality, because `LFPV1`'s PK inherits LFPSelection's full PK: `nwb_file_name`, `lfp_electrode_group_name`, `target_interval_list_name`, `filter_name`, `filter_sampling_rate`. Restricting only by `nwb_file_name` will multiply across electrode groups and filter presets and `fetch1` will raise.\n\nDiscovery-first shape:\n\n```python\nfrom spyglass.lfp.v1 import LFPSelection\nfrom spyglass.lfp import LFPOutput\n\n# 1. Enumerate populated LFP rows for this session\ncandidates = (LFPSelection & {'nwb_file_name': nwb_file}\n              ).fetch('KEY', as_dict=True)\nfor c in candidates:\n    print(c)  # inspect (electrode group, interval, filter)\n\n# 2. Pick one and resolve through the merge\nmerge_key = LFPOutput.merge_get_part(candidates[0]).fetch1('KEY')\nlfp_df = (LFPOutput & merge_key).fetch1_dataframe()\n```\n\nOr ask: which electrode group, interval, and filter did you populate? Routes to lfp_pipeline.md and feedback_loops.md (Inspect-before-act).",
+      "assertions": {
+        "required_substrings": [
+          "lfp_electrode_group_name",
+          "merge_get_part",
+          "lfp_pipeline.md"
+        ],
+        "expected_output_tables_exempt": [
+          "LFP",
+          "LFPSelection",
+          "LFPOutput",
+          "LFPV1"
+        ],
+        "forbidden_substrings": [
+          "(LFPV1 & {'nwb_file_name': nwb_file}).fetch1_dataframe()",
+          "(LFPV1 & {\"nwb_file_name\": nwb_file}).fetch1_dataframe()"
+        ],
+        "behavioral_checks": [
+          "Treats the prompt as under-specified — either asks the user for the missing keys OR shows discovery code that enumerates candidates first",
+          "Names the LFP-specific keys the user needs to choose (`lfp_electrode_group_name`, `target_interval_list_name`, `filter_name`, `filter_sampling_rate`)",
+          "Resolves the merge_id through `LFPOutput.merge_get_part(...).fetch1('KEY')`, NOT through a bare `LFPOutput & {nwb_file_name: ...}` restriction",
+          "Does NOT hand back a single-line bare-restriction `fetch1_dataframe()` without first verifying cardinality or scoping"
+        ]
+      },
+      "files": [],
+      "expectations": [
+        "Response contains substring `lfp_electrode_group_name`.",
+        "Response contains substring `merge_get_part`.",
+        "Response contains substring `lfp_pipeline.md`.",
+        "Response does not contain substring `(LFPV1 & {'nwb_file_name': nwb_file}).fetch1_dataframe()`.",
+        "Response does not contain substring `(LFPV1 & {\"nwb_file_name\": nwb_file}).fetch1_dataframe()`.",
+        "Treats the prompt as under-specified — either asks the user for the missing keys OR shows discovery code that enumerates candidates first",
+        "Names the LFP-specific keys the user needs to choose (`lfp_electrode_group_name`, `target_interval_list_name`, `filter_name`, `filter_sampling_rate`)",
+        "Resolves the merge_id through `LFPOutput.merge_get_part(...).fetch1('KEY')`, NOT through a bare `LFPOutput & {nwb_file_name: ...}` restriction",
+        "Does NOT hand back a single-line bare-restriction `fetch1_dataframe()` without first verifying cardinality or scoping"
+      ]
     }
   ]
 }
