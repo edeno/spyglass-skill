@@ -433,6 +433,52 @@ class ClassIndex(Mapping[str, tuple[ClassRecord, ...]]):
             fields |= set(renames.keys())
         return fields
 
+    def pk_fields_for(
+        self,
+        class_name: str,
+        version: str | None = None,
+        _seen: set[str] | None = None,
+    ) -> set[str] | None:
+        """Field names in ``class_name``'s primary key (transitively).
+
+        DataJoint propagates a parent's PK into a child's PK only for FK
+        edges declared above the ``---`` divider (``in_pk=True`` on the
+        FKEdge). Edges below ``---`` add non-PK FK columns. Walks only
+        the in_pk subset and applies projection renames the same way as
+        ``insert_fields_for``.
+
+        Used by the partial-PK populate guard: a ``Table.populate({...})``
+        whose dict is a strict subset of this set runs against every
+        combination of the missing PK fields — usually wider scope than
+        intended.
+
+        Returns None on any unresolvable parent (matching the rest of
+        the index API) so callers fail open rather than emit false
+        positives on partially-ambiguous chains.
+        """
+        if _seen is None:
+            _seen = set()
+        if class_name in _seen:
+            return set()
+        _seen.add(class_name)
+        rec = self.resolve_record(class_name, version)
+        if rec is None:
+            return None
+        fields = {f.name for f in rec.pk_fields}
+        for edge in rec.fk_edges:
+            if not edge.in_pk:
+                continue  # non-PK FK; doesn't propagate to PK
+            parent_pk = self.pk_fields_for(edge.parent, version, set(_seen))
+            if parent_pk is None:
+                return None
+            renames = edge.renames_dict()
+            adjusted = set(parent_pk)
+            for old_name in renames.values():
+                adjusted.discard(old_name)
+            fields |= adjusted
+            fields |= set(renames.keys())
+        return fields
+
     def find_ambiguous_in_chain(
         self,
         class_name: str,
