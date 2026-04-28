@@ -368,7 +368,7 @@ pose_df = (PositionOutput & merge_key).fetch_pose_dataframe()
 ## Best Practices
 
 1. **Always limit large queries**: Use `limit=` to avoid memory issues
-2. **Use evidence before code**: For source facts, run `code_graph.py`; for runtime headings, row counts, merge IDs, or custom tables, run `db_graph.py`
+2. **Use evidence before code**: For source facts, run `code_graph.py`; for runtime headings, row counts, merge IDs, or custom tables, run `db_graph.py`. For merge discovery, start with friendly keys like `nwb_file_name`, then resolve candidate `merge_id` values with merge-aware helpers.
 3. **Preview before fetching**: Use `.fetch(limit=1)` or `.merge_view()` to check structure
 4. **Check table relationships**: Use `.describe()`, `.parents()`, `.children()` when joining
 5. **Prefer DataJoint over SQL**: Use restriction operators instead of raw SQL queries
