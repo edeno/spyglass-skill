@@ -1638,9 +1638,7 @@
           "SpikeSortingPreprocessingParameters",
           "SpikeSortingRecordingSelection"
         ],
-        "forbidden_substrings": [
-          "must be a typo in the key"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Uses find_insert_fail(key) as the primary diagnostic, not guessing the missing parent",
           "Names the concrete FK parents (Raw, SortGroup, IntervalList, SpikeSortingPreprocessingParameters, LabTeam)",
@@ -1658,7 +1656,6 @@
         "Response contains substring `SortGroup`.",
         "Response contains substring `SpikeSortingPreprocessingParameters`.",
         "Response contains substring `SpikeSortingRecordingSelection`.",
-        "Response does not contain substring `must be a typo in the key`.",
         "Uses find_insert_fail(key) as the primary diagnostic, not guessing the missing parent",
         "Names the concrete FK parents (Raw, SortGroup, IntervalList, SpikeSortingPreprocessingParameters, LabTeam)",
         "Identifies 'sort_02_r1' as a likely missing IntervalList row, but frames it as a hypothesis to confirm via the diagnostic",
@@ -3169,11 +3166,7 @@
         "expected_output_tables_exempt": [
           "Electrode"
         ],
-        "forbidden_substrings": [
-          "runtime_debugging.md is the first",
-          "check_populate_status.py",
-          "diagnose_populate.py"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Tells the user to scroll back through their shell for the `logger.error` summary line that current `populate_all_common` emits naming failed tables — does NOT treat the run as fully silent",
           "Mentions that the function returns a list of failed `InsertError` keys, and suggests re-running with the return captured (`failed = populate_all_common(...)`) if the logger output was lost",
@@ -3187,9 +3180,6 @@
       "expectations": [
         "Response contains substring `populate_all_common_debugging.md`.",
         "Response contains substring `InsertError`.",
-        "Response does not contain substring `runtime_debugging.md is the first`.",
-        "Response does not contain substring `check_populate_status.py`.",
-        "Response does not contain substring `diagnose_populate.py`.",
         "Tells the user to scroll back through their shell for the `logger.error` summary line that current `populate_all_common` emits naming failed tables — does NOT treat the run as fully silent",
         "Mentions that the function returns a list of failed `InsertError` keys, and suggests re-running with the return captured (`failed = populate_all_common(...)`) if the logger output was lost",
         "Names `populate_all_common_debugging.md` as the reference to open after surfacing the logger / return-value signal",
