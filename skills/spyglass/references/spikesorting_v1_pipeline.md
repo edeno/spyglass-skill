@@ -414,11 +414,21 @@ from spyglass.spikesorting.v1.burst_curation import (
 **BurstPairSelection** (Manual) — FK to `MetricCuration` and `BurstPairParams`. Use the bulk-insert helper:
 
 ```python
+burst_params_name = "default"
 BurstPairSelection().insert_by_curation_id(
     metric_curation_id=metric_curation_id,   # uuid of the MetricCuration row
-    burst_params_name="default",
+    burst_params_name=burst_params_name,
 )
-BurstPair.populate({"metric_curation_id": metric_curation_id})
+# `BurstPair` inherits `BurstPairSelection`, which combines
+# `MetricCuration` + `BurstPairParams` (`burst_curation.py:71-75`).
+# Restricting populate to `metric_curation_id` alone leaves
+# `burst_params_name` open and re-runs against every BurstPairParams
+# row paired with this curation.
+# Scope to the params name you just inserted:
+BurstPair.populate({
+    "metric_curation_id": metric_curation_id,
+    "burst_params_name": burst_params_name,
+})
 ```
 
 **BurstPair** (Computed) — per-pair similarity/ISI/xcorrel scores in `BurstPair.BurstPairUnit`. Exposes plotting helpers (`plot_by_sort_group_ids`, `investigate_pair_xcorrel`, `investigate_pair_peaks`, `plot_peak_over_time`) for manual inspection before deciding to merge via a follow-up `CurationV1.insert_curation(..., merge_groups=...)`.

@@ -75,7 +75,13 @@ including units labeled `'reject'`.
 To apply labels, route through `CuratedSpikeSorting.fetch_nwb`:
 
 ```python
-nwb_obj = (CuratedSpikeSorting & key).fetch_nwb()[0]
+# `fetch_nwb()` does NOT raise on multiple-row restrictions — it
+# silently returns a list across every match. Verify cardinality
+# first before indexing [0], otherwise you'll grab an arbitrary
+# row's units. See common_mistakes.md #4 / runtime_debugging.md.
+rel = CuratedSpikeSorting & key
+assert len(rel) == 1, f"key matched {len(rel)} rows; tighten before fetch_nwb"
+nwb_obj = rel.fetch_nwb()[0]
 units = nwb_obj['units']        # labels already applied
 ```
 

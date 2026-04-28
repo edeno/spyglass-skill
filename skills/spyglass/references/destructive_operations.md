@@ -208,10 +208,16 @@ Concrete shape:
 # computed with the old threshold still reference this key by name, but
 # `ripple_param_name="default"` now points to a *different* parameter blob
 # than when those downstream rows were populated. Provenance is silently
-# corrupted.
+# corrupted. (Shape note: `speed_threshold` lives nested under
+# `ripple_detection_params`, NOT at the top level of `ripple_param_dict` —
+# see `ripple_pipeline.md` and `feedback_loops.md` for the full blob shape.)
 RippleParameters().update1({
     "ripple_param_name": "default",
-    "ripple_param_dict": {"speed_threshold": 0.1},  # changed value
+    "ripple_param_dict": {
+        "speed_name": "head_speed",
+        "ripple_detection_algorithm": "Kay_ripple_detector",
+        "ripple_detection_params": {"speed_threshold": 0.1},  # changed value
+    },
 })
 ```
 
@@ -220,12 +226,27 @@ Correct shape: insert a **new** parameter row with a different name, then popula
 ```python
 RippleParameters().insert1({
     "ripple_param_name": "tighter_thresh",
-    "ripple_param_dict": {"speed_threshold": 0.1},
+    "ripple_param_dict": {
+        "speed_name": "head_speed",
+        "ripple_detection_algorithm": "Kay_ripple_detector",
+        "ripple_detection_params": {"speed_threshold": 0.1},
+    },
 })
 # RippleLFPSelection rows already exist for the LFP band + group; no
-# new selection row needed. Just populate RippleTimesV1 against the
-# new ripple_param_name and the existing LFPBand / group rows.
-RippleTimesV1.populate({"ripple_param_name": "tighter_thresh"})
+# new selection row needed. Build a fully-scoped populate key —
+# RippleTimesV1's PK includes RippleLFPSelection, RippleParameters,
+# AND PositionOutput.proj(pos_merge_id='merge_id') (`ripple/v1/ripple.py:182`).
+# Restricting populate to `{"ripple_param_name": ...}` alone leaves
+# the upstream selection / position open and re-runs against every
+# eligible (RippleLFPSelection, pos_merge_id) combo under the new
+# params name — usually NOT what you want for a re-run scoped to one
+# downstream analysis.
+populate_key = {
+    **rip_sel_key,                  # the RippleLFPSelection PK fields
+    "ripple_param_name": "tighter_thresh",
+    "pos_merge_id": pos_merge_id,   # specific PositionOutput merge_id
+}
+RippleTimesV1.populate(populate_key)
 ```
 
 When `update1()` *is* fine: only when nothing downstream consumes the row yet. Verify explicitly before mutating — don't assume:
@@ -240,8 +261,10 @@ for child in RippleParameters().descendants(as_objects=True):
     n = len(child & {"ripple_param_name": "default"})
     assert n == 0, f"{child.table_name} has {n} rows under this params name"
 
-# Or, for the topology-only view, run the source-graph CLI:
+# Or, for the database-graph topology view, run:
 #   python skills/spyglass/scripts/db_graph.py path --down RippleParameters
+# (db_graph.py reads from the connected DataJoint database, NOT
+# from source — see scripts/README.md for the source-vs-runtime split.)
 ```
 
 If any descendant has rows, do not `update1()` — insert a new params row instead.
