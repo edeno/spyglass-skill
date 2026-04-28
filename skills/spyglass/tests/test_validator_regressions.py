@@ -1333,6 +1333,79 @@ def fixture_partial_populate_pk_warns(src_root):
     )
 
 
+def fixture_definition_divider_dashes_variants(src_root):
+    """Definition-divider parser must accept any `-{3,}` run.
+
+    Real Spyglass source uses both `---` and `----` styles (e.g.
+    `RippleParameters` at `ripple/v1/ripple.py:140` uses four dashes).
+    The previous parser only matched exactly `---`, which silently
+    classified trailing non-PK fields as PK on classes using the
+    longer divider — producing false-positive partial-PK populate
+    warnings when downstream tables FK'd those classes in_pk.
+
+    Synthetic two-class schema mirrors RippleParameters → RippleTimesV1:
+    P uses a four-dash divider with a non-PK blob field; T inherits
+    P's PK via `-> P`. A populate restricted to T's PK fields must
+    NOT emit a partial-PK warning that demands the blob.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        files = {
+            "fakepipe/p.py": '''
+                class P:
+                    definition = """
+                    p_name : varchar(80)
+                    ----
+                    p_blob : longblob
+                    """
+            ''',
+            "fakepipe/t.py": '''
+                class T:
+                    definition = """
+                    -> P
+                    extra : int
+                    ---
+                    """
+            ''',
+        }
+        for rel, body in files.items():
+            path = tmp / "spyglass" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(body))
+
+        md = _write_md(
+            """
+            # Test
+
+            ```python
+            T.populate({"p_name": "default", "extra": 1})
+            ```
+            """
+        )
+        v.clear_caches()
+        try:
+            with _with_md_files(md):
+                results = v.ValidationResult()
+                v.check_insert_key_shape(tmp, results)
+        finally:
+            v.clear_caches()
+    bad_partial = [w for w in results.warnings if "partial PK" in w]
+    if bad_partial:
+        print(
+            "  [FAIL] four-dash divider misparsed; populate falsely "
+            "flagged as partial-PK:"
+        )
+        for w in bad_partial:
+            print(f"         {w}")
+        return False
+    print("  [ok] divider parser: 4+ dashes correctly split PK / non-PK")
+    return True
+
+
 def fixture_full_populate_pk_no_warn(src_root):
     """`Class.populate({...})` covering the full PK must NOT warn.
 
@@ -3016,6 +3089,7 @@ FIXTURES = [
     fixture_singular_plural_hint_added,
     fixture_partial_populate_pk_warns,
     fixture_full_populate_pk_no_warn,
+    fixture_definition_divider_dashes_variants,
     fixture_link_landing_positive,
     fixture_link_landing_negative,
     fixture_citation_content_direct_match,

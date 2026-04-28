@@ -767,7 +767,15 @@ def parse_definition(
     non_pk_fields: list[FieldSpec] = []
     fk_edges: list[FKEdge] = []
     for offset, line in enumerate(lines):
-        if line.strip() == "---":
+        # DataJoint accepts any run of 3+ dashes as the PK / non-PK divider.
+        # Real Spyglass source uses both `---` and `----` styles (e.g. four
+        # dashes in `ripple/v1/ripple.py:140` for `RippleParameters`).
+        # Matching only exactly `---` would silently classify trailing
+        # blob/secondary fields as PK and produce false positives in any
+        # downstream check that distinguishes PK from non-PK
+        # (e.g. `pk_fields_for` and the partial-PK populate guard).
+        stripped = line.strip()
+        if stripped and all(c == "-" for c in stripped) and len(stripped) >= 3:
             in_pk = False
             continue
         if is_foreign_key(line):
