@@ -103,7 +103,8 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 | NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.ipynb` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — |
 | Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | — |
-| Spike sorting pipeline (current / v1) | [spikesorting_v1_pipeline.md](references/spikesorting_v1_pipeline.md) | `10_Spike_SortingV1.ipynb`, `11_Spike_Sorting_Analysis.ipynb` |
+| Spike sorting pipeline (current / v1) | [spikesorting_v1_pipeline.md](references/spikesorting_v1_pipeline.md) | `10_Spike_SortingV1.ipynb` |
+| Spike sorting analysis (post-pipeline: `SortedSpikesGroup`, `UnitAnnotation`, spike-time/firing-rate helpers) | [spikesorting_v1_analysis.md](references/spikesorting_v1_analysis.md) | `11_Spike_Sorting_Analysis.ipynb` |
 | Reading v0 legacy code / v0 data | [spikesorting_v0_legacy.md](references/spikesorting_v0_legacy.md) | `10_Spike_SortingV0.ipynb` |
 | Position tracking — overview / merge layer / imported pose | [position_pipeline.md](references/position_pipeline.md) | — |
 | Position tracking — Trodes (LED) | [position_trodes_v1_pipeline.md](references/position_trodes_v1_pipeline.md) | `20_Position_Trodes.ipynb` |

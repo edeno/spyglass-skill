@@ -287,8 +287,6 @@ SpyglassConfig(base_dir="/path/to/spyglass_data").save_dj_config(
 
 `save_method="global"` writes `~/.datajoint_config.json` (no extra `dj.config.save_global()` needed). Avoid the legacy `config/dj_config.py` helper in the Spyglass repo — it passes `filename=` to `SpyglassConfig.save_dj_config` (now `output_filename=`, `src/spyglass/settings.py:388`), and crashes with no args by assigning `None` to `SPYGLASS_BASE_DIR` (`config/dj_config.py:8`).
 
-Verify with:
-
 Sanity check at session start:
 
 ```python

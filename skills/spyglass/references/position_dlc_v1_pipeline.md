@@ -71,21 +71,24 @@ For the full 7-step DLC inference workflow (`insert_estimation_task` → `DLCPos
 
 ## Gotcha — empty PositionIntervalMap on old ingestions or DLC-only sessions
 
-If DLC populate crashes with `IndexError: index 0 is out of bounds for axis 0 with size 0` from `convert_epoch_interval_name_to_position_interval_name`, the session has no `PositionIntervalMap` rows. For each `TaskEpoch`, run:
+If DLC populate crashes with `IndexError: index 0 is out of bounds for axis 0 with size 0` from `convert_epoch_interval_name_to_position_interval_name`, the session has no resolvable `PositionIntervalMap` row. Note that `DLCPoseEstimation`'s `make()` already calls `convert_epoch_interval_name_to_position_interval_name` internally with `populate_missing=True` (`position/v1/position_dlc_pose_estimation.py:255-263`), so re-running the converter manually rarely helps — the converter ran, didn't resolve, and `DLCPoseEstimation` continued by falling back to video timestamps (see DLC-only below). The IndexError comes from a *downstream* step (typically `DLCCentroid` / `DLCOrientation` selection or the `RawPosition` lookup at `position_dlc_pose_estimation.py:264`) that still expects a real position interval. The diagnostic is upstream:
 
 ```python
 from spyglass.common import convert_epoch_interval_name_to_position_interval_name
 
+# Check what the converter actually returned for this epoch — None
+# means it inserted a null map row and there's no position interval
+# to resolve (`common/common_behav.py:886, 955`).
 convert_epoch_interval_name_to_position_interval_name(
     {'nwb_file_name': nwb_file, 'epoch': epoch_id},
     populate_missing=True,
 )
 ```
 
-**DLC-only sessions** (no Trodes-derived position). The mapping helper `convert_epoch_interval_name_to_position_interval_name` only recognizes interval names of the form `pos N valid times` (`common/common_behav.py:944`); when none are present it inserts a *null* map row rather than raising (`common/common_behav.py:886`). Two paths exist:
+**DLC-only sessions** (no Trodes-derived position). The converter only accepts interval names that pass `PositionSource._is_valid_name()` (matches `pos N valid times`, `common/common_behav.py:955`); when none are present it inserts a *null* map row rather than raising (`common/common_behav.py:886`). Two paths exist:
 
 - **Raw position is available for the session.** Populate `PositionSource` / `RawPosition` first so the `pos N valid times` intervals exist, then the mapper can resolve them.
-- **Genuinely DLC-only.** Pose estimation can still proceed: `DLCPoseEstimation` falls back to the source video's timestamps when the mapper returns no position-interval name (`position/v1/position_dlc_pose_estimation.py:255`). You don't need to invent a `RawPosition` row to make DLC populate run.
+- **Genuinely DLC-only.** `DLCPoseEstimation.make()` already falls back to the source video's timestamps when the mapper returns no position-interval name (`position/v1/position_dlc_pose_estimation.py:264`) — you don't need to invent a `RawPosition` row to make pose estimation run. Failures further downstream (`DLCCentroid`, `DLCOrientation`) only appear if those selections were inserted and *those* steps require a position interval; configure the DLC pipeline to stop after `DLCPoseEstimation` if your session has no Trodes-side position.
 
 ## Gotcha — DLC env vars must be set in the kernel
 

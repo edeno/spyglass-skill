@@ -26,7 +26,7 @@ Four sources feed `PositionOutput`. Their operational shapes differ:
 | Trodes (`TrodesPosV1`) | params → selection → populate | Yes — `make()` calls `_merge_insert` (`position/v1/position_trodes_position.py:241`) |
 | DLC (`DLCPosV1`) | 7-step pose-estimation chain | Yes — `make()` calls `_merge_insert` (`position/v1/position_dlc_selection.py:85`) |
 | Legacy common (`IntervalPositionInfo`, surfaced as `PositionOutput.CommonPos`) | params → selection → populate (older path; `common.common_position`) | Yes via the legacy populate path |
-| Imported (`ImportedPose`) | NWB-import path; no params and no selection table | Indirect — `make()` (`position/v1/imported_pose.py:44`) just calls `insert_from_nwbfile` and does not call `_merge_insert`; common-ingest invokes it via `populate_all_common`'s ImportedPose special-case (`populate_all_common.py:225`). To surface a row under `PositionOutput.ImportedPose`, call `PositionOutput.insert([key], part_name="ImportedPose")` yourself. |
+| Imported (`ImportedPose`) | NWB-import path; no params and no selection table | Indirect — `make()` (`position/v1/imported_pose.py:44`) just calls `insert_from_nwbfile` and does not call `_merge_insert`; common-ingest invokes it via `populate_all_common`'s ImportedPose special-case which overrides `key_source` to `Nwbfile()` for `ImportedPose` (`populate_all_common.py:141-145`). To surface a row under `PositionOutput.ImportedPose`, call `PositionOutput.insert([key], part_name="ImportedPose")` yourself. |
 
 For the source-specific canonical examples, gotchas, and parameter tables, open the corresponding file above. Legacy `CommonPos` is not covered in detail here — most active analyses use Trodes or DLC, and `IntervalPositionInfo` predates the v1 split.
 
@@ -45,7 +45,7 @@ For the source-specific canonical examples, gotchas, and parameter tables, open 
 
 ## Per-Source Method Matrix
 
-`PositionOutput.fetch1_dataframe()` (defined at `position/position_merge.py:81`) and `PositionOutput.fetch_video_path()` (`position_merge.py:110`) are dispatchers — they delegate to the source class. What you get back depends on which part the merge entry resolves to:
+`PositionOutput.fetch1_dataframe()` (defined at `position/position_merge.py:81`), `PositionOutput.fetch_pose_dataframe()` (`position_merge.py:94`), and `PositionOutput.fetch_video_path()` (`position_merge.py:110`) are all dispatchers — they delegate to the source class. What you get back depends on which part the merge entry resolves to:
 
 | Method | TrodesPosV1 | DLCPosV1 | CommonPos (`IntervalPositionInfo`) | ImportedPose |
 | --- | --- | --- | --- | --- |
@@ -53,11 +53,11 @@ For the source-specific canonical examples, gotchas, and parameter tables, open 
 | `fetch_video_path(key=dict())` | video path (`position/v1/position_trodes_position.py:278`) | video path (`position/v1/position_dlc_selection.py:315`) | video path (`common/common_position.py:546`) | **not implemented** — `ImportedPose` has no `fetch_video_path`. |
 | `fetch_pose_dataframe(key)` | not present | per-bodypart DLC pose | not present | per-bodypart imported pose (`imported_pose.py:110`) |
 
-In short: for Trodes/DLC/CommonPos, use the merge-level `fetch1_dataframe` / `fetch_video_path`. For imported pose, work through `ImportedPose.fetch_pose_dataframe(key)` directly (or via `PositionOutput.ImportedPose` part rows, if you've inserted them).
+In short: for Trodes/DLC/CommonPos, use the merge-level `fetch1_dataframe` / `fetch_video_path`. For imported pose, the merge-level `PositionOutput.fetch_pose_dataframe()` dispatcher routes to `ImportedPose.fetch_pose_dataframe(key)` for you (or to `DLCPosV1`'s pose helper for DLC merge entries); call `ImportedPose().fetch_pose_dataframe(key)` directly only when you don't need the merge layer.
 
 ## Imported Pose (manual NWB import)
 
-For pre-computed pose data stored in NWB files. **No parameters table, no selection table, and no normal user-facing populate** — `ImportedPose.make()` (`position/v1/imported_pose.py:44`) is just a thin wrapper around `insert_from_nwbfile`, and it is invoked by common ingest (`populate_all_common` special-cases `ImportedPose` so its `key_source` is `Nwbfile()` — see `populate_all_common.py:225`). Calling `ImportedPose().populate()` directly is not a user-facing pattern; use `insert_from_nwbfile` (defined at `position/v1/imported_pose.py:47`, implementation at `:105`) when manually importing outside the common-ingest driver.
+For pre-computed pose data stored in NWB files. **No parameters table, no selection table, and no normal user-facing populate** — `ImportedPose.make()` (`position/v1/imported_pose.py:44`) is just a thin wrapper around `insert_from_nwbfile`, and it is invoked by common ingest (`populate_all_common` special-cases `ImportedPose` so its `key_source` is `Nwbfile()` — see the `if table_name in ["ImportedPose", ...]` branch at `populate_all_common.py:141-145`). Calling `ImportedPose().populate()` directly is not a user-facing pattern; use `insert_from_nwbfile` (defined at `position/v1/imported_pose.py:47`, implementation at `:105`) when manually importing outside the common-ingest driver.
 
 ```python
 from spyglass.position.v1.imported_pose import ImportedPose
@@ -65,11 +65,17 @@ from spyglass.position.v1.imported_pose import ImportedPose
 # 1. Pull pose rows from the source NWB.
 ImportedPose().insert_from_nwbfile(nwb_file)
 
-# 2. Fetch back the per-bodypart pose dataframe directly from
-#    ImportedPose. PositionOutput.fetch1_dataframe / fetch_video_path
-#    do NOT route through here — see the method matrix above.
-key = {"nwb_file_name": nwb_file, "interval_list_name": "<imported>"}
-pose_df = ImportedPose().fetch_pose_dataframe(key)
+# 2. Discover the actual interval_list_name(s) the import created —
+#    `insert_from_nwbfile` synthesizes them as
+#    `pose_<obj.name>_valid_intervals` (one per PoseEstimation
+#    object in the NWB file; the `interval_list_name` field is set
+#    at `imported_pose.py:75-76`). Don't hand-build a name — fetch
+#    the registered keys instead.
+keys = (ImportedPose & {"nwb_file_name": nwb_file}).fetch(
+    "KEY", as_dict=True
+)
+# Then fetch the bodypart pose dataframe for one of them:
+pose_df = ImportedPose().fetch_pose_dataframe(keys[0])
 ```
 
 **ImportedPose** (Manual; `position/v1/imported_pose.py:18`)
