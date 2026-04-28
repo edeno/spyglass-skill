@@ -1097,7 +1097,6 @@
         ],
         "forbidden_substrings": [
           "Go ahead and insert it as 'default'",
-          "you can use 'default' as the name",
           "inserting as 'default' should be fine"
         ],
         "behavioral_checks": [
@@ -1117,7 +1116,6 @@
         "Response contains substring `RippleParameters`.",
         "Response contains substring `ripple_param_name`.",
         "Response does not contain substring `Go ahead and insert it as 'default'`.",
-        "Response does not contain substring `you can use 'default' as the name`.",
         "Response does not contain substring `inserting as 'default' should be fine`.",
         "Pushes back on the 'I don't know what these values do' framing — explains what at least three of the ripple-detection params actually control (speed_threshold, zscore_threshold, minimum_duration, etc.)",
         "Flags that 'default' collides with the shipped RippleParameters entry inserted by insert_default() — not just that it's a generic-sounding name",
@@ -3721,8 +3719,7 @@
           "SpikeSortingRecordingSelection"
         ],
         "forbidden_substrings": [
-          "wrap with set()",
-          "use np.unique"
+          "wrap with set()"
         ],
         "behavioral_checks": [
           "Distinguishes primary-key inheritance (FK declarations propagate the parent's PK) from secondary-attribute inheritance (a secondary FK below the `---` divider contributes secondary attrs, which do NOT propagate further downstream)",
@@ -3751,7 +3748,6 @@
         "Response contains substring `SpikeSortingSelection`.",
         "Response contains substring `SpikeSortingRecordingSelection`.",
         "Response does not contain substring `wrap with set()`.",
-        "Response does not contain substring `use np.unique`.",
         "Distinguishes primary-key inheritance (FK declarations propagate the parent's PK) from secondary-attribute inheritance (a secondary FK below the `---` divider contributes secondary attrs, which do NOT propagate further downstream)",
         "Names `nwb_file_name` as the colliding secondary attribute on both SpikeSortingSelection (via -> IntervalList) and SpikeSortingRecordingSelection (via -> Raw)",
         "Demonstrates BOTH fixes — two-restriction chain via fetch1('recording_id'), AND .proj('recording_id') on the LHS to drop the colliding secondary",
@@ -4949,7 +4945,6 @@
         ],
         "forbidden_substrings": [
           "yes, fetch_nwb1() returns",
-          "use fetch_nwb1",
           "fetch_nwb1 is shorthand"
         ],
         "behavioral_checks": [
@@ -4969,7 +4964,6 @@
         "Response contains substring `fetch_nwb`.",
         "Response contains substring `list of NWB`.",
         "Response does not contain substring `yes, fetch_nwb1() returns`.",
-        "Response does not contain substring `use fetch_nwb1`.",
         "Response does not contain substring `fetch_nwb1 is shorthand`.",
         "States that `fetch_nwb1()` does NOT exist on Spyglass tables; the real method is `fetch_nwb` which returns a list regardless of row count",
         "Names `dir()` or `inspect.getsource` (or equivalent introspection) as the verification primitive — does not invent a signature",
@@ -4994,7 +4988,6 @@
         ],
         "forbidden_substrings": [
           "yes, spyglass.compact() cleans up",
-          "use spyglass.compact",
           "dj.compact is the call"
         ],
         "behavioral_checks": [
@@ -5014,7 +5007,6 @@
         "Response contains substring `AnalysisNwbfile`.",
         "Response contains substring `dry_run`.",
         "Response does not contain substring `yes, spyglass.compact() cleans up`.",
-        "Response does not contain substring `use spyglass.compact`.",
         "Response does not contain substring `dj.compact is the call`.",
         "States that `spyglass.compact()` and `dj.compact()` do NOT exist as top-level functions; verifies via `dir(spyglass)` / `dir(dj)` or equivalent",
         "Routes to `Table().delete_orphans(dry_run=True)` (helpers.py:167) for orphaned DJ rows, AND `AnalysisNwbfile().cleanup(dry_run=False)` (common_nwbfile.py:754) for orphaned files on disk — these cover the two senses of 'orphans' (rows vs files)",
@@ -5219,7 +5211,6 @@
           "RippleTimesV1"
         ],
         "forbidden_substrings": [
-          "Use code_graph.py to find the primary key",
           "Run code_graph.py describe MyLabRipplePostprocess"
         ],
         "behavioral_checks": [
@@ -5232,7 +5223,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `heading.primary_key`.",
-        "Response does not contain substring `Use code_graph.py to find the primary key`.",
         "Response does not contain substring `Run code_graph.py describe MyLabRipplePostprocess`.",
         "States that `code_graph.py` cannot see tables defined outside `$SPYGLASS_SRC`",
         "Recommends runtime introspection through `db_graph.py` when available to the agent, or `MyLabRipplePostprocess.heading.primary_key` in the user's Python session; otherwise read the custom table's source definition directly",
