@@ -1,7 +1,7 @@
 # Implementation plan — reference key hygiene and validator coverage
 
 **Date:** 2026-04-28
-**Status:** Draft.
+**Status:** In progress.
 **Scope:** Reduce wrong or missing key claims in `skills/spyglass/references/` by tightening reference-writing policy, adding targeted validator checks for key-bearing examples, and adding evals that punish confident key invention.
 
 This plan responds to a repeated review finding: many dangerous Spyglass mistakes are not missing imports or broken links. They are plausible, copyable key claims that look reasonable to an LLM but fail against source or the user's runtime database.
@@ -96,6 +96,36 @@ For each finding, classify as:
 ### Output
 
 Add an audit note to this plan or a short temporary checklist in the PR description. Do not create a permanent reference catalog unless drift continues recurring.
+
+### Batch A audit note — 2026-04-28
+
+Initial audit started on branch `reference-key-hygiene`.
+
+Checks run:
+
+- `rg` scan over `skills/spyglass/references/*.md` for dict restrictions, `Primary Key`, `Key:`, `insert`, `populate`, `fetch1`, merge helpers, and likely key fields.
+- Targeted merge-hazard scan for `*Output & {...}`, `merge_get_part`, `merge_restrict`, `merge_delete`, `merge_delete_parent`, and `merge_id`.
+- `python skills/spyglass/scripts/validate_skill.py --spyglass-src /Users/edeno/Documents/GitHub/spyglass/src`.
+
+Observed baseline:
+
+- Existing validator passes: `2011 passed, 3 warnings, 0 failed`.
+- Warnings are existing size/progressive-disclosure warnings (`datajoint_api.md`, `runtime_debugging.md`), not key correctness failures.
+- No obvious stale split-route issue remains in references from the recent position/spike-sorting split.
+- The highest-risk merge-master footguns are already documented in `merge_methods.md`, `common_mistakes.md`, `feedback_loops.md`, and `destructive_operations.md`: bare `Master & {"nwb_file_name": ...}` is flagged as unsafe unless the field is actually on the master, and merge-aware helpers are recommended.
+- Current uncommitted edit in `destructive_operations.md` corrects the `RippleParameters` blob example so `speed_threshold` lives under `ripple_param_dict["ripple_detection_params"]`; this matches source (`ripple/v1/ripple.py` default blob construction and `make()` consumption).
+
+Working classification for Batch B:
+
+| Finding class | Current status | Next action |
+| --- | --- | --- |
+| Merge-key hazards | Mostly covered in cross-cutting refs | Spot-check examples that still use `*Output & {...}` and keep only master-key or explicit footgun examples. |
+| Blob parameter keys | Active cleanup surface | Prioritize parameter examples in `destructive_operations.md`, `ripple_pipeline.md`, `lfp_pipeline.md`, `decoding_pipeline.md`, and `position_trodes_v1_pipeline.md`. |
+| Unnecessary hardcoded keys | Needs file-by-file review | Replace with discovery-first examples where the exact key is not the concept being taught. |
+| Wrong / stale keys | None confirmed yet in this audit pass | Continue source-backed checks before editing. |
+| Validator coverage | Existing validator catches many dict-field cases, but not all prose/blob cases | Implement only narrow C1-C3 checks after Batch B surfaces concrete examples. |
+
+Do not broaden this into a full schema catalog. The next useful unit is a small PR that finishes the active `destructive_operations.md` parameter-blob correction, then audits one high-risk reference at a time.
 
 ## Batch B — reference cleanup
 
