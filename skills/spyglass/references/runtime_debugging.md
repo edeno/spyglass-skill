@@ -305,7 +305,17 @@ one_param = (TrodesPosParams & {"trodes_pos_params_name": "default"}).fetch1("KE
 
 Or aggregate before joining with `.aggr()` if you truly want a many-to-one rollup.
 
-**Robust fix.** In `make()`, assert cardinality before fetching: `assert len(rel) == 1, f"{rel.primary_key} matched {len(rel)} rows for key={key}"`. This catches multiplicity at the earliest possible point rather than at a confusing `fetch1()` further down.
+**Robust fix.** In `make()`, check cardinality before fetching:
+
+```python
+n_rows = len(rel)
+if n_rows != 1:
+    raise ValueError(
+        f"{rel.heading.primary_key} matched {n_rows} rows for key={key}"
+    )
+```
+
+This catches multiplicity at the earliest possible point rather than at a confusing `fetch1()` further down.
 
 **Watch-outs.** Restricting a merge table with a friendly key (e.g., `{"nwb_file_name": ...}`) almost always multiplies — use `merge_get_part()` or `merge_restrict()` instead. See [merge_methods.md](merge_methods.md).
 
@@ -367,12 +377,9 @@ table's connection). Each schema has its own `~jobs` table:
 ```python
 import datajoint as dj
 
-# Pick the schema that owns the table you're populating.
-# `MyTable.database` is the underlying schema name; use that
-# instead of guessing.
-schema_name = MyTable.connection.dependencies.parent_class[
-    MyTable.full_table_name
-].database  # or just MyTable.database in many DataJoint versions
+# Pick the schema that owns the table you're populating. `MyTable.database`
+# is the underlying schema name; use it instead of guessing.
+schema_name = MyTable.database
 jobs = dj.Schema(schema_name).jobs
 
 # Filter to this table's failed entries before doing anything:

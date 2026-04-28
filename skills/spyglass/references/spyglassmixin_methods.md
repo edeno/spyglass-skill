@@ -49,7 +49,8 @@ pynapple_obj = (Table & key).fetch_pynapple()
 Restrict table by searching up or down the dependency chain for matching fields.
 
 ```python
-# Find position outputs for a session (searches up for nwb_file_name)
+# Exploratory: find position outputs for a session by graph search.
+# For copyable merge-table code, prefer PositionOutput.merge_restrict(...).
 PositionOutput().restrict_by("nwb_file_name = 'file.nwb'", direction="up")
 
 # Find sessions with specific params (searches down)
@@ -60,6 +61,8 @@ Session().restrict_by('trodes_pos_params_name="default"', direction="down")
 Shorthand for `restrict_by(restriction, direction="up")`.
 
 ```python
+# Exploratory on merge masters; prefer PositionOutput.merge_restrict(...)
+# when building a key for fetch/populate/delete.
 PositionOutput() << "nwb_file_name = 'file.nwb'"
 ```
 

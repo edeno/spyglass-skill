@@ -68,21 +68,37 @@ for s in sessions:
 ### Find Data by Brain Region
 
 ```python
-from spyglass.common import ElectrodeGroup, BrainRegion
-from spyglass.lfp import LFPOutput
+from spyglass.common import BrainRegion, Electrode
+from spyglass.lfp import LFPElectrodeGroup, LFPOutput
 
-groups = (ElectrodeGroup & (BrainRegion & {'region_name': 'CA1'})).fetch('KEY')
+# LFPOutput.LFPV1 is keyed by `lfp_electrode_group_name`, not raw
+# `electrode_group_name`. Resolve through LFPElectrodeGroup.LFPElectrode
+# before restricting the merge table.
+lfp_electrodes = (
+    LFPElectrodeGroup.LFPElectrode
+    & (Electrode & (BrainRegion & {'region_name': 'CA1'}))
+).fetch("KEY", as_dict=True)
 
-for g in groups:
-    lfp = LFPOutput.merge_restrict(g)
+seen = set()
+for row in lfp_electrodes:
+    lfp_key = {
+        "nwb_file_name": row["nwb_file_name"],
+        "lfp_electrode_group_name": row["lfp_electrode_group_name"],
+    }
+    ident = tuple(lfp_key.items())
+    if ident in seen:
+        continue
+    seen.add(ident)
+    lfp = LFPOutput.merge_restrict(lfp_key)
     if len(lfp):
-        print(f"Found LFP for: {g}")
+        print(f"Found LFP for: {lfp_key}")
 ```
 
 ### Navigate Upstream/Downstream
 
 ```python
-# All position results for a session
+# Exploratory graph search. For copyable merge-table code, prefer
+# PositionOutput.merge_restrict({"nwb_file_name": nwb_file}).
 PositionOutput() << f"nwb_file_name = '{nwb_file}'"
 
 # Find sessions with specific parameters

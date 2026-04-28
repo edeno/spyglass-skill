@@ -220,12 +220,12 @@ PositionOutput.merge_restrict({'nwb_file_name': nwb_file})
 # Chain further restrictions
 PositionOutput.merge_restrict({'nwb_file_name': nwb_file}) & 'source = "TrodesPosV1"'
 ```
-
 **Do not restrict the merge master directly with upstream keys for
 data access.** The master's only primary-key column is `merge_id`;
 fields like `nwb_file_name` live on the part tables. A query like
-`(LFPOutput & {'nwb_file_name': f}).fetch()` returns no usable rows.
-Use `merge_get_part`, `merge_restrict`, or `merge_fetch` instead:
+`(LFPOutput & {'nwb_file_name': f}).fetch()` silently ignores the
+session restriction and returns unrestricted master rows. Use
+`merge_get_part`, `merge_restrict`, or `merge_fetch` instead:
 
 ```python
 # Find all merge rows for a session, with part-table columns:
