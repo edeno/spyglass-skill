@@ -208,10 +208,16 @@ Concrete shape:
 # computed with the old threshold still reference this key by name, but
 # `ripple_param_name="default"` now points to a *different* parameter blob
 # than when those downstream rows were populated. Provenance is silently
-# corrupted.
+# corrupted. (Shape note: `speed_threshold` lives nested under
+# `ripple_detection_params`, NOT at the top level of `ripple_param_dict` —
+# see `ripple_pipeline.md` and `feedback_loops.md` for the full blob shape.)
 RippleParameters().update1({
     "ripple_param_name": "default",
-    "ripple_param_dict": {"speed_threshold": 0.1},  # changed value
+    "ripple_param_dict": {
+        "speed_name": "head_speed",
+        "ripple_detection_algorithm": "Kay_ripple_detector",
+        "ripple_detection_params": {"speed_threshold": 0.1},  # changed value
+    },
 })
 ```
 
@@ -220,7 +226,11 @@ Correct shape: insert a **new** parameter row with a different name, then popula
 ```python
 RippleParameters().insert1({
     "ripple_param_name": "tighter_thresh",
-    "ripple_param_dict": {"speed_threshold": 0.1},
+    "ripple_param_dict": {
+        "speed_name": "head_speed",
+        "ripple_detection_algorithm": "Kay_ripple_detector",
+        "ripple_detection_params": {"speed_threshold": 0.1},
+    },
 })
 # RippleLFPSelection rows already exist for the LFP band + group; no
 # new selection row needed. Just populate RippleTimesV1 against the

@@ -71,15 +71,30 @@ from spyglass.spikesorting.analysis.v1.group import SortedSpikesGroup
 
 nwb_copy_file_name = "mediumnwb20230802_.nwb"
 
-# 1. Resolve the position merge_id (must uniquely identify one source + params).
-trodes_s_key = {
+# 1. Resolve the position merge_id. The restriction MUST uniquely
+#    identify one source + params row — discover what's actually
+#    populated for this session rather than guessing the params
+#    name. `"single_led_upsampled"` is a tutorial-specific name from
+#    `50_MUA_Detection.ipynb`'s mediumnwb fixture, NOT a Spyglass
+#    default; copying it verbatim against an unrelated session will
+#    `fetch1` zero rows.
+candidate_pos = (PositionOutput.TrodesPosV1 & {
     "nwb_file_name": nwb_copy_file_name,
-    "interval_list_name": "pos 0 valid times",
-    "trodes_pos_params_name": "single_led_upsampled",
-}
+}).fetch("KEY", as_dict=True)
+# Pick the row whose (interval_list_name, trodes_pos_params_name)
+# tuple matches the run epoch + processing variant you want. For the
+# tutorial fixture, that tuple is:
+trodes_s_key = next(
+    k for k in candidate_pos
+    if k["interval_list_name"] == "pos 0 valid times"
+    and k["trodes_pos_params_name"] == "single_led_upsampled"
+)
 pos_merge_id = (PositionOutput.TrodesPosV1 & trodes_s_key).fetch1("merge_id")
 
-# 2. Identify the SortedSpikesGroup you want.
+# 2. Identify the SortedSpikesGroup you want. Group name + filter
+#    params name are user-chosen at create_group time; discover via
+#    `(SortedSpikesGroup & {"nwb_file_name": ...}).fetch("KEY", as_dict=True)`
+#    rather than guessing. The values below are the tutorial defaults.
 sorted_spikes_group_key = {
     "nwb_file_name": nwb_copy_file_name,
     "sorted_spikes_group_name": "test_group",
