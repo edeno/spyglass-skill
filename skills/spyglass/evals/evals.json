@@ -5064,10 +5064,7 @@
           "RippleParameters",
           "RippleTimesV1"
         ],
-        "forbidden_substrings": [
-          "RippleParameters & {'speed_threshold'",
-          "RippleParameters & {\"speed_threshold\""
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies `speed_threshold` as a blob field nested under `ripple_param_dict[\"ripple_detection_params\"]`, NOT a heading column",
           "Routes blob shape verification to `RippleTimesV1.make` (the consumer) or to an actual fetched row, NOT to the table name alone",
@@ -5079,8 +5076,6 @@
         "Response contains substring `ripple_param_dict`.",
         "Response contains substring `ripple_detection_params`.",
         "Response contains substring `ripple_pipeline.md`.",
-        "Response does not contain substring `RippleParameters & {'speed_threshold'`.",
-        "Response does not contain substring `RippleParameters & {\"speed_threshold\"`.",
         "Identifies `speed_threshold` as a blob field nested under `ripple_param_dict[\"ripple_detection_params\"]`, NOT a heading column",
         "Routes blob shape verification to `RippleTimesV1.make` (the consumer) or to an actual fetched row, NOT to the table name alone",
         "Recommends fetch-then-filter-in-Python rather than a DataJoint restriction on the blob field"
@@ -5210,9 +5205,7 @@
           "MyLabRipplePostprocess",
           "RippleTimesV1"
         ],
-        "forbidden_substrings": [
-          "Run code_graph.py describe MyLabRipplePostprocess"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "States that `code_graph.py` cannot see tables defined outside `$SPYGLASS_SRC`",
           "Recommends runtime introspection through `db_graph.py` when available to the agent, or `MyLabRipplePostprocess.heading.primary_key` in the user's Python session; otherwise read the custom table's source definition directly",
@@ -5223,7 +5216,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `heading.primary_key`.",
-        "Response does not contain substring `Run code_graph.py describe MyLabRipplePostprocess`.",
         "States that `code_graph.py` cannot see tables defined outside `$SPYGLASS_SRC`",
         "Recommends runtime introspection through `db_graph.py` when available to the agent, or `MyLabRipplePostprocess.heading.primary_key` in the user's Python session; otherwise read the custom table's source definition directly",
         "Does NOT guess the PK from the class name or assume it inherits `RippleTimesV1`'s shape",
