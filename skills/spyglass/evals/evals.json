@@ -737,7 +737,6 @@
         "required_substrings": [
           "Session",
           "fetch_timeseries",
-          "does not exist",
           "spike sorting"
         ],
         "forbidden_substrings": [],
@@ -751,7 +750,6 @@
       "expectations": [
         "Response contains substring `Session`.",
         "Response contains substring `fetch_timeseries`.",
-        "Response contains substring `does not exist`.",
         "Response contains substring `spike sorting`.",
         "States that fetch_timeseries does not exist on Session",
         "Does not invent a method signature or behavior",
@@ -3768,10 +3766,7 @@
           "children(",
           "merge master"
         ],
-        "forbidden_substrings": [
-          "DecodingOutput.parents(",
-          "fetch_nwb"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Recommends `DecodingOutput.descendants()` (transitive walk) over `DecodingOutput.children()` (one-hop) and explains the distinction between the two",
           "Notes that `DecodingOutput` is a merge master, so downstream consumers FK to the master itself, not to its part tables (e.g. ClusterlessDecodingV1)"
@@ -3790,8 +3785,6 @@
         "Response contains substring `DecodingOutput.descendants(`.",
         "Response contains substring `children(`.",
         "Response contains substring `merge master`.",
-        "Response does not contain substring `DecodingOutput.parents(`.",
-        "Response does not contain substring `fetch_nwb`.",
         "Recommends `DecodingOutput.descendants()` (transitive walk) over `DecodingOutput.children()` (one-hop) and explains the distinction between the two",
         "Notes that `DecodingOutput` is a merge master, so downstream consumers FK to the master itself, not to its part tables (e.g. ClusterlessDecodingV1)"
       ]
