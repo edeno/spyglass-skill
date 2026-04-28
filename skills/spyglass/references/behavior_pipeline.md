@@ -129,8 +129,15 @@ MoseqModel().populate(model_key)
 
 # --- Phase 2: apply ----------------------------------------------------------
 
-# 5. Pair trained model with a pose merge_id to label (can differ from training)
-label_key = {**model_key, "pose_merge_id": merge_ids[0], "num_iters": 3}
+# 5. Pair trained model with a pose merge_id to label (can differ
+#    from training). For the tutorial, the training and labeling
+#    target is the single `merge_key` resolved at step 1; reuse it
+#    by name rather than indexing into `merge_ids[0]`. If you're
+#    training on a multi-pose group and labeling a different pose,
+#    pick the target merge_id explicitly (e.g. `next(m for m in ...)`).
+label_key = {**model_key,
+             "pose_merge_id": merge_key["merge_id"],
+             "num_iters": 3}
 MoseqSyllableSelection().insert1(label_key, skip_duplicates=True)
 MoseqSyllable().populate(label_key)
 
