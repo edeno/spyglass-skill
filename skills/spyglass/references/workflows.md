@@ -195,12 +195,21 @@ Reach for these before writing a for-loop over intervals. They're correct at the
 
 ### No Results Found
 
+For an LLM-facing answer, prefer `db_graph.py find-instance` / `describe`
+for row counts and runtime headings, because the JSON output is easier to
+quote and distinguishes runtime DB facts from source facts. The Python
+checks below are the notebook-session fallback.
+
 ```python
 # Check session exists
-assert len(Session & {'nwb_file_name': nwb_file}) > 0, "Session not found"
+session_count = len(Session & {'nwb_file_name': nwb_file})
+if session_count == 0:
+    raise ValueError("Session not found")
 
 # Check interval exists
-assert len(IntervalList & key) > 0, "Interval not found"
+interval_count = len(IntervalList & key)
+if interval_count == 0:
+    raise ValueError("Interval not found")
 
 # Preview merge table scoped to this session.
 # Don't call merge_view() without a restriction — it prints the entire
@@ -221,6 +230,12 @@ for part in parts:
 ```
 
 ### Join Not Working
+
+For source-declared relationships, run `code_graph.py path` or
+`code_graph.py describe` first. For relationships in the connected
+database, especially custom tables or schema drift, run `db_graph.py path`
+or `db_graph.py describe`. The direct DataJoint checks below are the
+notebook-session fallback.
 
 ```python
 # Inspect keys

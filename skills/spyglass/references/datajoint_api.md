@@ -278,6 +278,12 @@ Session().restrict_by(
 
 ## Table Inspection Commands
 
+For LLM answers, prefer the bundled scripts when they can answer the
+question: `code_graph.py describe/path/find-method` for source facts, and
+`db_graph.py describe/find-instance/path` for runtime headings, counts,
+rows, and DB adjacency. Use the interactive DataJoint forms below inside
+the user's Python session or when a script cannot see the needed context.
+
 ```python
 # View schema definition with primary/foreign keys
 Table.describe()
@@ -362,7 +368,7 @@ pose_df = (PositionOutput & merge_key).fetch_pose_dataframe()
 ## Best Practices
 
 1. **Always limit large queries**: Use `limit=` to avoid memory issues
-2. **Use friendly keys first**: Start with `nwb_file_name`, then get `merge_id`
+2. **Use evidence before code**: For source facts, run `code_graph.py`; for runtime headings, row counts, merge IDs, or custom tables, run `db_graph.py`
 3. **Preview before fetching**: Use `.fetch(limit=1)` or `.merge_view()` to check structure
 4. **Check table relationships**: Use `.describe()`, `.parents()`, `.children()` when joining
 5. **Prefer DataJoint over SQL**: Use restriction operators instead of raw SQL queries

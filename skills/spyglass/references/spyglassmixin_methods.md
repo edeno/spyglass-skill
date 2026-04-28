@@ -163,7 +163,11 @@ View all columns as a heading object.
 ### `parents()` / `children()`
 View parent/child table relationships.
 
-For full transitive walks (every downstream consumer, every upstream prerequisite), use DataJoint's `descendants()` / `ancestors()` — defined on `dj.Table` and inherited by every `SpyglassMixin`. See [datajoint_api.md § Table Inspection Commands](datajoint_api.md#table-inspection-commands) for the full topology-commands block.
+For LLM-facing answers, prefer `code_graph.py path` for source-declared
+dependency walks and `db_graph.py path` for runtime DB walks. Inside the
+user's Python session, DataJoint's `descendants()` / `ancestors()` are the
+direct equivalents — defined on `dj.Table` and inherited by every
+`SpyglassMixin`. See [datajoint_api.md § Table Inspection Commands](datajoint_api.md#table-inspection-commands) for the full topology-commands block.
 
 ## Storage
 
