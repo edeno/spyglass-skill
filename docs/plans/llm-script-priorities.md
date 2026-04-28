@@ -27,9 +27,12 @@ Immediate order:
    parameter inspection (`describe_params.py` / `trace_params.py`) and
    lightweight NWB inspection (`inspect_nwb_lite.py`). Parameters live in
    blobs and are interpreted in `make()` bodies, often by third-party
-   packages; NWB files are the file-backed evidence surface that the graph
-   tools cannot see, including both raw NWBs before ingestion and AnalysisNWB
-   files that store analysis results.
+   packages. For blob params, the helper should inspect Spyglass's consuming
+   source first, then inspect installed third-party signatures/source when
+   values are passed through; web/docs are a fallback only when source and
+   signatures do not explain semantics. NWB files are the file-backed evidence
+   surface that the graph tools cannot see, including both raw NWBs before
+   ingestion and AnalysisNWB files that store analysis results.
 4. Consider `map_si_to_spyglass.py` when SpikeInterface API drift shows up in
    evals or user sessions; this is external-package compatibility, not a graph
    question.
@@ -58,7 +61,7 @@ reference, and README attention before adding more scripts.
 | `db_graph.py` | **shipped / PR-ready** | Runtime database evidence: actual table headings, row counts, merge IDs, set operations, custom-table imports, and source/runtime divergence. It is the main antidote to invented keys, attributes, and row-state claims. |
 | `verify_spyglass_env.py` | **shipped** | Seven checks + JSON output + bounded timeout = LLM-ideal. Env assumptions become cite-able evidence instead of "trust me." |
 | `scrub_dj_config.py` | **shipped** | Safe ground-truth read of DB config. Closes the password-leak-into-context hallucination-adjacent hazard. |
-| **`describe_params.py` / `trace_params.py`** | likely next | Parameter rows are not just rows: values live in blobs, are consumed inside `make()`, and are often passed to third-party packages. This helper should produce an evidence packet tying params rows to consuming source locations and external call sites, not try to infer scientific meaning by itself. |
+| **`describe_params.py` / `trace_params.py`** | likely next | Parameter rows are not just rows: values live in blobs, are consumed inside `make()`, and are often passed to third-party packages. This helper should produce an evidence packet tying params rows to consuming source locations, installed third-party signatures/source, and external call sites. It should not infer scientific meaning by itself; it should support a layered answer: verified DB/provenance effect, verified execution site, and verified-or-conditional model/scientific effect. |
 | **`inspect_nwb_lite.py`** | candidate | Covers a different file-backed evidence surface: quickly summarize raw NWBs and AnalysisNWB files, including metadata, namespaces, processing modules, table shapes, dataset shapes, and object paths without loading array payloads into context. Useful before ingestion, when checking analysis outputs, and when comparing what the DB says to what is actually stored on disk. |
 | **`map_si_to_spyglass.py`** | candidate | Still valuable because SpikeInterface API drift (`WaveformExtractor` ↔ `SortingAnalyzer`) is an external-package compatibility problem, not a source/runtime graph problem. Best implemented as a tiny script over a YAML catalog. |
 

@@ -24,7 +24,10 @@ Two parts of this draft remain defensible, but need fresh narrower plans:
 - `describe_params.py` / `trace_params.py`, because parameter values live in
   blobs and their effect is determined where `make()` consumes the blob and
   passes values into Spyglass or third-party functions. `db_graph.py` can show
-  the row; it does not explain the consumption path.
+  the row; it does not explain the consumption path. A revived plan must also
+  cover installed third-party signatures/source when Spyglass passes the blob
+  through, and it must preserve a layered answer boundary: provenance effect,
+  execution site, and verified-or-conditional model/scientific effect.
 - `map_si_to_spyglass.py`, because SpikeInterface API compatibility is
   external-package drift rather than a Spyglass source/runtime graph question.
 
@@ -282,6 +285,15 @@ def main(argv: list[str] | None = None) -> int: ...
 `datajoint`, `spyglass`. Graceful skip when absent.
 
 ## Script 3 — `describe_params.py`
+
+**Revision note:** this historical design predates the current parameter
+failure mode from eval-118. If revived, do not implement it as a row lister
+only. It must trace where blob values are consumed and, when they are passed to
+external packages such as `non_local_detector`, inspect installed
+signatures/source before resorting to docs. The script still should not decide
+scientific meaning by itself; it should emit evidence and caveats that let the
+agent answer in three layers: DB/provenance effect, execution site, and
+verified-or-conditional model/scientific effect.
 
 ### Contract
 

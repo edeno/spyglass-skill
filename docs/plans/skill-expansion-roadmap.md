@@ -147,13 +147,22 @@ guesses.
 
 - Add evals for parameter traceability: params row -> blob summary -> consuming
   source location -> third-party call site -> uncertainty caveat.
+- Add evals that force the three-layer parameter answer shape: DB/provenance
+  effect, execution site, and model/scientific effect. When Spyglass passes a
+  blob to a third-party package, the expected behavior is to inspect installed
+  signatures/source first, use docs only as fallback, and phrase unverified
+  algorithmic consequences conditionally instead of omitting them.
 - Add evals for lightweight NWB inspection: raw file metadata, AnalysisNWB
   processing modules/results, namespaces, table shapes, array shapes, object
   paths, and no array payload values.
 - If evals show graph-tool + reference patterns are awkward, write narrow
   plans for `describe_params.py` / `trace_params.py` and `inspect_nwb_lite.py`.
 - Keep both tools evidentiary. They should surface facts for the agent to cite,
-  not decide scientific validity or ingestion policy by themselves.
+  not decide scientific validity or ingestion policy by themselves. For
+  parameter tools, the output should make uncertainty explicit enough that the
+  agent can say "Spyglass passes this value through here; if this installed
+  third-party object treats it as the active bin-size parameter, the expected
+  model effect is ...".
 
 ### 1.1 Quality-metrics ontology reference
 
