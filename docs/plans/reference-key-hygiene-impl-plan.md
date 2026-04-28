@@ -113,7 +113,7 @@ Observed baseline:
 - Warnings are existing size/progressive-disclosure warnings (`datajoint_api.md`, `runtime_debugging.md`), not key correctness failures.
 - No obvious stale split-route issue remains in references from the recent position/spike-sorting split.
 - The highest-risk merge-master footguns are already documented in `merge_methods.md`, `common_mistakes.md`, `feedback_loops.md`, and `destructive_operations.md`: bare `Master & {"nwb_file_name": ...}` is flagged as unsafe unless the field is actually on the master, and merge-aware helpers are recommended.
-- Current uncommitted edit in `destructive_operations.md` corrects the `RippleParameters` blob example so `speed_threshold` lives under `ripple_param_dict["ripple_detection_params"]`; this matches source (`ripple/v1/ripple.py` default blob construction and `make()` consumption).
+- This PR corrects the `RippleParameters` blob example in `destructive_operations.md` so `speed_threshold` lives under `ripple_param_dict["ripple_detection_params"]`; this matches source (`ripple/v1/ripple.py` default blob construction and `make()` consumption).
 
 Working classification for Batch B:
 
