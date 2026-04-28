@@ -63,7 +63,11 @@ def _one(result):
     """Normalize the (dict | list[dict]) return of the rerun-tolerant
     insert helpers (insert_selection on Recording / Sorting / Artifact,
     and insert_curation's parent-rerun branch) to a single dict."""
-    return result[0] if isinstance(result, list) else result
+    if not isinstance(result, list):
+        return result
+    if len(result) != 1:
+        raise ValueError(f"Expected one matching selection row, got {len(result)}")
+    return result[0]
 
 # 1. Group electrodes by shank (warning: overwrites existing groups for
 #    this session — cascades to downstream sorts; see doc #11 gotcha).
@@ -270,7 +274,11 @@ SortGroup().set_group_by_shank(nwb_file_name=nwb_file)
 # (`spikesorting/v1/recording.py:176-182`); normalize before
 # splatting downstream.
 def _one(result):
-    return result[0] if isinstance(result, list) else result
+    if not isinstance(result, list):
+        return result
+    if len(result) != 1:
+        raise ValueError(f"Expected one matching selection row, got {len(result)}")
+    return result[0]
 
 recording_key = _one(SpikeSortingRecordingSelection.insert_selection({
     "nwb_file_name": nwb_file, "sort_group_id": 0,
