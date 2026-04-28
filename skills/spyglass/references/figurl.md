@@ -11,21 +11,26 @@
 
 ## Overview
 
-FigURL provides web-based interactive visualizations for Spyglass data — spike sorting curation UIs and decoding playback views. Data is uploaded to kachery-cloud, which returns a shareable URL that opens in a browser.
+FigURL provides web-based interactive visualizations for Spyglass data. Data is uploaded to kachery-cloud, which returns a shareable URL that opens in a browser.
 
-Two main use cases:
+This reference focuses on the two most common FigURL paths in Spyglass; a third (MUA event visualization) is also exposed via `MuaEventsV1.create_figurl` (`mua/v1/mua.py:154`):
 
-- **Spike sorting curation**: upload a sorting, label/merge units in the browser, pull the results back into Spyglass
+- **Spike sorting curation** (covered below): upload a sorting, label/merge units in the browser, pull the results back into Spyglass
 - **Decoding visualization**: generate a 1D or 2D interactive view of posterior probabilities over time
+- *MUA event visualization (not covered in detail here)*: see [mua_pipeline.md](mua_pipeline.md).
 
-Sources: `src/spyglass/spikesorting/v1/figurl_curation.py`, `src/spyglass/decoding/decoding_merge.py` (`create_decoding_view`). Dependencies: `sortingview`, `kachery-cloud`, `figurl`.
+Sources: `src/spyglass/spikesorting/v1/figurl_curation.py`, `src/spyglass/decoding/decoding_merge.py` (`create_decoding_view`). FigURL is the upstream **web service / project**, not a Spyglass Python dependency. Spyglass integrates with it via `sortingview` and `kachery-cloud` (the actual installed packages — see `pyproject.toml:51, 68`).
 
 Upstream project (FigURL itself, for questions beyond Spyglass integration): <https://github.com/flatironinstitute/figurl>
 
 ## Spike Sorting Curation via FigURL
 
 ```python
-from spyglass.spikesorting.v1 import FigURLCurationSelection, FigURLCuration
+from spyglass.spikesorting.v1 import (
+    CurationV1,
+    FigURLCurationSelection,
+    FigURLCuration,
+)
 ```
 
 ### Workflow
@@ -50,10 +55,14 @@ print(url)
 
 # ---- User curates in browser, saving labels/merges to the curation_uri ----
 
-# 4. Pull curator's decisions back from kachery
-curation_json = (FigURLCurationSelection & sel_key).fetch1("curation_uri")
-labels = FigURLCuration.get_labels(curation_json)         # {unit_id: [labels]}
-merge_groups = FigURLCuration.get_merge_groups(curation_json)  # merge structure
+# 4. Pull curator's decisions back from kachery. The fetched value is
+#    the kachery URI (e.g. `sha1://...`); the helpers call
+#    `kachery_cloud.load_json(curation_uri)` internally
+#    (`spikesorting/v1/figurl_curation.py:215`) to deref it. Don't pre-load
+#    the JSON yourself — pass the URI string in.
+curation_uri = (FigURLCurationSelection & sel_key).fetch1("curation_uri")
+labels = FigURLCuration.get_labels(curation_uri)         # {unit_id: [labels]}
+merge_groups = FigURLCuration.get_merge_groups(curation_uri)  # merge structure
 
 # 5. Create a new CurationV1 entry with the pulled results
 CurationV1.insert_curation(
@@ -110,5 +119,5 @@ Under the hood, this routes to `non_local_detector.visualization.figurl_1D.creat
 - **URL retention**: kachery-cloud zones have retention policies. If the URL stops working, the underlying data has expired — repopulate to regenerate
 - **Upload size**: large sortings or recordings can take minutes to upload. Consider windowing with `segment_duration_sec` (see `_generate_figurl` kwargs in `figurl_curation.py`)
 - **Re-fetching labels**: `get_labels()` / `get_merge_groups()` hit kachery every call. If the curator updates the URL, re-run these to pull the latest state — no local cache
-- **`insert_curation()` bug #1530**: Sortings without a `curation_label` column raise `ValueError`. Always insert parent curations with at least an empty labels dict
+- **`generate_curation_uri()` requires the parent `CurationV1` NWB to have a `curation_label` column** — `insert_curation(labels=None)` itself just doesn't create one. The error fires later when you generate the figurl URI: `figurl_curation.py:87-93` raises `ValueError: Sorting object must have a 'curation_label' column ...`. Pass `labels={}` (or any non-`None` dict) to `insert_curation` — the `insert_curation` body adds the `curation_label` column whenever `labels is not None`, and any unit IDs missing from the dict get an empty `[]` automatically (see the `if labels is not None:` block in `spikesorting/v1/curation.py`). You don't have to enumerate every unit_id yourself.
 - **V0 vs V1**: v0 has its own `curation_figurl.py` with a similar but not identical API. V1 is the only path to use for new work — do not fall back to v0 if the v1 path fails. Existing v0 curation rows remain readable via `SpikeSortingOutput` (the merge table is source-agnostic); the FigURL generation path is what differs. Legacy v0 references are in [spikesorting_v0_legacy.md](spikesorting_v0_legacy.md).

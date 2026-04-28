@@ -1,14 +1,16 @@
 # SpyglassMixin Method Reference
 
-All Spyglass tables inherit from `SpyglassMixin`. These methods are
-available on every table in the database. For merge-table-specific
+Spyglass tables and merge parts inherit from `SpyglassMixin` /
+`SpyglassMixinPart`; these methods are available on those classes,
+not on arbitrary DataJoint tables, free tables, or unrelated
+lab-defined tables in the same database. For merge-table-specific
 methods (`merge_get_part`, `merge_restrict`, `merge_delete`, etc.)
 see [merge_methods.md](merge_methods.md); for the *group-table*
 shape (`SortedSpikesGroup`, `PositionGroup`, `*Group.create_group()`)
 see [group_tables.md](group_tables.md). This file covers the
 methods that live on the mixin itself and therefore apply to any
-Spyglass table — merge master, merge part, selection, computed, or
-manual.
+mixin-inheriting Spyglass table — merge master, merge part,
+selection, computed, or manual.
 
 ## Contents
 
@@ -25,7 +27,7 @@ manual.
 ## NWB Data Access
 
 ### `fetch_nwb(*attrs, **kwargs) -> list[dict]`
-Fetch NWB file objects for table entries. Automatically handles both raw `Nwbfile` and analysis `AnalysisNwbfile` sources. Downloads missing files from Dandi/Kachery if needed. Defined at `src/spyglass/utils/mixins/fetch.py:284`. Merge masters (`PositionOutput`, `LFPOutput`, etc.) override this with an extended signature that takes `restriction`, `multi_source`, and `return_merge_ids` kwargs — see [merge_methods.md § Data Fetching](merge_methods.md#data-fetching).
+Fetch NWB file objects for table entries. Defined at `src/spyglass/utils/mixins/fetch.py:284`. Resolves only on **NWB-backed tables** — `FetchMixin._nwb_table_tuple` (`fetch.py:79`) raises `NotImplementedError` when the table has no `Nwbfile` / `AnalysisNwbfile` FK and no `_nwb_table` attribute. Concretely: data tables (`LFPV1`, `TrodesPosV1`, `Raw`, `MetricCuration`, ...) work; selection / parameter / interval / config tables (`LFPSelection`, `LFPElectrodeGroup`, `IntervalList`, `SortInterval`, `LFPBandSelection`, `WaveformParameters`, ...) do NOT — they have no NWB to fetch. Decoding tables (`ClusterlessDecodingV1`, the SortedSpikes decoding equivalents) also do not use `fetch_nwb` — their analysis output is xarray netCDF (`.nc`) + a pickled classifier at a `filepath@analysis` external store; they expose `fetch_results()` (`xr.Dataset`), `fetch_model()`, `fetch_environments()` instead. See `decoding/v1/clusterless.py:99` and the surrounding fetchers. Handles both raw `Nwbfile` and analysis `AnalysisNwbfile` sources, and downloads missing files from Dandi / Kachery if needed. Merge masters (`PositionOutput`, `LFPOutput`, ...) override this with an extended signature that takes `restriction`, `multi_source`, and `return_merge_ids` kwargs — see [merge_methods.md § Data Fetching](merge_methods.md#data-fetching).
 
 ```python
 nwb_data = (LFPV1 & key).fetch_nwb()
@@ -33,7 +35,7 @@ nwb_data = (LFPV1 & key).fetch_nwb()
 ```
 
 ### `fetch_pynapple(*attrs, **kwargs)`
-Convert NWB data to pynapple objects for time series analysis.
+Convert NWB data to pynapple objects for time series analysis. Same NWB-backed-table gate as `fetch_nwb()` — same `NotImplementedError` from `FetchMixin._nwb_table_tuple` on selection / parameter / interval tables.
 
 ```python
 pynapple_obj = (Table & key).fetch_pynapple()
@@ -76,11 +78,13 @@ Control which tables are excluded from restrict_by graph traversal.
 ### `cautious_delete(force_permission=False, dry_run=False, *args, **kwargs)`
 Permission-checked deletion. Checks that the user is an admin or on a team with the session's experimenter(s). Walks the DataJoint dependency graph to cascade the delete — if any descendant class (especially a merge master) is not imported in the current session, the walk fails with `NetworkXError: ... not in the digraph`. See [merge_methods.md § Import merge masters before cascade-deleting](merge_methods.md#import-merge-masters-before-cascade-deleting-upstream-keys).
 
+`force_permission=True` skips just the team-permission check (`cautious_delete.py:226`) — the cascade and the per-store external-file cleanup at `cautious_delete.py:238-241` still run. Use this when you're an admin or genuinely the data owner and the team check is misfiring.
+
 ### `delete(*args, **kwargs)`
 Alias for `cautious_delete`.
 
 ### `super_delete(warn=True, *args, **kwargs)`
-Bypass permission checks **and** Spyglass's analysis-file cleanup — aliases straight to `datajoint.Table.delete`. DB rows are removed but `.nwb` files stay on disk; follow up with `AnalysisNwbfile().cleanup(dry_run=True)` → review → `dry_run=False`. Use only for legitimate admin cleanup, not to silence permission errors (the right fix there is wiring the user into `LabMember.LabMemberInfo`).
+Bypass permission checks **and** Spyglass's analysis-file cleanup — aliases straight to `datajoint.Table.delete` (`cautious_delete.py:249-254`); the external-file cleanup loop is NOT executed because the call never enters cautious_delete's body. DB rows are removed but `.nwb` files stay on disk; follow up with `AnalysisNwbfile().cleanup(dry_run=True)` → review → `dry_run=False`. Use only for legitimate admin cleanup, not to silence permission errors (the right fix there is wiring the user into `LabMember.LabMemberInfo`). Contrast with `force_permission=True` above, which skips only the team check and still cleans external files.
 
 ## Helper Methods
 
@@ -131,12 +135,14 @@ Loads shared schemas for graph traversal (needed for `restrict_by` across schema
 Populate computed table entries. Defined at `src/spyglass/utils/mixins/populate.py:48` as a superset of `datajoint.Table.populate` that adds before/after upstream-hash checking and parallel process support.
 
 Kwargs the mixin handles directly (popped before delegating to DataJoint):
-- `processes` (default `1`) — number of worker processes. Only honored when the table sets `_parallel_make = True` on the class; otherwise falls through to single-process populate. Must use `use_transaction=True` with `processes > 1` (enforced; otherwise raises `RuntimeError`).
+- `processes` (default `1`) — number of worker processes. Routes two ways depending on the class flag at `populate.py:95`:
+  - **`_parallel_make = False` (the default), transaction mode on** → passed through to `datajoint.Table.populate` via `kwargs["processes"] = processes`; DataJoint's own pool runs the parallelism. (Confirmed at `populate.py:95-98`.)
+  - **`_parallel_make = True`, `processes > 1`** → mixin uses its own `NonDaemonPool` so child processes can themselves spawn pools (needed when `make()` calls multiprocessing internally). Must run under `use_transaction=True`; otherwise raises `RuntimeError`.
 - `use_transaction` (default: class `_use_transaction`, usually `True`) — wraps each `make()` in a DB transaction so a mid-populate failure rolls back cleanly. Set `False` only for tables with long-running `make()` bodies that can't hold a transaction; then the mixin does a manual upstream-hash check and deletes any rows that were inserted into a table whose parents changed during the run.
 
 Kwargs passed through to `datajoint.Table.populate`:
 - `reserve_jobs=True` — acquire a row in the `~jobs` table before each `make()` so parallel workers don't duplicate work. Required when running multiple `populate()` processes in different terminals against the same table.
-- `suppress_errors=True` — continue on `make()` exceptions, logging into `~jobs` instead of raising. Pair with a follow-up `Table().fetch_jobs(status="error")` to inspect failures.
+- `suppress_errors=True` — continue on `make()` exceptions, logging into `~jobs` instead of raising. Inspect failures via DataJoint's job-table API: `(schema.jobs & {"table_name": "<table>", "status": "error"})` (no `Table().fetch_jobs(...)` helper exists in Spyglass).
 - `display_progress=True` — show a tqdm bar over the key set.
 - `limit=N` — process at most N keys from the key source.
 - Positional `*restrictions` — each is applied to `key_source` before fetching keys to populate.

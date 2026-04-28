@@ -912,7 +912,7 @@ All three `code_graph.py` subcommands work against either layout, with no specia
 - conda-forge install (`conda install`) — same as PyPI wheel; `<conda-env>/lib/pythonX.Y/site-packages`.
 - conda env + editable install (`pip install -e <repo>` inside an active conda env) — same as git checkout; `__file__` resolves through the editable link to the repo's `src/spyglass/`. This is the layout the skill repo's own dev env uses.
 
-Both layouts ship `.py` source (PyPI wheels include source; only ultra-rare `.pyc`-only distributions would break the AST walk, and Spyglass-neurodata is MIT and ships `.py`). The discovery one-liner in SKILL.md returns the package dir, not the parent — the error message in `_resolve_src_root` should suggest both forms so a pip-install user doesn't trip:
+Both layouts ship `.py` source (PyPI wheels include source; only ultra-rare `.pyc`-only distributions would break the AST walk, and spyglass-neuro is MIT and ships `.py`). The discovery one-liner in SKILL.md returns the package dir, not the parent — the error message in `_resolve_src_root` should suggest both forms so a pip-install user doesn't trip:
 
 ```python
 # In _resolve_src_root, when neither --src nor $SPYGLASS_SRC is set:

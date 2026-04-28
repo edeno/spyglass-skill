@@ -6,7 +6,7 @@ Triage failures from the common-ingest driver `spyglass.common.populate_all_comm
 
 - [Why this needs its own page](#why-this-needs-its-own-page)
 - [Primary fix — pass `raise_err=True`](#primary-fix--pass-raise_errtrue)
-- [Alternative — skip the driver and populate tables directly](#alternative--skip-the-driver-and-populate-tables-directly)
+- [Alternative — skip the driver and run the failing table directly](#alternative--skip-the-driver-and-run-the-failing-table-directly)
 - [When to reach for this](#when-to-reach-for-this)
 - [Cross-references](#cross-references)
 
@@ -27,23 +27,46 @@ The function accepts a `raise_err` parameter (see `src/spyglass/common/populate_
 
 ```python
 from spyglass.common import populate_all_common
-populate_all_common(nwb_file_name, raise_err=True)
+
+# IMPORTANT: pass the COPIED filename (the trailing-underscore form
+# that lives in `Nwbfile`), not the raw filename. `insert_sessions`
+# creates the copy via `copy_nwb_link_raw_ephys` and then passes
+# `out_nwb_file_name` to `populate_all_common`
+# (`data_import/insert_sessions.py:67-90`). Querying
+# `(Nwbfile & {nwb_file_name: ...})` shows the form already
+# registered for the session.
+populate_all_common("raw_file_.nwb", raise_err=True)  # note trailing _
 ```
 
 Once you have the traceback, route back to the matching failure signature in [runtime_debugging.md](runtime_debugging.md#failure-signatures) — usually signature A (`fetch1` cardinality) or H (IntegrityError from a missing ancestor row).
 
-## Alternative — skip the driver and populate tables directly
+## Alternative — skip the driver and run the failing table directly
 
-Useful when you want to isolate which table is failing without re-running the ones that succeeded:
+Useful when you want to isolate which table is failing without re-running the ones that succeeded. The faithful isolation pattern is **NOT** `T().populate(...)` — `populate_all_common` doesn't go through `populate()` for most tables. The driver's per-table loop lives in `single_transaction_make` (`common/populate_all_common.py:114-150`):
+
+- For `SpyglassIngestion` tables (the bulk of the common-tier list — `Session`, `Raw`, `RawPosition`, `PositionSource`, `Electrode`, `ElectrodeGroup`, `DIOEvents`, `VideoFile`, `CameraDevice`, `Probe`, `ProbeType`, `OptogeneticProtocol`, `Virus`, etc.; full list at `populate_all_common.py:7-40`), the driver calls `table().insert_from_nwbfile(nwb_file_name, config=table_config)` directly. The `config` dict comes from `entries.yaml` if present and overrides defaults; calling bare `populate()` skips this.
+- For non-`SpyglassIngestion` tables, the driver derives a key from upstream parents and calls `table().make(pop_key)` (`:127, 150`).
+
+Patterns matching the actual driver:
 
 ```python
 from spyglass.common import Session, Raw, DIOEvents, PositionSource
 
+# SpyglassIngestion tables — pass the copied (trailing-underscore)
+# filename and let entries.yaml override defaults if present.
+copy_name = "raw_file_.nwb"  # see "Primary fix" above for why this form
 for T in [Session, Raw, DIOEvents, PositionSource]:
-    T().populate({'nwb_file_name': nwb_file_name})   # exception propagates
+    T().insert_from_nwbfile(copy_name)   # exception propagates
+
+# Non-SpyglassIngestion tables — derive the key from upstream parents
+# (the driver does this via `parents().proj()` joins; the simplest
+# manual form when one parent is `Session` is to pass the registered
+# Nwbfile name) and call .make(key) directly.
+# from spyglass.common.<module> import OtherTable
+# OtherTable().make({"nwb_file_name": copy_name})
 ```
 
-This also works around cases where the per-table exception itself comes from a table that's expensive to re-run from scratch — you only rerun the table that failed.
+`T().populate(...)` may happen to work for some listed tables whose `make()` body delegates appropriately, but it's not the driver's path and it drops the `entries.yaml` config — so a populate that succeeded under `populate_all_common` can fail under bare `populate()` purely because the config wasn't applied.
 
 ## When to reach for this
 
@@ -51,7 +74,7 @@ Any of the following:
 
 - Fresh NWB ingest "completed" but downstream pipelines (position, LFP, spike sorting) can't find rows they expect in common tables.
 - `common_usage.InsertError` has entries for the file but the full traceback isn't there.
-- You suspect a raw-data issue (e.g., missing `trodes_pos_params` row, unusual epoch tag format, malformed NWB module) and need to see the actual failure, not just a label.
+- You suspect a raw-data issue and need to see the actual failure, not just a label. Common-ingest examples include: malformed experimenter / subject metadata (sex / species / age formatting that the DANDI patcher would normally fix), device / probe-type mismatches between the NWB and the lookup tables, missing `ndx-franklab-novela` / `ndx-pose` / `ndx-optogenetics` / `ndx-ophys-devices` extension objects, or unusual `task_epochs` tag formats (see [ingestion.md](ingestion.md) "TaskEpoch silently drops epochs"). Note that `TrodesPosParams` and other v1-pipeline params live downstream of `populate_all_common` (in `position.v1`, `lfp.v1`, etc.; not in the bundled `table_lists` at `populate_all_common.py:192-247`) — missing-params issues there belong to runtime debugging, not common-ingest debugging.
 - `populate_all_common` takes a long time and you want to isolate which specific table is slow or failing.
 
 If the ingest raised immediately (not silently), you already have a traceback — go straight to [runtime_debugging.md](runtime_debugging.md) and match the signature.

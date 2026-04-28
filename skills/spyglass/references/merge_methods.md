@@ -4,9 +4,11 @@ Covers the `_Merge`-base methods that live on merge master tables
 (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`,
 `LinearizedPositionOutput`), plus the projected-FK-rename pattern that
 merge tables force on downstream computed tables. For mixin-level
-methods that apply to every Spyglass table (`fetch_nwb`, `fetch_pynapple`,
-`cautious_delete`, `restrict_by`, `<<`/`>>`, helpers like `file_like` and
-`dict_to_pk`), see [spyglassmixin_methods.md](spyglassmixin_methods.md).
+methods (`cautious_delete`, `restrict_by`, `<<`/`>>`, `file_like`,
+`dict_to_pk`, ...) plus the **NWB-backed-table-only** `fetch_nwb` /
+`fetch_pynapple` (which raise `NotImplementedError` on tables without
+an `Nwbfile` / `AnalysisNwbfile` FK), see
+[spyglassmixin_methods.md](spyglassmixin_methods.md).
 
 ## Contents
 
@@ -244,12 +246,13 @@ Returns the part table(s) containing entries matching the restriction. This is t
 
 **Raises `ValueError`** if zero or multiple sources match when `multi_source=False` (default). Always wrap in try/except or use `multi_source=True`.
 
-**Misleading-error note.** When `merge_get_part` reports
-`ValueError: Found multiple potential parts: []` — the empty list means
-zero sources matched, not multiple. The usual cause is that the
-upstream source table (e.g. `IntervalPositionInfo`) has rows but they
-were never inserted into the merge part table (e.g.
-`PositionOutput.CommonPos`).
+**Misleading-error note.** Current source raises
+`ValueError: Found 0 potential parts: []` (`utils/dj_merge_tables.py:634`)
+— the count is interpolated, so the literal "0" appears in the
+message and the empty list `[]` confirms zero sources matched. The
+usual cause is that the upstream source table (e.g.
+`IntervalPositionInfo`) has rows but they were never inserted into
+the merge part table (e.g. `PositionOutput.CommonPos`).
 
 Check:
 
@@ -296,15 +299,21 @@ cls = PositionOutput().merge_get_parent_class("TrodesPosV1")
 
 ### Data Fetching
 
-#### `merge_fetch(*attrs, restriction=True, **kwargs) -> list`
+#### `merge_fetch(*attrs, restriction=True, **kwargs)` — return shape varies
+
 Fetch data across all part tables. Similar to `fetch()` but works across the union of all parts. **Instance method** — call on a restricted relation or an instance, not the bare class.
 
+**Return-shape footgun.** Source returns `results[0] if len(results) == 1 else results` (`utils/dj_merge_tables.py:841`): exactly one part-fetch produces the inner object directly (a list / array / dict, depending on the `attrs` you asked for), but two-or-more parts produces a list of those objects. Don't write code that assumes either shape — branch on `isinstance(out, list)`, or restrict via `merge_get_part(...)` and call `.fetch(...)` on the resolved part directly when you need a stable return type.
+
 ```python
-# Correct — instance form:
-data = (PositionOutput & {'nwb_file_name': nwb_file}).merge_fetch()
-# Also correct — explicit instance + restriction kwarg:
+# Preferred — explicit restriction kwarg routes the dict to each part:
 data = PositionOutput().merge_fetch(restriction={'nwb_file_name': nwb_file})
+
+# Or resolve through the right part directly when you know which one:
+data = (PositionOutput.TrodesPosV1 & {'nwb_file_name': nwb_file}).fetch(...)
 ```
+
+**Footgun.** Don't write `(PositionOutput & {'nwb_file_name': nwb_file}).merge_fetch()`. The merge master's heading is just `(merge_id, source)` (`position/position_merge.py:31`), so the `&` step looks like the silent-no-op pattern this skill warns about elsewhere — even though `merge_fetch` happens to re-route the attached restriction to the parts internally (via `_merge_restrict_parts(restriction=self.restriction)` at `utils/dj_merge_tables.py:811-826`). The behavior works, but reading the line, you can't tell whether the restriction is being applied or silently ignored — the misreading is the bug. Prefer the explicit `restriction=` kwarg, or resolve through `PositionOutput.<Part>` / `merge_get_part(restriction)` when you know which source you want.
 
 #### `fetch1_dataframe(*attrs, **kwargs) -> pd.DataFrame`
 Fetch a single entry as a pandas DataFrame. Works by routing to the correct part table's `fetch1_dataframe` method.

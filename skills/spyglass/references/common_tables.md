@@ -150,7 +150,7 @@ Simple lookup tables referenced by Session.
 
 ### `Raw`
 
-- **Primary Key**: `nwb_file_name` (via Session), plus `interval_list_name` (via IntervalList)
+- **Primary Key**: `nwb_file_name` (inherited from Session). `interval_list_name` is a **dependent FK** to `IntervalList` (declared below the `---` divider), not part of the PK — see `common_ephys.py:276`. Verify with `code_graph.py describe Raw` (each attribute carries `in_pk: true|false`).
 - Entry point for raw ElectricalSeries. Upstream of LFP and spike sorting.
 - Use `Raw.describe()` for exact schema.
 
@@ -176,7 +176,7 @@ FirFilterParameters & 'filter_name LIKE "Theta%"'
 - **Primary Key**: `nwb_file_name`, `interval_list_name` (FKs to `Session` and `IntervalList`; `common_behav.py:34`).
 - Non-PK: `source` (e.g. `"trodes"`, `"dlc"`, `"imported"`), `import_file_name`.
 - Part table: `PositionSource.SpatialSeries` — one row per spatial series in the NWB file.
-- **Populated by the ingest path, not `populate_all_common`.** `PositionSource.populate()` is a thin wrapper that warns and delegates to `PositionSource.make()`, which calls `insert_from_nwbfile(nwb_file_name)` per unique session. DLC-only sessions that lack a Trodes `'pos N valid times'` interval may skip insertion — see the DLC gotchas in [position_pipeline.md](position_pipeline.md).
+- **Populated during `insert_sessions()` via `populate_all_common()`.** `insert_sessions` writes the `Nwbfile` row, then calls `populate_all_common()` (`spyglass/data_import/insert_sessions.py:90`); `populate_all_common` lists `PositionSource` in its table sequence at line 227 and special-cases its key source down to just `nwb_file_name` (line 137) because the per-session insert is idempotent across `interval_list_name`. You can also call `PositionSource().insert_from_nwbfile(nwb_file_name)` directly. DLC-only sessions that lack a Trodes `'pos N valid times'` interval may skip insertion — see the DLC gotchas in [position_dlc_v1_pipeline.md](position_dlc_v1_pipeline.md).
 
 ### `RawPosition`
 
@@ -280,19 +280,34 @@ must:
    class MyAnalysis(SpyglassMixin, dj.Computed):
        definition = '''
        -> UpstreamTable
-       -> AnalysisNwbfile          # literal FK string; do not alias
+       -> AnalysisNwbfile          # adds the analysis_nwbfile FK
        ---
-       my_object_id: varchar(40)   # or _object_id
+       my_object_id: varchar(80)   # match the width used by your source
        '''
    ```
 
-2. **Use the literal `-> AnalysisNwbfile` FK string** — `FetchMixin`
-   recognizes that exact string to wire up `fetch_nwb`. Aliased
-   imports work only if you also set
-   `_nwb_table = AnalysisNwbfile()` as a class attribute.
+2. **Make sure the table has exactly one analysis-NWB parent.**
+   `FetchMixin._nwb_table_tuple` (`spyglass/utils/mixins/fetch.py:48-72`)
+   detects analysis files by walking `self.parents()` and matching
+   any parent whose table name ends in `` `analysis_nwbfile` ``.
+   Common-vs-custom analysis tables are then disambiguated through
+   `AnalysisRegistry().get_class(...)`. More than one analysis-NWB
+   parent raises (multiple-parents check at `fetch.py:53-57`); zero
+   analysis-NWB parents falls back to an explicit `_nwb_table` class
+   attribute, then to a literal `-> Nwbfile` FK for raw files
+   (`fetch.py:72-76`). Practically: declare ONE
+   `-> AnalysisNwbfile` (or one `-> CustomAnalysisNwbfile`) on the
+   table, OR set `_nwb_table = AnalysisNwbfile()` deliberately as a
+   class attribute. Don't do both, and don't declare two
+   analysis-NWB FKs.
 
-3. **Store an `object_id` column** per referenced NWB object; `_object_id`
-   is the convention Spyglass's helpers look for.
+3. **Store an `object_id` column** per referenced NWB object; the
+   `_object_id` suffix is the convention Spyglass's helpers look for.
+   Match the `varchar` width used by your source / sibling tables —
+   common-tier tables often use `varchar(40)` (e.g.
+   `common_position.py:109`); newer tables often use `varchar(80)`
+   (e.g. `position/v1/position_dlc_selection.py:49`). Pick the wider
+   form when in doubt.
 
 Without these, `fetch_nwb` raises:
 

@@ -20,7 +20,9 @@ from spyglass.linearization.merge import LinearizedPositionOutput
 
 ## Canonical Example
 
-Linearization takes a 2D position (from the `PositionOutput` merge table) and projects it onto a track graph. Minimal end-to-end flow:
+Linearization takes a 2D position (from a `PositionOutput` entry whose source exposes a `position` NWB object with `get_spatial_series()` — typically `TrodesPosV1` or `DLCPosV1`) and projects it onto a track graph. `LinearizedPositionV1.make()` calls `PositionOutput().fetch_nwb({"merge_id": pos_merge_id})[0]` and reads the `"position"` key (`linearization/v1/main.py:135`); other PositionOutput sources don't share that shape. `ImportedPose` reads a `"pose"` key via `fetch_pose_dataframe` (`position/v1/imported_pose.py:129`); legacy `IntervalPositionInfo` exposes per-component `head_position_object_id` (`common/common_position.py:105`); neither resolves through this pipeline as-is.
+
+Minimal end-to-end flow:
 
 ```python
 from spyglass.linearization.merge import LinearizedPositionOutput
@@ -52,9 +54,15 @@ LinearizationSelection.insert1(selection_key, skip_duplicates=True)
 # 3. Populate
 LinearizedPositionV1.populate(selection_key)
 
-# 4. Fetch via the merge table
-merge_key = LinearizedPositionOutput.merge_get_part(selection_key).fetch1("KEY")
+# 4. Fetch via the merge table. `merge_restrict(selection_key)`
+#    restricts the merge view to entries whose part-table parent
+#    matches the selection key — clearer than `merge_get_part` here
+#    because the selection key already names the part. Notebook
+#    `24_Linearization.py:281` uses this form.
+merge_key = LinearizedPositionOutput.merge_restrict(selection_key).fetch1("KEY")
 linear_pos = (LinearizedPositionOutput & merge_key).fetch1_dataframe()
+# Output columns (from track_linearization.get_linearized_position):
+#   linear_position, track_segment_id, projected_x_position, projected_y_position
 ```
 
 ## LinearizedPositionOutput Merge Table
@@ -83,25 +91,40 @@ from spyglass.linearization.v1 import (
 - Defines track geometry as a networkx graph
 - Used by: linearization pipeline and decoding pipeline
 
-**LinearizationParameters** (Manual)
+**LinearizationParameters** (Lookup)
 
 - Key: `linearization_param_name`
-- Parameters for the HMM-based linearization algorithm
+- Parameters for nearest-edge or optional HMM-based linearization. The schema's `use_hmm` field defaults to `0` (`linearization/v1/main.py:27`); `track_linearization.get_linearized_position()` uses nearest-edge projection when `use_HMM=False` and switches to HMM only when explicitly enabled. The "default" row is the nearest-edge path.
+- `dj.Lookup` (not `Manual`) at `linearization/v1/main.py:22`. **No `contents`** are declared, so the table is empty by default — `dj.Lookup` only auto-populates when `contents = [...]` is set on the class. Insert a row before using it; the canonical workflow uses `linearization_param_name="default"` and notebook `24_Linearization.py` inserts that row explicitly with `LinearizationParameters().insert1({"linearization_param_name": "default"}, skip_duplicates=True)`. Verify on your install with `code_graph.py describe LinearizationParameters` (no `contents` in the class body) and `(LinearizationParameters & {"linearization_param_name": "default"}).fetch()`.
 
 **LinearizationSelection** (Lookup)
 
-- Links: PositionOutput (merge_id), TrackGraph, LinearizationParameters, IntervalList
+- Links: `PositionOutput.proj(pos_merge_id='merge_id')`, `TrackGraph`, `LinearizationParameters` (`linearization/v1/main.py:101-105`). It does NOT FK `IntervalList` directly — the temporal scope flows in via the `PositionOutput` merge entry, not as a separate selection-table FK.
 
 **LinearizedPositionV1** (Computed)
 
-- Outputs linearized position projected onto track graph
+- Outputs linearized position projected onto the track graph. The dataframe carries:
+  - `linear_position` — 1D position along the track
+  - `track_segment_id` — which graph segment the sample is on
+  - `projected_x_position`, `projected_y_position` — 2D coordinates of the nearest-edge projection
+- Source: `linearization/v1/main.py:170` writes the dataframe and inserts into `LinearizedPositionOutput`; the column set is what `track_linearization.get_linearized_position()` returns.
 
 ## Fetch Example
 
 ```python
-# Get linearized position for an already-populated merge entry
-merge_key = LinearizedPositionOutput.merge_get_part(key).fetch1("KEY")
+# Get linearized position for an already-populated entry. Build
+# `selection_key` the same way the canonical example above did
+# (pos_merge_id + track_graph_name + linearization_param_name); use
+# `merge_restrict` to scope the merge view to that selection's part.
+selection_key = {
+    "pos_merge_id": position_merge_id,
+    "track_graph_name": "6-arm-radial",
+    "linearization_param_name": "default",
+}
+merge_key = LinearizedPositionOutput.merge_restrict(selection_key).fetch1("KEY")
 linear_pos = (LinearizedPositionOutput & merge_key).fetch1_dataframe()
+# Columns: linear_position, track_segment_id, projected_x_position,
+#          projected_y_position.
 ```
 
 ## Dependency: track_linearization

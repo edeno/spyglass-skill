@@ -1,6 +1,6 @@
 # Spike Sorting v0 (Legacy)
 
-v0 is legacy. All new work uses the v1 pipeline — see [spikesorting_pipeline.md](spikesorting_pipeline.md). This file covers what you need to know if you're reading existing v0 code or querying existing v0 sortings through `SpikeSortingOutput`.
+v0 is legacy. All new work uses the v1 pipeline — see [spikesorting_v1_pipeline.md](spikesorting_v1_pipeline.md). This file covers what you need to know if you're reading existing v0 code or querying existing v0 sortings through `SpikeSortingOutput`.
 
 ## Contents
 
