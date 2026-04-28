@@ -114,7 +114,10 @@ After a pipeline `populate()`, confirm rows landed and one output has the expect
 ```python
 MyPipelineV1.populate(key)
 print(len(MyPipelineV1 & key))                   # keys you asked for get processed?
-sample = (MyPipelineV1 & key).fetch(limit=1, as_dict=True)[0]
+rows = (MyPipelineV1 & key).fetch(limit=1, as_dict=True)
+if not rows:
+    raise ValueError("populate produced no matching rows; debug this key before continuing")
+sample = rows[0]
 # Eyeball dtypes/shapes against downstream code's assumptions
 ```
 
