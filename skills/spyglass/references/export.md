@@ -26,8 +26,9 @@ Export has 3 phases: **log**, **populate**, **package**.
 ExportSelection().start_export(paper_id="my_paper", analysis_id="analysis_v1")
 
 # ... run any queries/fetches you want included ...
-# All fetch/fetch1/fetch_nwb calls are logged while the session is active.
-# Every query participates in the export via SpyglassMixin/ExportMixin.
+# Queries against tables that inherit SpyglassMixin / ExportMixin
+# participate. Custom dj.Manual / dj.Computed tables that don't inherit
+# the mixin are NOT logged on direct access — see "Pitfalls" below.
 
 ExportSelection().stop_export()
 
@@ -56,7 +57,7 @@ Tracks which queries/fetches were made during an export session.
 Materializes the export from `ExportSelection`.
 
 - `populate_paper(paper_id, ...)` — Populate export for a specific paper
-- `prepare_files_for_export(key, n_processes=1)` — **admin-gated, in-place patcher** (NOT just staging). Iterates the export's analysis NWB files and, for each, calls `update_analysis_for_dandi_standard(filepath)` (`utils/dandi_file_updates.py:17`), which opens the file in append mode (`h5py.File(filepath, "a")` at `:42`), mutates it (sex / species / age / experimenter formatting; float16 → float32 conversion; missing DynamicTable id columns; source-script filename) inside one `with` block, then by default updates the DataJoint external table + checksum via `_resolve_external_table` (`:79-82`). The whole file is rewritten in place.
+- `prepare_files_for_export(key, n_processes=1)` — **admin-gated, in-place patcher** (NOT just staging). Iterates `Export.File.file_path` (raw and analysis NWB paths captured for the export, plus any unlinked files — `common/common_usage.py:640`) and calls `update_analysis_for_dandi_standard(filepath)` (`utils/dandi_file_updates.py:17`) on each, which opens the file in append mode (`h5py.File(filepath, "a")` at `:42`) and mutates targeted attrs/datasets inside the `with` block (sex / species / age / experimenter formatting; float16 → float32 conversion; missing DynamicTable id columns; source-script filename) — not a whole-file rewrite. After the edit it updates the DataJoint external table + checksum via `_resolve_external_table` (`:79-82`); the location resolves to `"raw"` for files ending in `_.nwb` and `"analysis"` otherwise (`:79`), so the helper updates raw external checksums too.
 
 ### `ExportErrorLog` (Manual)
 Logs errors encountered during export.
@@ -76,7 +77,11 @@ Logs errors encountered during export.
 sel = ExportSelection()
 sel.start_export(paper_id="smith2024", analysis_id="fig2")
 
-# Any fetch_nwb, fetch, fetch1 during this window is captured
+# fetch / fetch1 / restrict / join on SpyglassMixin tables during
+# this window are captured. fetch_nwb only writes a file-log entry
+# when the underlying NWB attribute is "analysis"
+# (`utils/mixins/fetch.py:306-310`); fetch_nwb on raw-only tables
+# still records the table/restriction but won't log a file row.
 from spyglass.position import PositionOutput
 merge_key = PositionOutput.merge_get_part(key).fetch1("KEY")
 position = (PositionOutput & merge_key).fetch1_dataframe()
@@ -97,7 +102,7 @@ ExportSelection().list_file_paths({"paper_id": "smith2024"})
 
 ### How export logging works
 
-Every Spyglass table inherits `ExportMixin`. When an export session is active, calls like `.fetch()`, `.fetch1()`, `.fetch_nwb()`, `.restrict()`, and `.join()` write log entries to `ExportSelection` via the `_log_fetch` and `_run_with_log` hooks. Pass `log_export=False` to skip logging for a specific call.
+Spyglass tables that inherit `SpyglassMixin` get `ExportMixin` by composition. When an export session is active, calls like `.fetch()`, `.fetch1()`, `.restrict()`, and `.join()` on those tables write log entries to `ExportSelection` via the `_log_fetch` and `_run_with_log` hooks. `.fetch_nwb()` writes a file-log entry only when the underlying NWB attribute is `"analysis"` (`utils/mixins/fetch.py:306-310`) — fetches against tables backed by raw-only NWB attrs still record the table/restriction but don't add a file row. Pass `log_export=False` to skip logging for a specific call.
 
 ### Scoping an export to a single analysis
 
@@ -131,19 +136,23 @@ For these, see the DANDI-prep tracking issue or hand-patch with `h5py` (admin / 
 **Run the patcher first.**
 
 ```python
-from spyglass.common.common_usage import Export
+from spyglass.common.common_usage import Export, ExportSelection
 
-# `prepare_files_for_export` is the orchestrator — it iterates files
-# in the export selection and calls `update_analysis_for_dandi_standard`
-# on each. (`update_analysis_for_dandi_standard` is a standalone
-# function in `spyglass.utils.dandi_file_updates`, not a method on
-# Export.) Note the admin-gate caveat below.
+# `prepare_files_for_export` is the orchestrator — it iterates
+# `Export.File.file_path` for the export and calls
+# `update_analysis_for_dandi_standard` on each.
+# (`update_analysis_for_dandi_standard` is a standalone function in
+# `spyglass.utils.dandi_file_updates`, not a method on Export.) Note
+# the admin-gate caveat below.
 Export().prepare_files_for_export(paper_key)
 
-# Then re-validate:
+# Then re-validate. `list_file_paths` returns a list of dicts by
+# default (`{"file_path": "..."}`) — pass `as_dict=False` for plain
+# strings (`common/common_usage.py:228`). `pynwb.validate` is
+# keyword-only on `paths=[...]` in current pynwb (`pynwb/validate.py:131`).
 import pynwb
-for path in ExportSelection().list_file_paths(paper_key):
-    pynwb.validate(path)
+for path in ExportSelection().list_file_paths(paper_key, as_dict=False):
+    pynwb.validate(paths=[path])
 ```
 
 **Admin-permission gate note.** Both layers gate on admin:
