@@ -316,7 +316,7 @@ def check_schema_facts(results: ValidationResult, registry: ClassRegistry) -> No
 
 Run BEFORE landing the validator change. Each drift item gets a remediation commit, grouped by reference file:
 
-### Commit 1.1 — `references: fix spikesorting_pipeline.md PK typos and CurationV1 stale doc`
+### Commit 1.1 — `references: fix spikesorting_v1_pipeline.md PK typos and CurationV1 stale doc`
 
 Five changes in one commit (single file, related concern):
 
@@ -330,7 +330,7 @@ Five changes in one commit (single file, related concern):
 
 The CurationV1 rewrite is the only judgment-call item. **Decision rule** (so a fresh agent can execute autonomously):
 
-1. `git blame skills/spyglass/references/spikesorting_pipeline.md | grep CurationV1` to find when the 2-field doc was added.
+1. `git blame skills/spyglass/references/spikesorting_v1_pipeline.md | grep CurationV1` to find when the 2-field doc was added.
 2. If blame predates 2024-06: the doc was likely written for the v0 schema or an early v1; default to "fix the docs to match current source" (rewrite to 9-field PK, add a note that this changed during v1 stabilization).
 3. If blame is recent (post 2024-06): the doc was deliberately abbreviated; check the commit message for rationale. If the rationale was "users only need sorting_id and curation_id for fetching", convert to a `<!-- schema-exempt[derived-pk]: full PK matches CurationV1 source; users typically restrict by sorting_id+curation_id — see spikesorting/v1/curation.py -->` annotation and keep the abbreviated form in prose.
 4. If neither (blame is ambiguous): rewrite to source PK (rule #2 default) and flag the commit for human review in the commit message.
@@ -390,7 +390,7 @@ For each: read the source class, write the canonical PK line. ~5 min per entry.
 
 LFPV1 (line 124), LFPArtifactDetection (line 177), LFPBandV1 (line 201). Each inherits from its Selection table; itemize the inherited fields.
 
-### Commit 2.3 — `references: add structured PK declarations to spikesorting_pipeline.md` (4 entries)
+### Commit 2.3 — `references: add structured PK declarations to spikesorting_v1_pipeline.md` (4 entries)
 
 SpikeSortingRecording (line 196), SpikeSorting (line 256), MetricParameters (line 303), MetricCuration (line 308).
 
@@ -597,7 +597,7 @@ Land eval 79 as Commit 3.4 (immediately after the user-facing README update in 3
 
 ## Open questions deferred to execution
 
-1. **CurationV1 PK investigation** (Phase 1.1, line 268). Could be: stale v0 doc, intentional simplification, or just always wrong. Need to read git history of `spikesorting_pipeline.md:268` and the source `spikesorting/v1/curation.py` to decide whether the rewrite is "fix the docs to match current source" or "the source needs a constraint we should add". Default: fix the docs to match current source; flag for human review if the source state itself looks suspicious.
+1. **CurationV1 PK investigation** (Phase 1.1, line 268). Could be: stale v0 doc, intentional simplification, or just always wrong. Need to read git history of `spikesorting_v1_pipeline.md:268` and the source `spikesorting/v1/curation.py` to decide whether the rewrite is "fix the docs to match current source" or "the source needs a constraint we should add". Default: fix the docs to match current source; flag for human review if the source state itself looks suspicious.
 2. **`AnalysisNwbfile` audit anomaly** (Phase 1.3). My naive parser reported `analysis_file_name` as "extra" relative to source. Either source has different PK, or my parser failed to resolve the class. Investigate during execution; fix accordingly.
 3. **`schema-exempt` annotation grammar** (Phase 3.1). Current proposal: `<!-- schema-exempt: <reason> -->`. Should reasons be free-form or structured (e.g., `reason="upstream-pinned"` with enumerated reasons)? Free-form is simpler; structured enables aggregate-reason reporting. Default to free-form; revisit if reasons proliferate.
 

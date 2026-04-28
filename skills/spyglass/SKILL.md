@@ -24,14 +24,18 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 ## Core Directives
 
 - **NEVER delete or drop without explicit confirmation.** The database holds irreplaceable neuroscience data. Any destructive helper (`delete`, `drop`, `cleanup`, `merge_delete`, etc.) must be paired with an inspect step and user confirmation first. `.delete()` on SpyglassMixin tables aliases to `cautious_delete` — it enforces team-based permissions so you can't accidentally delete another lab member's sessions. Paired shapes + protection model: [destructive_operations.md](references/destructive_operations.md).
-- **Do not invent identifiers.** Plausible method, kwarg, field, and table names are the main hallucination shape. Verify before asserting: `code_graph.py describe` / `find-method` for source identity and FK/method claims; `db_graph.py describe` / `find-instance` for runtime table, heading, row, and merge-id claims. Fall back to grep, `inspect.signature`, or `Table.heading` for method bodies, signatures, and uncovered shapes. If unverifiable, flag as unconfirmed. Examples: [common_mistakes.md](references/common_mistakes.md).
+- **Do not invent identifiers.** Verify plausible method, kwarg, field, table, and key names before asserting them. Use the Evidence Expectations below; if unavailable, flag as unconfirmed. Examples: [common_mistakes.md](references/common_mistakes.md).
 - **Treat pipeline version as load-bearing.** If the user names a versioned class/table, import/path, traceback, or version directory (`CurationV1`, `v1 SortGroup`, `spyglass.spikesorting.v1`, `<pipeline>/<version>/`), verify that version's source before naming classes, methods, kwargs, signatures, tiers, definitions, or workflow steps. Do not infer symmetry; for comparisons, use [feedback_loops.md § Verify behavior, trust identity](references/feedback_loops.md#verify-behavior-trust-identity). If unverified, abstain or flag uncertainty.
 - **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
 - **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** when the restriction is partial. `print(len(rel))`; if >1, `rel.fetch(as_dict=True)` to find missing PK fields. `Table.describe()` shows schema, not count. Carveout: a full-PK restriction is unique — `fetch1()` skips the `len()`. See Common Mistake #2.
 - **Environment**: detect setup; don't assume Jupyter or remote NWB.
 - **DataJoint config files**: `dj_local_conf.json` / `~/.datajoint_config.json` hold plaintext `database.password`. Don't `Read`/`cat`; run `python skills/spyglass/scripts/scrub_dj_config.py` (masks secret leaves). Details: [setup_config.md](references/setup_config.md).
-- **Source of truth**: when the skill and repo disagree, trust the repo. Cited paths use `src/spyglass/...` (drop `src/` for pip installs; locate via `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`). Tutorials at `notebooks/*.ipynb` drift — cite the `.ipynb` (not the `py_scripts/` mirror), and when a cell fails on a missing parameter/table/column, check the source tree.
+- **Source of truth**: when the skill and repo disagree, trust the repo. Cite `src/spyglass/...` (drop `src/` for pip installs; locate with `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`). Tutorials drift — cite `.ipynb`, not `py_scripts/`; when a cell fails on a missing parameter/table/column, check source.
 - **Do not edit the installed Spyglass package.** Edits to `src/spyglass/...` desync the in-DB schema from what other labs run, and `pip install -e .` silently reverts them. Push back if the user insists.
+
+## Evidence Expectations
+
+Treat table, key, attribute, method, dependency, parameter, and row-state claims as evidence-backed. Static/source facts: `code_graph.py`, source, or `inspect.signature`. Runtime facts: `db_graph.py`, `Table.heading`, counts, or fetches. Blob parameter keys need source `make()`/builders, docs, or actual rows. If unavailable, mark as hypothesis or abstain.
 
 ## Common Mistakes
 
@@ -99,9 +103,12 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 | NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.ipynb` |
 | DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — |
 | Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | — |
-| Spike sorting pipeline (current / v1) | [spikesorting_pipeline.md](references/spikesorting_pipeline.md) | `10_Spike_SortingV1.ipynb`, `11_Spike_Sorting_Analysis.ipynb` |
+| Spike sorting pipeline (current / v1) | [spikesorting_v1_pipeline.md](references/spikesorting_v1_pipeline.md) | `10_Spike_SortingV1.ipynb` |
+| Spike sorting analysis (post-pipeline: `SortedSpikesGroup`, `UnitAnnotation`, spike-time/firing-rate helpers) | [spikesorting_v1_analysis.md](references/spikesorting_v1_analysis.md) | `11_Spike_Sorting_Analysis.ipynb` |
 | Reading v0 legacy code / v0 data | [spikesorting_v0_legacy.md](references/spikesorting_v0_legacy.md) | `10_Spike_SortingV0.ipynb` |
-| Position tracking (Trodes / DLC) | [position_pipeline.md](references/position_pipeline.md) | `20_Position_Trodes.ipynb`, `21_DLC.ipynb` |
+| Position tracking — overview / merge layer / imported pose | [position_pipeline.md](references/position_pipeline.md) | — |
+| Position tracking — Trodes (LED) | [position_trodes_v1_pipeline.md](references/position_trodes_v1_pipeline.md) | `20_Position_Trodes.ipynb` |
+| Position tracking — DeepLabCut | [position_dlc_v1_pipeline.md](references/position_dlc_v1_pipeline.md) | `21_DLC.ipynb` |
 | Linearization | [linearization_pipeline.md](references/linearization_pipeline.md) | `24_Linearization.ipynb` |
 | LFP / theta | [lfp_pipeline.md](references/lfp_pipeline.md) | `30_LFP.ipynb`, `31_Theta.ipynb` |
 | Ripple detection | [ripple_pipeline.md](references/ripple_pipeline.md) | `32_Ripple_Detection.ipynb` |

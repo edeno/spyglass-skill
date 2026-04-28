@@ -159,7 +159,7 @@ guesses.
 
 **Why:** Aim 2.1 asks for a formal mapping metric ↔ modality ↔ failure
 mode. Today the skill only lists metric *names* in
-`spikesorting_pipeline.md`. A maintained ontology is a natural
+`spikesorting_v1_pipeline.md`. A maintained ontology is a natural
 addition and compounds with every downstream monitoring feature.
 
 **Deliverables:**

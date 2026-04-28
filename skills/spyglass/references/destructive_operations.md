@@ -27,7 +27,7 @@ Build the restricted relation; do not call the destructive helper yet.
 - `print(len(rel_to_delete))` — row count.
 - If the count is `0`, stop. The restriction didn't match what the user thinks it did; almost always a bug in the PK fields.
 - If the count is *unexpectedly large*, stop and ask whether the restriction is right before proceeding.
-- For merge tables, also preview the affected part tables (`(MergeTable & key).parts()`, then inspect each part via `merge_get_part`).
+- For merge tables, preview the affected part rows. **`(MergeTable & key).parts()` is NOT restriction-aware** — `parts()` returns every declared part regardless of the restriction (DataJoint structural metadata; see `utils/dj_merge_tables.py:95`). Use `MergeTable().merge_restrict(key)` (returns the union of restricted parts as a DataJoint relation) or `MergeTable().merge_get_part(key)` (returns the specific part class for a single matched row), and count rows on each.
 
 ### Phase 2 — Report
 
@@ -105,7 +105,7 @@ Only enter this subsection when the user has explicitly named one of `super_dele
 Appropriate scenarios are narrow: admin cleanup after a lab member leaves, fixing a misconfigured experimenter row, or the data owner deleting their own data when the team check is misfiring for a known reason. In every case, run the bypass with `dry_run=True` first when the helper supports it, and report the preview before the actual call.
 
 - **`(Table & key).super_delete(warn=True)`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` by default; `warn=False` suppresses both the warning and the log, so the audit trail depends on the default. **`super_delete` does NOT run Spyglass's file cleanup** — analysis / raw NWB files stay on disk because `Nwbfile.cleanup(delete_files=True)` is never called. After a `super_delete`, run the cleanup helpers explicitly (see [File cleanup](#file-cleanup) below).
-- **`(Table & key).delete(force_permission=True)`** — skips the team check and logs. Same disk-cleanup gap as `super_delete`.
+- **`(Table & key).delete(force_permission=True)`** — skips the team check (`cautious_delete.py:226`) but **stays on the cautious_delete path** for the rest, so the per-`ext_type` external-file cleanup loop at `cautious_delete.py:238-241` still runs. Disk cleanup is NOT skipped here, in contrast with `super_delete`.
 - **`MergeMaster.merge_delete_parent(key, dry_run=True)`** — bypasses the team check structurally (see Coverage gaps above). The classmethod form is required; the restricted form `(MergeMaster & key).merge_delete_parent()` silently drops the restriction and would delete every parent.
 
 After a bypass call, treat the next message as a verification step: fetch the post-state, confirm only the intended rows are gone, and run `Nwbfile.cleanup(delete_files=True)` and any pipeline-scoped `cleanup()` helpers to reclaim the disk space `cautious_delete` would have handled.
@@ -182,7 +182,7 @@ DecodingOutput().cleanup(dry_run=True)   # LOGS what would be removed
 # DecodingOutput().cleanup(dry_run=False)
 ```
 
-**`Nwbfile.cleanup(delete_files=False)`** (staticmethod, `common_nwbfile.py:140`) removes DataJoint filepath entries for raw NWB files not currently referenced. The default (`delete_files=False`) removes only the DB-level entries, leaving the files on disk — use this as the inspect-equivalent step. Setting `delete_files=True` also removes the files themselves. There is **no** `dry_run` argument, and passing `dry_run=True` raises `TypeError`. Do not conflate with `AnalysisNwbfile.cleanup` above.
+**`Nwbfile.cleanup(delete_files=False)`** (staticmethod, `common_nwbfile.py:140-146`) is **destructive in both modes**. It calls `schema.external["raw"].delete(delete_external_files=delete_files)` unconditionally, which removes external-table entries (the DB-level filepath rows) regardless of `delete_files`. `delete_files=False` only stops the on-disk file removal — it does NOT stop the DB mutation. There is **no** `dry_run` argument; passing `dry_run=True` raises `TypeError`. **Do not present this as a preview step.** If you want to see what would be removed, query the external table directly first (`schema.external["raw"].unused()` returns the entries the cleanup would touch). Do not conflate with `AnalysisNwbfile.cleanup` above, which DOES have a `dry_run` argument.
 
 ```python
 Nwbfile.cleanup()                    # entries only; files stay on disk
@@ -232,9 +232,16 @@ When `update1()` *is* fine: only when nothing downstream consumes the row yet. V
 
 ```python
 # For each child of the param table, check no rows reference this key.
-for child in RippleParameters().descendants():
-    n = len(child() & {"ripple_param_name": "default"})
-    assert n == 0, f"{child.__name__} has {n} rows under this params name"
+# `descendants()` returns table NAMES by default (datajoint table.py:220);
+# pass `as_objects=True` to get FreeTable objects you can restrict.
+for child in RippleParameters().descendants(as_objects=True):
+    if "ripple_param_name" not in child.heading.names:
+        continue  # skip descendants that don't carry this PK field
+    n = len(child & {"ripple_param_name": "default"})
+    assert n == 0, f"{child.table_name} has {n} rows under this params name"
+
+# Or, for the topology-only view, run the source-graph CLI:
+#   python skills/spyglass/scripts/db_graph.py path --down RippleParameters
 ```
 
 If any descendant has rows, do not `update1()` — insert a new params row instead.

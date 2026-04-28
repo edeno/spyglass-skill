@@ -255,15 +255,15 @@ All directories are created automatically on first config load if they do not ex
 
 ### Additional Environment Variables
 
-`SpyglassConfig` sets several environment variables with defaults (see `env_defaults` in `settings.py`):
+`SpyglassConfig` sets several environment variables on load. Most defaults live in `env_defaults` (`settings.py`); `KACHERY_ZONE` is handled separately via a `kachery_zone_dict` that reads `os.environ["KACHERY_ZONE"]` first, then falls back to `dj.config['custom']['kachery_zone']`, then to the `franklab.default` zone (`settings.py:245-264`):
 
-| Variable | Default | Purpose |
-| ---------- | --------- | --------- |
-| `FIGURL_CHANNEL` | `franklab2` | figurl visualization channel |
-| `DJ_SUPPORT_FILEPATH_MANAGEMENT` | `TRUE` | Enable DataJoint filepath management |
-| `KACHERY_CLOUD_EPHEMERAL` | `TRUE` | Kachery cloud mode |
-| `HDF5_USE_FILE_LOCKING` | `FALSE` | HDF5 file locking |
-| `KACHERY_ZONE` | `franklab.default` | Kachery zone for data sharing |
+| Variable | Default | Source | Purpose |
+| ---------- | --------- | --------- | --------- |
+| `FIGURL_CHANNEL` | `franklab2` | `env_defaults` | figurl visualization channel |
+| `DJ_SUPPORT_FILEPATH_MANAGEMENT` | `TRUE` | `env_defaults` | Enable DataJoint filepath management |
+| `KACHERY_CLOUD_EPHEMERAL` | `TRUE` | `env_defaults` | Kachery cloud mode |
+| `HDF5_USE_FILE_LOCKING` | `FALSE` | `env_defaults` | HDF5 file locking |
+| `KACHERY_ZONE` | `franklab.default` | `kachery_zone_dict` (env → dj.config → default) | Kachery zone for data sharing |
 
 > **Note:** `FIGURL_CHANNEL` and `KACHERY_ZONE` defaults are hardcoded
 > to Frank Lab values in `settings.py` (historical). Labs running their
@@ -271,13 +271,21 @@ All directories are created automatically on first config load if they do not ex
 > or via `dj.config['custom']` before importing `spyglass.settings` —
 > the defaults will not match your zone.
 
-**Fresh-workstation setup — the one piece of state that doesn't travel
-with the source.** `dj.config['stores']` is machine-local (filesystem
-paths), so `git pull` or a fresh `pip install` leaves it unset on a
-new machine. Populate it by running the `config/dj_config.py` helper
-in the Spyglass repo (or the equivalent
-`SpyglassConfig.save_dj_config(...)` call), then
-`dj.config.save_global()`.
+**Fresh-workstation setup — the one piece of state that doesn't travel with the source.** `dj.config['stores']` is machine-local (filesystem paths), so `git pull` or a fresh `pip install` leaves it unset on a new machine. Populate it via either of:
+
+```bash
+python scripts/install.py --config-only --base-dir /path/to/spyglass_data
+```
+
+```python
+from spyglass.settings import SpyglassConfig
+SpyglassConfig(base_dir="/path/to/spyglass_data").save_dj_config(
+    save_method="global", base_dir="/path/to/spyglass_data",
+    database_user="<your-db-user>",
+)
+```
+
+`save_method="global"` writes `~/.datajoint_config.json` (no extra `dj.config.save_global()` needed). Avoid the legacy `config/dj_config.py` helper in the Spyglass repo — it passes `filename=` to `SpyglassConfig.save_dj_config` (now `output_filename=`, `src/spyglass/settings.py:388`), and crashes with no args by assigning `None` to `SPYGLASS_BASE_DIR` (`config/dj_config.py:8`).
 
 Sanity check at session start:
 
@@ -322,10 +330,12 @@ Use `KACHERY_ZONE` / `KACHERY_CLOUD_EPHEMERAL` env vars above to pick the zone a
 **Common kachery failure modes + diagnostics.**
 
 **`KACHERY_CLOUD_DIR` mismatch.** Spyglass sets `KACHERY_CLOUD_DIR` to
-`${SPYGLASS_BASE_DIR}/.kachery_cloud` on import. `kachery-cloud-init`
-by default writes a `client_id` to `~/.kachery-cloud`. If the two
-don't agree, the Spyglass process can't find the client and Kachery
-calls fail with "Client not registered" or silent 500s.
+`${SPYGLASS_BASE_DIR}/.kachery-cloud` on import (note the hyphen — see
+`directory_schema.json` `kachery.cloud: ".kachery-cloud"`).
+`kachery-cloud-init` by default writes a `client_id` to
+`~/.kachery-cloud`. If the two don't agree, the Spyglass process can't
+find the client and Kachery calls fail with "Client not registered" or
+silent 500s.
 
 **Zone authorization.** `KACHERY_ZONE` must be set BEFORE importing
 Spyglass, and the DB admin must have added your github user to that

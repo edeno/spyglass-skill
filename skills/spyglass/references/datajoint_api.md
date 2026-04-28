@@ -107,7 +107,7 @@ names, times = (Session & key).fetch('nwb_file_name', 'session_start_time')
 # Returns list of dicts with only primary key fields
 ```
 
-**Footgun — too-loose restriction.** `fetch1()` (and universal wrappers like `merge_get_part` and `fetch1_dataframe`) raises "expected one row, got N" when the restriction matches multiple rows. The decoding-only `DecodingOutput.fetch_results` wraps `fetch1()` and shares this behavior — no other `*Output` merge table ships a `fetch_results` method. The usual cause is under-specifying the key: `{"nwb_file_name": nwb_file}` alone typically matches every interval, every parameter set, and every pipeline version for that session. `fetch_nwb()` is a SEPARATE footgun — it silently returns a list across all matching rows, so `[0]`-indexing on an under-specified restriction quietly picks an arbitrary row instead of raising. Fix for both shapes: include enough primary-key fields to pick exactly one row. When unsure what fields exist, print the loose-restriction result first and use it to build a fully-specified key:
+**Footgun — too-loose restriction.** `fetch1()` (and universal wrappers like `merge_get_part` and `fetch1_dataframe`) raises `DataJointError: expected one row, got N` when the restriction matches multiple rows. The decoding-only `DecodingOutput.fetch_results` is **NOT** a `fetch1()` wrapper — it routes through `merge_restrict_class` (`utils/dj_merge_tables.py:770`), which raises a different error shape: `ValueError: Ambiguous entry. Data has mult rows in parent: ...` when the restriction matches multiple parent rows. Same diagnostic outcome (under-specified key), distinct error class — pattern-match on `ValueError` for the decoding case. The usual cause is under-specifying the key: `{"nwb_file_name": nwb_file}` alone typically matches every interval, every parameter set, and every pipeline version for that session. `fetch_nwb()` is a SEPARATE footgun — it silently returns a list across all matching rows, so `[0]`-indexing on an under-specified restriction quietly picks an arbitrary row instead of raising. Fix for all shapes: include enough primary-key fields to pick exactly one row. When unsure what fields exist, print the loose-restriction result first and use it to build a fully-specified key:
 
 ```python
 # Discover
@@ -142,7 +142,7 @@ Implications for writing Spyglass code:
 1. **Confirm cardinality before committing to a disk fetch.** The cardinality check (see `len(rel)` pattern above) is cheap — it's a DB read. A wrong-key `fetch1_dataframe()` wastes disk I/O *and* raises after the slow operation.
 2. **Different failure modes.** A `fetch1_dataframe()` can raise `FileNotFoundError` or time out on Kachery even when the table row exists and the restriction is correct — that means the file wasn't synced, not that the query is wrong. Don't debug the restriction; check the filestore.
 3. **Prefer one disk fetch over many.** `for k in keys: (T & k).fetch_nwb()` hits the filestore N times. If you need all of them, look for a pipeline-specific batched accessor before rolling your own; HDF5 read concurrency across files generally works but within a single file requires care.
-4. **`fetch_nwb()` returns a list, not a scalar.** On a single-row restriction it returns `[nwb_obj]` — a separate gotcha from the disk-vs-DB distinction, covered in SKILL.md Common Mistake #4.
+4. **`fetch_nwb()` returns a list of dicts.** Each dict carries the row's fetched fields plus the loaded NWB object(s) keyed by attribute name (`utils/mixins/fetch.py:284, 319`); a single-row restriction still returns a 1-element list — index `[0]` and read the NWB by key (e.g. `nwb_objs[0]["lfp"]`). Separate gotcha from the disk-vs-DB distinction; also covered in SKILL.md Common Mistake #4.
 
 ### Aggregation (`.aggr()`)
 
@@ -209,7 +209,7 @@ class MyComputedTable(SpyglassMixin, dj.Computed):
 
 **Why the split exists.** Long computations shouldn't hold a DB transaction open — the split lets DataJoint release the DB between `make_fetch` (which reads under a snapshot) and `make_insert` (which writes under its own transaction), with `make_compute` running outside any transaction. Before writing, DataJoint re-runs `make_fetch` and checks the result is unchanged — catching cases where an upstream row was deleted/repopulated mid-compute.
 
-**Which pattern a given Spyglass table uses.** Most v1 tables (e.g., `LFPV1`, `TrodesPosV1`, `SortedSpikesDecodingV1`) still use single-method `make()`. Newer tables with expensive pure-compute stages — e.g., `ClusterlessDecodingV1` — use tri-part make. Check the class body: if you see `make_fetch`/`make_compute`/`make_insert`, it's tri-part; in that case `.make()` won't exist as a direct callable — referring to it as `Table.make()` in code or documentation will mislead.
+**Which pattern a given Spyglass table uses.** Most v1 tables (e.g., `LFPV1`, `TrodesPosV1`, `SortedSpikesDecodingV1`) still use single-method `make()`. Newer tables with expensive pure-compute stages — e.g., `ClusterlessDecodingV1` — use tri-part make. Check the class body: if you see `make_fetch`/`make_compute`/`make_insert`, it's tri-part; the class doesn't define its own monolithic `make()` (DataJoint's inherited `AutoPopulate.make` orchestrates the three phases — `datajoint/autopopulate.py:96, 399`), so when reasoning about behavior or stack traces, inspect the three phase methods on the class instead of looking for a single `make()` body.
 
 **Consequence for debugging.** When tracing a populate failure inside a tri-part-make table, identify which of the three phases raised:
 
@@ -241,8 +241,13 @@ Restrict by descendant attribute — searches **down** the dependency chain. Use
 # Find sessions that have specific position parameters
 Session() >> 'trodes_pos_params_name="default"'
 
-# Find sessions that have decoding results
-Session() >> 'decoding_param_name="default_decoding"'
+# Find sessions that have decoding results. `DecodingParameters`
+# ships defaults at module-import time keyed on
+# f"<shape>_<source>_{non_local_detector_version}"
+# (e.g. "contfrag_clusterless_v1.2.0"; see decoding/v1/core.py:48).
+# There is no "default_decoding" row — pick a real param-name
+# value (or use a LIKE pattern) for this restriction.
+Session() >> 'decoding_param_name LIKE "contfrag_clusterless%"'
 ```
 
 ### Explicit Restriction (`.restrict_by()`)
@@ -281,7 +286,12 @@ Table.heading.secondary_attributes
 Table.parents()
 Table.children()
 
-# Full transitive walk (every upstream prerequisite / downstream consumer)
+# Full transitive walk (every upstream prerequisite / downstream consumer).
+# Both return table NAMES by default (`datajoint/table.py:220`); pass
+# `as_objects=True` for FreeTable objects you can introspect, but they
+# are NOT a restrictable relation — `Table.descendants() & {key: ...}`
+# silently does the wrong thing. Loop over `as_objects=True` and
+# restrict each table individually, or use `db_graph.py path`.
 Table.ancestors()    # all tables this one depends on, recursively
 Table.descendants()  # all tables that depend on this one, recursively
 
@@ -296,10 +306,12 @@ len(Table & restriction)
 
 ### Fetch NWB Objects (`.fetch_nwb()`)
 
-Available on all Spyglass tables via SpyglassMixin. Loads NWB data objects.
+Inherited via `SpyglassMixin` (from `FetchMixin`), but only resolves on **NWB-backed tables** — those that FK to `Nwbfile` / `AnalysisNwbfile` or set `_nwb_table = ...`. Calling it on a table without that FK (selection / parameter / interval / config tables) raises `NotImplementedError` from `FetchMixin._nwb_table_tuple`. Loads NWB data objects when available.
+
+**Exception — decoding tables.** `ClusterlessDecodingV1` (and the SortedSpikes decoding equivalents) store results as xarray netCDF (`.nc`) + a pickled classifier, not NWB. They expose dedicated `fetch_results()` / `fetch_model()` / `fetch_environments()` methods instead of `fetch_nwb()`. See `decoding/v1/clusterless.py:99` (results_path declaration) and the `fetch_results` method nearby.
 
 ```python
-# Fetch NWB objects for a table entry
+# Fetch NWB objects for a table entry (NWB-backed: LFPV1, TrodesPosV1, Raw, ...)
 nwb_objs = (LFPV1 & key).fetch_nwb()
 
 # Access data from NWB object
@@ -308,7 +320,7 @@ lfp_data = nwb_objs[0]['lfp']
 
 ### Fetch as Pynapple (`.fetch_pynapple()`)
 
-Convert NWB data to pynapple objects for time series analysis.
+Same NWB-backed-table gate as `fetch_nwb()`: resolves only on tables with an (Analysis)Nwbfile FK or `_nwb_table` attribute. Converts NWB data to pynapple objects for time series analysis.
 
 ```python
 pynapple_obj = (Table & key).fetch_pynapple()

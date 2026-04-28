@@ -33,7 +33,7 @@ worked example with `len(...)` demonstration, plus the canonical
 
 ## 2. Too-loose restriction + `fetch1()`
 
-`{"nwb_file_name": f}` alone usually matches many rows — every interval, every param set, every pipeline version for that session. `fetch1()`, `merge_get_part()`, and `fetch1_dataframe()` all raise "expected one row, got N" under an under-specified restriction. The decoding-only `DecodingOutput.fetch_results()` shares this behavior since it wraps `fetch1()` internally — but it is decoding-specific, not a universal helper.
+`{"nwb_file_name": f}` alone usually matches many rows — every interval, every param set, every pipeline version for that session. `fetch1()`, `merge_get_part()`, and `fetch1_dataframe()` all raise `DataJointError: expected one row, got N` under an under-specified restriction. `DecodingOutput.fetch_results()` raises a *different* error class for the same diagnostic shape — `ValueError: Ambiguous entry...` — because it routes through `merge_restrict_class` (`utils/dj_merge_tables.py:770`), not `fetch1()`. Same fix, different exception type to pattern-match on.
 
 **Fix.** Add enough primary-key fields to pick exactly one row. Discovery pattern: restrict loosely first, inspect with `.fetch(as_dict=True)` or `MergeTable.merge_restrict(key)`, then build a fully-specified key. Full footgun and fix: [datajoint_api.md](datajoint_api.md).
 
@@ -62,7 +62,7 @@ Spyglass pipelines take different interval-name fields, and two upstream tables 
 No universal `target_interval_list_name` exists. The field varies by pipeline:
 - `IntervalList.interval_list_name` — the primary key of the source table
 - `LFPSelection` / `LFPBandSelection` — `target_interval_list_name`
-- `SpikeSortingRecordingSelection` (v0) — `sort_interval_list_name` (FK projection from `SortInterval.sort_interval_name`; the selection table renames it)
+- `SpikeSortingRecordingSelection` (v0) — `sort_interval_name` (FKs `SortInterval` whose PK is `sort_interval_name` at `spikesorting_recording.py:241`). The downstream `SpikeSortingRecording` (computed) is what introduces `sort_interval_list_name` via `-> IntervalList.proj(sort_interval_list_name='interval_list_name')` at `spikesorting_recording.py:342`. Use `sort_interval_name` to restrict the selection; use `sort_interval_list_name` to restrict the recording or its consumers.
 - Artifact removal outputs — `artifact_removed_interval_list_name`
 - Decoding V1 — `encoding_interval` AND `decoding_interval` (two separate intervals, both projected from `IntervalList.interval_list_name`)
 
@@ -83,8 +83,12 @@ The same splits happen with any free-form string PK field: subject names (`j16` 
 BrainRegion.fetch("region_name")
 # Electrode groups already inserted for this session
 (ElectrodeGroup & {"nwb_file_name": f}).fetch("electrode_group_name")
-# Existing parameter-set names on a selection table
-ParamsTable.fetch("params_name")
+# Existing parameter-set names on a parameter table. There is no
+# universal `params_name` field — each parameter table has its own
+# field (e.g. `trodes_pos_params_name`, `decoding_param_name`,
+# `dlc_si_params_name`). Discover via the table's PK, then fetch:
+pk = ParamsTable.heading.primary_key
+ParamsTable.fetch(*pk)
 ```
 
 Treat existing values in `BrainRegion`, `LabMember`, `LabTeam`, and the lab's established parameter tables as the de facto naming convention — they are what downstream analyses pin to. Diverge only with a specific reason, and when you do, pick an informatively-distinct name (not a typo-variant that collides under casing or whitespace normalization).

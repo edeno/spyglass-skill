@@ -219,11 +219,11 @@ Each signature follows the same shape so the triage output is consistent.
 
 ### A. fetch1() cardinality
 
-**Symptom.** `DataJointError: fetch1 should only be called on relations with exactly one tuple` (or `no tuples`). Sometimes surfaces as `ValueError` from wrappers like `merge_get_part()` or `fetch1_dataframe()`. The decoding-specific `DecodingOutput.fetch_results()` wraps `fetch1()` under the hood and raises the same error shape — but that method only exists on `DecodingOutput`, not on other merge tables.
+**Symptom.** `DataJointError: fetch1 should only be called on relations with exactly one tuple` (or `no tuples`). Sometimes surfaces as `ValueError` from wrappers like `merge_get_part()` or `fetch1_dataframe()`. **Decoding-specific variant** — `DecodingOutput.fetch_results()` does NOT call `fetch1()`; it routes through `merge_restrict_class` (`utils/dj_merge_tables.py:770`), which raises `ValueError: Ambiguous entry. Data has mult rows in parent: ...` for the same diagnostic shape (under-specified restriction → multiple parent matches). Different error class, same fix.
 
-**Most likely root cause.** The restriction in front of `fetch1()` is either too loose (matches multiple rows — every interval, every parameter set, every pipeline version) or too tight (matches zero rows because a field was wrong).
+**Most likely root cause.** The restriction in front of `fetch1()` (or `merge_restrict_class`) is either too loose (matches multiple rows — every interval, every parameter set, every pipeline version) or too tight (matches zero rows because a field was wrong).
 
-**Why that explanation fits.** `fetch1()` is defined to raise on anything other than exactly one row, and Spyglass's universal wrappers `merge_get_part` and `fetch1_dataframe` call it internally (as does the decoding-only `DecodingOutput.fetch_results`).
+**Why that explanation fits.** `fetch1()` is defined to raise on anything other than exactly one row, and Spyglass's universal wrappers `merge_get_part` and `fetch1_dataframe` call it internally. `DecodingOutput.fetch_results` instead routes through `merge_restrict_class`, which has its own multi-row guard and raises `ValueError` (`utils/dj_merge_tables.py:782-786`).
 
 **Fastest confirmation checks.**
 
@@ -357,13 +357,31 @@ MyTable().populate(
 MyTable().make(failing_key)
 ```
 
-Inspect the jobs table to see reserved/errored keys:
+Inspect the jobs table to see reserved/errored keys. **Derive the
+jobs table from the failing table** rather than hard-coding a
+schema name — Spyglass schemas are split across many database names
+(`common`, `lfp_v1`, `spikesorting_v1`, `position_v1`, `decoding_v1`,
+etc.; a quick check is the `database` attribute on the failing
+table's connection). Each schema has its own `~jobs` table:
 
 ```python
 import datajoint as dj
-jobs = dj.schema("spyglass_common").jobs   # or whichever schema owns MyTable
-jobs.fetch(as_dict=True)
-jobs.delete_quick()   # only after confirming you want to re-run those keys
+
+# Pick the schema that owns the table you're populating.
+# `MyTable.database` is the underlying schema name; use that
+# instead of guessing.
+schema_name = MyTable.connection.dependencies.parent_class[
+    MyTable.full_table_name
+].database  # or just MyTable.database in many DataJoint versions
+jobs = dj.Schema(schema_name).jobs
+
+# Filter to this table's failed entries before doing anything:
+errors = jobs & {
+    "table_name": MyTable.table_name,
+    "status": "error",
+}
+errors.fetch(as_dict=True)
+errors.delete_quick()   # only after confirming you want to re-run those keys
 ```
 
 **Minimal fix.** Debug with orchestration off. Once the true cause is fixed, re-enable reservation/parallelism for the full run.
@@ -452,15 +470,25 @@ include those secondary attrs (from its `-> IntervalList` and
 directly works — but `populate()` doesn't use that heading, it uses
 `key_source`'s.
 
-**Fix.** Restrict against the full Selection table, then project to a
-PK-only key before `populate`:
+**Fix.** Restrict against the full Selection table for **the table you're
+populating**, then project to a PK-only key before `populate`. For
+`SpikeSorting.populate`, that's `SpikeSortingSelection`
+(`spikesorting/v1/sorting.py:199`; PK = `sorting_id`):
 
 ```python
-sel_key = (SpikeSortingRecordingSelection & key).fetch1('KEY')
-SpikeSortingRecording.populate(sel_key)
+# SpikeSorting.populate — fix the symptom-table's Selection (NOT
+# SpikeSortingRecordingSelection, which gates the upstream
+# `SpikeSortingRecording.populate` instead):
+sort_key = (SpikeSortingSelection & key).fetch1('KEY')
+SpikeSorting.populate(sort_key)
 
-# or for multi-row populates:
-SpikeSortingRecording.populate((SpikeSortingRecordingSelection & key).proj())
+# Multi-row populate:
+SpikeSorting.populate((SpikeSortingSelection & key).proj())
+
+# Same shape one tier upstream — for SpikeSortingRecording.populate,
+# fix SpikeSortingRecordingSelection:
+rec_key = (SpikeSortingRecordingSelection & key).fetch1('KEY')
+SpikeSortingRecording.populate(rec_key)
 ```
 
 Applies to every `*V1.populate(...)` entry point
@@ -481,8 +509,9 @@ row in an ancestor table, *not* in the table you're inserting into.
 **Find the missing upstream:**
 
 ```python
-# SpyglassMixin ships a diagnostic helper:
-Table().find_insert_fail(key)    # prints 'Raw: MISSING', etc.
+# SpyglassMixin ships a diagnostic helper. It RETURNS the diagnostic
+# string (`utils/mixins/helpers.py:68-83`) — wrap in print() to view.
+print(Table().find_insert_fail(key))    # 'Raw: MISSING', etc.
 
 # or walk parents manually:
 for p in Table.parents(as_objects=True):

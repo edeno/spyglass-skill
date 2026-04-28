@@ -4,7 +4,9 @@ Common errors during installation and first-run. For installation steps, see [se
 
 ## First-response diagnostic
 
-When a user reports something is "not working" vaguely — a `populate` silently skipping, a `fetch1` failing, a connection error — run `python skills/spyglass/scripts/verify_spyglass_env.py` first. It's a single command that checks DataJoint config, base-dir resolution and writability, subdir layout, DB connection (with a 10-second timeout so it doesn't hang), and version-pin drift. The output tells you which of those seven surfaces is actually broken before you start reading tracebacks. Pass `--json` if you want machine-parseable output; pass `--check <name>` to run one specific check.
+This file covers **install, import, config, connection, and base-dir** failures only — symptoms that surface before the user can run a normal Spyglass query at all. `populate` / `make` / `fetch1` failures, NumPy / pandas errors inside `make()`, and join-multiplicity issues belong to runtime debugging — see [runtime_debugging.md](runtime_debugging.md) and [common_mistakes.md](common_mistakes.md).
+
+When a user reports something is "not working" at install / import / connection time — a base-dir warning, a `dj.conn()` timeout, a missing-symbol `ImportError` after `git pull` — run `python skills/spyglass/scripts/verify_spyglass_env.py` first. It's a single command that checks DataJoint config, base-dir resolution and writability, subdir layout, DB connection (with a 10-second timeout so it doesn't hang), and version-pin drift. The output tells you which of those seven surfaces is actually broken before you start reading tracebacks. Pass `--json` if you want machine-parseable output; pass `--check <name>` to run one specific check.
 
 ## Contents
 
@@ -195,10 +197,14 @@ connection at import time (`ExportErrorLog` in `dj_helper_fn` pulled in
 a handshake). If `dj.config` wasn't valid yet — bad host, no password,
 wrong TLS — the import failed.
 
-**Fixed in Spyglass post-#1563** (merged 2026-04-09): `ExportErrorLog`
-moved out of `dj_helper_fn.py` to `common_usage.py`, breaking the
-circular dependency. Upgrade (`git pull && pip install -e .`) and the
-lazy-init fix applies.
+**Current Spyglass:** `ExportErrorLog` lives in
+`spyglass/common/common_usage.py` (verify with `code_graph.py describe
+ExportErrorLog`); `dj_helper_fn.py` imports it lazily inside the
+function body, so importing `spyglass.utils` no longer triggers a
+DataJoint handshake. If `code_graph.py describe ExportErrorLog`
+shows it defined under `spyglass/utils/dj_helper_fn.py` (or imported
+at module top of `dj_helper_fn`), the install predates this fix —
+upgrade (`git pull && pip install -e .`).
 
 Workaround for older installs — populate `dj.config` BEFORE the first
 `from spyglass...`:
@@ -246,8 +252,10 @@ unset DLC_BASE_DIR DLC_PROJECT_PATH
 then re-import.
 
 Both modes are import-time, so neither can be fixed from a live
-Spyglass session — the fix goes through the raw DataJoint config or
-through upgrading Spyglass past #1563.
+Spyglass session — the fix goes through the raw DataJoint config, or
+through upgrading to a Spyglass that defines `ExportErrorLog` in
+`common_usage` and imports it lazily inside `dj_helper_fn` (verify
+with `code_graph.py describe ExportErrorLog`).
 
 ## `ImportError` / symbol-moved errors after `git pull` — editable-install drift
 
@@ -393,8 +401,9 @@ import pynwb   # and whatever else uses HDF5
 ```
 
 The separate "`pynwb` version too old" failure in the same area —
-`AttributeError` on `TimeSeries.get_timestamps` — was fixed by
-bumping the pin to `pynwb>=2.5.0` in #1384. Upgrade your env
-(`pip install -U pynwb`) if you're on 2.2.x.
+`AttributeError` on `TimeSeries.get_timestamps` — needs the floor
+specified in `pyproject.toml` (currently `pynwb>=3.1.3` at line 65;
+verify on your install). Upgrade your env (`pip install -U pynwb`)
+if you're below the floor.
 
 For more troubleshooting guidance, see `docs/src/GettingStarted/TROUBLESHOOTING.md` and `docs/src/GettingStarted/DATABASE.md` in the repository.
