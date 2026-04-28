@@ -142,7 +142,7 @@ Implications for writing Spyglass code:
 1. **Confirm cardinality before committing to a disk fetch.** The cardinality check (see `len(rel)` pattern above) is cheap — it's a DB read. A wrong-key `fetch1_dataframe()` wastes disk I/O *and* raises after the slow operation.
 2. **Different failure modes.** A `fetch1_dataframe()` can raise `FileNotFoundError` or time out on Kachery even when the table row exists and the restriction is correct — that means the file wasn't synced, not that the query is wrong. Don't debug the restriction; check the filestore.
 3. **Prefer one disk fetch over many.** `for k in keys: (T & k).fetch_nwb()` hits the filestore N times. If you need all of them, look for a pipeline-specific batched accessor before rolling your own; HDF5 read concurrency across files generally works but within a single file requires care.
-4. **`fetch_nwb()` returns a list, not a scalar.** On a single-row restriction it returns `[nwb_obj]` — a separate gotcha from the disk-vs-DB distinction, covered in SKILL.md Common Mistake #4.
+4. **`fetch_nwb()` returns a list of dicts.** Each dict carries the row's fetched fields plus the loaded NWB object(s) keyed by attribute name (`utils/mixins/fetch.py:284, 319`); a single-row restriction still returns a 1-element list — index `[0]` and read the NWB by key (e.g. `nwb_objs[0]["lfp"]`). Separate gotcha from the disk-vs-DB distinction; also covered in SKILL.md Common Mistake #4.
 
 ### Aggregation (`.aggr()`)
 
@@ -209,7 +209,7 @@ class MyComputedTable(SpyglassMixin, dj.Computed):
 
 **Why the split exists.** Long computations shouldn't hold a DB transaction open — the split lets DataJoint release the DB between `make_fetch` (which reads under a snapshot) and `make_insert` (which writes under its own transaction), with `make_compute` running outside any transaction. Before writing, DataJoint re-runs `make_fetch` and checks the result is unchanged — catching cases where an upstream row was deleted/repopulated mid-compute.
 
-**Which pattern a given Spyglass table uses.** Most v1 tables (e.g., `LFPV1`, `TrodesPosV1`, `SortedSpikesDecodingV1`) still use single-method `make()`. Newer tables with expensive pure-compute stages — e.g., `ClusterlessDecodingV1` — use tri-part make. Check the class body: if you see `make_fetch`/`make_compute`/`make_insert`, it's tri-part; in that case `.make()` won't exist as a direct callable — referring to it as `Table.make()` in code or documentation will mislead.
+**Which pattern a given Spyglass table uses.** Most v1 tables (e.g., `LFPV1`, `TrodesPosV1`, `SortedSpikesDecodingV1`) still use single-method `make()`. Newer tables with expensive pure-compute stages — e.g., `ClusterlessDecodingV1` — use tri-part make. Check the class body: if you see `make_fetch`/`make_compute`/`make_insert`, it's tri-part; the class doesn't define its own monolithic `make()` (DataJoint's inherited `AutoPopulate.make` orchestrates the three phases — `datajoint/autopopulate.py:96, 399`), so when reasoning about behavior or stack traces, inspect the three phase methods on the class instead of looking for a single `make()` body.
 
 **Consequence for debugging.** When tracing a populate failure inside a tri-part-make table, identify which of the three phases raised:
 
@@ -286,7 +286,12 @@ Table.heading.secondary_attributes
 Table.parents()
 Table.children()
 
-# Full transitive walk (every upstream prerequisite / downstream consumer)
+# Full transitive walk (every upstream prerequisite / downstream consumer).
+# Both return table NAMES by default (`datajoint/table.py:220`); pass
+# `as_objects=True` for FreeTable objects you can introspect, but they
+# are NOT a restrictable relation — `Table.descendants() & {key: ...}`
+# silently does the wrong thing. Loop over `as_objects=True` and
+# restrict each table individually, or use `db_graph.py path`.
 Table.ancestors()    # all tables this one depends on, recursively
 Table.descendants()  # all tables that depend on this one, recursively
 

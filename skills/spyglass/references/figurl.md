@@ -55,10 +55,14 @@ print(url)
 
 # ---- User curates in browser, saving labels/merges to the curation_uri ----
 
-# 4. Pull curator's decisions back from kachery
-curation_json = (FigURLCurationSelection & sel_key).fetch1("curation_uri")
-labels = FigURLCuration.get_labels(curation_json)         # {unit_id: [labels]}
-merge_groups = FigURLCuration.get_merge_groups(curation_json)  # merge structure
+# 4. Pull curator's decisions back from kachery. The fetched value is
+#    the kachery URI (e.g. `sha1://...`); the helpers call
+#    `kachery_cloud.load_json(curation_uri)` internally
+#    (`spikesorting/v1/figurl_curation.py:215`) to deref it. Don't pre-load
+#    the JSON yourself — pass the URI string in.
+curation_uri = (FigURLCurationSelection & sel_key).fetch1("curation_uri")
+labels = FigURLCuration.get_labels(curation_uri)         # {unit_id: [labels]}
+merge_groups = FigURLCuration.get_merge_groups(curation_uri)  # merge structure
 
 # 5. Create a new CurationV1 entry with the pulled results
 CurationV1.insert_curation(

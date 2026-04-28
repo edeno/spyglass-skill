@@ -97,7 +97,7 @@ for fname in ["session_01.nwb", "session_02.nwb"]:
 ```python
 insert_sessions(
     nwb_file_names,           # str — one filename in $SPYGLASS_RAW_DIR; list input is broken (see Gotcha above)
-    rollback_on_fail=False,   # Undo all inserts if any table fails
+    rollback_on_fail=False,   # On any per-table failure logged to InsertError, super_delete the Nwbfile row (cascades DB rows, does NOT clean files; mutually exclusive with raise_err=True — see populate_all_common.py:257)
     raise_err=False,          # Raise on first error instead of logging and continuing
     reinsert=False,           # Allow re-insertion of a file already in Nwbfile
 )
