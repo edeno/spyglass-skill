@@ -5139,11 +5139,11 @@
           "TrodesPosParams"
         ],
         "forbidden_substrings": [
-          "Set trodes_pos_param_name",
-          "trodes_pos_param_name is correct"
+          "trodes_pos_param_name'",
+          "trodes_pos_param_name\""
         ],
         "behavioral_checks": [
-          "Identifies the singular/plural typo (`trodes_pos_param_name` vs `trodes_pos_params_name`)",
+          "Identifies the singular/plural typo (`trodes_pos_param_name` vs `trodes_pos_params_name`) and does NOT recommend the singular form as the correct field name",
           "Uses `code_graph.py describe` if acting as the skill agent, or `Table.heading.primary_key` in the user's Python session — does not assert the field name from memory",
           "Names the silent-drop semantics — DataJoint ignores unknown restriction keys without error"
         ]
@@ -5152,9 +5152,9 @@
       "expectations": [
         "Response contains substring `trodes_pos_params_name`.",
         "Response contains substring `heading.primary_key`.",
-        "Response does not contain substring `Set trodes_pos_param_name`.",
-        "Response does not contain substring `trodes_pos_param_name is correct`.",
-        "Identifies the singular/plural typo (`trodes_pos_param_name` vs `trodes_pos_params_name`)",
+        "Response does not contain substring `trodes_pos_param_name'`.",
+        "Response does not contain substring `trodes_pos_param_name\"`.",
+        "Identifies the singular/plural typo (`trodes_pos_param_name` vs `trodes_pos_params_name`) and does NOT recommend the singular form as the correct field name",
         "Uses `code_graph.py describe` if acting as the skill agent, or `Table.heading.primary_key` in the user's Python session — does not assert the field name from memory",
         "Names the silent-drop semantics — DataJoint ignores unknown restriction keys without error"
       ]
@@ -5166,7 +5166,7 @@
       "tier": "parameter-semantics",
       "difficulty": "medium",
       "prompt": "I want to find every RippleParameters row whose `speed_threshold` is below 4.0. What restriction do I run?",
-      "expected_output": "`speed_threshold` is NOT a heading field on `RippleParameters` — it lives nested inside the `ripple_param_dict` longblob, under `ripple_param_dict[\"ripple_detection_params\"][\"speed_threshold\"]` (verify the blob shape via `ripple_pipeline.md` § RippleParameters or by reading an existing row: `(RippleParameters & {}).fetch('ripple_param_dict', limit=1, as_dict=True)[0]`). The consumer site is `RippleTimesV1.make` (`ripple/v1/ripple.py:204-223`), which is the authority for what's actually inside the blob. There is no DataJoint restriction shape that filters on a blob field — fetch all the rows, deserialize, and filter in Python:\n\n```python\nrows = RippleParameters.fetch(as_dict=True)\nmatches = [\n    r for r in rows\n    if r['ripple_param_dict']['ripple_detection_params']['speed_threshold'] < 4.0\n]\n```\n\nRoutes to feedback_loops.md (blob-shape varies per pipeline) and ripple_pipeline.md.",
+      "expected_output": "`speed_threshold` is NOT a heading field on `RippleParameters` — it lives nested inside the `ripple_param_dict` longblob, under `ripple_param_dict[\"ripple_detection_params\"][\"speed_threshold\"]` (verify the blob shape via `ripple_pipeline.md` § RippleParameters or by reading an existing row: `(RippleParameters & {}).fetch('ripple_param_dict', limit=1, as_dict=True)[0]`). The consumer site is `RippleTimesV1.make` (`ripple/v1/ripple.py:207-224`), which is the authority for what's actually inside the blob. There is no DataJoint restriction shape that filters on a blob field — fetch all the rows, deserialize, and filter in Python:\n\n```python\nrows = RippleParameters.fetch(as_dict=True)\nmatches = [\n    r for r in rows\n    if r['ripple_param_dict']['ripple_detection_params']['speed_threshold'] < 4.0\n]\n```\n\nRoutes to feedback_loops.md (blob-shape varies per pipeline) and ripple_pipeline.md.",
       "assertions": {
         "required_substrings": [
           "ripple_param_dict",
@@ -5179,7 +5179,8 @@
         ],
         "forbidden_substrings": [
           "RippleParameters & {'speed_threshold'",
-          "RippleParameters & {\"speed_threshold\""
+          "RippleParameters & {\"speed_threshold\"",
+          "speed_threshold <"
         ],
         "behavioral_checks": [
           "Identifies `speed_threshold` as a blob field nested under `ripple_param_dict[\"ripple_detection_params\"]`, NOT a heading column",
@@ -5194,6 +5195,7 @@
         "Response contains substring `ripple_pipeline.md`.",
         "Response does not contain substring `RippleParameters & {'speed_threshold'`.",
         "Response does not contain substring `RippleParameters & {\"speed_threshold\"`.",
+        "Response does not contain substring `speed_threshold <`.",
         "Identifies `speed_threshold` as a blob field nested under `ripple_param_dict[\"ripple_detection_params\"]`, NOT a heading column",
         "Routes blob shape verification to `RippleTimesV1.make` (the consumer) or to an actual fetched row, NOT to the table name alone",
         "Recommends fetch-then-filter-in-Python rather than a DataJoint restriction on the blob field"
@@ -5216,13 +5218,10 @@
         "expected_output_tables_exempt": [
           "DecodingOutput"
         ],
-        "forbidden_substrings": [
-          "the count is correct",
-          "the restriction worked"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies the silent no-op shape: merge master's heading is only `(merge_id, source)`, so unknown restriction keys are dropped without error",
-          "Recommends `merge_restrict` (or `merge_get_part`) as the fix; does NOT recommend rerunning the bare `& {nwb_file_name: ...}` form",
+          "Recommends `merge_restrict` (or `merge_get_part`) as the fix; does NOT confirm the user's bare `& {nwb_file_name: ...}` count of 2735 as correct, and does NOT recommend rerunning the bare form",
           "Verifies the merge-master heading with `code_graph.py describe DecodingOutput` (agent tool) or `DecodingOutput.heading.primary_key` in the user's Python session, not invented merge-master fields"
         ]
       },
@@ -5231,10 +5230,8 @@
         "Response contains substring `merge_restrict`.",
         "Response contains substring `merge_methods.md`.",
         "Response contains substring `merge_id`.",
-        "Response does not contain substring `the count is correct`.",
-        "Response does not contain substring `the restriction worked`.",
         "Identifies the silent no-op shape: merge master's heading is only `(merge_id, source)`, so unknown restriction keys are dropped without error",
-        "Recommends `merge_restrict` (or `merge_get_part`) as the fix; does NOT recommend rerunning the bare `& {nwb_file_name: ...}` form",
+        "Recommends `merge_restrict` (or `merge_get_part`) as the fix; does NOT confirm the user's bare `& {nwb_file_name: ...}` count of 2735 as correct, and does NOT recommend rerunning the bare form",
         "Verifies the merge-master heading with `code_graph.py describe DecodingOutput` (agent tool) or `DecodingOutput.heading.primary_key` in the user's Python session, not invented merge-master fields"
       ]
     },
@@ -5257,10 +5254,7 @@
           "RippleParameters",
           "PositionOutput"
         ],
-        "forbidden_substrings": [
-          "Yes, that's enough",
-          "the partial restriction is fine"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies the populate restriction as partial-PK and explains it runs over every combination of the missing PK fields",
           "Names the missing PK fields explicitly (`RippleLFPSelection`, `pos_merge_id`)",
@@ -5273,8 +5267,6 @@
         "Response contains substring `RippleLFPSelection`.",
         "Response contains substring `pos_merge_id`.",
         "Response contains substring `ripple/v1/ripple.py`.",
-        "Response does not contain substring `Yes, that's enough`.",
-        "Response does not contain substring `the partial restriction is fine`.",
         "Identifies the populate restriction as partial-PK and explains it runs over every combination of the missing PK fields",
         "Names the missing PK fields explicitly (`RippleLFPSelection`, `pos_merge_id`)",
         "Recommends building a fully-scoped `populate_key` with the missing fields included",
@@ -5285,7 +5277,7 @@
       "id": 131,
       "eval_name": "key-hygiene-v0-v1-cross-version",
       "stage": "hallucination-resistance",
-      "tier": "version-disambiguation",
+      "tier": "disambiguation",
       "difficulty": "medium",
       "prompt": "On v1's `SortGroup`, can I call `set_group_by_electrode_group(nwb_file_name)` like the v0 docs show?",
       "expected_output": "No — `set_group_by_electrode_group` exists only on v0's `SortGroup` (`spyglass/spikesorting/v0/spikesorting_recording.py:94`). v1's `SortGroup` exposes only `set_group_by_shank` (`spyglass/spikesorting/v1/recording.py:51`); there is no electrode-group-grouping helper on v1. Verify by any of: (a) **agent tool** — `code_graph.py find-method set_group_by_electrode_group` returns the v0 owner only; (b) **source read** — grep `spyglass/spikesorting/v1/recording.py` for the method set on v1's `SortGroup`; (c) **Python session** — `from spyglass.spikesorting.v1.recording import SortGroup; [m for m in dir(SortGroup) if 'set_group' in m]`. Use `set_group_by_shank` for clusterless / waveform-based v1 workflows; do NOT port the v0 electrode-group pattern. Routes to spikesorting_v1_pipeline.md and spikesorting_v0_legacy.md.",
@@ -5298,12 +5290,9 @@
         "expected_output_tables_exempt": [
           "SortGroup"
         ],
-        "forbidden_substrings": [
-          "Yes, you can use set_group_by_electrode_group on v1",
-          "v1's SortGroup also has set_group_by_electrode_group"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
-          "States that `set_group_by_electrode_group` does NOT exist on v1's SortGroup",
+          "States that `set_group_by_electrode_group` does NOT exist on v1's SortGroup, in any phrasing — does not affirm that v1 supports the v0 helper",
           "Names `set_group_by_shank` as the v1 alternative",
           "Verifies with `code_graph.py find-method` (agent tool), a version-specific source read, or Python introspection on the imported v1 SortGroup — not memory",
           "Cites distinct v0 and v1 source paths to anchor the version difference"
@@ -5314,9 +5303,7 @@
         "Response contains substring `set_group_by_shank`.",
         "Response contains substring `spikesorting_v1_pipeline.md`.",
         "Response contains substring `spikesorting/v1/recording.py`.",
-        "Response does not contain substring `Yes, you can use set_group_by_electrode_group on v1`.",
-        "Response does not contain substring `v1's SortGroup also has set_group_by_electrode_group`.",
-        "States that `set_group_by_electrode_group` does NOT exist on v1's SortGroup",
+        "States that `set_group_by_electrode_group` does NOT exist on v1's SortGroup, in any phrasing — does not affirm that v1 supports the v0 helper",
         "Names `set_group_by_shank` as the v1 alternative",
         "Verifies with `code_graph.py find-method` (agent tool), a version-specific source read, or Python introspection on the imported v1 SortGroup — not memory",
         "Cites distinct v0 and v1 source paths to anchor the version difference"
@@ -5371,7 +5358,6 @@
       "assertions": {
         "required_substrings": [
           "lfp_electrode_group_name",
-          "merge_get_part",
           "lfp_pipeline.md"
         ],
         "expected_output_tables_exempt": [
@@ -5380,27 +5366,21 @@
           "LFPOutput",
           "LFPV1"
         ],
-        "forbidden_substrings": [
-          "(LFPV1 & {'nwb_file_name': nwb_file}).fetch1_dataframe()",
-          "(LFPV1 & {\"nwb_file_name\": nwb_file}).fetch1_dataframe()"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Treats the prompt as under-specified — either asks the user for the missing keys OR shows discovery code that enumerates candidates first",
           "Names the LFP-specific keys the user needs to choose (`lfp_electrode_group_name`, `target_interval_list_name`, `filter_name`, `filter_sampling_rate`)",
-          "Resolves the merge_id through `LFPOutput.merge_get_part(...).fetch1('KEY')`, NOT through a bare `LFPOutput & {nwb_file_name: ...}` restriction",
+          "Resolves the merge_id through a merge-aware helper (`LFPOutput.merge_get_part(...).fetch1('KEY')` OR `LFPOutput.merge_restrict(...)`), NOT through a bare `LFPOutput & {nwb_file_name: ...}` restriction",
           "Does NOT hand back a single-line bare-restriction `fetch1_dataframe()` without first verifying cardinality or scoping"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `lfp_electrode_group_name`.",
-        "Response contains substring `merge_get_part`.",
         "Response contains substring `lfp_pipeline.md`.",
-        "Response does not contain substring `(LFPV1 & {'nwb_file_name': nwb_file}).fetch1_dataframe()`.",
-        "Response does not contain substring `(LFPV1 & {\"nwb_file_name\": nwb_file}).fetch1_dataframe()`.",
         "Treats the prompt as under-specified — either asks the user for the missing keys OR shows discovery code that enumerates candidates first",
         "Names the LFP-specific keys the user needs to choose (`lfp_electrode_group_name`, `target_interval_list_name`, `filter_name`, `filter_sampling_rate`)",
-        "Resolves the merge_id through `LFPOutput.merge_get_part(...).fetch1('KEY')`, NOT through a bare `LFPOutput & {nwb_file_name: ...}` restriction",
+        "Resolves the merge_id through a merge-aware helper (`LFPOutput.merge_get_part(...).fetch1('KEY')` OR `LFPOutput.merge_restrict(...)`), NOT through a bare `LFPOutput & {nwb_file_name: ...}` restriction",
         "Does NOT hand back a single-line bare-restriction `fetch1_dataframe()` without first verifying cardinality or scoping"
       ]
     }
