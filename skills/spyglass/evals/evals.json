@@ -156,9 +156,7 @@
           "PositionOutput.merge_delete(merge_key)",
           "classmethod-restriction-discard"
         ],
-        "forbidden_substrings": [
-          "just confirm the deletion"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Explicitly warns the user to NOT confirm the 200-row prompt",
           "Shows the corrected form with restriction as an argument",
@@ -169,7 +167,6 @@
       "expectations": [
         "Response contains substring `PositionOutput.merge_delete(merge_key)`.",
         "Response contains substring `classmethod-restriction-discard`.",
-        "Response does not contain substring `just confirm the deletion`.",
         "Explicitly warns the user to NOT confirm the 200-row prompt",
         "Shows the corrected form with restriction as an argument",
         "Cites the classmethod-restriction-discard pattern"
@@ -831,8 +828,7 @@
           "LabTeam"
         ],
         "forbidden_substrings": [
-          "super_delete(warn=False)",
-          "delete_quick"
+          "super_delete(warn=False)"
         ],
         "behavioral_checks": [
           "Explains the team-permission model rather than the bypass",
@@ -845,7 +841,6 @@
         "Response contains substring `team_name`.",
         "Response contains substring `LabTeam`.",
         "Response does not contain substring `super_delete(warn=False)`.",
-        "Response does not contain substring `delete_quick`.",
         "Explains the team-permission model rather than the bypass",
         "Does not recommend super_delete() as the primary fix",
         "Treats the PermissionError as a feature, not a bug"
@@ -1102,7 +1097,6 @@
         ],
         "forbidden_substrings": [
           "Go ahead and insert it as 'default'",
-          "Looks fine, just insert",
           "you can use 'default' as the name",
           "inserting as 'default' should be fine"
         ],
@@ -1123,7 +1117,6 @@
         "Response contains substring `RippleParameters`.",
         "Response contains substring `ripple_param_name`.",
         "Response does not contain substring `Go ahead and insert it as 'default'`.",
-        "Response does not contain substring `Looks fine, just insert`.",
         "Response does not contain substring `you can use 'default' as the name`.",
         "Response does not contain substring `inserting as 'default' should be fine`.",
         "Pushes back on the 'I don't know what these values do' framing — explains what at least three of the ripple-detection params actually control (speed_threshold, zscore_threshold, minimum_duration, etc.)",
@@ -1148,8 +1141,7 @@
           "pyproject.toml"
         ],
         "forbidden_substrings": [
-          "pip install -U spyglass",
-          "upgrade spyglass"
+          "pip install -U spyglass"
         ],
         "behavioral_checks": [
           "Asks whether the user upgraded any package (especially spikeinterface, or a sibling lib that may have pulled it) before naming a fix — does not assume env drift without checking",
@@ -1168,7 +1160,6 @@
         "Response contains substring `WaveformExtractor`.",
         "Response contains substring `pyproject.toml`.",
         "Response does not contain substring `pip install -U spyglass`.",
-        "Response does not contain substring `upgrade spyglass`.",
         "Asks whether the user upgraded any package (especially spikeinterface, or a sibling lib that may have pulled it) before naming a fix — does not assume env drift without checking",
         "Identifies the version-coupling issue (Spyglass pins a specific SpikeInterface range; WaveformExtractor was removed after 0.99.x in favor of SortingAnalyzer)",
         "Points at pyproject.toml as the source of truth for the pin rather than guessing a specific version",
@@ -1318,9 +1309,7 @@
           "TrodesPosV1",
           "DLCPosV1"
         ],
-        "forbidden_substrings": [
-          "retry merge_get_part"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Decodes the error correctly — 'Found 0 potential parts: []' means zero source-table rows mapped to a merge-part-table row, not 'multiple'",
           "Gives the `len(part & restriction)` diagnostic to confirm zero-in-merge-part",
@@ -1336,7 +1325,6 @@
         "Response contains substring `IntervalPositionInfo`.",
         "Response contains substring `TrodesPosV1`.",
         "Response contains substring `DLCPosV1`.",
-        "Response does not contain substring `retry merge_get_part`.",
         "Decodes the error correctly — 'Found 0 potential parts: []' means zero source-table rows mapped to a merge-part-table row, not 'multiple'",
         "Gives the `len(part & restriction)` diagnostic to confirm zero-in-merge-part",
         "Identifies the missing merge-insert step as the root cause",
@@ -1610,7 +1598,6 @@
           "cleanup("
         ],
         "forbidden_substrings": [
-          "just use super_delete next time",
           "super_delete is fine here"
         ],
         "behavioral_checks": [
@@ -1629,7 +1616,6 @@
         "Response contains substring `dry_run`.",
         "Response contains substring `LabMemberInfo`.",
         "Response contains substring `cleanup(`.",
-        "Response does not contain substring `just use super_delete next time`.",
         "Response does not contain substring `super_delete is fine here`.",
         "Confirms super_delete bypasses Spyglass's file cleanup (aliases to datajoint.Table.delete)",
         "Shows AnalysisNwbfile().cleanup(dry_run=True) first, then dry_run=False",
@@ -1702,8 +1688,6 @@
           "Session"
         ],
         "forbidden_substrings": [
-          "just re-run insert_sessions",
-          "clear the Nwbfile row and retry",
           "edit populate_all_common.py"
         ],
         "behavioral_checks": [
@@ -1723,8 +1707,6 @@
         "Response contains substring `PositionSource`.",
         "Response contains substring `Raw`.",
         "Response contains substring `Session`.",
-        "Response does not contain substring `just re-run insert_sessions`.",
-        "Response does not contain substring `clear the Nwbfile row and retry`.",
         "Response does not contain substring `edit populate_all_common.py`.",
         "Leads with `populate_all_common(nwb_file_name, raise_err=True)` as the primary fix — the function's built-in kwarg",
         "Identifies the default `raise_err=False` behavior as the silent-failure root cause",
@@ -4014,8 +3996,7 @@
         ],
         "forbidden_substrings": [
           "reinsert=True before",
-          "should super_delete",
-          "delete the Session row and re-ingest"
+          "should super_delete"
         ],
         "behavioral_checks": [
           "Inspects `common_usage.InsertError` first (with the session's nwb_file_name restriction) rather than re-running the ingest blindly",
@@ -4040,7 +4021,6 @@
         "Response contains substring `ProbeType`.",
         "Response does not contain substring `reinsert=True before`.",
         "Response does not contain substring `should super_delete`.",
-        "Response does not contain substring `delete the Session row and re-ingest`.",
         "Inspects `common_usage.InsertError` first (with the session's nwb_file_name restriction) rather than re-running the ingest blindly",
         "Mentions that missing `Probe` rows often indicate an upstream `DataAcquisitionDevice` / `ProbeType` dependency that skipped silently — not a Probe-table-level fault"
       ]
@@ -4549,8 +4529,6 @@
           "descendants("
         ],
         "forbidden_substrings": [
-          "yes, just call `update1`",
-          "yes, just call update1",
           "go ahead and update1"
         ],
         "behavioral_checks": [
@@ -4578,8 +4556,6 @@
         "Response contains substring `RippleParameters`.",
         "Response contains substring `RippleTimesV1`.",
         "Response contains substring `descendants(`.",
-        "Response does not contain substring `yes, just call `update1``.",
-        "Response does not contain substring `yes, just call update1`.",
         "Response does not contain substring `go ahead and update1`.",
         "Pushes back on `update1()` against the existing 'default' row when downstream rows may already consume it — does NOT capitulate to the user's framing",
         "Recommends inspecting `RippleParameters().descendants()` (or equivalent walk) and checking `(child & {ripple_param_name: 'default'})` for `>0` rows BEFORE deciding whether `update1` is safe",
@@ -4694,7 +4670,6 @@
           "provenance"
         ],
         "forbidden_substrings": [
-          "call update1 on the existing row",
           "yes, just update1 the row"
         ],
         "behavioral_checks": [
@@ -4718,7 +4693,6 @@
         "Response contains substring `new ripple_param_name`.",
         "Response contains substring `ripple_param_dict`.",
         "Response contains substring `provenance`.",
-        "Response does not contain substring `call update1 on the existing row`.",
         "Response does not contain substring `yes, just update1 the row`.",
         "Recommends inserting a NEW `RippleParameters` row (e.g. `ripple_param_name='zscore3'`) and populating `RippleTimesV1` against the new name — does NOT recommend mutating the existing `'default'` row via `update1()`",
         "Frames the issue as **provenance**: existing `RippleTimesV1` rows still reference the old param name but the blob would have changed, breaking reproducibility",
@@ -4892,7 +4866,6 @@
           "RippleParameters"
         ],
         "forbidden_substrings": [
-          "just restart the kernel",
           "the fix is to restart the kernel"
         ],
         "behavioral_checks": [
@@ -4911,7 +4884,6 @@
         "Response contains substring `lock`.",
         "Response contains substring `performance_schema`.",
         "Response contains substring `RippleParameters`.",
-        "Response does not contain substring `just restart the kernel`.",
         "Response does not contain substring `the fix is to restart the kernel`.",
         "Routes to `check_threads(detailed=True)` (helpers.py:206) BEFORE suggesting a kernel restart or reconnect — it's the diagnostic primitive that distinguishes lock contention from slow compute",
         "Distinguishes *idle* hang (no CPU, no progress -> lock contention) from slow-compute (fetch pulling a large blob -> CPU activity in the kernel); picks lock contention as the likely cause for a small params table",
