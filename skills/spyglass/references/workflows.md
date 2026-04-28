@@ -116,6 +116,12 @@ for sk in sessions:
     except (dj.DataJointError, ValueError):
         # zero or multiple matches — skip this session in the batch
         continue
+    # `merge_get_part` raises only on zero or multiple matching PART
+    # TABLES — it does NOT prove the returned part relation has
+    # exactly one ROW. Verify before fetch1, otherwise a multi-row
+    # part will raise mid-batch.
+    if len(part) != 1:
+        continue
     results.append((PositionOutput & part.fetch1("KEY")).fetch1_dataframe())
 ```
 

@@ -299,8 +299,11 @@ cls = PositionOutput().merge_get_parent_class("TrodesPosV1")
 
 ### Data Fetching
 
-#### `merge_fetch(*attrs, restriction=True, **kwargs) -> list`
+#### `merge_fetch(*attrs, restriction=True, **kwargs)` — return shape varies
+
 Fetch data across all part tables. Similar to `fetch()` but works across the union of all parts. **Instance method** — call on a restricted relation or an instance, not the bare class.
+
+**Return-shape footgun.** Source returns `results[0] if len(results) == 1 else results` (`utils/dj_merge_tables.py:841`): exactly one part-fetch produces the inner object directly (a list / array / dict, depending on the `attrs` you asked for), but two-or-more parts produces a list of those objects. Don't write code that assumes either shape — branch on `isinstance(out, list)`, or restrict via `merge_get_part(...)` and call `.fetch(...)` on the resolved part directly when you need a stable return type.
 
 ```python
 # Preferred — explicit restriction kwarg routes the dict to each part:

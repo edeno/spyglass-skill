@@ -232,9 +232,16 @@ When `update1()` *is* fine: only when nothing downstream consumes the row yet. V
 
 ```python
 # For each child of the param table, check no rows reference this key.
-for child in RippleParameters().descendants():
-    n = len(child() & {"ripple_param_name": "default"})
-    assert n == 0, f"{child.__name__} has {n} rows under this params name"
+# `descendants()` returns table NAMES by default (datajoint table.py:220);
+# pass `as_objects=True` to get FreeTable objects you can restrict.
+for child in RippleParameters().descendants(as_objects=True):
+    if "ripple_param_name" not in child.heading.names:
+        continue  # skip descendants that don't carry this PK field
+    n = len(child & {"ripple_param_name": "default"})
+    assert n == 0, f"{child.table_name} has {n} rows under this params name"
+
+# Or, for the topology-only view, run the source-graph CLI:
+#   python skills/spyglass/scripts/db_graph.py path --down RippleParameters
 ```
 
 If any descendant has rows, do not `update1()` — insert a new params row instead.

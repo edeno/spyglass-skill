@@ -509,8 +509,9 @@ row in an ancestor table, *not* in the table you're inserting into.
 **Find the missing upstream:**
 
 ```python
-# SpyglassMixin ships a diagnostic helper:
-Table().find_insert_fail(key)    # prints 'Raw: MISSING', etc.
+# SpyglassMixin ships a diagnostic helper. It RETURNS the diagnostic
+# string (`utils/mixins/helpers.py:68-83`) — wrap in print() to view.
+print(Table().find_insert_fail(key))    # 'Raw: MISSING', etc.
 
 # or walk parents manually:
 for p in Table.parents(as_objects=True):

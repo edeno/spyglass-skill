@@ -108,7 +108,16 @@ print(len(existing), "existing rows for this group key")
 #    (nwb_file_name, unit_filter_params_name, sorted_spikes_group_name)
 #    triple already exists (`spikesorting/analysis/v1/group.py:84-95`).
 #    The same group_name CAN coexist under a different
-#    unit_filter_params_name — they're distinct rows by PK.
+#    unit_filter_params_name — they're distinct rows by PK
+#    (`spikesorting/analysis/v1/group.py:63`). HOWEVER:
+#    `SortedSpikesGroup.fetch_spike_data` only restricts the Units
+#    part by (`nwb_file_name`, `sorted_spikes_group_name`)
+#    (`spikesorting/analysis/v1/group.py:171`) — it does NOT filter
+#    by `unit_filter_params_name`. If two rows share a group_name
+#    under different filter params, fetch_spike_data merges their
+#    units silently. Keep `sorted_spikes_group_name` unique per
+#    session unless you've verified the helper behavior matches
+#    your intent.
 SortedSpikesGroup().create_group(
     nwb_file_name=nwb_file,
     group_name=group_name,

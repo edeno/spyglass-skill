@@ -105,7 +105,7 @@ print(len(rel))          # must be exactly 1
 result = rel.fetch1()    # only call after len == 1 is confirmed
 ```
 
-For merge tables specifically, the inspect phase uses `MergeTable.merge_restrict(key)` or `(MergeTable & key).fetch(as_dict=True)` — not `fetch_results`, which is a decoding-only data-loading method.
+For merge tables specifically, the inspect phase uses `MergeTable.merge_restrict(key)` or — only when `key` contains a merge-master field, especially `merge_id` — `(MergeTable & key).fetch(as_dict=True)`. The merge master's heading is just `(merge_id, source)`, so a `key` carrying only upstream fields silently no-ops the `&` and the `fetch` returns the entire merge table. `merge_restrict` routes the restriction to the parts and is the safe default; reach for the `&` form only when you already have a `merge_id` in hand.
 
 ## Post-`populate()` verification
 

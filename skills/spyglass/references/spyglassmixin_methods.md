@@ -1,14 +1,16 @@
 # SpyglassMixin Method Reference
 
-All Spyglass tables inherit from `SpyglassMixin`. These methods are
-available on every table in the database. For merge-table-specific
+Spyglass tables and merge parts inherit from `SpyglassMixin` /
+`SpyglassMixinPart`; these methods are available on those classes,
+not on arbitrary DataJoint tables, free tables, or unrelated
+lab-defined tables in the same database. For merge-table-specific
 methods (`merge_get_part`, `merge_restrict`, `merge_delete`, etc.)
 see [merge_methods.md](merge_methods.md); for the *group-table*
 shape (`SortedSpikesGroup`, `PositionGroup`, `*Group.create_group()`)
 see [group_tables.md](group_tables.md). This file covers the
 methods that live on the mixin itself and therefore apply to any
-Spyglass table — merge master, merge part, selection, computed, or
-manual.
+mixin-inheriting Spyglass table — merge master, merge part,
+selection, computed, or manual.
 
 ## Contents
 
