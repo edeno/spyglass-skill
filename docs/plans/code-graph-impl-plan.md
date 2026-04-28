@@ -4,6 +4,8 @@
 **Date last updated:** 2026-04-26
 **Status:** **Historical / shipped — superseded by the actual code.** Treat this plan as the design rationale that justified the work; for current behavior consult the code and tests, not this file. Routing copy in [skills/spyglass/references/feedback_loops.md](../../skills/spyglass/references/feedback_loops.md) ("Three graphs, three primitive families") and the machine-readable contract via `python3 skills/spyglass/scripts/code_graph.py info --json` are the user-facing source of truth.
 
+> **Note (2026-04-28 maintenance commit):** eval IDs cited in this document (e.g. 21, 51, 80, 89) reflect the values at drafting time. Eval IDs were renumbered to a dense 1..N sequence after the historical gaps (36, 120, 122) were filled; current IDs differ. Look up by `eval_name` in `evals.json` for the canonical mapping.
+
 **What shipped vs. what this plan said.** Most of the original plan landed as written; the divergences below all came from review-driven course corrections during execution and are not yet reflected in the body of this document.
 
 - **`compare_versions.py` references stripped.** The plan assumed PR #15 would land first. It didn't, so the script doesn't exist in this PR. All references to it in user-facing skill content (and the not-found hint copy) were removed; the version-asymmetry workflow now routes through `describe --file <v0 path>` + `describe --file <v1 path>` plus reading the source.

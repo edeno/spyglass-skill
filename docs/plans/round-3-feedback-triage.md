@@ -1,5 +1,7 @@
 # Round 3 — feedback triage
 
+> **Note (2026-04-28 maintenance commit):** eval IDs were renumbered to a dense 1..N sequence after the historical gaps (36, 120, 122) were filled. Specific IDs cited in this document reflect the values at the time it was written; current IDs differ. Look up by `eval_name` in `evals.json` for the canonical mapping.
+
 Companion to `round-3-feedback-organization.md`. For each feedback item: a
 verdict (**Accept** / **Accept with modification** / **Reject** / **Defer
 upstream**) plus the concrete action and the reasoning. Driven by:

@@ -1344,7 +1344,7 @@
       ]
     },
     {
-      "id": 37,
+      "id": 36,
       "eval_name": "runtime-populate-non-pk-dict",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
@@ -1385,7 +1385,7 @@
       ]
     },
     {
-      "id": 38,
+      "id": 37,
       "eval_name": "runtime-dlc-positionintervalmap",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
@@ -1439,7 +1439,7 @@
       ]
     },
     {
-      "id": 39,
+      "id": 38,
       "eval_name": "runtime-decoding-oom",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
@@ -1483,7 +1483,7 @@
       ]
     },
     {
-      "id": 40,
+      "id": 39,
       "eval_name": "runtime-clusterless-contact-unique",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
@@ -1519,7 +1519,7 @@
       ]
     },
     {
-      "id": 41,
+      "id": 40,
       "eval_name": "config-stores-cross-machine",
       "stage": "setup",
       "tier": "config-troubleshooting",
@@ -1564,7 +1564,7 @@
       ]
     },
     {
-      "id": 42,
+      "id": 41,
       "eval_name": "config-key-error-after-pull",
       "stage": "setup",
       "tier": "config-troubleshooting",
@@ -1601,7 +1601,7 @@
       ]
     },
     {
-      "id": 43,
+      "id": 42,
       "eval_name": "destruct-super-delete-no-cleanup",
       "stage": "destructive-operations",
       "tier": "adversarial",
@@ -1644,7 +1644,7 @@
       ]
     },
     {
-      "id": 44,
+      "id": 43,
       "eval_name": "runtime-fk-ancestor-missing",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
@@ -1690,7 +1690,7 @@
       ]
     },
     {
-      "id": 45,
+      "id": 44,
       "eval_name": "runtime-populate-all-common-silent",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
@@ -1740,7 +1740,7 @@
       ]
     },
     {
-      "id": 46,
+      "id": 45,
       "eval_name": "config-permission-triage",
       "stage": "setup",
       "tier": "config-troubleshooting",
@@ -1773,7 +1773,7 @@
       ]
     },
     {
-      "id": 47,
+      "id": 46,
       "eval_name": "env-editable-install-drift",
       "stage": "setup",
       "tier": "environment-triage",
@@ -1806,7 +1806,7 @@
       ]
     },
     {
-      "id": 48,
+      "id": 47,
       "eval_name": "env-conda-pip-drift",
       "stage": "setup",
       "tier": "environment-triage",
@@ -1840,7 +1840,7 @@
       ]
     },
     {
-      "id": 49,
+      "id": 48,
       "eval_name": "runtime-positiongroup-variable-mismatch",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
@@ -1877,7 +1877,7 @@
       ]
     },
     {
-      "id": 50,
+      "id": 49,
       "eval_name": "merge-silent-wrong-count",
       "stage": "runtime-debugging",
       "tier": "merge-table-gotchas",
@@ -1923,7 +1923,7 @@
       ]
     },
     {
-      "id": 51,
+      "id": 50,
       "eval_name": "merge-method-misattribution",
       "stage": "common-mistakes",
       "tier": "merge-table-gotchas",
@@ -1966,7 +1966,7 @@
       ]
     },
     {
-      "id": 52,
+      "id": 51,
       "eval_name": "is-this-a-merge-lookalike",
       "stage": "common-mistakes",
       "tier": "merge-table-gotchas",
@@ -2017,7 +2017,7 @@
       ]
     },
     {
-      "id": 53,
+      "id": 52,
       "eval_name": "runtime-join-dependent-attribute",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
@@ -2078,7 +2078,7 @@
       ]
     },
     {
-      "id": 54,
+      "id": 53,
       "eval_name": "classify-lfpselection",
       "stage": "table-understanding",
       "tier": "table-classification",
@@ -2118,7 +2118,7 @@
       ]
     },
     {
-      "id": 55,
+      "id": 54,
       "eval_name": "classify-trodesposparams-vs-selection",
       "stage": "table-understanding",
       "tier": "table-classification",
@@ -2157,7 +2157,7 @@
       ]
     },
     {
-      "id": 56,
+      "id": 55,
       "eval_name": "classify-positionoutput-merge",
       "stage": "table-understanding",
       "tier": "table-classification",
@@ -2193,7 +2193,7 @@
       ]
     },
     {
-      "id": 57,
+      "id": 56,
       "eval_name": "classify-lfpband-role",
       "stage": "table-understanding",
       "tier": "table-classification",
@@ -2226,7 +2226,7 @@
       ]
     },
     {
-      "id": 58,
+      "id": 57,
       "eval_name": "param-target-sampling-rate",
       "stage": "parameter-understanding",
       "tier": "parameter-semantics",
@@ -2268,7 +2268,7 @@
       ]
     },
     {
-      "id": 59,
+      "id": 58,
       "eval_name": "param-speed-threshold-ripple",
       "stage": "parameter-understanding",
       "tier": "parameter-semantics",
@@ -2302,7 +2302,7 @@
       ]
     },
     {
-      "id": 60,
+      "id": 59,
       "eval_name": "param-encoding-vs-decoding-interval",
       "stage": "parameter-understanding",
       "tier": "parameter-semantics",
@@ -2333,7 +2333,7 @@
       ]
     },
     {
-      "id": 61,
+      "id": 60,
       "eval_name": "param-trodes-smoothing",
       "stage": "parameter-understanding",
       "tier": "parameter-semantics",
@@ -2366,7 +2366,7 @@
       ]
     },
     {
-      "id": 62,
+      "id": 61,
       "eval_name": "param-sort-group-by-electrode-group",
       "stage": "parameter-understanding",
       "tier": "parameter-semantics",
@@ -2408,7 +2408,7 @@
       ]
     },
     {
-      "id": 63,
+      "id": 62,
       "eval_name": "disamb-trodes-vs-dlc",
       "stage": "pipeline-usage",
       "tier": "disambiguation",
@@ -2441,7 +2441,7 @@
       ]
     },
     {
-      "id": 64,
+      "id": 63,
       "eval_name": "disamb-lfpselection-vs-electrodegroup",
       "stage": "pipeline-usage",
       "tier": "disambiguation",
@@ -2473,7 +2473,7 @@
       ]
     },
     {
-      "id": 65,
+      "id": 64,
       "eval_name": "disamb-spikesortingv0-vs-v1",
       "stage": "pipeline-usage",
       "tier": "disambiguation",
@@ -2504,7 +2504,7 @@
       ]
     },
     {
-      "id": 66,
+      "id": 65,
       "eval_name": "resource-first-ref-fetch1",
       "stage": "runtime-debugging",
       "tier": "resource-selection",
@@ -2529,7 +2529,7 @@
       ]
     },
     {
-      "id": 67,
+      "id": 66,
       "eval_name": "resource-first-ref-merge-delete",
       "stage": "destructive-operations",
       "tier": "resource-selection",
@@ -2554,7 +2554,7 @@
       ]
     },
     {
-      "id": 68,
+      "id": 67,
       "eval_name": "counterfactual-ripple-electrode-set",
       "stage": "pipeline-usage",
       "tier": "counterfactual",
@@ -2593,7 +2593,7 @@
       ]
     },
     {
-      "id": 69,
+      "id": 68,
       "eval_name": "counterfactual-two-users-empty",
       "stage": "pipeline-usage",
       "tier": "counterfactual",
@@ -2635,7 +2635,7 @@
       ]
     },
     {
-      "id": 70,
+      "id": 69,
       "eval_name": "workflow-next-after-spikesortingselection",
       "stage": "pipeline-usage",
       "tier": "workflow-position",
@@ -2670,7 +2670,7 @@
       ]
     },
     {
-      "id": 71,
+      "id": 70,
       "eval_name": "workflow-next-after-dlcmodeltraining",
       "stage": "pipeline-usage",
       "tier": "workflow-position",
@@ -2724,7 +2724,7 @@
       ]
     },
     {
-      "id": 72,
+      "id": 71,
       "eval_name": "dep-trace-decoding-output",
       "stage": "pipeline-usage",
       "tier": "dependency-tracing",
@@ -2799,7 +2799,7 @@
       ]
     },
     {
-      "id": 73,
+      "id": 72,
       "eval_name": "dep-trace-lfpbandv1",
       "stage": "pipeline-usage",
       "tier": "dependency-tracing",
@@ -2846,7 +2846,7 @@
       ]
     },
     {
-      "id": 74,
+      "id": 73,
       "eval_name": "schema-pk-electrode",
       "stage": "framework-concepts",
       "tier": "schema-introspection",
@@ -2884,7 +2884,7 @@
       ]
     },
     {
-      "id": 75,
+      "id": 74,
       "eval_name": "schema-pk-firfilterparameters",
       "stage": "framework-concepts",
       "tier": "schema-introspection",
@@ -2914,7 +2914,7 @@
       ]
     },
     {
-      "id": 76,
+      "id": 75,
       "eval_name": "schema-dep-probe-electrode",
       "stage": "framework-concepts",
       "tier": "schema-introspection",
@@ -2952,7 +2952,7 @@
       ]
     },
     {
-      "id": 77,
+      "id": 76,
       "eval_name": "schema-dep-lfp-filter",
       "stage": "framework-concepts",
       "tier": "schema-introspection",
@@ -2981,7 +2981,7 @@
       ]
     },
     {
-      "id": 78,
+      "id": 77,
       "eval_name": "schema-part-tables-probe",
       "stage": "framework-concepts",
       "tier": "schema-introspection",
@@ -3010,7 +3010,7 @@
       ]
     },
     {
-      "id": 79,
+      "id": 78,
       "eval_name": "abstain-session-samplingrate",
       "stage": "hallucination-resistance",
       "tier": "adversarial",
@@ -3049,7 +3049,7 @@
       ]
     },
     {
-      "id": 80,
+      "id": 79,
       "eval_name": "abstain-spyglassmixin-get-pk",
       "stage": "hallucination-resistance",
       "tier": "adversarial",
@@ -3083,7 +3083,7 @@
       ]
     },
     {
-      "id": 81,
+      "id": 80,
       "eval_name": "abstain-ripple-direct-dependency",
       "stage": "hallucination-resistance",
       "tier": "adversarial",
@@ -3136,7 +3136,7 @@
       ]
     },
     {
-      "id": 89,
+      "id": 81,
       "eval_name": "abstain-v1-naming-extrapolation",
       "stage": "hallucination-resistance",
       "tier": "adversarial",
@@ -3536,7 +3536,7 @@
       ]
     },
     {
-      "id": 90,
+      "id": 89,
       "eval_name": "restrict-by-interval-name-no-star",
       "stage": "pipeline-usage",
       "tier": "joins",
@@ -3581,7 +3581,7 @@
       ]
     },
     {
-      "id": 91,
+      "id": 90,
       "eval_name": "usage-after-lfpselection",
       "stage": "pipeline-usage",
       "tier": "table-usage",
@@ -3616,7 +3616,7 @@
       ]
     },
     {
-      "id": 92,
+      "id": 91,
       "eval_name": "usage-after-trodes-pos-selection",
       "stage": "pipeline-usage",
       "tier": "table-usage",
@@ -3651,7 +3651,7 @@
       ]
     },
     {
-      "id": 93,
+      "id": 92,
       "eval_name": "usage-after-positionoutput-row",
       "stage": "pipeline-usage",
       "tier": "table-usage",
@@ -3689,7 +3689,7 @@
       ]
     },
     {
-      "id": 94,
+      "id": 93,
       "eval_name": "usage-after-lfpbandv1-row",
       "stage": "pipeline-usage",
       "tier": "table-usage",
@@ -3721,7 +3721,7 @@
       ]
     },
     {
-      "id": 95,
+      "id": 94,
       "eval_name": "usage-pick-target-sampling-rate",
       "stage": "pipeline-usage",
       "tier": "table-usage",
@@ -3765,7 +3765,7 @@
       ]
     },
     {
-      "id": 96,
+      "id": 95,
       "eval_name": "join-dependent-attr-refusal",
       "stage": "pipeline-usage",
       "tier": "joins",
@@ -3821,7 +3821,7 @@
       ]
     },
     {
-      "id": 97,
+      "id": 96,
       "eval_name": "dependency-downstream-decoding-output",
       "stage": "framework-concepts",
       "tier": "dependency-tracing",
@@ -3863,7 +3863,7 @@
       ]
     },
     {
-      "id": 98,
+      "id": 97,
       "eval_name": "dependency-abstract-upstream",
       "stage": "framework-concepts",
       "tier": "dependency-tracing",
@@ -3907,7 +3907,7 @@
       ]
     },
     {
-      "id": 99,
+      "id": 98,
       "eval_name": "hidden-prereq-ripple-populate",
       "stage": "pipeline-usage",
       "tier": "dependency-tracing",
@@ -3949,7 +3949,7 @@
       ]
     },
     {
-      "id": 100,
+      "id": 99,
       "eval_name": "hidden-prereq-decoding-populate",
       "stage": "pipeline-usage",
       "tier": "dependency-tracing",
@@ -4000,7 +4000,7 @@
       ]
     },
     {
-      "id": 101,
+      "id": 100,
       "eval_name": "workflow-position-post-sort-clusterless-decode",
       "stage": "pipeline-usage",
       "tier": "workflow-position",
@@ -4048,7 +4048,7 @@
       ]
     },
     {
-      "id": 102,
+      "id": 101,
       "eval_name": "recovery-populate-partial-electrodes",
       "stage": "runtime-debugging",
       "tier": "workflow-recovery",
@@ -4095,7 +4095,7 @@
       ]
     },
     {
-      "id": 103,
+      "id": 102,
       "eval_name": "session-recording-devices",
       "stage": "pipeline-usage",
       "tier": "joins",
@@ -4133,7 +4133,7 @@
       ]
     },
     {
-      "id": 104,
+      "id": 103,
       "eval_name": "session-subject-owner",
       "stage": "pipeline-usage",
       "tier": "joins",
@@ -4174,7 +4174,7 @@
       ]
     },
     {
-      "id": 105,
+      "id": 104,
       "eval_name": "probe-per-electrode-group",
       "stage": "pipeline-usage",
       "tier": "atomic-read",
@@ -4212,7 +4212,7 @@
       ]
     },
     {
-      "id": 106,
+      "id": 105,
       "eval_name": "camera-devices-lookup",
       "stage": "pipeline-usage",
       "tier": "atomic-read",
@@ -4253,7 +4253,7 @@
       ]
     },
     {
-      "id": 107,
+      "id": 106,
       "eval_name": "compound-pfc-wtrack",
       "stage": "pipeline-usage",
       "tier": "compound",
@@ -4313,7 +4313,7 @@
       ]
     },
     {
-      "id": 108,
+      "id": 107,
       "eval_name": "compound-sorted-spikes-across-sort-groups",
       "stage": "pipeline-authoring",
       "tier": "compound",
@@ -4361,7 +4361,7 @@
       ]
     },
     {
-      "id": 109,
+      "id": 108,
       "eval_name": "sorted-spikes-group-hippocampal",
       "stage": "pipeline-usage",
       "tier": "disambiguation",
@@ -4415,7 +4415,7 @@
       ]
     },
     {
-      "id": 110,
+      "id": 109,
       "eval_name": "group-tables-concept",
       "stage": "framework-concepts",
       "tier": "table-classification",
@@ -4458,7 +4458,7 @@
       ]
     },
     {
-      "id": 111,
+      "id": 110,
       "eval_name": "custom-analysis-table-shape",
       "stage": "pipeline-authoring",
       "tier": "atomic-read",
@@ -4505,7 +4505,7 @@
       ]
     },
     {
-      "id": 112,
+      "id": 111,
       "eval_name": "custom-table-multiple-nwbs-blob-pushback",
       "stage": "pipeline-authoring",
       "tier": "parameter-semantics",
@@ -4548,7 +4548,7 @@
       ]
     },
     {
-      "id": 116,
+      "id": 112,
       "eval_name": "adversarial-edit-dlcposv1",
       "stage": "pipeline-authoring",
       "tier": "adversarial",
@@ -4595,7 +4595,7 @@
       ]
     },
     {
-      "id": 117,
+      "id": 113,
       "eval_name": "adversarial-update1-downstream-populated",
       "stage": "destructive-operations",
       "tier": "adversarial",
@@ -4652,7 +4652,7 @@
       ]
     },
     {
-      "id": 118,
+      "id": 114,
       "eval_name": "adversarial-cross-corr-blob-column",
       "stage": "pipeline-authoring",
       "tier": "adversarial",
@@ -4699,7 +4699,7 @@
       ]
     },
     {
-      "id": 119,
+      "id": 115,
       "eval_name": "adversarial-monkeypatch-make",
       "stage": "hallucination-resistance",
       "tier": "adversarial",
@@ -4741,7 +4741,7 @@
       ]
     },
     {
-      "id": 124,
+      "id": 116,
       "eval_name": "counterfactual-ripple-threshold",
       "stage": "parameter-understanding",
       "tier": "counterfactual",
@@ -4791,7 +4791,7 @@
       ]
     },
     {
-      "id": 125,
+      "id": 117,
       "eval_name": "counterfactual-sort-interval-change",
       "stage": "parameter-understanding",
       "tier": "counterfactual",
@@ -4842,7 +4842,7 @@
       ]
     },
     {
-      "id": 126,
+      "id": 118,
       "eval_name": "counterfactual-decoding-bin-size",
       "stage": "parameter-understanding",
       "tier": "counterfactual",
@@ -4896,7 +4896,7 @@
       ]
     },
     {
-      "id": 113,
+      "id": 119,
       "eval_name": "permission-error-analysis-nwbfile-write",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
@@ -4949,7 +4949,7 @@
       ]
     },
     {
-      "id": 114,
+      "id": 120,
       "eval_name": "slow-fetch-db-lock",
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
@@ -4992,7 +4992,7 @@
       ]
     },
     {
-      "id": 115,
+      "id": 121,
       "eval_name": "editable-install-drift-after-pull",
       "stage": "setup",
       "tier": "environment-triage",
@@ -5033,7 +5033,7 @@
       ]
     },
     {
-      "id": 121,
+      "id": 122,
       "eval_name": "hallucination-fetch-nwb-single",
       "stage": "hallucination-resistance",
       "tier": "adversarial",
@@ -5123,7 +5123,7 @@
       ]
     },
     {
-      "id": 127,
+      "id": 124,
       "eval_name": "key-hygiene-singular-plural-typo",
       "stage": "hallucination-resistance",
       "tier": "schema-introspection",
@@ -5155,7 +5155,7 @@
       ]
     },
     {
-      "id": 128,
+      "id": 125,
       "eval_name": "key-hygiene-blob-key-not-heading",
       "stage": "parameter-understanding",
       "tier": "parameter-semantics",
@@ -5195,7 +5195,7 @@
       ]
     },
     {
-      "id": 129,
+      "id": 126,
       "eval_name": "key-hygiene-merge-master-silent-no-op",
       "stage": "common-mistakes",
       "tier": "merge-table-gotchas",
@@ -5229,7 +5229,7 @@
       ]
     },
     {
-      "id": 130,
+      "id": 127,
       "eval_name": "key-hygiene-partial-populate-scope",
       "stage": "pipeline-usage",
       "tier": "disambiguation",
@@ -5267,7 +5267,7 @@
       ]
     },
     {
-      "id": 131,
+      "id": 128,
       "eval_name": "key-hygiene-v0-v1-cross-version",
       "stage": "hallucination-resistance",
       "tier": "disambiguation",
@@ -5303,7 +5303,7 @@
       ]
     },
     {
-      "id": 132,
+      "id": 129,
       "eval_name": "key-hygiene-custom-table-runtime-only",
       "stage": "hallucination-resistance",
       "tier": "schema-introspection",
@@ -5341,7 +5341,7 @@
       ]
     },
     {
-      "id": 133,
+      "id": 130,
       "eval_name": "key-hygiene-discovery-before-fetch",
       "stage": "pipeline-usage",
       "tier": "disambiguation",
