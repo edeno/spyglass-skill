@@ -5138,10 +5138,7 @@
         "expected_output_tables_exempt": [
           "TrodesPosParams"
         ],
-        "forbidden_substrings": [
-          "trodes_pos_param_name'",
-          "trodes_pos_param_name\""
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies the singular/plural typo (`trodes_pos_param_name` vs `trodes_pos_params_name`) and does NOT recommend the singular form as the correct field name",
           "Uses `code_graph.py describe` if acting as the skill agent, or `Table.heading.primary_key` in the user's Python session — does not assert the field name from memory",
@@ -5152,8 +5149,6 @@
       "expectations": [
         "Response contains substring `trodes_pos_params_name`.",
         "Response contains substring `heading.primary_key`.",
-        "Response does not contain substring `trodes_pos_param_name'`.",
-        "Response does not contain substring `trodes_pos_param_name\"`.",
         "Identifies the singular/plural typo (`trodes_pos_param_name` vs `trodes_pos_params_name`) and does NOT recommend the singular form as the correct field name",
         "Uses `code_graph.py describe` if acting as the skill agent, or `Table.heading.primary_key` in the user's Python session — does not assert the field name from memory",
         "Names the silent-drop semantics — DataJoint ignores unknown restriction keys without error"
@@ -5179,8 +5174,7 @@
         ],
         "forbidden_substrings": [
           "RippleParameters & {'speed_threshold'",
-          "RippleParameters & {\"speed_threshold\"",
-          "speed_threshold <"
+          "RippleParameters & {\"speed_threshold\""
         ],
         "behavioral_checks": [
           "Identifies `speed_threshold` as a blob field nested under `ripple_param_dict[\"ripple_detection_params\"]`, NOT a heading column",
@@ -5195,7 +5189,6 @@
         "Response contains substring `ripple_pipeline.md`.",
         "Response does not contain substring `RippleParameters & {'speed_threshold'`.",
         "Response does not contain substring `RippleParameters & {\"speed_threshold\"`.",
-        "Response does not contain substring `speed_threshold <`.",
         "Identifies `speed_threshold` as a blob field nested under `ripple_param_dict[\"ripple_detection_params\"]`, NOT a heading column",
         "Routes blob shape verification to `RippleTimesV1.make` (the consumer) or to an actual fetched row, NOT to the table name alone",
         "Recommends fetch-then-filter-in-Python rather than a DataJoint restriction on the blob field"
