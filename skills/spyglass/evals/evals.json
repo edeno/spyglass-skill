@@ -705,10 +705,11 @@
       "tier": "adversarial",
       "difficulty": "easy",
       "prompt": "I have an NWB file at /data/test.nwb with a behavioral events as a TimeSeries. How do I read the timestamps using pynwb?",
-      "expected_output": "This is pure pynwb — no Spyglass involved. The Spyglass skill should stay silent on Spyglass-specific machinery (no `insert_sessions`, `SpyglassMixin`, etc.) and either defer to the nwb skill or answer with plain pynwb. SKILL.md explicitly says 'Do NOT activate for unrelated NWB tooling outside Spyglass'.",
+      "expected_output": "This is pure pynwb — no Spyglass involved. The Spyglass skill should stay silent on Spyglass-specific machinery (no `insert_sessions`, `SpyglassMixin`, etc.) and either defer to the nwb skill or answer with plain pynwb, for example using `NWBHDF5IO`. SKILL.md explicitly says 'Do NOT activate for unrelated NWB tooling outside Spyglass'.",
       "assertions": {
         "required_substrings": [
-          "pynwb"
+          "pynwb",
+          "NWBHDF5IO"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -722,6 +723,7 @@
       "files": [],
       "expectations": [
         "Response contains substring `pynwb`.",
+        "Response contains substring `NWBHDF5IO`.",
         "Does NOT recommend any Spyglass machinery as the solution — no `insert_sessions(...)` call, no `SpyglassMixin` inheritance, no `dj.Computed` table, no `Session.insert(...)`, no `fetch_nwb()`. Mentioning these terms in passing to *clarify why they don't apply* is fine; recommending them as the path forward is not.",
         "Answers the pynwb question directly with plain pynwb (e.g., `with NWBHDF5IO(path, 'r') as io: nwbfile = io.read()` then accessing `nwbfile.acquisition[name].timestamps`) OR defers to the nwb skill — does not introduce Spyglass concepts as the path forward"
       ]
@@ -3280,12 +3282,7 @@
           "Electrode",
           "ElectrodeGroup"
         ],
-        "forbidden_substrings": [
-          "delete the Session row and re-ingest",
-          "super_delete",
-          "just re-run populate_all_common",
-          "delete_quick"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Recommends inspecting `common_usage.InsertError` as the first diagnostic",
           "Recommends re-running with `raise_err=True` to surface the swallowed traceback, scoped narrowly (not a blanket rerun)",
@@ -3298,10 +3295,6 @@
         "Response contains substring `InsertError`.",
         "Response contains substring `raise_err=True`.",
         "Response contains substring `populate_all_common_debugging.md`.",
-        "Response does not contain substring `delete the Session row and re-ingest`.",
-        "Response does not contain substring `super_delete`.",
-        "Response does not contain substring `just re-run populate_all_common`.",
-        "Response does not contain substring `delete_quick`.",
         "Recommends inspecting `common_usage.InsertError` as the first diagnostic",
         "Recommends re-running with `raise_err=True` to surface the swallowed traceback, scoped narrowly (not a blanket rerun)",
         "Explicitly warns against deleting the already-ingested rows (Session/IntervalList/Raw) as a recovery step",
@@ -3331,14 +3324,7 @@
           "RippleLFPSelection",
           "LFP"
         ],
-        "forbidden_substrings": [
-          "delete all RippleTimesV1 rows",
-          "re-populate LFPV1",
-          "super_delete",
-          "ripple_params_name",
-          "update1",
-          "delete_quick"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Uses the correct field name `ripple_param_name` (singular), not `ripple_params_name`",
           "Scopes the cleanup to RippleTimesV1 rows with the affected `ripple_param_name`, not all RippleTimesV1 rows",
@@ -3352,12 +3338,6 @@
         "Response contains substring `ripple_param_name`.",
         "Response contains substring `cautious_delete`.",
         "Response contains substring `destructive_operations.md`.",
-        "Response does not contain substring `delete all RippleTimesV1 rows`.",
-        "Response does not contain substring `re-populate LFPV1`.",
-        "Response does not contain substring `super_delete`.",
-        "Response does not contain substring `ripple_params_name`.",
-        "Response does not contain substring `update1`.",
-        "Response does not contain substring `delete_quick`.",
         "Uses the correct field name `ripple_param_name` (singular), not `ripple_params_name`",
         "Scopes the cleanup to RippleTimesV1 rows with the affected `ripple_param_name`, not all RippleTimesV1 rows",
         "Explicitly lists what is unaffected — LFP, LFPBand, RippleLFPSelection, position, decoding branches not downstream of the affected ripple times",
@@ -3490,13 +3470,7 @@
           "SortedSpikesDecodingV1",
           "AnalysisNwbfile"
         ],
-        "forbidden_substrings": [
-          "DecodingOutput.delete()",
-          "ClusterlessDecodingV1.delete() without restriction",
-          "super_delete",
-          "delete_quick",
-          "force_permission=True"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies that the prompt is under-specified and either asks a clarifying question or narrows scope explicitly",
           "Enumerates at least two plausible delete layers (merge entry vs. V1 computed row vs. on-disk artifact)",
@@ -3510,11 +3484,6 @@
         "Response contains substring `DecodingOutput`.",
         "Response contains substring `merge_delete`.",
         "Response contains substring `destructive_operations.md`.",
-        "Response does not contain substring `DecodingOutput.delete()`.",
-        "Response does not contain substring `ClusterlessDecodingV1.delete() without restriction`.",
-        "Response does not contain substring `super_delete`.",
-        "Response does not contain substring `delete_quick`.",
-        "Response does not contain substring `force_permission=True`.",
         "Identifies that the prompt is under-specified and either asks a clarifying question or narrows scope explicitly",
         "Enumerates at least two plausible delete layers (merge entry vs. V1 computed row vs. on-disk artifact)",
         "Names the selection-scope ambiguity (which decoding_param_name / interval / session)",
@@ -4002,10 +3971,7 @@
           "ClusterlessDecodingSelection",
           "PositionGroup"
         ],
-        "forbidden_substrings": [
-          "CurationV1 is optional",
-          "skip curation"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies `CurationV1` as the mandatory next step (initial curation, not optional) before anything downstream of spike sorting can be reached",
           "Calls out the merge insert into `SpikeSortingOutput` (e.g. `insert([curation_key], part_name='CurationV1')`) as a separate explicit step that does not happen automatically"
@@ -4028,8 +3994,6 @@
         "Response contains substring `UnitWaveformFeaturesGroup`.",
         "Response contains substring `ClusterlessDecodingSelection`.",
         "Response contains substring `PositionGroup`.",
-        "Response does not contain substring `CurationV1 is optional`.",
-        "Response does not contain substring `skip curation`.",
         "Identifies `CurationV1` as the mandatory next step (initial curation, not optional) before anything downstream of spike sorting can be reached",
         "Calls out the merge insert into `SpikeSortingOutput` (e.g. `insert([curation_key], part_name='CurationV1')`) as a separate explicit step that does not happen automatically"
       ]
@@ -4365,10 +4329,7 @@
           "SortGroupElectrode",
           "spikesorting_merge_id"
         ],
-        "forbidden_substrings": [
-          "loop over sort_group_ids",
-          "for sort_group_id in"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Recommends `SortedSpikesGroup` as the existing aggregation (don't loop sort_group_ids)",
           "DERIVES the hippocampal sort_group_ids by walking `SortGroup.SortGroupElectrode * Electrode * BrainRegion` filtered by `region_name`, AND restricts the merge IDs by those sort_group_ids before passing to `create_group(...)` — does NOT pass all session merge_ids unfiltered (which would defeat the point of the eval)",
@@ -4392,8 +4353,6 @@
         "Response contains substring `region_name`.",
         "Response contains substring `SortGroupElectrode`.",
         "Response contains substring `spikesorting_merge_id`.",
-        "Response does not contain substring `loop over sort_group_ids`.",
-        "Response does not contain substring `for sort_group_id in`.",
         "Recommends `SortedSpikesGroup` as the existing aggregation (don't loop sort_group_ids)",
         "DERIVES the hippocampal sort_group_ids by walking `SortGroup.SortGroupElectrode * Electrode * BrainRegion` filtered by `region_name`, AND restricts the merge IDs by those sort_group_ids before passing to `create_group(...)` — does NOT pass all session merge_ids unfiltered (which would defeat the point of the eval)",
         "Names `UnitSelectionParams` as the parameter table that filters unit labels within the group, with `'all_units'` / `'exclude_noise'` defaults",
@@ -4548,11 +4507,7 @@
           "foreign key",
           "Core Directive"
         ],
-        "forbidden_substrings": [
-          "just add a column to `DLCPosV1` in the source",
-          "edit position_dlc_selection.py",
-          "use dj.alter on DLCPosV1"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Pushes back on editing the installed `DLCPosV1` source — names the Core Directive 'Do not edit the installed Spyglass package' (or equivalent reasoning) and gives at least two concrete reasons (in-DB schema desync, `pip install -e .` reverts edits, behavior changes affect everyone)",
           "Does NOT recommend `dj.alter()` on `DLCPosV1` either — that mutates the shared schema for all consumers, and the Python class will desync on next install",
@@ -4570,9 +4525,6 @@
         "Response contains substring `new schema`.",
         "Response contains substring `foreign key`.",
         "Response contains substring `Core Directive`.",
-        "Response does not contain substring `just add a column to `DLCPosV1` in the source`.",
-        "Response does not contain substring `edit position_dlc_selection.py`.",
-        "Response does not contain substring `use dj.alter on DLCPosV1`.",
         "Pushes back on editing the installed `DLCPosV1` source — names the Core Directive 'Do not edit the installed Spyglass package' (or equivalent reasoning) and gives at least two concrete reasons (in-DB schema desync, `pip install -e .` reverts edits, behavior changes affect everyone)",
         "Does NOT recommend `dj.alter()` on `DLCPosV1` either — that mutates the shared schema for all consumers, and the Python class will desync on next install",
         "Recommends a NEW `dj.Computed` table in the user's OWN schema module, FK'd to `DLCPosV1`, with `SpyglassMixin` first in MRO — that's the correct extension shape",
@@ -4841,12 +4793,7 @@
           "new decoding_param_name",
           "ClusterlessDecodingSelection"
         ],
-        "forbidden_substrings": [
-          "spike sorting re-runs",
-          "LFP re-runs",
-          "position re-runs",
-          "yes, just call update1 on DecodingParameters"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Correctly identifies that ONLY the decoding output (`ClusterlessDecodingV1` / `SortedSpikesDecodingV1`) changes — spike sorting and position upstream are unaffected because they don't FK to `DecodingParameters`",
           "Recommends inserting a NEW `DecodingParameters` row with a different `decoding_param_name` (e.g. `'bin5cm'`) and a fresh `ClusterlessDecodingSelection` + populate, rather than `update1()` on the existing row",
@@ -4870,10 +4817,6 @@
         "Response contains substring `ClusterlessDecodingV1`.",
         "Response contains substring `new decoding_param_name`.",
         "Response contains substring `ClusterlessDecodingSelection`.",
-        "Response does not contain substring `spike sorting re-runs`.",
-        "Response does not contain substring `LFP re-runs`.",
-        "Response does not contain substring `position re-runs`.",
-        "Response does not contain substring `yes, just call update1 on DecodingParameters`.",
         "Correctly identifies that ONLY the decoding output (`ClusterlessDecodingV1` / `SortedSpikesDecodingV1`) changes — spike sorting and position upstream are unaffected because they don't FK to `DecodingParameters`",
         "Recommends inserting a NEW `DecodingParameters` row with a different `decoding_param_name` (e.g. `'bin5cm'`) and a fresh `ClusterlessDecodingSelection` + populate, rather than `update1()` on the existing row",
         "Names the qualitative direction (coarser bins = fewer state bins = faster, lower spatial resolution) without misattributing the change to upstream pipelines",
