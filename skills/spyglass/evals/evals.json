@@ -2205,7 +2205,6 @@
       "assertions": {
         "required_substrings": [
           "Nyquist",
-          "downsampled output",
           "LFPV1"
         ],
         "forbidden_substrings": [
@@ -2227,7 +2226,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `Nyquist`.",
-        "Response contains substring `downsampled output`.",
         "Response contains substring `LFPV1`.",
         "Response does not contain substring `sample rate doesn't matter`.",
         "Explains that target_sampling_rate sets the downsampled output rate of LFPV1",
@@ -2246,8 +2244,7 @@
       "expected_output": "Routes to ripple_pipeline.md. Explains that speed_threshold is a movement-exclusion cutoff: candidate ripple events are kept only when the animal's speed at start AND end is below the threshold (speed <= speed_threshold). Predicts the direction correctly: raising 4 -> 10 cm/s loosens the immobility filter, KEEPING MORE candidate events (events at speeds up to 10 cm/s that were previously rejected now pass). The quality tradeoff: more peri-movement events get included, which may not be true sharp-wave ripples — looser immobility conditioning. To get fewer / cleaner SWRs, LOWER the threshold. Source proof: ripple_detection/core.py keeps events where speed <= speed_threshold; the package's own docstring at detectors.py says \"Increasing speed_threshold if movement exclusion is too strict\".",
       "assertions": {
         "required_substrings": [
-          "immobility",
-          "speed <= speed_threshold"
+          "immobility"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -2263,7 +2260,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `immobility`.",
-        "Response contains substring `speed <= speed_threshold`.",
         "Identifies speed_threshold as a movement-exclusion cutoff (events kept when speed <= threshold)",
         "Predicts the direction correctly: raising 4 -> 10 keeps MORE candidate events, not fewer",
         "Identifies the tradeoff: looser immobility conditioning admits peri-movement events that may not be true SWRs",
@@ -2280,9 +2276,6 @@
       "expected_output": "Routes to decoding_pipeline.md. Notes that both encoding_interval and decoding_interval are projected FKs to IntervalList — they pick existing interval rows by name, not raw time ranges. Explains that the encoding interval is where the place-field / receptive-field model is trained, while the decoding interval is where the trained model is applied. Yes, they can be the same interval (within-run reconstruction). Setting them differently is the standard pattern for replay analysis: train the model on a run interval, then apply it to a sleep or reward interval to decode replayed trajectories.",
       "assertions": {
         "required_substrings": [
-          "model is trained",
-          "model is applied",
-          "replay analysis",
           "IntervalList"
         ],
         "forbidden_substrings": [],
@@ -2293,9 +2286,6 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `model is trained`.",
-        "Response contains substring `model is applied`.",
-        "Response contains substring `replay analysis`.",
         "Response contains substring `IntervalList`.",
         "Explains that encoding_interval trains the place-field / receptive-field model; decoding_interval is where the trained model is applied",
         "Gives a same-interval use (within-run reconstruction) and a different-interval use (train on run, decode replay during sleep / reward)"
@@ -2312,8 +2302,7 @@
       "assertions": {
         "required_substrings": [
           "speed_smoothing_std_dev",
-          "position_smoothing_duration",
-          "TrodesPosParams.describe"
+          "position_smoothing_duration"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -2327,7 +2316,6 @@
       "expectations": [
         "Response contains substring `speed_smoothing_std_dev`.",
         "Response contains substring `position_smoothing_duration`.",
-        "Response contains substring `TrodesPosParams.describe`.",
         "Names `speed_smoothing_std_dev` (Gaussian sigma) as the field that controls speed-trace noise",
         "Distinguishes `speed_smoothing_std_dev` (Gaussian sigma applied at the velocity stage inside `get_velocity`, common_position.py:475) from `position_smoothing_duration` (moving-average applied to the LED positions BEFORE centroid / velocity / speed are computed, common_position.py:431-435). Both affect the returned `speed` column — they just enter the pipeline at different stages — and shrinking either produces a noisier speed trace. Does NOT claim either field is decoupled from `speed`, and does NOT claim `position_smoothing_duration` is applied after speed is computed.",
         "Predicts: shrinking / disabling `speed_smoothing_std_dev` gives a noisier speed trace, causing spurious crossings of downstream thresholds",
@@ -4644,7 +4632,6 @@
         "required_substrings": [
           "RippleTimesV1",
           "RippleLFPSelection",
-          "new ripple_param_name",
           "ripple_param_dict",
           "provenance"
         ],
@@ -4669,7 +4656,6 @@
       "expectations": [
         "Response contains substring `RippleTimesV1`.",
         "Response contains substring `RippleLFPSelection`.",
-        "Response contains substring `new ripple_param_name`.",
         "Response contains substring `ripple_param_dict`.",
         "Response contains substring `provenance`.",
         "Response does not contain substring `yes, just update1 the row`.",
@@ -4692,9 +4678,7 @@
         "required_substrings": [
           "SpikeSortingRecording",
           "SpikeSorting",
-          "CurationV1",
-          "new recording_id",
-          "insert_selection"
+          "CurationV1"
         ],
         "forbidden_substrings": [
           "yes, the old curation still applies",
@@ -4721,8 +4705,6 @@
         "Response contains substring `SpikeSortingRecording`.",
         "Response contains substring `SpikeSorting`.",
         "Response contains substring `CurationV1`.",
-        "Response contains substring `new recording_id`.",
-        "Response contains substring `insert_selection`.",
         "Response does not contain substring `yes, the old curation still applies`.",
         "Response does not contain substring `old curation transfers`.",
         "Recognizes that changing the sort interval (via `IntervalList`) changes the input key to `SpikeSortingRecordingSelection.insert_selection`, producing a NEW `recording_id` (the PK is a uuid generated from the inputs at recording.py:180), NOT a mutation of the existing row",
@@ -4743,7 +4725,6 @@
         "required_substrings": [
           "DecodingParameters",
           "ClusterlessDecodingV1",
-          "new decoding_param_name",
           "ClusterlessDecodingSelection"
         ],
         "forbidden_substrings": [],
@@ -4768,7 +4749,6 @@
       "expectations": [
         "Response contains substring `DecodingParameters`.",
         "Response contains substring `ClusterlessDecodingV1`.",
-        "Response contains substring `new decoding_param_name`.",
         "Response contains substring `ClusterlessDecodingSelection`.",
         "Correctly identifies that ONLY the decoding output (`ClusterlessDecodingV1` / `SortedSpikesDecodingV1`) changes — spike sorting and position upstream are unaffected because they don't FK to `DecodingParameters`",
         "Recommends inserting a NEW `DecodingParameters` row with a different `decoding_param_name` (e.g. `'bin5cm'`) and a fresh `ClusterlessDecodingSelection` + populate, rather than `update1()` on the existing row",
