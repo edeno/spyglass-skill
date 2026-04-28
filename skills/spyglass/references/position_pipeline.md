@@ -65,17 +65,26 @@ from spyglass.position.v1.imported_pose import ImportedPose
 # 1. Pull pose rows from the source NWB.
 ImportedPose().insert_from_nwbfile(nwb_file)
 
-# 2. Discover the actual interval_list_name(s) the import created —
-#    `insert_from_nwbfile` synthesizes them as
-#    `pose_<obj.name>_valid_intervals` (one per PoseEstimation
-#    object in the NWB file; the `interval_list_name` field is set
-#    at `imported_pose.py:75-76`). Don't hand-build a name — fetch
-#    the registered keys instead.
+# 2. Discover the actual interval_list_name(s) the import created.
+#    `insert_from_nwbfile` LOOPS over every `PoseEstimation` object
+#    in the source NWB and creates one master row per object
+#    (`imported_pose.py:54`), each keyed by a synthesized name of
+#    the form `pose_<obj.name>_valid_intervals`
+#    (`imported_pose.py:76`). One NWB → potentially several rows;
+#    don't hand-build a name and don't assume "the first row" is
+#    the one you want.
 keys = (ImportedPose & {"nwb_file_name": nwb_file}).fetch(
     "KEY", as_dict=True
 )
-# Then fetch the bodypart pose dataframe for one of them:
-pose_df = ImportedPose().fetch_pose_dataframe(keys[0])
+for k in keys:
+    print(k["interval_list_name"])      # inspect candidates
+# Then pick the one matching the PoseEstimation object you care
+# about (the `<obj.name>` segment), e.g.:
+my_key = next(
+    k for k in keys
+    if k["interval_list_name"] == "pose_<your_obj_name>_valid_intervals"
+)
+pose_df = ImportedPose().fetch_pose_dataframe(my_key)
 ```
 
 **ImportedPose** (Manual; `position/v1/imported_pose.py:18`)
