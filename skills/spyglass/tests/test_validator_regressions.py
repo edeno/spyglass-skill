@@ -1255,6 +1255,209 @@ def fixture_insert1_diamond_projection(src_root):
         return False
 
 
+def fixture_singular_plural_hint_added(src_root):
+    """Singular/plural near-miss adds a 'did you mean ...?' suggestion.
+
+    Real bug class from audit rounds: ``trodes_pos_param_name`` (singular)
+    instead of the actual schema field ``trodes_pos_params_name``. The
+    existing field-missing warning would catch the typo, but the new hint
+    makes it actionable.
+    """
+    md = _write_md(
+        """
+        # Test
+
+        ```python
+        TrodesPosParams & {"trodes_pos_param_name": "default"}
+        ```
+        """
+    )
+    with _with_md_files(md):
+        results = v.ValidationResult()
+        v.check_restriction_fields(src_root, results)
+    return _assert_warn_contains(
+        results, "did you mean 'trodes_pos_params_name'?",
+        "key-shape: singular/plural hint surfaces correct field",
+    )
+
+
+def fixture_partial_populate_pk_warns(src_root):
+    """`Class.populate({...})` covering a strict subset of PK must warn.
+
+    Real bug from PR #22 round-3 in `spikesorting_v1_pipeline.md`:
+    ``BurstPair.populate({"metric_curation_id": ...})`` left
+    ``burst_params_name`` open and re-ran across every BurstPairParams
+    row paired with that curation. Synthetic schema mirrors the shape:
+    PK is {a, b}, populate restricts only by {a}.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        files = {
+            "fakepipe/t.py": '''
+                class T:
+                    definition = """
+                    a: int
+                    b: varchar(80)
+                    ---
+                    """
+            ''',
+        }
+        for rel, body in files.items():
+            path = tmp / "spyglass" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(body))
+
+        md = _write_md(
+            """
+            # Test
+
+            ```python
+            T.populate({"a": 1})
+            ```
+            """
+        )
+        v.clear_caches()
+        try:
+            with _with_md_files(md):
+                results = v.ValidationResult()
+                v.check_insert_key_shape(tmp, results)
+        finally:
+            v.clear_caches()
+    return _assert_warn_contains(
+        results, "partial PK",
+        "key-shape: partial-PK populate caught (BurstPair-shape regression)",
+    )
+
+
+def fixture_definition_divider_dashes_variants(src_root):
+    """Definition-divider parser must accept any `-{3,}` run.
+
+    Real Spyglass source uses both `---` and `----` styles (e.g.
+    `RippleParameters` at `ripple/v1/ripple.py:140` uses four dashes).
+    The previous parser only matched exactly `---`, which silently
+    classified trailing non-PK fields as PK on classes using the
+    longer divider — producing false-positive partial-PK populate
+    warnings when downstream tables FK'd those classes in_pk.
+
+    Synthetic two-class schema mirrors RippleParameters → RippleTimesV1:
+    P uses a four-dash divider with a non-PK blob field; T inherits
+    P's PK via `-> P`. A populate restricted to T's PK fields must
+    NOT emit a partial-PK warning that demands the blob.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        files = {
+            "fakepipe/p.py": '''
+                class P:
+                    definition = """
+                    p_name : varchar(80)
+                    ----
+                    p_blob : longblob
+                    """
+            ''',
+            "fakepipe/t.py": '''
+                class T:
+                    definition = """
+                    -> P
+                    extra : int
+                    ---
+                    """
+            ''',
+        }
+        for rel, body in files.items():
+            path = tmp / "spyglass" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(body))
+
+        md = _write_md(
+            """
+            # Test
+
+            ```python
+            T.populate({"p_name": "default", "extra": 1})
+            ```
+            """
+        )
+        v.clear_caches()
+        try:
+            with _with_md_files(md):
+                results = v.ValidationResult()
+                v.check_insert_key_shape(tmp, results)
+        finally:
+            v.clear_caches()
+    bad_partial = [w for w in results.warnings if "partial PK" in w]
+    if bad_partial:
+        print(
+            "  [FAIL] four-dash divider misparsed; populate falsely "
+            "flagged as partial-PK:"
+        )
+        for w in bad_partial:
+            print(f"         {w}")
+        return False
+    print("  [ok] divider parser: 4+ dashes correctly split PK / non-PK")
+    return True
+
+
+def fixture_full_populate_pk_no_warn(src_root):
+    """`Class.populate({...})` covering the full PK must NOT warn.
+
+    Pairs with `fixture_partial_populate_pk_warns` to confirm the new
+    check doesn't fire false positives on correctly-scoped populate
+    calls. Same synthetic schema; restricts every PK field.
+    """
+    import tempfile
+    import textwrap
+    from pathlib import Path as P
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = P(tmp_str)
+        files = {
+            "fakepipe/t.py": '''
+                class T:
+                    definition = """
+                    a: int
+                    b: varchar(80)
+                    ---
+                    """
+            ''',
+        }
+        for rel, body in files.items():
+            path = tmp / "spyglass" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(textwrap.dedent(body))
+
+        md = _write_md(
+            """
+            # Test
+
+            ```python
+            T.populate({"a": 1, "b": "x"})
+            ```
+            """
+        )
+        v.clear_caches()
+        try:
+            with _with_md_files(md):
+                results = v.ValidationResult()
+                v.check_insert_key_shape(tmp, results)
+        finally:
+            v.clear_caches()
+    bad = [w for w in results.warnings if "partial PK" in w]
+    if not bad:
+        print("  [ok] key-shape: full-PK populate produces no partial-PK warning")
+        return True
+    print(f"  [FAIL] full-PK populate wrongly warned: {bad}")
+    return False
+
+
 def fixture_insert1_unknown_class(src_root):
     """`.insert1()` on a class not in KNOWN_CLASSES / auto-discovery skipped."""
     md = _write_md(
@@ -2883,6 +3086,10 @@ FIXTURES = [
     fixture_insert1_spread_kwargs,
     fixture_insert1_unknown_class,
     fixture_insert1_diamond_projection,
+    fixture_singular_plural_hint_added,
+    fixture_partial_populate_pk_warns,
+    fixture_full_populate_pk_no_warn,
+    fixture_definition_divider_dashes_variants,
     fixture_link_landing_positive,
     fixture_link_landing_negative,
     fixture_citation_content_direct_match,

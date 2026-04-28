@@ -1052,11 +1052,15 @@ def check_restriction_fields(src_root, results):
                         hint = ", ".join(sample)
                         if len(fields) > len(sample):
                             hint += ", ..."
+                        near = _singular_plural_near_miss(key, fields)
+                        suggestion = (
+                            f" (did you mean '{near}'?)" if near else ""
+                        )
                         results.warn(
                             f"{location}: "
                             f"({canonical} & {{\"{key}\": ...}}): "
-                            f"field '{key}' not found in schema "
-                            f"(known: {hint})"
+                            f"field '{key}' not found in schema"
+                            f"{suggestion} (known: {hint})"
                         )
 
 
@@ -1066,6 +1070,37 @@ def check_restriction_fields(src_root, results):
 _INSERT_SHAPED_METHODS = frozenset({
     "insert1", "insert", "populate", "insert_selection",
 })
+
+
+# Suffix pairs whose singular/plural collision is the most frequent typo
+# class observed in audit rounds (e.g. `position_info_param_name` vs
+# `position_info_params_name`, `trodes_pos_param_name` vs
+# `trodes_pos_params_name`). Narrow allowlist on purpose: fuzzy matching
+# across every word in every file would generate noise.
+_SINGULAR_PLURAL_SUFFIXES = (
+    ("_param_name", "_params_name"),
+    ("_param_id", "_params_id"),
+)
+
+
+def _singular_plural_near_miss(key: str, fields: set) -> str | None:
+    """If ``key`` is a singular/plural near-miss of a field in ``fields``,
+    return the schema-correct spelling. Else None.
+
+    Examples (when the schema contains ``trodes_pos_params_name``):
+      ``trodes_pos_param_name``  → ``trodes_pos_params_name``
+      ``trodes_pos_params_name`` → None (already correct)
+    """
+    for sing, plur in _SINGULAR_PLURAL_SUFFIXES:
+        if key.endswith(sing):
+            candidate = key[:-len(sing)] + plur
+            if candidate in fields:
+                return candidate
+        if key.endswith(plur):
+            candidate = key[:-len(plur)] + sing
+            if candidate in fields:
+                return candidate
+    return None
 
 
 def check_insert_key_shape(src_root, results):
@@ -1137,6 +1172,12 @@ def check_insert_key_shape(src_root, results):
                         continue
                     line_num = block_start + call_line - 1
                     location = f"{md_file.name}:{line_num}"
+                    string_keys = {
+                        k.value
+                        for k in d.keys
+                        if isinstance(k, ast.Constant)
+                        and isinstance(k.value, str)
+                    }
                     for key_node in d.keys:
                         if not isinstance(key_node, ast.Constant):
                             continue
@@ -1149,12 +1190,46 @@ def check_insert_key_shape(src_root, results):
                         hint = ", ".join(sample)
                         if len(valid_fields) > len(sample):
                             hint += ", ..."
+                        near = _singular_plural_near_miss(key, valid_fields)
+                        suggestion = (
+                            f" (did you mean '{near}'?)" if near else ""
+                        )
                         results.warn(
                             f"{location}: "
                             f"{class_name}.{method_name}({{\"{key}\": ...}}): "
-                            f"key '{key}' not in schema "
-                            f"(known: {hint})"
+                            f"key '{key}' not in schema"
+                            f"{suggestion} (known: {hint})"
                         )
+
+                    # Partial-PK populate guard. If `Class.populate({...})`
+                    # passes only a subset of the table's PK fields, the
+                    # populate runs over every value of the missing PK
+                    # fields — usually NOT the intended scope (a re-run
+                    # for a single downstream analysis should pin every
+                    # PK field). Only run when every provided key is a
+                    # known field; otherwise the unknown-key warning
+                    # above is the more actionable signal.
+                    if (
+                        method_name == "populate"
+                        and string_keys
+                        and string_keys.issubset(valid_fields)
+                    ):
+                        pk_fields = idx.pk_fields_for(
+                            class_name, file_version,
+                        )
+                        if pk_fields is not None:
+                            missing_pk = pk_fields - string_keys
+                            if missing_pk and string_keys & pk_fields:
+                                results.warn(
+                                    f"{location}: "
+                                    f"{class_name}.populate({{...}}): "
+                                    f"partial PK — restriction is missing "
+                                    f"{sorted(missing_pk)}; populate will "
+                                    f"run over every combination of those "
+                                    f"fields (PK is {sorted(pk_fields)}). "
+                                    f"Include the missing PK fields if you "
+                                    f"meant to scope this to one row."
+                                )
 
 
 # Pattern for `class Foo(_Merge, ...)` — the canonical shape for Spyglass
