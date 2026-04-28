@@ -68,7 +68,12 @@ No universal `target_interval_list_name` exists. The field varies by pipeline:
 
 A restriction that works on one selection table can silently match zero rows on another because the field name, the interval-name value, or both differ. DataJoint does not warn when a restriction field is missing from the table — the field is silently ignored.
 
-**Fix.** Inspect the downstream table's primary key (`Table.heading.primary_key`) to see the actual interval-field name. Confirm the value exists for the session with `(IntervalList & {"nwb_file_name": f}).fetch("interval_list_name")`. If the selection was inserted against a different interval than the one you're now restricting, re-insert with the correct value. Full triage including diagnostic queries and the two-interval decoding case: [runtime_debugging.md](runtime_debugging.md) Signature F.
+**Fix.** Inspect the downstream table's primary key (`db_graph.py describe`
+for runtime truth, `code_graph.py describe` for source truth, or
+`Table.heading.primary_key` inside the user's session) to see the actual
+interval-field name. Confirm the value exists for the session with
+`db_graph.py find-instance` or `(IntervalList & {"nwb_file_name": f}).fetch("interval_list_name")`.
+If the selection was inserted against a different interval than the one you're now restricting, re-insert with the correct value. Full triage including diagnostic queries and the two-interval decoding case: [runtime_debugging.md](runtime_debugging.md) Signature F.
 
 ## 7. Fragmenting lab-wide search with inconsistent names
 
@@ -162,4 +167,4 @@ recording_id = (SpikeSortingSelection & {'sorting_id': sid}).fetch1('recording_i
 
 Both fixes are correct. Fix 1 stays composable in one expression; Fix 2 is more legible when you want to pause and inspect `recording_id` mid-debug.
 
-**Diagnostic habit.** Before recommending a multi-table `*` chain, inspect each side's secondary attributes: `Table.heading.secondary_attributes`. Look for collisions — if any attribute appears in both, you need `.proj()` or a split. The Spyglass attributes most likely to collide are `nwb_file_name` (propagated via `-> Raw`, `-> Session`, `-> IntervalList`, `-> AnalysisNwbfile`, `-> Electrode`) and `interval_list_name` (via `-> IntervalList` on any selection table). When you're unsure, build the join one step at a time and inspect `.heading` after each `*`.
+**Diagnostic habit.** Before recommending a multi-table `*` chain, inspect each side's secondary attributes: use `db_graph.py describe` for runtime headings, `code_graph.py describe` for source headings, or `Table.heading.secondary_attributes` inside the user's session. Look for collisions — if any attribute appears in both, you need `.proj()` or a split. The Spyglass attributes most likely to collide are `nwb_file_name` (propagated via `-> Raw`, `-> Session`, `-> IntervalList`, `-> AnalysisNwbfile`, `-> Electrode`) and `interval_list_name` (via `-> IntervalList` on any selection table). When you're unsure, build the join one step at a time and inspect `.heading` after each `*`.

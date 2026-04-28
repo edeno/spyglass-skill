@@ -221,15 +221,23 @@ class MyComputedTable(SpyglassMixin, dj.Computed):
 
 ## Spyglass-Specific Operators
 
+These graph-search helpers are useful for interactive exploration. They are
+not the preferred way to build production keys for merge masters: for
+`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, etc.,
+prefer `merge_restrict(...)` / `merge_get_part(...)` when the next step is
+`fetch1`, `populate`, deletion, or generated code.
+
 ### Upstream Restriction (`<<`)
 
 Restrict by ancestor attribute — searches **up** the dependency chain. Use when the field you want to filter on belongs to a table upstream of the current table.
 
 ```python
-# Find all PositionOutput entries for a specific session
+# Exploratory: find all PositionOutput entries for a specific session.
+# For copyable merge-table code, prefer PositionOutput.merge_restrict(...).
 PositionOutput() << "nwb_file_name = 'j1620210710_.nwb'"
 
-# Find all SpikeSortingOutput entries for a subject
+# Exploratory: find all SpikeSortingOutput entries for a subject.
+# For copyable merge-table code, prefer SpikeSortingOutput.merge_restrict(...).
 SpikeSortingOutput() << "subject_id = 'J16'"
 ```
 
@@ -255,7 +263,7 @@ Session() >> 'decoding_param_name LIKE "contfrag_clusterless%"'
 Same as `<<`/`>>` but with explicit direction parameter.
 
 ```python
-# Upstream (equivalent to <<)
+# Upstream (equivalent to <<; exploratory on merge masters)
 PositionOutput().restrict_by(
     "nwb_file_name = 'j1620210710_.nwb'",
     direction="up"
@@ -269,6 +277,12 @@ Session().restrict_by(
 ```
 
 ## Table Inspection Commands
+
+For LLM answers, prefer the bundled scripts when they can answer the
+question: `code_graph.py describe/path/find-method` for source facts, and
+`db_graph.py describe/find-instance/path` for runtime headings, counts,
+rows, and DB adjacency. Use the interactive DataJoint forms below inside
+the user's Python session or when a script cannot see the needed context.
 
 ```python
 # View schema definition with primary/foreign keys
@@ -311,8 +325,13 @@ Inherited via `SpyglassMixin` (from `FetchMixin`), but only resolves on **NWB-ba
 **Exception — decoding tables.** `ClusterlessDecodingV1` (and the SortedSpikes decoding equivalents) store results as xarray netCDF (`.nc`) + a pickled classifier, not NWB. They expose dedicated `fetch_results()` / `fetch_model()` / `fetch_environments()` methods instead of `fetch_nwb()`. See `decoding/v1/clusterless.py:99` (results_path declaration) and the `fetch_results` method nearby.
 
 ```python
-# Fetch NWB objects for a table entry (NWB-backed: LFPV1, TrodesPosV1, Raw, ...)
-nwb_objs = (LFPV1 & key).fetch_nwb()
+# Fetch NWB objects for a table entry (NWB-backed: LFPV1, TrodesPosV1, Raw, ...).
+# `fetch_nwb()` returns a list and does not enforce one-row cardinality.
+rel = LFPV1 & key
+n_rows = len(rel)
+if n_rows != 1:
+    raise ValueError(f"key matched {n_rows} rows; tighten before fetch_nwb")
+nwb_objs = rel.fetch_nwb()
 
 # Access data from NWB object
 lfp_data = nwb_objs[0]['lfp']
@@ -349,7 +368,7 @@ pose_df = (PositionOutput & merge_key).fetch_pose_dataframe()
 ## Best Practices
 
 1. **Always limit large queries**: Use `limit=` to avoid memory issues
-2. **Use friendly keys first**: Start with `nwb_file_name`, then get `merge_id`
+2. **Use evidence before code**: For source facts, run `code_graph.py`; for runtime headings, row counts, merge IDs, or custom tables, run `db_graph.py`. For merge discovery, start with friendly keys like `nwb_file_name`, then resolve candidate `merge_id` values with merge-aware helpers.
 3. **Preview before fetching**: Use `.fetch(limit=1)` or `.merge_view()` to check structure
 4. **Check table relationships**: Use `.describe()`, `.parents()`, `.children()` when joining
 5. **Prefer DataJoint over SQL**: Use restriction operators instead of raw SQL queries

@@ -1,7 +1,7 @@
 # Implementation plan — reference key hygiene and validator coverage
 
 **Date:** 2026-04-28
-**Status:** In progress.
+**Status:** Batches A and B complete (PR #22 + this PR). Batches C / D / E deferred.
 **Scope:** Reduce wrong or missing key claims in `skills/spyglass/references/` by tightening reference-writing policy, adding targeted validator checks for key-bearing examples, and adding evals that punish confident key invention.
 
 This plan responds to a repeated review finding: many dangerous Spyglass mistakes are not missing imports or broken links. They are plausible, copyable key claims that look reasonable to an LLM but fail against source or the user's runtime database.
@@ -126,6 +126,17 @@ Working classification for Batch B:
 | Validator coverage | Existing validator catches many dict-field cases, but not all prose/blob cases | Implement only narrow C1-C3 checks after Batch B surfaces concrete examples. |
 
 Do not broaden this into a full schema catalog. The next useful unit is a small PR that finishes the active `destructive_operations.md` parameter-blob correction, then audits one high-risk reference at a time.
+
+### Progress log
+
+- **2026-04-28 — PR #22 (merged, commit `66d1a34`):** Batch A audit + early Batch B. Fixed two concrete wrong/copyable findings: `RippleParameters` blob shape in `destructive_operations.md` and tutorial-specific `trodes_pos_params_name` hardcode in `mua_pipeline.md`. Round-2/3 follow-ups added scoped `RippleTimesV1.populate` key, multi-row ImportedPose discovery, BurstPair populate scope, v0 legacy `fetch_nwb()[0]` cardinality, and `behavior_pipeline.md` first-row pattern.
+- **2026-04-28 — Batch B narrow first pass (this PR):** focused pass over runnable code blocks in priority files (merge_methods, spyglassmixin_methods, datajoint_api, runtime_debugging, workflows, dependencies, feedback_loops, custom_pipeline_authoring). Added cardinality guards before `fetch_nwb`, replaced `assert` with explicit `if/raise ValueError` patterns, sharpened merge-master silent-no-op wording, fixed `LFPElectrodeGroup` join key in workflows, renamed shadowing `ElectrodeGroup` part class. Companion thread: promote `code_graph.py` / `db_graph.py` CLIs as the LLM-facing fact-check authority, with in-session DataJoint API as fallback (SKILL.md, common_mistakes.md, common_tables.md, datajoint_api.md, spyglassmixin_methods.md, workflows.md). SKILL.md L40 clarifies that bare CLI names mean `python skills/spyglass/scripts/<name>`. Stricter `_one()` helper in `spikesorting_v1_pipeline.md` raises on multi-row selection results instead of silently picking the first.
+
+### Remaining work
+
+- **Batch C narrow validator additions** — extend the dict-restriction field checker to `populate({...})` calls; add a singular/plural near-miss check (`_param_name` vs `_params_name`); add regression fixtures.
+- **Batch D evals** — pin the patterns this PR fixed (key invention, partial populate, blob shape, merge-master wrong restriction) so future regressions fail evals before they fail users.
+- **Batch E maintainer checklist** — open only if drift continues recurring after C/D land.
 
 ## Batch B — reference cleanup
 

@@ -22,8 +22,13 @@ Most raw and analysis data is stored in NWB files (HDF5-based) — tables refere
 **Exception — decoding output is not NWB.** `ClusterlessDecodingV1` and the SortedSpikes decoding equivalents store results as `xarray` netCDF (`.nc`) at a `filepath@analysis` external store, with the classifier pickled alongside (`.pkl`). They expose dedicated fetchers: `fetch_results()` (`xr.Dataset`) at `decoding/v1/clusterless.py:453`, `fetch_model()` at `:470`, `fetch_environments()` at `:475` — not `fetch_nwb()`. The storage declaration is at `decoding/v1/clusterless.py:99` (`results_path: filepath@analysis`).
 
 ```python
-# Fetch NWB objects from an NWB-backed table (e.g. LFPV1, TrodesPosV1, Raw)
-nwb_data = (Table & key).fetch_nwb()
+# Fetch NWB objects from an NWB-backed table (e.g. LFPV1, TrodesPosV1, Raw).
+# `fetch_nwb()` returns a list and does not enforce one-row cardinality.
+rel = Table & key
+n_rows = len(rel)
+if n_rows != 1:
+    raise ValueError(f"key matched {n_rows} rows; tighten before fetch_nwb")
+nwb_data = rel.fetch_nwb()
 
 # Access data from NWB object
 lfp_series = nwb_data[0]['lfp']

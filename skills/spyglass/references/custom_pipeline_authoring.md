@@ -258,7 +258,7 @@ class MyElectrodeGroupSet(SpyglassMixin, dj.Manual):
     -> Session
     """
 
-    class ElectrodeGroup(SpyglassMixinPart):
+    class ElectrodeGroupMember(SpyglassMixinPart):
         """One row per `ElectrodeGroup` included in the set."""
 
         definition = """

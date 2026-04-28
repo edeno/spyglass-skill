@@ -16,7 +16,11 @@
 
 Tables in the `spyglass.common` schema. These are the root tables all pipelines depend on.
 
-**Important**: Always verify table structure with `Table.describe()` or `Table.heading` before writing queries that depend on specific column names. This reference provides an overview of table purposes and relationships, not an exhaustive schema copy.
+**Important**: Always verify table structure before writing queries that
+depend on specific column names. Use `code_graph.py describe` for
+source-declared structure, `db_graph.py describe` for the connected
+database, or `Table.describe()` / `Table.heading` inside the user's Python
+session. This reference is an overview, not an exhaustive schema copy.
 
 **Adjacent concepts.** Group tables (`SortedSpikesGroup`, `PositionGroup`, `UnitSelectionParams`) live in pipeline-specific schemas, not in `common`, but the shape recurs across pipelines — see [group_tables.md](group_tables.md). Merge tables similarly live in pipeline schemas — see [merge_methods.md](merge_methods.md).
 
@@ -229,7 +233,12 @@ Nwbfile
 
 ## Discovery Patterns
 
-When you need exact column names or key structure, always check the table directly:
+When you need exact column names or key structure, use the bundled scripts
+first when answering outside the user's live notebook: `code_graph.py
+describe <Class> --json` for source-declared keys/FKs, or `db_graph.py
+describe <Class> --count --json` for the connected database's runtime
+heading and row count. Inside a Python session, the equivalent direct
+DataJoint checks are:
 
 ```python
 # View full schema definition
