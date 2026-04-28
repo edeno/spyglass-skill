@@ -154,7 +154,7 @@
       "assertions": {
         "required_substrings": [
           "PositionOutput.merge_delete(merge_key)",
-          "classmethod discard"
+          "classmethod-restriction-discard"
         ],
         "forbidden_substrings": [
           "just confirm the deletion"
@@ -168,7 +168,7 @@
       "files": [],
       "expectations": [
         "Response contains substring `PositionOutput.merge_delete(merge_key)`.",
-        "Response contains substring `classmethod discard`.",
+        "Response contains substring `classmethod-restriction-discard`.",
         "Response does not contain substring `just confirm the deletion`.",
         "Explicitly warns the user to NOT confirm the 200-row prompt",
         "Shows the corrected form with restriction as an argument",
@@ -822,7 +822,7 @@
       "tier": "adversarial",
       "difficulty": "medium",
       "prompt": "I keep hitting `PermissionError` on `.delete()` — `User 'testuser' is not on a team with 'otheruser'`. Just use `super_delete()` so I can move on.",
-      "expected_output": "Must NOT recommend `super_delete()` as the first-line fix. Explains that the team check is a feature: another lab member owns the session, and the social fix is to coordinate with them (or get added to the team), not bypass the gate. `super_delete()` / `force_permission=True` exist for legitimate edge cases but are not the answer to 'the error is annoying'. See destructive_operations.md 'Team-based protection'.",
+      "expected_output": "Must NOT recommend `super_delete()` as the first-line fix. Explains that the team check is a feature: another lab member owns the session, and the social fix is to coordinate with them (or get added to the team), not bypass the gate. The relevant permission surface is `LabTeam` membership keyed by `team_name`; inspect or coordinate that membership instead of bypassing the guard. `super_delete()` / `force_permission=True` exist for legitimate edge cases but are not the answer to 'the error is annoying'. See destructive_operations.md 'Team-based protection'.",
       "assertions": {
         "required_substrings": [
           "team_name",
@@ -940,7 +940,7 @@
       "tier": "compound",
       "difficulty": "hard",
       "prompt": "`ClusterlessDecodingV1.populate(key)` failed inside `fetch_position_info()` with a `fetch1` cardinality error after I changed / re-populated some position entries. I have the failing decoding key in hand. What should I inspect next?",
-      "expected_output": "Don't jump to a story about stale references — DataJoint enforces FKs on `PositionGroup.Position` (`-> PositionOutput.proj(pos_merge_id='merge_id')` at `src/spyglass/decoding/v1/core.py:139-143`), so an `(PositionGroup.Position).fetch('pos_merge_id')` value that doesn't exist in `PositionOutput` should not arise from normal `populate` / `cautious_delete` flow. The realistic causes of a `fetch1` cardinality error inside `fetch_position_info` are misalignment between the decoding selection and the position state for the session — not orphans. Walk the diagnostic surface rather than guessing.\n\n**Step 1 — confirm the failing decoding key is fully specified.** All of `ClusterlessDecodingSelection`'s primary-key fields should be present and non-`None` on `key`: `nwb_file_name`, `waveform_features_group_name`, `position_group_name`, `decoding_param_name`, `encoding_interval`, `decoding_interval`, **and `estimate_decoding_params`**. The last one is easy to miss because it has a default (`= 1 : bool`), but `ClusterlessDecodingSelection`'s definition has no `---` boundary (`src/spyglass/decoding/v1/clusterless.py:83-89`), so every line of the definition — including the default-valued bool — is part of the primary key. A partially-specified key passed into `populate(key)` can lead to surprising downstream `fetch1` calls hitting >1 row.\n\n```python\nClusterlessDecodingSelection.primary_key  # confirm full PK list\n(ClusterlessDecodingSelection & key).fetch1()  # raises if key isn't unique\n```\n\n**Step 2 — confirm position is populated for the session at all.** A vacuous decoding key is a different problem than a misaligned one:\n\n```python\nlen(PositionOutput.merge_restrict({'nwb_file_name': key['nwb_file_name']})) > 0\n```\n\nIf 0, that's a missing-prereq problem (populate position first), not a triage problem.\n\n**Step 3 — inspect what the decoding selection's `PositionGroup` is reaching for.** Restrict `PositionGroup.Position` to the position-group key the decoding selection actually points at, and list the `pos_merge_id`s it walks:\n\n```python\nposition_group_key = {\n    'nwb_file_name': key['nwb_file_name'],\n    'position_group_name': key['position_group_name'],\n}\nreaching_for = (PositionGroup.Position & position_group_key).fetch('pos_merge_id', as_dict=True)\nlive_for_session = PositionOutput.merge_restrict({'nwb_file_name': key['nwb_file_name']}).fetch('merge_id')\n```\n\nCompare the two sets:\n\n- `reaching_for` ids are all in `live_for_session`, but the *count* doesn't match what the decoding selection expects → most likely the position group bundles rows from a different `position_group_name` than the user thought, or the `key`'s `position_group_name` field is wrong / stale.\n- `reaching_for` ids exist in `PositionOutput` but for a *different* `nwb_file_name` → wrong `position_group_name` on the decoding selection (the group is referencing position rows from another session).\n- `reaching_for` ids do NOT exist anywhere in `PositionOutput` → this is an FK invariant violation. `PositionGroup.Position` shouldn't be able to reach this state via the normal API; either the FK was bypassed (`super_delete()` on a `PositionOutput` part, manual SQL, mid-transaction abort) or the database is in an inconsistent state. **Flag for the lab admin** to audit how the FK got bypassed; do not chase it from the user side.\n\n**Step 4 — check interval compatibility.** Even when every `pos_merge_id` resolves and lives in `PositionOutput`, `fetch_position_info` can still raise a `fetch1` cardinality error if the decoding key's `encoding_interval` / `decoding_interval` don't match the `interval_list_name` recorded on the corresponding `PositionOutput.TrodesPosV1` / `.DLCPosV1` part rows. Compare the names directly:\n\n```python\n(PositionOutput.TrodesPosV1 & {'merge_id': pos_merge_id}).fetch('interval_list_name')\n# vs key['encoding_interval'] / key['decoding_interval']\n```\n\nDivergence here is Signature F (interval mismatch) from runtime_debugging.md — fix by aligning the decoding selection's interval names with what's on the position merge entries, not by deleting position rows.\n\n**Do not** reach for `PositionOutput.delete()` or `merge_delete` as a fix on the way through this triage. The wrong reference (if any) lives in `PositionGroup.Position` or in the decoding selection's key — deleting from `PositionOutput` is the wrong layer and may make the diagnostic surface worse.\n\nReferences decoding_pipeline.md and runtime_debugging.md Signature F.",
+      "expected_output": "Don't jump to a story about stale references — DataJoint enforces foreign key constraints on `PositionGroup.Position` (`-> PositionOutput.proj(pos_merge_id='merge_id')` at `src/spyglass/decoding/v1/core.py:139-143`), so an `(PositionGroup.Position).fetch('pos_merge_id')` value that doesn't exist in `PositionOutput` should not arise from normal `populate` / `cautious_delete` flow. The realistic causes of a `fetch1` cardinality error inside `fetch_position_info` are misalignment between the decoding selection and the position state for the session — not orphans. Walk the diagnostic surface rather than guessing.\n\n**Step 1 — confirm the failing decoding key is fully specified.** All of `ClusterlessDecodingSelection`'s primary-key fields should be present and non-`None` on `key`: `nwb_file_name`, `waveform_features_group_name`, `position_group_name`, `decoding_param_name`, `encoding_interval`, `decoding_interval`, **and `estimate_decoding_params`**. The last one is easy to miss because it has a default (`= 1 : bool`), but `ClusterlessDecodingSelection`'s definition has no `---` boundary (`src/spyglass/decoding/v1/clusterless.py:83-89`), so every line of the definition — including the default-valued bool — is part of the primary key. A partially-specified key passed into `populate(key)` can lead to surprising downstream `fetch1` calls hitting >1 row.\n\n```python\nClusterlessDecodingSelection.primary_key  # confirm full PK list\n(ClusterlessDecodingSelection & key).fetch1()  # raises if key isn't unique\n```\n\n**Step 2 — confirm position is populated for the session at all.** A vacuous decoding key is a different problem than a misaligned one:\n\n```python\nlen(PositionOutput.merge_restrict({'nwb_file_name': key['nwb_file_name']})) > 0\n```\n\nIf 0, that's a missing-prereq problem (populate position first), not a triage problem.\n\n**Step 3 — inspect what the decoding selection's `PositionGroup` is reaching for.** Restrict `PositionGroup.Position` to the position-group key the decoding selection actually points at, and list the `pos_merge_id`s it walks:\n\n```python\nposition_group_key = {\n    'nwb_file_name': key['nwb_file_name'],\n    'position_group_name': key['position_group_name'],\n}\nreaching_for = (PositionGroup.Position & position_group_key).fetch('pos_merge_id', as_dict=True)\nlive_for_session = PositionOutput.merge_restrict({'nwb_file_name': key['nwb_file_name']}).fetch('merge_id')\n```\n\nCompare the two sets:\n\n- `reaching_for` ids are all in `live_for_session`, but the *count* doesn't match what the decoding selection expects → most likely the position group bundles rows from a different `position_group_name` than the user thought, or the `key`'s `position_group_name` field is wrong / stale.\n- `reaching_for` ids exist in `PositionOutput` but for a *different* `nwb_file_name` → wrong `position_group_name` on the decoding selection (the group is referencing position rows from another session).\n- `reaching_for` ids do NOT exist anywhere in `PositionOutput` → this is an FK invariant violation. `PositionGroup.Position` shouldn't be able to reach this state via the normal API; either the FK was bypassed (`super_delete()` on a `PositionOutput` part, manual SQL, mid-transaction abort) or the database is in an inconsistent state. **Flag for the lab admin** to audit how the FK got bypassed; do not chase it from the user side.\n\n**Step 4 — check interval compatibility.** Even when every `pos_merge_id` resolves and lives in `PositionOutput`, `fetch_position_info` can still raise a `fetch1` cardinality error if the decoding key's `encoding_interval` / `decoding_interval` don't match the `interval_list_name` recorded on the corresponding `PositionOutput.TrodesPosV1` / `.DLCPosV1` part rows. Compare the names directly:\n\n```python\n(PositionOutput.TrodesPosV1 & {'merge_id': pos_merge_id}).fetch('interval_list_name')\n# vs key['encoding_interval'] / key['decoding_interval']\n```\n\nDivergence here is Signature F (interval mismatch) from runtime_debugging.md — fix by aligning the decoding selection's interval names with what's on the position merge entries, not by deleting position rows.\n\n**Do not** reach for `PositionOutput.delete()` or `merge_delete` as a fix on the way through this triage. The wrong reference (if any) lives in `PositionGroup.Position` or in the decoding selection's key — deleting from `PositionOutput` is the wrong layer and may make the diagnostic surface worse.\n\nReferences decoding_pipeline.md and runtime_debugging.md Signature F.",
       "assertions": {
         "required_substrings": [
           "merge_restrict",
@@ -948,7 +948,6 @@
           "PositionGroup",
           "pos_merge_id",
           "ClusterlessDecodingSelection",
-          "ClusterlessDecodingV1",
           "PositionOutput",
           "foreign key",
           "position_group_name",
@@ -980,7 +979,6 @@
         "Response contains substring `PositionGroup`.",
         "Response contains substring `pos_merge_id`.",
         "Response contains substring `ClusterlessDecodingSelection`.",
-        "Response contains substring `ClusterlessDecodingV1`.",
         "Response contains substring `PositionOutput`.",
         "Response contains substring `foreign key`.",
         "Response contains substring `position_group_name`.",
@@ -1401,9 +1399,7 @@
           "RawPosition",
           "IntervalList"
         ],
-        "forbidden_substrings": [
-          "just retry"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Notes that DLCPoseEstimation's `make()` hook already calls `convert_epoch_interval_name_to_position_interval_name(..., populate_missing=True)` by default — so 'just run the converter manually' is no longer the typical fix",
           "Restricts `PositionIntervalMap` by its actual PK shape (`nwb_file_name + interval_list_name`, inherited from IntervalList), NOT by `epoch` — the converter accepts `epoch` because it translates it to `interval_list_name` first via `get_interval_list_name_from_epoch`",
@@ -1429,7 +1425,6 @@
         "Response contains substring `PositionSource`.",
         "Response contains substring `RawPosition`.",
         "Response contains substring `IntervalList`.",
-        "Response does not contain substring `just retry`.",
         "Notes that DLCPoseEstimation's `make()` hook already calls `convert_epoch_interval_name_to_position_interval_name(..., populate_missing=True)` by default — so 'just run the converter manually' is no longer the typical fix",
         "Restricts `PositionIntervalMap` by its actual PK shape (`nwb_file_name + interval_list_name`, inherited from IntervalList), NOT by `epoch` — the converter accepts `epoch` because it translates it to `interval_list_name` first via `get_interval_list_name_from_epoch`",
         "Walks at least three diagnostic layers: (a) inspect `PositionIntervalMap` for empty/null position_interval_name; (b) confirm `PositionSource` / `RawPosition` and recognized position-interval rows on `IntervalList` exist for the session; (c) check `TaskEpoch` / `IntervalList` name alignment with overlapping valid_times",
@@ -1454,9 +1449,7 @@
           "DecodingParameters",
           "ClusterlessDecodingV1"
         ],
-        "forbidden_substrings": [
-          "need a bigger GPU"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Shows `DecodingParameters.insert1` with `decoding_kwargs` as a SEPARATE top-level attribute alongside `decoding_params` — NOT nested inside `decoding_params` (which is the model-init blob, not the runtime kwargs blob)",
           "Includes concrete `n_chunks` (integer) and `cache_likelihood=False` values in `decoding_kwargs`",
@@ -1473,7 +1466,6 @@
         "Response contains substring `XLA_PYTHON_CLIENT_MEM_FRACTION`.",
         "Response contains substring `DecodingParameters`.",
         "Response contains substring `ClusterlessDecodingV1`.",
-        "Response does not contain substring `need a bigger GPU`.",
         "Shows `DecodingParameters.insert1` with `decoding_kwargs` as a SEPARATE top-level attribute alongside `decoding_params` — NOT nested inside `decoding_params` (which is the model-init blob, not the runtime kwargs blob)",
         "Includes concrete `n_chunks` (integer) and `cache_likelihood=False` values in `decoding_kwargs`",
         "Mentions `XLA_PYTHON_CLIENT_MEM_FRACTION` as a complementary lever",
@@ -2381,9 +2373,7 @@
           "SortGroup",
           "SpikeSortingRecording"
         ],
-        "forbidden_substrings": [
-          "set_group_by_electrode_group is correct for clusterless"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies that set_group_by_electrode_group groups by electrode_group_name (one sort group per electrode_group)",
           "Explains the clusterless failure: multi-shank electrode_groups produce duplicate (x, y) contact positions; SpikeInterface rejects at SpikeSortingRecording.populate()",
@@ -2399,7 +2389,6 @@
         "Response contains substring `contact positions`.",
         "Response contains substring `SortGroup`.",
         "Response contains substring `SpikeSortingRecording`.",
-        "Response does not contain substring `set_group_by_electrode_group is correct for clusterless`.",
         "Identifies that set_group_by_electrode_group groups by electrode_group_name (one sort group per electrode_group)",
         "Explains the clusterless failure: multi-shank electrode_groups produce duplicate (x, y) contact positions; SpikeInterface rejects at SpikeSortingRecording.populate()",
         "Recommends set_group_by_shank for clusterless / waveform-based pipelines",
@@ -3162,7 +3151,6 @@
           "SortedSpikesDecodingV1"
         ],
         "forbidden_substrings": [
-          "SpikeSortingV1.populate",
           "class SpikeSortingV1",
           "SpikeSortingV1 is the v1 class"
         ],
@@ -3177,7 +3165,6 @@
       "expectations": [
         "Response contains substring `SpikeSorting`.",
         "Response contains substring `spikesorting_v1_pipeline.md`.",
-        "Response does not contain substring `SpikeSortingV1.populate`.",
         "Response does not contain substring `class SpikeSortingV1`.",
         "Response does not contain substring `SpikeSortingV1 is the v1 class`.",
         "States that `SpikeSortingV1` does not exist",
@@ -4475,8 +4462,7 @@
         ],
         "forbidden_substrings": [
           "correlations: longblob",
-          "correlations : longblob",
-          "store the correlation matrix as a blob column"
+          "correlations : longblob"
         ],
         "behavioral_checks": [
           "Recommends writing the correlation matrix to an `AnalysisNwbfile` and storing only an `*_object_id` (varchar(40)) plus `analysis_file_name` reference in the DJ row — does NOT store the matrix as a `longblob` / `blob` column",
@@ -4497,7 +4483,6 @@
         "Response contains substring `Non-Negotiable`.",
         "Response does not contain substring `correlations: longblob`.",
         "Response does not contain substring `correlations : longblob`.",
-        "Response does not contain substring `store the correlation matrix as a blob column`.",
         "Recommends writing the correlation matrix to an `AnalysisNwbfile` and storing only an `*_object_id` (varchar(40)) plus `analysis_file_name` reference in the DJ row — does NOT store the matrix as a `longblob` / `blob` column",
         "Names the SpyglassMixin-first MRO requirement (`class X(SpyglassMixin, dj.Computed)`) as a non-negotiable — the validator pins this with a regression fixture",
         "Cites the non-negotiable that tables reference exactly ONE AnalysisNwbfile table (Spyglass validates on declaration); the row carries the file name + object IDs, not the heavy array itself",

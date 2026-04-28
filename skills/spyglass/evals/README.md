@@ -110,25 +110,26 @@ Tiers capture *what kind of capability* the eval tests. A single skill can be st
 | Tier | N | What it tests |
 | --- | --- | --- |
 | `baseline` | 7 | Skill activation + correct routing on canonical, happy-path questions (fresh install, first ingest, first LFP populate). If these fail, nothing else matters. |
-| `atomic-read` | 5 | Single-table fetch by primary key or restricted scan. Tests that the skill can point to the right table and write the right `& key` restriction. |
+| `atomic-read` | 8 | Single-table fetch by primary key or restricted scan. Tests that the skill can point to the right table and write the right `& key` restriction. |
 | `merge-key-discovery` | 3 | Given a merge-output table and an upstream selector, resolve the specific `merge_id` or part-table entry. Merge tables are Spyglass's highest-friction abstraction. |
-| `joins` | 5 | Compose across 2+ tables to answer a question no single table can. Tests relationship knowledge. |
-| `adversarial` | 11 | Non-activation (the skill should NOT fire on unrelated questions), hallucination resistance (made-up table names), destructive-operation pushback (`cautious_delete` bypass requests). |
-| `compound` | 2 | Multi-reference handoffs mirroring real session-length problems — the answer must draw on three or more reference files. |
+| `joins` | 9 | Compose across 2+ tables to answer a question no single table can. Tests relationship knowledge. |
+| `adversarial` | 17 | Non-activation (the skill should NOT fire on unrelated questions), hallucination resistance (made-up table names), destructive-operation pushback (`cautious_delete` bypass requests). |
+| `compound` | 4 | Multi-reference handoffs mirroring real session-length problems — the answer must draw on three or more reference files. |
 | `post-ingest-validation` | 3 | After a fresh ingest "completed," verify what actually made it into the tables and catch silent skips (electrodes missing, PositionSource empty, DIOEvents absent). |
 | `merge-table-gotchas` | 5 | Merge-table-specific failure modes beyond key discovery — insert-order violations, `cautious_delete` cascades, `_object_id` + `SpyglassMixin` requirements on custom merge parts. |
-| `runtime-errors` | 8 | Real tracebacks from `populate()` / `make()` / `fetch1()` with the user's debugging context attached. Tests triage: which reference, which diagnostic, which fix. |
-| `environment-triage` | 3 | Install-level failures (editable-install drift after `git pull`, conda env broken by a stray `pip install`, conda path isolation). |
+| `runtime-errors` | 10 | Real tracebacks from `populate()` / `make()` / `fetch1()` with the user's debugging context attached. Tests triage: which reference, which diagnostic, which fix. |
+| `environment-triage` | 4 | Install-level failures (editable-install drift after `git pull`, conda env broken by a stray `pip install`, conda path isolation). |
 | `config-troubleshooting` | 3 | Config-level failures (`dj.config` wiring, Kachery credentials, shared-install permission layers). |
-| `table-classification` | 5 | Classify a table by DataJoint tier (Manual / Lookup / Computed / Imported / Part) and Spyglass role (selection / parameter / compute / output / merge). |
-| `parameter-semantics` | 6 | Explain what a specific parameter controls and predict downstream effects of changing it. |
-| `disambiguation` | 4 | Choose between two similar tables or workflow branches with explicit reasoning. Also covers under-specified prompts where correct behavior is to ask or narrow scope before answering. |
-| `counterfactual` | 4 | "If X were different, which downstream entries would change." |
+| `table-classification` | 6 | Classify a table by DataJoint tier (Manual / Lookup / Computed / Imported / Part) and Spyglass role (selection / parameter / compute / output / merge). |
+| `parameter-semantics` | 8 | Explain what a specific parameter controls and predict downstream effects of changing it. |
+| `disambiguation` | 8 | Choose between two similar tables or workflow branches with explicit reasoning. Also covers under-specified prompts where correct behavior is to ask or narrow scope before answering. |
+| `counterfactual` | 7 | "If X were different, which downstream entries would change." |
 | `resource-selection` | 4 | Meta-test: which reference file should be opened first to answer a question. |
-| `workflow-recovery` | 2 | Recover from partial success — `populate()` completed but rows are missing, a parameter row was edited in place, an insertion was rolled back mid-chain. Tests whether the skill narrows the safe-next-diagnostic rather than defaulting to broad reruns or destructive cleanup. |
-| `workflow-position` | 2 | "I'm at point X in the pipeline; what populates next." |
-| `dependency-tracing` | 2 | Abstract enumeration of the full upstream chain for a given output table. |
-| `schema-introspection` | 5 | Direct fact about a table's schema (PK fields, direct dependency, part-table set). Grep-scorable, stable canonical answer. |
+| `workflow-recovery` | 3 | Recover from partial success — `populate()` completed but rows are missing, a parameter row was edited in place, an insertion was rolled back mid-chain. Tests whether the skill narrows the safe-next-diagnostic rather than defaulting to broad reruns or destructive cleanup. |
+| `workflow-position` | 3 | "I'm at point X in the pipeline; what populates next." |
+| `dependency-tracing` | 6 | Abstract enumeration of the full upstream chain for a given output table. |
+| `schema-introspection` | 7 | Direct fact about a table's schema (PK fields, direct dependency, part-table set). Grep-scorable, stable canonical answer. |
+| `table-usage` | 5 | Given an already-populated row or selection table, choose the next safe table/API to call and avoid treating intermediate tables as final outputs. |
 
 ## Stages
 
@@ -136,18 +137,18 @@ Stages capture *which phase of a Spyglass workflow* the prompt lives in. Orthogo
 
 | Stage | N | Meaning |
 | --- | --- | --- |
-| `setup` | 6 | Install, env vars, DataJoint config, permissions. |
+| `setup` | 7 | Install, env vars, DataJoint config, permissions. |
 | `ingestion` | 4 | Converting + loading NWB files into Spyglass tables. |
-| `pipeline-usage` | 26 | Using a pipeline end-to-end: insert params → populate → fetch. Largest slice by design — pipeline usage is the 80% case. |
-| `runtime-debugging` | 19 | Triaging an error that already happened. |
-| `common-mistakes` | 5 | Prompts that specifically test the patterns documented in `common_mistakes.md`. |
-| `pipeline-authoring` | 2 | Writing a custom pipeline table (`SpyglassMixin`, `AnalysisNwbfile` FK, `_object_id` convention). |
-| `framework-concepts` | 6 | DataJoint-layer concepts (blob vs external, `filepath@` stores) and schema-introspection (PK / dependency / part-table facts). |
+| `pipeline-usage` | 44 | Using a pipeline end-to-end: insert params → populate → fetch. Largest slice by design — pipeline usage is the 80% case. |
+| `runtime-debugging` | 21 | Triaging an error that already happened. |
+| `common-mistakes` | 6 | Prompts that specifically test the patterns documented in `common_mistakes.md`. |
+| `pipeline-authoring` | 7 | Writing a custom pipeline table (`SpyglassMixin`, `AnalysisNwbfile` FK, `_object_id` convention). |
+| `framework-concepts` | 9 | DataJoint-layer concepts (blob vs external, `filepath@` stores) and schema-introspection (PK / dependency / part-table facts). |
 | `non-activation` | 2 | Questions the skill should stay silent on (plain Python, unrelated neuro tooling). |
-| `hallucination-resistance` | 5 | User cites a made-up API, field, dependency, or class name extrapolated from a naming pattern; correct answer is "that doesn't exist, here's the real one — and here's the verification primitive." |
-| `destructive-operations` | 5 | User asks for `cautious_delete` bypass, `super_delete()`, manual DROP, or an under-specified delete — correct answer pushes back, scopes, or asks before acting. |
+| `hallucination-resistance` | 11 | User cites a made-up API, field, dependency, or class name extrapolated from a naming pattern; correct answer is "that doesn't exist, here's the real one — and here's the verification primitive." |
+| `destructive-operations` | 6 | User asks for `cautious_delete` bypass, `super_delete()`, manual DROP, or an under-specified delete — correct answer pushes back, scopes, or asks before acting. |
 | `table-understanding` | 4 | Questions about what a table *is* (DataJoint tier, Spyglass role, what it stores, relationship to its merge wrapper). Cross-pipeline. |
-| `parameter-understanding` | 5 | Questions about what a specific parameter *controls* and downstream consequences of changing it. Cross-pipeline. |
+| `parameter-understanding` | 9 | Questions about what a specific parameter *controls* and downstream consequences of changing it. Cross-pipeline. |
 
 ## Difficulty
 
@@ -155,9 +156,9 @@ Captures *how hard the eval is to answer*, independent of stage and tier. Used f
 
 | Difficulty | N | What it tests |
 | --- | --- | --- |
-| `easy` | 25 | One-step lookup or single-fact recall. Atomic-read, schema-introspection, baseline activation, hallucination/non-activation. |
-| `medium` | 43 | Two-step composition or one inference hop. Single-table debugging, merge-key discovery, parameter-semantics with locally documented effects. |
-| `hard` | 21 | Multi-step reasoning, multi-reference handoff, ambiguity, or counterfactual reasoning. Compound, dependency-tracing, recovery-from-incomplete-state. |
+| `easy` | 35 | One-step lookup or single-fact recall. Atomic-read, schema-introspection, baseline activation, hallucination/non-activation. |
+| `medium` | 62 | Two-step composition or one inference hop. Single-table debugging, merge-key discovery, parameter-semantics with locally documented effects. |
+| `hard` | 33 | Multi-step reasoning, multi-reference handoff, ambiguity, or counterfactual reasoning. Compound, dependency-tracing, recovery-from-incomplete-state. |
 
 Difficulty is judged on the *answering* side, not the question side. A short prompt can be hard ("trace upstream of `LFPBandV1`") and a long traceback prompt can be easy.
 
