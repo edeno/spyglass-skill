@@ -117,13 +117,16 @@ PositionOutput.merge_restrict({'nwb_file_name': nwb_file})
 ```python
 import matplotlib.pyplot as plt
 
-# Only valid for merge entries whose source supports fetch1_dataframe
-# (TrodesPosV1, DLCPosV1, CommonPos). For ImportedPose, use
-# ImportedPose().fetch_pose_dataframe(key) instead — see the method
-# matrix above.
+# This example uses bare 'position_x' / 'position_y' — valid for
+# TrodesPosV1 and DLCPosV1. CommonPos (IntervalPositionInfo)
+# returns 'head_position_x' / 'head_position_y' instead (see the
+# method matrix above), so swap the column names if the merge
+# entry resolves to CommonPos. ImportedPose has no
+# fetch1_dataframe — use ImportedPose().fetch_pose_dataframe(key).
 position_df = (PositionOutput & merge_key).fetch1_dataframe()
+x_col, y_col = "position_x", "position_y"   # CommonPos: "head_position_x", "head_position_y"
 plt.figure(figsize=(10, 8))
-plt.plot(position_df['position_x'], position_df['position_y'],
+plt.plot(position_df[x_col], position_df[y_col],
          'b-', alpha=0.5, linewidth=0.5)
 plt.xlabel('X Position (cm)')
 plt.ylabel('Y Position (cm)')
