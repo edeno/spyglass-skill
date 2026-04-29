@@ -4,6 +4,7 @@
 
 - [Overview](#overview)
 - [Schema Naming and Your Write Surface](#schema-naming-and-your-write-surface)
+- [Adding a column to a core Spyglass table](#adding-a-column-to-a-core-spyglass-table)
 - [Five-Step Decision Tree](#five-step-decision-tree)
 - [Non-Negotiables](#non-negotiables)
 - [Single Custom Table (Not a Pipeline)](#single-custom-table-not-a-pipeline)
@@ -17,7 +18,7 @@
 
 ## Overview
 
-This reference is for **authoring** a new pipeline that plugs into Spyglass — not for *using* existing pipelines. Typical authoring cases:
+This reference is for **authoring** a new pipeline that plugs into Spyglass — not for *using* existing pipelines. For calling methods on tables that already exist (`fetch_nwb`, `cautious_delete`, `merge_get_part`, etc.), see [spyglassmixin_methods.md](spyglassmixin_methods.md); this file is for authoring new schema modules. Typical authoring cases:
 
 - You want to run a new analysis downstream of an existing merge table (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`).
 - You want to run a new analysis on raw/ingested data directly (`Session`, `Raw`, `IntervalList`, `RawPosition`, `Electrode`).
@@ -47,6 +48,16 @@ Before writing any schema file, know where your user is allowed to write — thi
 | `dj_admin` | ✓ | ✓ | ✓ (including other users') |
 
 `dj_collab` is the common default for new lab members — you own your prefix and can read everything, but can't extend lab-shared schemas. This rule applies equally to custom pipelines and to single custom tables.
+
+## Adding a column to a core Spyglass table
+
+If the user asks to add a column to a Spyglass core table (`Session`, `Electrode`, `IntervalList`, `Raw`, `LFPV1`, `SpikeSorting`, anything in `spyglass.common` or a maintained pipeline), **do not edit the core schema**. The right pattern is a companion table in your user/lab schema that FKs to the core table:
+
+- `dj.Computed` — derived values that come from a deterministic function of upstream rows (write a `make()` body, populate after the upstream populates).
+- `dj.Manual` — human annotations, free-form metadata, lab-specific labels (insert by hand or by a small loader script).
+- `dj.Lookup` — controlled vocabularies, code-defined enums (`contents` baked into the class).
+
+Each FKs to the core table on its primary key, so your new field is queryable as a join (`CoreTable * MyCompanion`) wherever it would have appeared as a "real" column. Reasons to keep this discipline: (1) core schema changes require an upstream PR + per-release `Table.alter()` migration documented in CHANGELOG.md ([datajoint_api.md → Field Ownership](datajoint_api.md#field-ownership) explains why; ALTER privilege is admin-only on shared DBs), so this is not a routine user workflow; (2) a companion table is reversible — you can drop your schema without touching the canonical pipeline; (3) downstream Spyglass consumers won't break because the canonical heading is unchanged. Push back if the user insists on editing core: route them to opening an issue / PR upstream rather than locally patching their checkout.
 
 ## Five-Step Decision Tree
 
@@ -288,7 +299,7 @@ Common upstream tables for authoring: `Session`, `IntervalList`, `Raw`, `RawPosi
 
 ## AnalysisNwbfile Storage Pattern
 
-Outputs too large for DataJoint columns (arrays, waveforms, posteriors, timeseries) go into an AnalysisNwbfile. The DataJoint row stores only the filename and object IDs.
+Heavy results — arrays, correlation/connectivity matrices, embeddings, decoded posteriors, time series, anything that would fit a `longblob` only by being squeezed in — go into an `AnalysisNwbfile`, not a `longblob` column. The DataJoint row stores `analysis_file_name` plus the per-object IDs needed to retrieve them. The non-negotiable here is **reproducibility, exportability, and shareability**, not just write/read performance: the DANDI / Kachery / paper-snapshot export workflows, the cleanup tooling (`AnalysisNwbfile.cleanup`), and the provenance tracking that lets a future reader regenerate or audit a result *all* assume heavy outputs live in addressable analysis files. A `longblob` is invisible to those tools — it round-trips through the DB but can't be exported with the rest of the analysis bundle, can't be re-shared standalone, and won't appear in DANDI uploads.
 
 **Use the `build()` context manager** for all analysis-file writes. It handles the CREATE → POPULATE → REGISTER lifecycle atomically and prevents the common "Cannot call add_nwb_object() in state: REGISTERED" error that arises when separate `create()`, `add_nwb_object()`, `add()` calls are interleaved.
 
