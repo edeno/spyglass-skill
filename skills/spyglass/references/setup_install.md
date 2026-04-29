@@ -31,11 +31,11 @@ pip install spyglass-neuro
 
 This installs Spyglass and its core Python dependencies but does not create a conda environment or configure the database. Set up DataJoint manually — most users put credentials in `~/.datajoint_config.json` (the path Spyglass's installer writes; see "What the installer actually does" below) or a per-project `dj_local_conf.json` next to your code; both are honored by DataJoint. Environment variables work too.
 
-Pure pip skips two things the conda path provides automatically: the environment itself and the DataJoint config. It is also less reliable for **optional / heavier pipeline extras** — components like spike-sorting binaries (`mountainsort4`, `ghostipy`) and FFT libraries (`pyfftw`) often need conda-forge binaries, and DLC has its own environment file (`environments/environment_dlc.yml`). Verify against the install you need: `pyproject.toml` lists what pure pip will install; the `environments/*.yml` files list the extras conda-forge provides. Use the automated installer or `mamba env create -f environments/environment.yml` + `pip install -e .` unless you have a specific reason to avoid conda.
+Pure pip skips two things the conda path provides automatically: the environment itself and the DataJoint config. It is also less reliable for **optional / heavier pipeline extras** — spike-sorting binaries (`mountainsort4`) and filtering / FFT libraries (`ghostipy` — used by `common/common_filter.py`, not a sorter; `pyfftw`) often need conda-forge binaries, and DLC has its own environment file (`environments/environment_dlc.yml`). Verify against the install you need: `pyproject.toml` lists what pure pip will install; the `environments/*.yml` files list the extras conda-forge provides. Use the automated installer or `mamba env create -f environments/environment.yml` + `pip install -e .` unless you have a specific reason to avoid conda.
 
 ### conda (from environment file)
 
-Spyglass provides environment files in the `environments/` directory. Per the repo's `notebooks/py_scripts/00_Setup.py:229-239`, the minimal file is the recommended starting point — `environment.yml` is the full, heavier install.
+Spyglass provides environment files in the `environments/` directory. The Setup notebook (`notebooks/00_Setup.ipynb`) recommends the minimal file as the starting point — `environment.yml` is the full, heavier install.
 
 ```bash
 # Minimal environment (recommended default — faster install)
@@ -57,12 +57,14 @@ conda activate spyglass          # or: spyglass-dlc, spyglass-moseq-cpu, etc.
 pip install -e .
 ```
 
-### From Source (development)
+### From Source — inside an existing Spyglass environment (development)
+
+This snippet assumes a Spyglass conda env is already active (created via the automated installer or one of the `environments/*.yml` files). For a *fresh* setup, run `python scripts/install.py` or `mamba env create -f environments/environment_min.yml` first; install order matters — env creation first, then `pip install -e .` against that env.
 
 ```bash
 git clone https://github.com/LorenFrankLab/spyglass.git
 cd spyglass
-pip install -e .
+pip install -e .   # against the already-active Spyglass env
 ```
 
 The `-e` flag installs in editable mode so changes to the source are reflected immediately.
