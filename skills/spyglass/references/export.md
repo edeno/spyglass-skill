@@ -1,6 +1,6 @@
 # Export Pipeline
 
-The export pipeline produces a reproducible snapshot of tables and files used in a paper or analysis. It logs every fetch during an "export session," then bundles the touched tables and the raw + analysis NWB files it logged into an export package. Distinct from interactive sharing ([figurl.md](figurl.md)) and from the Kachery sync surface ([setup_config.md § Data Sharing Tables (Kachery)](setup_config.md#data-sharing-tables-kachery)).
+The export pipeline produces a reproducible snapshot of tables and files used in a paper or analysis. It logs every fetch during an "export session," then bundles the touched tables and the raw + analysis NWB files it logged — plus files reached transitively through the restriction graph from logged tables and any linked files those resolve to (`common/common_usage.py:550`) — into an export package. Distinct from interactive sharing ([figurl.md](figurl.md)) and from the Kachery sync surface ([setup_config.md § Data Sharing Tables (Kachery)](setup_config.md#data-sharing-tables-kachery)).
 
 ## Contents
 
@@ -67,7 +67,7 @@ Logs errors encountered during export.
 1. **Only one export can be active per Python instance.** Calling `start_export` while another is running silently stops the first. If multiple people share a Python process (e.g., shared notebook kernel), coordinate export sessions or use separate processes.
 2. **Direct calls on tables without `SpyglassMixin` aren't logged.** Tables that inherit plain `dj.Manual`/`dj.Computed` (no `ExportMixin` via `SpyglassMixin`) won't write log entries when *they* are the entry point of a fetch — no error, the call is just invisible to `ExportSelection`. The export bundle isn't necessarily missing those tables' rows, though: ancestor tables can still be reached through the restriction graph from logged Spyglass tables and pulled into the export that way. The failure shape to watch for is "I called `MyCustomTable & key` directly and the rows didn't show up in `preview_tables`" — fix by adding `SpyglassMixin` so direct accesses also log.
 3. **Compound `&` restrictions inside an export are logged as OR, not AND.** A query built like `(Table & a) & b` during an active export produces an export bundle that includes every row matching `a` OR `b`, not just the intersection. For AND semantics, use `Table & dj.AndList([a, b])` or a single SQL string `Table & "a AND b"`. Verify with `preview_tables(paper_id=...)` after stopping the export.
-4. **`Export().populate_paper(paper_id="foo")` overwrites any previous export for the same `paper_id`.** No prompt, no confirmation — the prior bash script and `Export` rows are replaced. Use a new `paper_id` (or a new `analysis_id` within the same paper) for iterative exports.
+4. **`Export().populate_paper(paper_id="foo")` overwrites any previous export for the same `paper_id`.** No prompt, no confirmation — the prior bash script and `Export` rows are replaced. For a separately packaged export, use a **new `paper_id`**. Logging a new `analysis_id` under the same `paper_id` does *not* produce a separate package — it adds another log session that gets bundled into the same combined paper export on the next `populate_paper(paper_id=...)` call (see [Scoping an export to a single analysis](#scoping-an-export-to-a-single-analysis)).
 
 ## Common Patterns
 
@@ -117,7 +117,7 @@ Spyglass tables that inherit `SpyglassMixin` get `ExportMixin` by composition. W
 
 **Fixed by `update_analysis_for_dandi_standard`** (`utils/dandi_file_updates.py:41-63`):
 
-- `general/source_script` — missing `source_script_file_name` attribute
+- `general/source_script` — missing `file_name` attribute (the patcher writes `grp.attrs["file_name"] = script_name`, `dandi_file_updates.py:98-103`)
 - `/general/subject/sex` — non-single-letter values (e.g. `"Female"` → `"F"`)
 - `/general/subject/species` — `"Rat"` → `"Rattus norvegicus"`
 - Missing `/general/subject/age` (default `"P4M/P8M"`)
