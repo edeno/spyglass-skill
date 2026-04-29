@@ -7,6 +7,7 @@
 - [DecodingOutput Merge Table](#decodingoutput-merge-table)
 - [Results Structure (xarray.Dataset)](#results-structure-xarraydataset)
 - [Shared Components](#shared-components)
+- [User inputs vs `populate()` plumbing](#user-inputs-vs-populate-plumbing)
 - [Clusterless Decoding Flow](#clusterless-decoding-flow)
 - [Sorted Spikes Decoding Flow](#sorted-spikes-decoding-flow)
 - [Common Patterns](#common-patterns)
@@ -226,6 +227,14 @@ cols = list((DLCPosV1 & key).fetch1_dataframe().columns)
 # Pass matching names:
 PositionGroup().create_group(..., position_variables=cols[:2])
 ```
+
+## User inputs vs `populate()` plumbing
+
+Applies to both clusterless and sorted-spikes decoding. The user-side surface is small; the rest is plumbing inside `*DecodingV1.make()`. Listing plumbing as a user input over-scopes the answer; missing a real input under-scopes it.
+
+**User inputs** — must exist before `*DecodingSelection.insert1`: a **neural-data group** (`UnitWaveformFeaturesGroup` for clusterless, `SortedSpikesGroup` for sorted spikes; upstream features/spikes already populated); a **`PositionGroup`** row pointing at a populated `PositionOutput`; a **`DecodingParameters`** row whose name is version-suffixed (`f"<shape>_<source>_{non_local_detector_version}"`) and is *not* auto-inserted on import; **`encoding_interval`** and **`decoding_interval`** `IntervalList` names (can be the same row); **`estimate_decoding_params`** (0 = fixed params from `DecodingParameters`, 1 = re-fit via Baum-Welch during populate).
+
+**Plumbing inside `make()`** — not user-inserted rows: aligning spike (or feature) times to the position grid; building track graph / environment from `PositionGroup`; constructing the HMM transition matrix + observation model (clusterless mark intensity vs sorted-spikes place fields) from `DecodingParameters`; fitting on `encoding_interval` + forward-backward on `decoding_interval`; writing `results_path` (.nc) + `classifier_path` (.pkl) — populated outputs, not inputs. For "what do I need to run decoding?" answer with the user-input list. For "why is the decoder wrong?" debug user inputs first, then source-read the relevant `make()`.
 
 ## Clusterless Decoding Flow
 
