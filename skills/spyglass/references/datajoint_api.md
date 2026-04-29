@@ -281,19 +281,27 @@ Session().restrict_by(
 
 DataJoint queries depend on attributes living where you think they live. **Reused names** — `nwb_file_name`, `interval_list_name`, `merge_id`, `electrode_id`, `recording_id` — appear on many tables with different declaration sites. Before writing a join or restriction, trace every attribute used as a join key or in a restriction dict back to the table that *declares* it.
 
-### The PK / secondary distinction
+### What FK inheritance actually propagates
 
-DataJoint FK inheritance only safely propagates **primary-key fields** from upstream tables. Secondary attributes on an upstream table do **not** automatically become restriction-safe on downstream tables — even though they appear in the downstream class's `.heading`.
+DataJoint FK inheritance propagates upstream **primary-key fields** into the downstream table's heading. Secondary attributes do *not* propagate just because the downstream table depends on the upstream table — they stay on the table that declared them.
 
-Canonical shape: a `*Selection` table declares its own PK plus FK-introduced secondary attributes below the `---` divider; a downstream populated table FKs only the `*Selection`'s PK. Even though the secondary attribute appears in the populated table's `.heading` via PK inheritance, it isn't *declared* there — restricting through it routes via accidental inheritance rather than the schema you intend.
+If a restriction field appears on a downstream table's heading, it falls into one of:
+
+1. Part of the downstream table's declared (or PK-inherited) primary key.
+2. A secondary attribute the downstream table declared itself.
+3. Not on the downstream heading at all — declared only on an upstream / selection table.
+
+The third case is the canonical trap. When the field belongs to a selection or upstream table, restrict *that* table first and project its primary key into the downstream restriction. The naive shape `Downstream & {"that_field": ...}` errors at query-build time when the attribute isn't in the downstream heading.
 
 ```python
-# Wrong: relies on PK-inherited appearance of `interval_list_name`
-#         on the populated table.
+# Wrong shape: assumes the field is on `MyComputed`'s heading. When the
+#              field is only declared on `MySelection`, the query errors
+#              ("attribute not in heading") or, if the agent never runs
+#              it, ships an answer that doesn't execute.
 populated = MyComputed & {"interval_list_name": "02_r1"}
 
-# Right: restrict on the selection (where the field is declared)
-#        and project.
+# Right shape: restrict the selection (where the field lives) and
+#              project its PK forward into the downstream.
 populated = MyComputed & (
     MySelection & {"interval_list_name": "02_r1"}
 ).proj()
@@ -301,8 +309,8 @@ populated = MyComputed & (
 
 ### Two failure shapes this guards against
 
-1. **Wrong owner for a real field.** The query runs but routes through a table that doesn't actually declare the restriction attribute, so the result depends on accidental PK-inheritance rather than the schema you intend.
-2. **Invented ownership of a real field.** Claiming a field lives on a downstream table when it's actually a secondary attribute of an upstream table that doesn't propagate via FK inheritance.
+1. **Field not on the downstream heading.** The agent writes a restriction referencing a field that's only declared upstream. DataJoint errors, or the agent never actually runs the query and trusts the wrong shape.
+2. **Right name, wrong table.** Reused names declared independently on multiple tables. Restricting the wrong one runs cleanly but returns the wrong rows.
 
 ### How to verify
 
@@ -310,9 +318,7 @@ If you can't cite where a field is declared, treat the query as a hypothesis. Th
 
 - `code_graph.py describe <Table>` — shows declared PK / secondary attributes / FKs from source.
 - Source-read the table's `definition` block — the canonical declaration, with the `---` divider separating PK from secondary attrs.
-- `Table.heading` (against a live DB) — the runtime view, including PK-inherited fields. Don't confuse "appears in heading" with "declared by this table."
-
-The trap is that `Table.heading` shows ALL attributes, including those inherited via PK from upstream. That's why the source-read or `describe` is necessary: only those distinguish *declared* from *inherited*.
+- `Table.heading` (against a live DB) — shows the downstream table's actual exposed attributes (its own declared fields plus PK-inherited fields from upstream FKs). Don't confuse "appears in the upstream table's source" with "appears on the downstream table's heading" — only PK fields propagate down.
 
 ## Table Inspection Commands
 
