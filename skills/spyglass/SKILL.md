@@ -127,5 +127,5 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 | Export for papers / reproducible snapshots | [export.md](references/export.md) |
 | Syncing / sharing with collaborators (Kachery) | [setup_config.md § Data Sharing Tables (Kachery)](references/setup_config.md#data-sharing-tables-kachery) |
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) |
-| External packages (SpikeInterface, PyNWB, DLC, non_local_detector) | [dependencies.md](references/dependencies.md) |
+| External packages (SpikeInterface, PyNWB, DLC/DeepLabCut, non_local_detector) | [dependencies.md](references/dependencies.md) |
 | Authoring custom tables or pipelines / extending existing ones | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) |
