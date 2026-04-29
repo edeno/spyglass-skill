@@ -1,5 +1,5 @@
 <!-- pipeline-version: v1 -->
-# Moseq Pipeline
+# MoSeq Pipeline
 
 Behavioral analysis: group keypoint pose data, train a motion-sequencing (MoSeq) model, then apply it to convert pose trajectories into behavioral syllables.
 
