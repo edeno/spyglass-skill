@@ -1,6 +1,6 @@
 # Decoding Pipeline
 
-Bayesian position decoding from neural activity (clusterless and sorted-spikes) via `non_local_detector`. Covers `DecodingOutput`, the shared user-inputs-vs-`make()`-plumbing rule, and recovery patterns when `populate()` yields no work.
+State space position decoding from neural activity (clusterless and sorted-spikes) via `non_local_detector`. Covers `DecodingOutput`, the shared user-inputs-vs-`make()`-plumbing rule, and recovery patterns when `populate()` yields no work.
 
 ## Contents
 
