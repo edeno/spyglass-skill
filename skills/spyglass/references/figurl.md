@@ -108,9 +108,12 @@ view = DecodingOutput.create_decoding_view(
 # non_local_detector helpers (`create_1D_decode_view` /
 # `create_2D_decode_view`) call `.url(label="1D Decoding" / "2D Decoding")`
 # internally, so do NOT call `.url()` again on the return value.
-# Print or open it directly. (For raw sortingview/FigURL view objects
-# elsewhere — e.g. ripple/MUA viewers — the call shape is
-# `view.url(label="...")` with an explicit label, not bare `.url()`.)
+# Print or open it directly. (Spyglass's other figurl-returning
+# methods — ripple, MUA, curation viewers — also return URL strings
+# for the same reason. The `.url(label="...")` rule applies only to
+# lower-level sortingview/FigURL view objects you construct yourself
+# in custom code; in that case, always pass an explicit `label=`,
+# never bare `.url()`.)
 ```
 
 Under the hood, this routes to `non_local_detector.visualization.figurl_1D.create_1D_decode_view` or `figurl_2D.create_2D_decode_view` based on the decoder's environment dimensionality.
@@ -125,7 +128,7 @@ Under the hood, this routes to `non_local_detector.visualization.figurl_1D.creat
 ## Common Gotchas
 
 - **URL retention**: kachery-cloud zones have retention policies. If the URL stops working, the underlying data has expired — repopulate to regenerate
-- **Upload size**: large sortings or recordings can take minutes to upload. `_generate_figurl` accepts a `segment_duration_sec` windowing kwarg, but the normal `FigURLCuration.populate(sel_key)` path does *not* expose it through `FigURLCurationSelection` — to use it, call `_generate_figurl` directly rather than relying on the table workflow
+- **Upload size**: large sortings or recordings can take minutes to upload. `_generate_figurl` accepts a `segment_duration_sec` windowing kwarg, but the normal `FigURLCuration.populate(sel_key)` path does *not* expose it through `FigURLCurationSelection`. The table workflow does not expose this knob; using it requires custom code around the private helper (you'd have to manually assemble the recording/sorting inputs `populate` would have built for you), so prefer the table workflow unless you are deliberately bypassing it
 - **Re-fetching labels**: `get_labels()` / `get_merge_groups()` hit kachery every call. If the curator updates the URL, re-run these to pull the latest state — no local cache
 - **`generate_curation_uri()` requires the parent `CurationV1` NWB to have a `curation_label` column** — `insert_curation(labels=None)` itself just doesn't create one. The error fires later when you generate the figurl URI: `figurl_curation.py:87-93` raises `ValueError: Sorting object must have a 'curation_label' column ...`. Pass `labels={}` (or any non-`None` dict) to `insert_curation` — the `insert_curation` body adds the `curation_label` column whenever `labels is not None`, and any unit IDs missing from the dict get an empty `[]` automatically (see the `if labels is not None:` block in `spikesorting/v1/curation.py`). You don't have to enumerate every unit_id yourself.
 - **V0 vs V1**: v0 has its own `curation_figurl.py` with a similar but not identical API. V1 is the only path to use for new work — do not fall back to v0 if the v1 path fails. Existing v0 curation rows remain readable via `SpikeSortingOutput` (the merge table is source-agnostic); the FigURL generation path is what differs. Legacy v0 references are in [spikesorting_v0_legacy.md](spikesorting_v0_legacy.md).
