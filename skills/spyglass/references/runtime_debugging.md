@@ -301,7 +301,7 @@ print(type(x).__name__, getattr(x, "shape", None), getattr(x, "dtype", None))
 
 **Most likely root cause.** A relation you assumed was one-to-one is actually one-to-many. Common culprits: merge tables (one `nwb_file_name` → many parts), parameter tables (one session → many parameter sets), interval lists (one session → many intervals).
 
-**Why that explanation fits.** DataJoint joins are natural joins over shared attribute names, as long as each shared attribute is primary on at least one side (DataJoint's `assert_join_compatibility` refuses only the secondary-on-both-sides case, `datajoint/condition.py:104`; same rule documented in [datajoint_api.md § Join](datajoint_api.md)). Any field that looks like a foreign key but is actually repeated across the upstream table multiplies rows.
+**Why that explanation fits.** DataJoint joins are natural joins over shared attribute names, as long as each shared attribute is primary on at least one side (DataJoint's `assert_join_compatibility` refuses only the secondary-on-both-sides case, `datajoint/condition.py:104`; same rule documented in [datajoint_api.md § Join](datajoint_api.md#join-)). Any field that looks like a foreign key but is actually repeated across the upstream table multiplies rows.
 
 **Fastest confirmation checks.**
 
