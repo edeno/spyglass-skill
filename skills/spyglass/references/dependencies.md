@@ -55,7 +55,7 @@ unit_ids = sorting.get_unit_ids()
 spike_train = sorting.get_unit_spike_train(unit_id=0)
 ```
 
-Sorters in `SpikeSorterParameters.contents`: Spyglass hard-codes two — `mountainsort4` (with two preset rows for tetrode vs probe) and `clusterless_thresholder` (`spikesorting/v1/sorting.py:158-184`). The list then `extend()`s with `[sorter, "default", sis.get_default_sorter_params(sorter)]` for every sorter `sis.available_sorters()` reports (`spikesorting/v1/sorting.py:185-190`), so the rest (`kilosort2_5`, `kilosort3`, `ironclust`, `mountainsort5`, etc.) are **environment-dependent**: they appear only if SpikeInterface finds the underlying sorter binary on `PATH`. Use `python -c "import spikeinterface.sorters as sis; print(sis.available_sorters())"` to enumerate what your install actually exposes. Note `kilosort2_5` (with the underscore-5), not `kilosort2`. Other sorters require their own per-sorter wrappers / params rows.
+Sorters in `SpikeSorterParameters.contents`: Spyglass hard-codes two — `mountainsort4` (with two preset rows for tetrode vs probe) and `clusterless_thresholder` (`spikesorting/v1/sorting.py:158-184`). The list then `extend()`s with `[sorter, "default", sis.get_default_sorter_params(sorter)]` for every sorter that **SpikeInterface wraps** (`sis.available_sorters()` at `spikesorting/v1/sorting.py:185-190`). Important: `available_sorters()` returns the wrapper list — every sorter SpikeInterface knows how to drive — *not* the locally usable list. So the default-parameter row exists for `kilosort2_5`, `kilosort3`, `ironclust`, `mountainsort5`, etc. on every install, but **runtime execution** is where a missing Kilosort / IronClust / etc. binary or env actually fails (typically a `SpikeSortingException` / `FileNotFoundError` at sort time, not at row-insert time). Use `sis.installed_sorters()` (not `available_sorters()`) to enumerate what your environment can actually run; cross-check before inserting a `SpikeSortingSelection` row that points at a non-installed sorter. Note `kilosort2_5` (with the underscore-5), not `kilosort2`. Other sorters require their own per-sorter wrappers / params rows.
 
 ### SpikeInterface / Spyglass version coupling
 
@@ -68,7 +68,7 @@ public API across minor releases.
 
 ```bash
 python -c 'import spikeinterface; print(spikeinterface.__version__)'
-grep -E 'spikeinterface' environment.yml pyproject.toml
+grep -E 'spikeinterface' pyproject.toml environments/environment*.yml
 ```
 
 Common symptom → upstream version that changed it:
