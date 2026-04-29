@@ -72,18 +72,19 @@ For the full 7-step DLC inference workflow (`insert_estimation_task` → `DLCPos
 
 ## Gotcha — pose estimation hangs on existing video
 
-`DLCPoseEstimationSelection.insert_estimation_task(...)` never completes (no error, no progress) when an `.mp4` with the same name already sits in the DLC target video directory. The path is whatever the install sets for `dlc_video_dir` (check `spyglass.settings` or `dj.config['custom']['dlc_dirs']`; this is a site/lab-specific path, not a Spyglass-shipped default). Manually delete the stale `.mp4` before re-running. If the call appears to hang, this is the first thing to check.
+`DLCPoseEstimationSelection.insert_estimation_task(...)` can appear to hang (no error, no progress) when an `.mp4` with the same name already sits in the DLC target video directory — observed lab failure mode, not a documented Spyglass contract. The path is whatever the install sets for `dlc_video_dir` (check `spyglass.settings` or `dj.config['custom']['dlc_dirs']`; this is a site/lab-specific path, not a Spyglass-shipped default). Manually delete the stale `.mp4` before re-running. If the call appears to hang, this is the first thing to check.
 
 ## Gotcha — empty PositionIntervalMap on old ingestions or DLC-only sessions
 
-If DLC populate crashes with `IndexError: index 0 is out of bounds for axis 0 with size 0` from `convert_epoch_interval_name_to_position_interval_name`, the session has no resolvable `PositionIntervalMap` row. Note that `DLCPoseEstimation`'s `make()` already calls `convert_epoch_interval_name_to_position_interval_name` internally with `populate_missing=True` (`position/v1/position_dlc_pose_estimation.py:255-263`), so re-running the converter manually rarely helps — the converter ran, didn't resolve, and `DLCPoseEstimation` continued by falling back to video timestamps (see DLC-only below). The IndexError comes from a *downstream* step (typically `DLCCentroid` / `DLCOrientation` selection or the `RawPosition` lookup at `position_dlc_pose_estimation.py:264`) that still expects a real position interval. The diagnostic is upstream:
+If DLC populate crashes with `IndexError: index 0 is out of bounds for axis 0 with size 0` from `convert_epoch_interval_name_to_position_interval_name`, the session has no resolvable `PositionIntervalMap` row. Note that `DLCPoseEstimation`'s `make()` already calls `convert_epoch_interval_name_to_position_interval_name` internally with `populate_missing=True` (`position/v1/position_dlc_pose_estimation.py:255-263`), so re-running the converter manually rarely helps — the converter ran, didn't resolve, and `DLCPoseEstimation` continued by falling back to video timestamps. `DLCPoseEstimation` itself only reaches the `RawPosition` lookup at `position/v1/position_dlc_pose_estimation.py:264` when `interval_list_name` is truthy; otherwise it sets `spatial_series = None`. So if the IndexError appears, inspect *which stage* actually threw it — the converter returning `[]` is a clue that no Trodes-derived position interval exists, not proof that every downstream DLC stage requires one. The diagnostic is upstream:
 
 ```python
 from spyglass.common import convert_epoch_interval_name_to_position_interval_name
 
-# Check what the converter actually returned for this epoch — None
-# means it inserted a null map row and there's no position interval
-# to resolve (`common/common_behav.py:886, 955`).
+# Check what the converter actually returned for this epoch — an
+# EMPTY list ([]) means it inserted a null map row and there's no
+# position interval to resolve (`common/common_behav.py:886, 955,
+# 991`). Test `if not result:`, not `if result is None:`.
 convert_epoch_interval_name_to_position_interval_name(
     {'nwb_file_name': nwb_file, 'epoch': epoch_id},
     populate_missing=True,
