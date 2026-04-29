@@ -311,7 +311,7 @@ assert 'raw' in dj.config['stores'] and 'analysis' in dj.config['stores']
 
 ## Data Sharing Tables (Kachery)
 
-Three tables configure kachery-cloud sharing alongside the env vars above. The chain is `KacheryZone` (lookup of available zones) → `AnalysisNwbfileKacherySelection` (manual selection pairing a zone with an analysis-NWB row) → `AnalysisNwbfileKachery` (computed; FKs to the selection at `sharing/sharing_kachery.py:113`). Skip the selection in your mental model and the populate path doesn't make sense.
+Three tables configure kachery-cloud sharing alongside the env vars above. The chain is `KacheryZone` (manual registry of available zones) → `AnalysisNwbfileKacherySelection` (manual selection pairing a zone with an analysis-NWB row) → `AnalysisNwbfileKachery` (computed; FKs to the selection at `sharing/sharing_kachery.py:113`). Skip the selection in your mental model and the populate path doesn't make sense.
 
 ```python
 from spyglass.sharing import (
@@ -326,6 +326,11 @@ from spyglass.sharing import (
 - Key: `kachery_zone_name`
 - Registers the kachery zone(s) this install can publish to.
 
+**AnalysisNwbfileKacherySelection** (Manual)
+
+- Pairs a `KacheryZone` row with an `AnalysisNwbfile` row — the manual selection step that says "publish *this* analysis file under *that* zone."
+- `AnalysisNwbfileKachery.populate(...)` reads its rows; an unselected pair will not appear in the output.
+
 **AnalysisNwbfileKachery** (Computed)
 
 - Part table: `AnalysisNwbfileKachery.LinkedFile`
@@ -335,9 +340,7 @@ Use `KACHERY_ZONE` / `KACHERY_CLOUD_EPHEMERAL` env vars above to pick the zone a
 
 **Common kachery failure modes + diagnostics.**
 
-**`KACHERY_CLOUD_DIR` mismatch.** Spyglass sets `KACHERY_CLOUD_DIR` to
-`${SPYGLASS_BASE_DIR}/.kachery-cloud` on import (note the hyphen — see
-`directory_schema.json` `kachery.cloud: ".kachery-cloud"`).
+**`KACHERY_CLOUD_DIR` mismatch.** By default, Spyglass sets `KACHERY_CLOUD_DIR` to `${SPYGLASS_BASE_DIR}/.kachery-cloud` on import (note the hyphen — see `directory_schema.json` `kachery.cloud: ".kachery-cloud"`). The default can be overridden by exporting `KACHERY_CLOUD_DIR` before import or by setting `dj.config['custom']['kachery_dirs']`.
 `kachery-cloud-init` by default writes a `client_id` to
 `~/.kachery-cloud`. If the two don't agree, the Spyglass process can't
 find the client and Kachery calls fail with "Client not registered" or
