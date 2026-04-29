@@ -83,9 +83,9 @@ Any helper that removes rows or files goes through this file's patterns.
 # You ran:
 (Session & {"nwb_file_name": "j1620210710_.nwb"}).delete()
 # It raised:
-# PermissionError: User 'edeno' is not on a team with 'jsmith', an experimenter for session(s):
+# PermissionError: User 'testuser' is not on a team with 'otheruser', an experimenter for session(s):
 #   nwb_file_name: j1620210710_.nwb
-# -> Talk to jsmith, not to super_delete().
+# -> Talk to otheruser, not to super_delete().
 ```
 
 **Default response to a `PermissionError`: coordinate, don't bypass.** The error names the experimenter who owns the blocking session(s) — talk to them. If the experimenter is no longer reachable (left the lab, on extended leave), contact a lab admin. The bypass mechanisms exist but are not the first response — they live in [When a user explicitly asks to bypass](#when-a-user-explicitly-asks-to-bypass) below.

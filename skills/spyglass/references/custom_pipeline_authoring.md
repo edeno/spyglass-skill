@@ -38,7 +38,7 @@ Before writing any schema file, know where your user is allowed to write — thi
 - **Lab-shared** (reserved names, `SHARED_MODULES` in `database_settings.py`): `behavior`, `common`, `decoding`, `figurl`, `lfp`, `linearization`, `mua`, `position`, `ripple`, `sharing`, `spikesorting`. Writes to these require `dj_user` or `dj_admin` and are coordinated across the lab — never pick one of these as a prefix for personal work.
 - **Other users' prefixes**: off-limits unless you have `dj_admin`.
 
-> **Common hallucination to avoid.** Do NOT prefix personal schemas with `spyglass_` (as in `spyglass_<user>_<topic>`). User `edeno`'s personal theta/gamma analysis belongs in `edeno_theta_gamma`, not `spyglass_edeno_theta_gamma` — the latter raises a MySQL permission error at `dj.schema(...)` call time because `spyglass_` ≠ `database.user`. There is no implicit "framework namespace" for `spyglass_*`; lab-shared names are the explicit `SHARED_MODULES` listed above.
+> **Common hallucination to avoid.** Do NOT prefix personal schemas with `spyglass_` (as in `spyglass_<user>_<topic>`). User `testuser`'s personal theta/gamma analysis belongs in `testuser_theta_gamma`, not `spyglass_testuser_theta_gamma` — the latter raises a MySQL permission error at `dj.schema(...)` call time because `spyglass_` ≠ `database.user`. There is no implicit "framework namespace" for `spyglass_*`; lab-shared names are the explicit `SHARED_MODULES` listed above.
 
 **Roles your account might hold** (set by whoever admin'd your DB account):
 
@@ -96,7 +96,7 @@ import datajoint as dj
 from spyglass.common import Session
 from spyglass.utils import SpyglassMixin
 
-schema = dj.schema("edeno_annotations")  # <database_user>_<suffix>, per above
+schema = dj.schema("testuser_annotations")  # <database_user>_<suffix>, per above
 
 @schema
 class SessionAnnotations(SpyglassMixin, dj.Manual):
