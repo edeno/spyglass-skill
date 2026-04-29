@@ -91,9 +91,9 @@ cap — the caps exist because context bloat hurts triggering quality.
 
 - Don't `cat` or `Read` a user's `dj_local_conf.json` / `~/.datajoint_config.json` — they hold DB passwords. Canonical safe-read is `python skills/spyglass/scripts/scrub_dj_config.py` (SKILL.md Core Directive #6); this repo's Claude should follow it too.
 - Don't hand-write HTML for eval reviews; use skill-creator's `generate_review.py`.
-- Don't commit a personal `$SPYGLASS_SRC` path or anything under `*-workspace/` (gitignored).
+- Don't commit a personal `$SPYGLASS_SRC` path. The eval workspace itself (`skills/spyglass-workspace/`) **is** tracked — full sweeps live under `runs/<run-id>/` and ship in-repo for reproducibility (~20 MB per sweep). A stray flat `iteration-N/` directory outside `runs/` is the only workspace pattern still gitignored.
 - Don't bypass hooks (`--no-verify`) on commits. If the validator fails, fix the drift — that's the point of the gate.
-- When dispatching subagents for a graded eval sweep, use the canonical prompt templates in [skills/spyglass/evals/dispatch_prompts.md](skills/spyglass/evals/dispatch_prompts.md). The without_skill template explicitly prohibits reading `skills/spyglass/` to prevent baseline contamination — see `skills/spyglass-workspace/summary/SUMMARY.md` ("Transcript-level caveats and mechanisms") for the empirical evidence motivating that prohibition.
+- When dispatching subagents for a graded eval sweep, use the canonical prompt templates in [skills/spyglass/evals/dispatch_prompts.md](skills/spyglass/evals/dispatch_prompts.md). The without_skill template explicitly prohibits reading `skills/spyglass/` to prevent baseline contamination — see `skills/spyglass-workspace/runs/round-c-2026-04-28/summary/SUMMARY.md` ("Transcript-level caveats and mechanisms") for the empirical evidence motivating that prohibition. Per-sweep artifacts live under `skills/spyglass-workspace/runs/<run-id>/` (e.g., `runs/round-c-2026-04-28/`); each run directory carries its own `run.json` with skill/source commits and headline results, plus `BATCHES.md`, `findings.md`, `iteration-N/`, and `summary/`.
 
 ## Commit messages
 

@@ -10,13 +10,13 @@ subagents reached for it via `ls` / `grep` / direct `Read`. The contamination
 biased *against* the skill (baselines got partial skill-content access on those
 evals), but a clean comparison is worth the extra prompt sentence. The
 empirical observation lives in
-[`skills/spyglass-workspace/summary/SUMMARY.md`](../../spyglass-workspace/summary/SUMMARY.md)
+[`skills/spyglass-workspace/runs/round-c-2026-04-28/summary/SUMMARY.md`](../../spyglass-workspace/runs/round-c-2026-04-28/summary/SUMMARY.md)
 under "Transcript-level caveats and mechanisms."
 
 ## Placeholders
 
 - `{prompt}` — the raw user-facing prompt from `evals.json` for the eval being run.
-- `{eval_dir}` — absolute path of the per-eval workspace directory for this dispatch, e.g. `/.../skills/spyglass-workspace/iteration-N/eval-NNN-name`.
+- `{eval_dir}` — absolute path of the per-eval workspace directory for this dispatch, e.g. `/.../skills/spyglass-workspace/runs/<run-id>/iteration-N/eval-NNN-name`.
 - `{condition}` — `with_skill` or `without_skill`.
 - `{skill_dir}` — absolute path to the skill bundle, i.e. `/.../skills/spyglass`. Resolves at orchestration time so the templates stay portable across machines.
 - `{spyglass_src}` — absolute path of the **pinned local Spyglass source checkout** (the path that `$SPYGLASS_SRC` points at for this sweep), e.g. `/.../spyglass/src/spyglass`. Always pin to a local checkout for reproducibility — see the "Reproducibility" section below.
