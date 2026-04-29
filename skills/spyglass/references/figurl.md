@@ -11,7 +11,7 @@
 
 ## Overview
 
-FigURL provides web-based interactive visualizations for Spyglass data. Data is uploaded to kachery-cloud, which returns a shareable URL that opens in a browser.
+FigURL provides web-based interactive visualizations for Spyglass data. Data is uploaded to kachery-cloud, which returns a shareable URL that opens in a browser. For paper-snapshot exports rather than ephemeral viewers, see [export.md](export.md).
 
 This reference focuses on the two most common FigURL paths in Spyglass; a third (MUA event visualization) is also exposed via `MuaEventsV1.create_figurl` (`mua/v1/mua.py:154`):
 

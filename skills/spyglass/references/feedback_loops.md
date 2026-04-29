@@ -1,6 +1,6 @@
 # Common Feedback Loops
 
-Quality-critical Spyglass operations have a **validator → fix → proceed** shape: run a check, fix anything unexpected, only advance when the check passes. These are proactive versions of the rules in SKILL.md's Common Mistakes — they prevent bugs rather than diagnose them after the fact. Load this reference when the user is about to do one of the operations below and you want to teach the check alongside the action.
+Quality-critical Spyglass operations have a **validator → fix → proceed** shape: run a check, fix anything unexpected, only advance when the check passes. These are proactive versions of the rules in SKILL.md's Common Mistakes — they prevent bugs rather than diagnose them after the fact. Load this reference when the user is about to do one of the operations below and you want to teach the check alongside the action. Also owns the tool-routing matrix (relationship / lookup questions, source-graph vs runtime-DB-graph), the field-ownership cross-link, and the static-graph-vs-runtime-use principle.
 
 ## Contents
 

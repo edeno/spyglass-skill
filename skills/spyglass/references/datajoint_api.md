@@ -11,7 +11,7 @@
 - [DataFrame Commands](#dataframe-commands)
 - [Best Practices](#best-practices)
 
-Complete reference for querying and analyzing neural data with DataJoint operators and Spyglass extensions.
+DataJoint queries and Spyglass extensions — restrictions, joins, projections, headings, the `make()` / tri-part-make body shape, Spyglass-specific operators (`<<` / `>>`, `restrict_by`), and the field-ownership rules that gate restriction-attribute correctness.
 
 ## DataJoint Core Operators
 

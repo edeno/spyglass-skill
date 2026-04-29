@@ -1,5 +1,7 @@
 # Custom Pipeline Authoring
 
+Authoring guide for new pipelines that plug into Spyglass — schema-naming, the params/selection/computed/merge tier decision tree, `AnalysisNwbfile` storage, and core-table extension policy. For *using* existing-table methods, see [spyglassmixin_methods.md](spyglassmixin_methods.md).
+
 ## Contents
 
 - [Overview](#overview)

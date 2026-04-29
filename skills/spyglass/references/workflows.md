@@ -7,7 +7,7 @@
 - [Common Patterns](#common-patterns)
 - [Troubleshooting](#troubleshooting)
 
-For pipeline-specific workflows (position, LFP, spike sorting, decoding), see the corresponding pipeline reference files. For canonical end-to-end examples, run the `notebooks/*.ipynb` tutorials in Jupyter (the `notebooks/py_scripts/*.py` files are a jupytext mirror of the same content, kept for PR-review diffs).
+Cross-table workflow planning and multi-pipeline analysis recipes — patterns for assembling queries that span session, position, sorting, and decoding tables. For pipeline-specific workflows (position, LFP, spike sorting, decoding), see the corresponding pipeline reference files; for relationship and runtime questions, route via [feedback_loops.md § Tool routing](feedback_loops.md#tool-routing-for-relationship-and-lookup-questions) instead of treating this file as a catch-all.
 
 ## Exploring Available Data
 

@@ -1,6 +1,8 @@
 <!-- pipeline-version: v1 -->
 # LFP Pipeline
 
+LFP at any band — wideband via `LFPV1` / `LFPOutput` and bandpass via `LFPBandV1` / `LFPBandSelection` (theta, ripple-band, gamma, custom). `LFPV1.make()` reads `Raw` at runtime, so static FK walks alone understate the inputs needed to reproduce filtered output.
+
 ## Contents
 
 - [Overview](#overview)

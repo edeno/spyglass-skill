@@ -9,7 +9,7 @@
 
 ## Overview
 
-The export pipeline produces a reproducible snapshot of tables and files used in a paper or analysis. It logs every fetch during an "export session," then bundles the touched tables and analysis files into an export package.
+The export pipeline produces a reproducible snapshot of tables and files used in a paper or analysis. It logs every fetch during an "export session," then bundles the touched tables and analysis files into an export package. Distinct from interactive sharing ([figurl.md](figurl.md)) and from the Kachery sync surface ([setup_config.md § Data Sharing Tables (Kachery)](setup_config.md#data-sharing-tables-kachery)).
 
 ```python
 from spyglass.common.common_usage import ExportSelection, Export

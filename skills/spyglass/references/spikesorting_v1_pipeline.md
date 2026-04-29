@@ -1,6 +1,8 @@
 <!-- pipeline-version: v1 -->
 # Spike Sorting Pipeline
 
+Current spike-sorting pipeline (`SpikeSortingRecording` → `SpikeSorting` → `CurationV1` → metrics → `SpikeSortingOutput`). For analysis surfaces *downstream* of curation (`SortedSpikesGroup`, `UnitAnnotation`), see [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md). For v0 legacy, see [spikesorting_v0_legacy.md](spikesorting_v0_legacy.md).
+
 ## Contents
 
 - [Overview](#overview)

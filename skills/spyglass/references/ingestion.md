@@ -1,5 +1,7 @@
 # NWB Ingestion
 
+Loading NWB files into Spyglass via `insert_sessions` — filename rules, the post-ingest verification triplet, and the `reinsert=True` re-ingestion path. For the tables ingest writes into, see [common_tables.md](common_tables.md).
+
 ## Contents
 
 - [Overview](#overview)

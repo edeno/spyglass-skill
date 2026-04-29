@@ -7,7 +7,7 @@
 - [Optional Dependencies](#optional-dependencies)
 - [Dependency Tiers](#dependency-tiers)
 
-How Spyglass uses its key external packages. Only Spyglass-specific integration patterns are documented here — generic package usage (NumPy, Pandas, Matplotlib) is omitted.
+How Spyglass uses its key external packages — DataJoint, PyNWB / HDMF, SpikeInterface, `non_local_detector`, `track_linearization`, `position_tools`, `ripple_detection`, DLC / DeepLabCut, MoSeq / `keypoint_moseq`, Kachery. Only Spyglass-specific integration patterns are documented here; generic package usage (NumPy, pandas, matplotlib) is omitted.
 
 ## Core Dependencies
 

@@ -1,5 +1,7 @@
 # Spyglass Common Tables Reference
 
+Spyglass-managed common-ingest tables — sessions/files, intervals, electrodes/devices, brain regions, and task/lab metadata. For DataJoint operators on these tables, see [datajoint_api.md](datajoint_api.md).
+
 ## Contents
 
 - [Session and File Management](#session-and-file-management)
