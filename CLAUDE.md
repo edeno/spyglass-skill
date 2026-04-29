@@ -93,6 +93,7 @@ cap — the caps exist because context bloat hurts triggering quality.
 - Don't hand-write HTML for eval reviews; use skill-creator's `generate_review.py`.
 - Don't commit a personal `$SPYGLASS_SRC` path or anything under `*-workspace/` (gitignored).
 - Don't bypass hooks (`--no-verify`) on commits. If the validator fails, fix the drift — that's the point of the gate.
+- When dispatching subagents for a graded eval sweep, use the canonical prompt templates in [skills/spyglass/evals/dispatch_prompts.md](skills/spyglass/evals/dispatch_prompts.md). The without_skill template explicitly prohibits reading `skills/spyglass/` to prevent baseline contamination — see `skills/spyglass-workspace/summary/SUMMARY.md` ("Transcript-level caveats and mechanisms") for the empirical evidence motivating that prohibition.
 
 ## Commit messages
 
