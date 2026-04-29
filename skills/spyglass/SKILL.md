@@ -7,11 +7,10 @@ description: Use when the task involves Spyglass — the LorenFrankLab
   custom pipelines, and debugging populate/make/fetch1 failures. Activate
   when the task touches any of `import spyglass` / `from spyglass.*`,
   `SPYGLASS_BASE_DIR`, `SpyglassMixin`, `merge_get_part`, `merge_restrict`,
-  any versioned pipeline class (e.g., `LFPV1`, `TrodesPosV1`, `DLCPosV1`,
-  `RippleTimesV1`, `CurationV1`, `ClusterlessDecodingV1`,
-  `SortedSpikesDecodingV1`, and any future `*V2`/`*V3` successors with the
-  same root names; also `SpikeSorting`), or DLC/DANDI/Kachery within a
-  Spyglass context
+  any Spyglass versioned pipeline class (e.g., `LFPV1`, `TrodesPosV1`,
+  `DLCPosV1`, `RippleTimesV1`, `CurationV1`, `ClusterlessDecodingV1`,
+  `SortedSpikesDecodingV1`, or future `*V2`/`*V3` pipeline successors; also
+  `SpikeSorting`), or DLC/DANDI/Kachery within a Spyglass context
   — even if the user doesn't name "Spyglass" explicitly. Do NOT activate
   for plain DataJoint without Spyglass imports, unrelated NWB tooling
   (pynwb, ndx-*) outside Spyglass, or generic Python/NumPy/pandas debugging
