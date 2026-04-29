@@ -20,7 +20,7 @@ This reference owns the canonical paired shapes for every destructive helper in 
 
 ## Required workflow
 
-Every call to `delete()`, `cleanup()`, `merge_delete()`, `merge_delete_parent()`, or `super_delete()` proceeds through these phases. Do not skip any, and do not collapse Phase 2 and Phase 3 into a single message — give the user time to actually read the inspect output before expecting confirmation. **`drop()` and `delete_quick()` are not in the routine destructive surface** — `drop()` removes a whole table from the schema (admin / schema-maintenance only; never use as a row-delete workaround), and `delete_quick()` skips DataJoint's cascade machinery (admin-debug only; can leave dangling FKs). If the user reaches for either, surface the alternative (`.delete()` for rows; coordinate with the schema owner for table drops) before proceeding.
+Every call to `delete()`, `cleanup()`, `merge_delete()`, `merge_delete_parent()`, or `super_delete()` proceeds through these phases. Do not skip any, and do not collapse Phase 2 and Phase 3 into a single message — give the user time to actually read the inspect output before expecting confirmation. **`drop()` and `delete_quick()` are not in the routine destructive surface** — `drop()` removes a whole table from the schema (admin / schema-maintenance only; never use as a row-delete workaround), and `delete_quick()` deletes without cascading and without prompts (per the DataJoint docstring: it fails if any dependent table holds matching rows — so it doesn't leave dangling FKs at the MySQL layer, but it does bypass DataJoint's cascade planning, the user prompt, and Spyglass's permission/audit/file-cleanup behavior; admin-debug only). If the user reaches for either, surface the alternative (`.delete()` for rows; coordinate with the schema owner for table drops) before proceeding.
 
 ### Phase 1 — Inspect
 
@@ -61,7 +61,8 @@ When the user intended to delete a subset, confirm the remainder matches expecta
 
 - **DataJoint**: `delete()`, `drop()`, `cautious_delete()`, `super_delete()`, `delete_quick()`
 - **Merge-table helpers**: `merge_delete()`, `merge_delete_parent()`
-- **File cleanup**: `cleanup()`, `delete_orphans()` — these remove analysis files from disk
+- **Row-orphan cleanup**: `Table().delete_orphans(dry_run=True)` finds rows with no children and, when `dry_run=False`, calls `orphans.super_delete(...)` (`HelperMixin.delete_orphans` in `utils/mixins/helpers.py`). It removes **rows**, not files.
+- **File cleanup**: `AnalysisNwbfile().cleanup(...)`, `DecodingOutput().cleanup(...)`, `Nwbfile.cleanup(...)` — these remove files from disk; behavior and `dry_run` support varies per helper (see [File cleanup](#file-cleanup) below).
 
 Any helper that removes rows or files goes through this file's patterns.
 
@@ -106,7 +107,7 @@ Only enter this subsection when the user has explicitly named one of `super_dele
 
 Appropriate scenarios are narrow: admin cleanup after a lab member leaves, fixing a misconfigured experimenter row, or the data owner deleting their own data when the team check is misfiring for a known reason. In every case, run the bypass with `dry_run=True` first when the helper supports it, and report the preview before the actual call.
 
-- **`(Table & key).super_delete(warn=True)`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` by default; `warn=False` suppresses both the warning and the log, so the audit trail depends on the default. **`super_delete` does NOT run Spyglass's file cleanup** — analysis / raw NWB files stay on disk because `Nwbfile.cleanup(delete_files=True)` is never called. After a `super_delete`, run the cleanup helpers explicitly (see [File cleanup](#file-cleanup) below).
+- **`(Table & key).super_delete(warn=True)`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` by default; `warn=False` suppresses both the warning and the log, so the audit trail depends on the default. **`super_delete` does NOT run Spyglass's file cleanup** — by jumping straight to `datajoint.Table.delete`, it skips `CautiousDeleteMixin.cautious_delete()` and the per-`ext_type` external-file cleanup loop at `cautious_delete.py:238-241`, so neither analysis-file nor raw-NWB external rows get the cleanup pass that a normal `.delete()` would do. After a `super_delete`, run the appropriate cleanup helper explicitly (see [File cleanup](#file-cleanup) below — match the helper to the kind of orphan).
 - **`(Table & key).delete(force_permission=True)`** — skips the team check (`cautious_delete.py:226`) but **stays on the cautious_delete path** for the rest, so the per-`ext_type` external-file cleanup loop at `cautious_delete.py:238-241` still runs. Disk cleanup is NOT skipped here, in contrast with `super_delete`.
 - **`MergeMaster.merge_delete_parent(key, dry_run=True)`** — bypasses the team check structurally (see Coverage gaps above). The classmethod form is required; the restricted form `(MergeMaster & key).merge_delete_parent()` silently drops the restriction and would delete every parent.
 
