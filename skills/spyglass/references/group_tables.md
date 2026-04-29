@@ -1,6 +1,6 @@
 # Group Tables
 
-Group tables aggregate many upstream rows under one user-named key, so downstream pipelines can foreign-key the *group* instead of the underlying rows. Different shape from merge tables; different problem solved. This file is the landing target when a question references a `*Group` table or talks about "grouping units / electrodes / position streams together for one downstream analysis."
+Group tables aggregate many upstream rows under one stable key, often user-named, so downstream pipelines can foreign-key the *group* instead of the underlying rows. Different shape from merge tables; different problem solved. This file is the landing target when a question references a `*Group` table or talks about "grouping units / electrodes / position streams together for one downstream analysis."
 
 ## Contents
 
@@ -142,7 +142,7 @@ The decoding-selection insert then takes `group_key` as one foreign-key block; `
 ## Cross-references
 
 - [merge_methods.md](merge_methods.md) — sister concept. Classmethod-discard is the merge-table footgun where a restricted relation is silently dropped because the method is a `@classmethod` that ignores `self`. Group-master methods need to be checked individually: `SortedSpikesGroup.fetch_spike_data(key, time)` is a `@classmethod`, but it takes `key` as an explicit argument and routes through `get_fully_defined_key(key)` (`spikesorting/analysis/v1/group.py:142, 168`), so the merge-style classmethod-discard footgun doesn't apply there. The general rule still holds: don't rely on relation restrictions reaching the method body unless the method is documented as instance- or restriction-aware.
-- [common_tables.md](common_tables.md) — `Session`, the upstream FK every group masters references.
+- [common_tables.md](common_tables.md) — `Session`, the common upstream FK for most session-scoped group masters; check the per-table heading for exceptions (e.g. `PoseGroup` is global and does not FK `Session`; `UnitSelectionParams` is a parameter table referenced from `SortedSpikesGroup`'s PK, not a group master).
 - [spyglassmixin_methods.md](spyglassmixin_methods.md) — `cautious_delete` semantics apply to groups; deleting a group cascades to its part rows.
 - [decoding_pipeline.md](decoding_pipeline.md) — `SortedSpikesDecodingSelection` and `ClusterlessDecodingSelection` are the canonical downstream consumers.
 - [mua_pipeline.md](mua_pipeline.md) — `MuaEventsV1` consumes `SortedSpikesGroup` directly (no `Selection` part).
