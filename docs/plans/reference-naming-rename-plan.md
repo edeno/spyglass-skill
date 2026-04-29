@@ -88,6 +88,20 @@ Rename these in a dedicated rename-only commit:
 | `mua_pipeline.md` | `mua_v1_pipeline.md` | Documents `MuaEventsV1` pipeline surface. |
 | `ripple_pipeline.md` | `ripple_v1_pipeline.md` | Documents `RippleTimesV1` pipeline surface. |
 
+Optional non-pipeline renames if the rename PR becomes a broader reference
+naming cleanup:
+
+| Current file | Proposed file | Reason |
+| --- | --- | --- |
+| `feedback_loops.md` | `verification_loops.md` | The file now owns validator/fix/proceed loops, tool routing, field-ownership cross-links, and static-vs-runtime guidance. "Feedback loops" undersells that routing role. |
+| `workflows.md` | `cross_table_workflows.md` | Narrows the file away from catch-all workflow status and toward its real surface: assembling queries and recipes across multiple tables/pipelines. |
+| `dependencies.md` | `external_dependencies.md` | Clarifies that the file is the external-package boundary, not internal table dependencies. |
+| `ingestion.md` | `nwb_ingestion.md` | Makes the NWB-specific ingest surface explicit and matches the file title. |
+
+Do not include these optional renames if the goal is only to make concrete
+pipeline filenames version-consistent. If included, keep them in the same
+rename-only PR but preferably in a separate commit from the pipeline renames.
+
 Do not rename these:
 
 | File | Reason |
@@ -100,11 +114,11 @@ Do not rename these:
 | `spikesorting_v0_legacy.md` | Already follows policy. |
 | `figurl.md` | Integration / visualization reference, not a single pipeline implementation. |
 | `export.md` | Paper/export workflow, not a versioned pipeline. |
-| `dependencies.md` | External-package boundary, cross-cutting. |
-| `workflows.md` | Cross-table workflow recipes, cross-cutting. |
+| `dependencies.md` | External-package boundary, cross-cutting. Rename only if doing the optional broader cleanup above. |
+| `workflows.md` | Cross-table workflow recipes, cross-cutting. Rename only if doing the optional broader cleanup above. |
 | `runtime_debugging.md` | Runtime triage across pipelines, cross-cutting. |
 | `destructive_operations.md` | Safety policy across pipelines, cross-cutting. |
-| `feedback_loops.md` | Verification/tool-routing loops, cross-cutting. |
+| `feedback_loops.md` | Verification/tool-routing loops, cross-cutting. Rename only if doing the optional broader cleanup above. |
 | `common_mistakes.md` | Cross-cutting anti-pattern reference. |
 | `common_tables.md` | Common ingest and metadata tables, not a pipeline. |
 | `datajoint_api.md` | Query/API reference, not a pipeline. |
@@ -113,7 +127,7 @@ Do not rename these:
 | `spyglassmixin_methods.md` | Mixin-method API reference, not a pipeline. |
 | `custom_pipeline_authoring.md` | Authoring guide, not a concrete pipeline. |
 | `setup_install.md`, `setup_config.md`, `setup_troubleshooting.md` | Setup surfaces, not pipelines. |
-| `ingestion.md`, `populate_all_common_debugging.md` | Ingestion/common-populate surfaces, not versioned analysis pipelines. |
+| `ingestion.md`, `populate_all_common_debugging.md` | Ingestion/common-populate surfaces, not versioned analysis pipelines. Rename `ingestion.md` only if doing the optional broader cleanup above. |
 
 ## Mechanical update checklist
 
@@ -129,7 +143,7 @@ In the rename-only commit:
 6. Run:
 
    ```bash
-   rg "behavior_pipeline|decoding_pipeline|lfp_pipeline|linearization_pipeline|mua_pipeline|ripple_pipeline" skills docs
+   rg "behavior_pipeline|decoding_pipeline|lfp_pipeline|linearization_pipeline|mua_pipeline|ripple_pipeline|feedback_loops|workflows|dependencies|ingestion" skills docs
    ./skills/spyglass/scripts/validate_all.sh --baseline-warnings 3
    ```
 
