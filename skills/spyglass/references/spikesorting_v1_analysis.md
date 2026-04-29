@@ -3,7 +3,7 @@
 
 Post-pipeline analysis surface that sits *downstream* of `SpikeSortingOutput` and `CurationV1`. The pipeline itself (recording preprocessing → sorting → curation → metrics → burst-pair) is in [spikesorting_v1_pipeline.md](spikesorting_v1_pipeline.md); this file covers the tables and helpers used after a curated sort exists: aggregating units into groups for downstream pipelines (decoding, ripple-detection, MUA), annotating units, and the SpikeInterface accessors.
 
-Mirrors `notebooks/11_Spike_Sorting_Analysis.ipynb`.
+For tutorial flow, see `notebooks/11_Spike_Sorting_Analysis.ipynb`; for schema/API authority, trust `src/spyglass/...` over the notebook prose.
 
 ## Contents
 
@@ -23,7 +23,7 @@ from spyglass.spikesorting.analysis.v1.group import SortedSpikesGroup, UnitSelec
 **UnitSelectionParams** (Manual)
 
 - Key: `unit_filter_params_name`
-- Defaults: `"all_units"`, `"exclude_noise"`, `"default_exclusion"`
+- Defaults: `"all_units"`, `"exclude_noise"`, `"default_exclusion"` — declared in `contents` plus `insert_default()` (`spikesorting/analysis/v1/group.py:17-59`). Despite being a `dj.Manual`, the rows are *not* auto-inserted on import. **On a fresh DB, run `UnitSelectionParams().insert_default()` once** before any `SortedSpikesGroup.create_group(..., unit_filter_params_name=...)` call that references one of these names — otherwise the FK insert fails with no matching row.
 
 **SortedSpikesGroup** (Manual)
 
@@ -138,8 +138,10 @@ for unit_id, spikes in zip(unit_ids, spike_times):
 ### Access SpikeInterface objects
 
 These accessors route through the merge's part class. They work for
-v0 (`SpikeSortingV0`) and v1 (`CurationV1`) sortings, but
-`ImportedSpikeSorting` deliberately raises `NotImplementedError`
+v0 `CuratedSpikeSorting` (the v0 merge part at
+`SpikeSortingOutput.CuratedSpikeSorting`, `spikesorting_merge.py:9-10`)
+and v1 `CurationV1` sortings, but `ImportedSpikeSorting` deliberately
+raises `NotImplementedError`
 (`spikesorting/imported.py:95-104`) — Spyglass cannot reconstruct a
 SpikeInterface recording / sorting from arbitrary external NWB units.
 For an imported sorting, read the units table directly from the
