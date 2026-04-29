@@ -5,6 +5,7 @@
 - [DataJoint Core Operators](#datajoint-core-operators)
 - [Computed Tables: `make()` and tri-part make](#computed-tables-make-and-tri-part-make)
 - [Spyglass-Specific Operators](#spyglass-specific-operators)
+- [Field Ownership](#field-ownership)
 - [Table Inspection Commands](#table-inspection-commands)
 - [NWB File Commands](#nwb-file-commands)
 - [DataFrame Commands](#dataframe-commands)
@@ -275,6 +276,43 @@ Session().restrict_by(
     direction="down"
 )
 ```
+
+## Field Ownership
+
+DataJoint queries depend on attributes living where you think they live. **Reused names** — `nwb_file_name`, `interval_list_name`, `merge_id`, `electrode_id`, `recording_id` — appear on many tables with different declaration sites. Before writing a join or restriction, trace every attribute used as a join key or in a restriction dict back to the table that *declares* it.
+
+### The PK / secondary distinction
+
+DataJoint FK inheritance only safely propagates **primary-key fields** from upstream tables. Secondary attributes on an upstream table do **not** automatically become restriction-safe on downstream tables — even though they appear in the downstream class's `.heading`.
+
+Canonical shape: a `*Selection` table declares its own PK plus FK-introduced secondary attributes below the `---` divider; a downstream populated table FKs only the `*Selection`'s PK. Even though the secondary attribute appears in the populated table's `.heading` via PK inheritance, it isn't *declared* there — restricting through it routes via accidental inheritance rather than the schema you intend.
+
+```python
+# Wrong: relies on PK-inherited appearance of `interval_list_name`
+#         on the populated table.
+populated = MyComputed & {"interval_list_name": "02_r1"}
+
+# Right: restrict on the selection (where the field is declared)
+#        and project.
+populated = MyComputed & (
+    MySelection & {"interval_list_name": "02_r1"}
+).proj()
+```
+
+### Two failure shapes this guards against
+
+1. **Wrong owner for a real field.** The query runs but routes through a table that doesn't actually declare the restriction attribute, so the result depends on accidental PK-inheritance rather than the schema you intend.
+2. **Invented ownership of a real field.** Claiming a field lives on a downstream table when it's actually a secondary attribute of an upstream table that doesn't propagate via FK inheritance.
+
+### How to verify
+
+If you can't cite where a field is declared, treat the query as a hypothesis. Three verification paths:
+
+- `code_graph.py describe <Table>` — shows declared PK / secondary attributes / FKs from source.
+- Source-read the table's `definition` block — the canonical declaration, with the `---` divider separating PK from secondary attrs.
+- `Table.heading` (against a live DB) — the runtime view, including PK-inherited fields. Don't confuse "appears in heading" with "declared by this table."
+
+The trap is that `Table.heading` shows ALL attributes, including those inherited via PK from upstream. That's why the source-read or `describe` is necessary: only those distinguish *declared* from *inherited*.
 
 ## Table Inspection Commands
 
