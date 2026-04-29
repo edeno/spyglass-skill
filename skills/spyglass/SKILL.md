@@ -102,7 +102,7 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 | Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) |
 | Source-graph questions — FK chain A→B, what X declares, owner of method Y, up/downstream | [feedback_loops.md § Tool routing](references/feedback_loops.md#tool-routing-for-relationship-and-lookup-questions) → `code_graph.py` |
 | Runtime / DB-graph questions — row existence, counts, merge IDs, set ops, runtime heading vs source heading, source/runtime disagreement, custom tables outside `$SPYGLASS_SRC` | [feedback_loops.md § Tool routing](references/feedback_loops.md#tool-routing-for-relationship-and-lookup-questions) → `db_graph.py` |
-| Cross-version comparison or versioned class/table behavior (v0 vs v1, sorter quirks, etc.) | [feedback_loops.md § Verify behavior, trust identity](references/feedback_loops.md#verify-behavior-trust-identity) + `code_graph.py describe` / `find-method` / source-read |
+| Cross-version comparison or versioned class/table behavior (v0 vs v1, versioned imports/paths, method/signature differences) | [feedback_loops.md § Verify behavior, trust identity](references/feedback_loops.md#verify-behavior-trust-identity) + `code_graph.py describe` / `find-method` / source-read |
 | Common Spyglass footguns | [common_mistakes.md](references/common_mistakes.md) |
 | Merge tables / `_Merge` methods (`merge_get_part`, `merge_restrict`, `merge_delete`) | [merge_methods.md](references/merge_methods.md) |
 | SpyglassMixin helpers (`fetch_nwb`, `cautious_delete`, `<<` / `>>`) | [spyglassmixin_methods.md](references/spyglassmixin_methods.md) |
@@ -117,14 +117,14 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 | Position tracking — Trodes (LED) | [position_trodes_v1_pipeline.md](references/position_trodes_v1_pipeline.md) |
 | Position tracking — DeepLabCut | [position_dlc_v1_pipeline.md](references/position_dlc_v1_pipeline.md) |
 | Linearization | [linearization_pipeline.md](references/linearization_pipeline.md) |
-| LFP / LFPBand / theta / ripple-band inputs | [lfp_pipeline.md](references/lfp_pipeline.md) |
+| LFP / LFPBand — wideband or bandpass-filtered LFP at any band | [lfp_pipeline.md](references/lfp_pipeline.md) |
 | Ripple detection | [ripple_pipeline.md](references/ripple_pipeline.md) |
 | Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) |
 | MUA detection | [mua_pipeline.md](references/mua_pipeline.md) |
 | Behavior / MoSeq | [behavior_pipeline.md](references/behavior_pipeline.md) |
 | Cross-table exploration | [workflows.md](references/workflows.md) |
 | Export for papers / reproducible snapshots | [export.md](references/export.md) |
-| Syncing / sharing with collaborators (Kachery) | [setup_config.md § Data Sharing Tables (Kachery)](references/setup_config.md) |
+| Syncing / sharing with collaborators (Kachery) | [setup_config.md § Data Sharing Tables (Kachery)](references/setup_config.md#data-sharing-tables-kachery) |
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) |
 | External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) |
 | Authoring custom tables or pipelines / extending existing ones | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) |
