@@ -20,7 +20,7 @@ This reference owns the canonical paired shapes for every destructive helper in 
 
 ## Required workflow
 
-Every call to `delete()`, `drop()`, `cleanup()`, `merge_delete()`, `merge_delete_parent()`, `super_delete()`, or `delete_quick()` proceeds through these phases. Do not skip any, and do not collapse Phase 2 and Phase 3 into a single message — give the user time to actually read the inspect output before expecting confirmation.
+Every call to `delete()`, `cleanup()`, `merge_delete()`, `merge_delete_parent()`, or `super_delete()` proceeds through these phases. Do not skip any, and do not collapse Phase 2 and Phase 3 into a single message — give the user time to actually read the inspect output before expecting confirmation. **`drop()` and `delete_quick()` are not in the routine destructive surface** — `drop()` removes a whole table from the schema (admin / schema-maintenance only; never use as a row-delete workaround), and `delete_quick()` skips DataJoint's cascade machinery (admin-debug only; can leave dangling FKs). If the user reaches for either, surface the alternative (`.delete()` for rows; coordinate with the schema owner for table drops) before proceeding.
 
 ### Phase 1 — Inspect
 
@@ -40,7 +40,7 @@ Output to the user in one message, before asking for confirmation:
 - Sample rows (`.fetch(as_dict=True, limit=5)` or similar)
 - What will cascade: child tables that will also lose rows
 - For file-cleanup helpers, list filenames that will be deleted
-- For large deletes, also report total disk that will be reclaimed: `rel.get_table_storage_usage(human_readable=True)` (sums sizes of referenced analysis files — useful for "is this worth doing" decisions before the user confirms).
+- For large deletes, also report total disk that will be reclaimed: `rel.get_table_storage_usage(human_readable=True)` (sums sizes of referenced **analysis** files — useful for "is this worth doing" decisions before the user confirms). **Caveat:** the helper only works on tables that carry `analysis_file_name` in their heading (`utils/helpers.py:321`); on tables without it (`Session`, `Nwbfile`, raw merge masters, parameter/selection rows that don't reference an analysis file), it logs a warning and returns 0. Don't report a literal "0 MiB will be reclaimed" on those — the disk impact lives in the *raw* external store, not the analysis-file store, and needs a different measurement (see `Nwbfile.cleanup` notes below).
 
 ### Phase 3 — Wait for explicit confirmation
 
@@ -67,7 +67,7 @@ Any helper that removes rows or files goes through this file's patterns.
 
 ## Team-based protection: `.delete()` is `cautious_delete()`
 
-**Spyglass enforces team-based permissions on deletes.** On any `SpyglassMixin` table, `.delete()` is aliased to `cautious_delete()` — calling `.delete()` automatically invokes the permission check. You do not need to (and should not) reach for `cautious_delete()` by name; just call `.delete()`.
+**Spyglass enforces team-based permissions on deletes.** On ordinary `SpyglassMixin` tables, `.delete()` is aliased to `cautious_delete()` — calling `.delete()` automatically invokes the permission check. You do not need to (and should not) reach for `cautious_delete()` by name; just call `.delete()`. **Carve-out for merge masters:** `_Merge.delete()` overrides the alias (`utils/dj_merge_tables.py:860`) — it dispatches through the merge part tables, then calls `super_delete()` on the master rows it just orphaned. So a delete on `PositionOutput` / `LFPOutput` / `SpikeSortingOutput` / `DecodingOutput` etc. follows the merge-cascade path, not the bare cautious_delete path. The team check still fires (via the underlying part tables), but the master's row removal is intentionally a `super_delete`, not a cautious_delete — that is the merge-table contract, not a bypass.
 
 **How the check works** (`_check_delete_permission` at `src/spyglass/utils/mixins/cautious_delete.py:90-150`):
 
@@ -110,7 +110,10 @@ Appropriate scenarios are narrow: admin cleanup after a lab member leaves, fixin
 - **`(Table & key).delete(force_permission=True)`** — skips the team check (`cautious_delete.py:226`) but **stays on the cautious_delete path** for the rest, so the per-`ext_type` external-file cleanup loop at `cautious_delete.py:238-241` still runs. Disk cleanup is NOT skipped here, in contrast with `super_delete`.
 - **`MergeMaster.merge_delete_parent(key, dry_run=True)`** — bypasses the team check structurally (see Coverage gaps above). The classmethod form is required; the restricted form `(MergeMaster & key).merge_delete_parent()` silently drops the restriction and would delete every parent.
 
-After a bypass call, treat the next message as a verification step: fetch the post-state, confirm only the intended rows are gone, and run `Nwbfile.cleanup(delete_files=True)` and any pipeline-scoped `cleanup()` helpers to reclaim the disk space `cautious_delete` would have handled.
+After a bypass call, treat the next message as a verification step: fetch the post-state, confirm only the intended rows are gone, and reclaim the disk space `cautious_delete` would have handled. Match the cleanup helper to the kind of orphan, since the bypass paths above almost always leave **analysis-file** orphans, not raw-NWB orphans:
+
+- **Analysis-file orphans (the common case):** `AnalysisNwbfile().cleanup(dry_run=True)` first — it logs the paths it would remove. Inspect the log; only then `AnalysisNwbfile().cleanup(dry_run=False)`. Pair with any pipeline-scoped helpers (`DecodingOutput().cleanup(dry_run=True/False)`, etc.) that wrap the same pattern.
+- **Raw-NWB orphans (rare — only when the bypass deleted a `Nwbfile` row whose external file is no longer referenced):** `Nwbfile.cleanup(delete_files=...)` has **no `dry_run` mode** — both `delete_files=True` and `delete_files=False` are destructive (the `False` form removes the DataJoint external-tracking row but leaves the file; the `True` form removes both). Inspect orphans first with `schema.external["raw"].unused()` (DataJoint's external-tracking enumerate), confirm the listed files are not still referenced upstream, and only then call `Nwbfile.cleanup(delete_files=True)`. Do not reach for it casually after a bypass — the analysis-file cleanup is almost always what you want.
 
 ## Paired shapes
 
