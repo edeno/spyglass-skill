@@ -1,5 +1,5 @@
 <!-- pipeline-version: v1 -->
-# Spike Sorting Pipeline
+# Spike Sorting Pipeline (v1)
 
 Current spike-sorting pipeline (`SpikeSortingRecording` → `SpikeSorting` → `CurationV1` → metrics → `SpikeSortingOutput`). For analysis surfaces *downstream* of curation (`SortedSpikesGroup`, `UnitAnnotation`), see [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md). For v0 legacy, see [spikesorting_v0_legacy.md](spikesorting_v0_legacy.md).
 
@@ -172,10 +172,11 @@ SpikeSortingRecordingSelection → SpikeSortingRecording (preprocessing)
 SpikeSortingSelection → SpikeSorting (run sorter)
     ↓
 CurationV1 (labels + merge groups)
+    ↓                          ├─→ FigURLCurationSelection → FigURLCuration (manual curation UI; FKs CurationV1 directly, not MetricCuration)
     ↓                          ↓
     ↓               MetricCurationSelection → MetricCuration (quality metrics)
-    ↓                          │        ├─→ FigURLCurationSelection → FigURLCuration (manual curation UI)
-    ↓                          │        └─→ BurstPairSelection → BurstPair (optional burst-pair analysis)
+    ↓                          │
+    ↓                          └─→ BurstPairSelection → BurstPair (optional burst-pair analysis)
     ↓                          ↓
 SpikeSortingOutput.CurationV1 (merge table)
     ↓
@@ -308,7 +309,7 @@ from spyglass.spikesorting.v1 import (
 
 - Key: `artifact_param_name`
 - Defaults: `"default"`, `"none"`
-- Use `ArtifactDetectionParameters.describe()` for exact parameter fields
+- `artifact_params` is a `blob` column (`spikesorting/v1/artifact.py:55`), so `ArtifactDetectionParameters.describe()` only shows the outer column — it cannot reveal blob-internal keys. Discover blob-internal fields via `ArtifactDetectionParameters().insert_default()` (then read a stock row), `(ArtifactDetectionParameters & key).fetch1("artifact_params")` on an existing row, or source: read the `contents` list and `_get_artifact_times` for the keys actually consumed.
 
 ## Step 3: Spike Sorting
 
@@ -342,7 +343,7 @@ from spyglass.spikesorting.v1 import CurationV1
 **CurationV1** (Manual)
 
 - Key: `sorting_id`, `curation_id`
-- Valid labels: `"reject"`, `"noise"`, `"artifact"`, `"mua"`, `"accept"`
+- Conventional labels used by Spyglass curation/display/filtering: `"reject"`, `"noise"`, `"artifact"`, `"mua"`, `"accept"`. The constant lives in source as `valid_labels`, but `insert_curation` does not enforce membership; downstream filters and viewers expect this set, so other strings will store but won't be recognized by the standard tooling.
 - Methods:
   - `insert_curation(sorting_id, parent_curation_id, labels, merge_groups, apply_merge, metrics, description)`
   - `get_recording(key)` — SpikeInterface BaseRecording
@@ -445,7 +446,7 @@ BurstPair.populate({
 
 ## Post-pipeline analysis
 
-`SortedSpikesGroup` (aggregating units across sort groups for decoding / MUA / population analysis), `UnitAnnotation`, and the post-curation common patterns (spike-time fetch, firing-rate compute, SpikeInterface accessors) live in [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md). That file mirrors `notebooks/11_Spike_Sorting_Analysis.ipynb`. This file stays focused on the pipeline itself (preprocessing → sorting → curation → metrics → burst-pair).
+`SortedSpikesGroup` (aggregating units across sort groups for decoding / MUA / population analysis), `UnitAnnotation`, and the post-curation common patterns (spike-time fetch, firing-rate compute, SpikeInterface accessors) live in [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md). For tutorial flow, see `notebooks/11_Spike_Sorting_Analysis.ipynb`; for schema/API authority trust `src/spyglass/...` over the notebook prose. This file stays focused on the pipeline itself (preprocessing → sorting → curation → metrics → burst-pair).
 
 ## Imported Spike Sorting
 
