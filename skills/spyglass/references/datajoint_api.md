@@ -288,7 +288,7 @@ DataJoint FK inheritance propagates upstream **primary-key fields** into the dow
 A candidate restriction field for a downstream table falls into one of:
 
 1. Part of the downstream table's primary key (declared by the table or PK-inherited from a parent FK).
-2. A secondary attribute the downstream table introduced itself (declared directly, or introduced via an `-> Other` FK below the `---` divider).
+2. A secondary attribute the downstream table introduced itself — declared directly, or parent PK fields introduced as secondary attributes by an `-> Other` FK below the `---` divider.
 3. Not exposed on the downstream heading at all — present only on an upstream / selection table.
 
 The third case is the canonical trap. When the field is only on a selection or upstream table, restrict *that* table first and project its primary key into the downstream restriction. The naive shape `Downstream & {"that_field": ...}` errors at query-build time when the attribute isn't in the downstream heading.
