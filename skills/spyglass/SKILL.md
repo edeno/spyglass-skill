@@ -122,7 +122,7 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 | Ripple detection | [ripple_pipeline.md](references/ripple_pipeline.md) |
 | Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) |
 | MUA detection | [mua_pipeline.md](references/mua_pipeline.md) |
-| Behavior / MoSeq | [behavior_pipeline.md](references/behavior_pipeline.md) |
+| MoSeq | [behavior_pipeline.md](references/behavior_pipeline.md) |
 | Cross-table workflow planning / multi-pipeline analysis recipes | [workflows.md](references/workflows.md) |
 | Export for papers / reproducible snapshots | [export.md](references/export.md) |
 | Syncing / sharing with collaborators (Kachery) | [setup_config.md § Data Sharing Tables (Kachery)](references/setup_config.md#data-sharing-tables-kachery) |
