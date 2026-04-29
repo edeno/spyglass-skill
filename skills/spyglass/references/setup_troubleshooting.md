@@ -35,7 +35,7 @@ The base directory is not set. Fix by setting the environment variable or adding
 export SPYGLASS_BASE_DIR=~/spyglass_data
 ```
 
-Or in `dj_local_conf.json`:
+Or in a DataJoint config file (`~/.datajoint_config.json` if you want it global, or `dj_local_conf.json` next to your code for a per-project override — both are honored, the local form takes precedence):
 ```json
 {
   "custom": {
@@ -78,49 +78,33 @@ If `SpyglassConfig` logs a stores mismatch warning, the `raw` or `analysis` path
 
 ## `AccessError` / `PermissionError` on a shared installation
 
-Three distinct permission failures show up during `populate()` /
-insert / delete and are easy to confuse:
+This file owns the *setup-adjacent* permission failures: MySQL grants on a new install / new schema, the one-time `LabMember.LabMemberInfo` onboarding insert, and shared-filesystem write bits. The runtime-debugging questions that *use* the team check — `super_delete()` bypass decisions, `force_permission=True`, debugging which experimenter blocked your delete — belong in [destructive_operations.md](destructive_operations.md); generic populate/fetch error triage is in [runtime_debugging.md § Failure signatures](runtime_debugging.md#failure-signatures).
 
-**1. MySQL grants (for INSERT/UPDATE/DELETE/CREATE).**
+**1. MySQL grants (for `INSERT` / `UPDATE` / `DELETE` / `CREATE`).**
 
 ```python
 dj.conn().query('SHOW GRANTS FOR CURRENT_USER();').fetchall()
 ```
 
-Grants are per-schema-prefix on shared installations. A brand-new
-schema (e.g. `ripple_v1`, `spikesorting_recording`, or a user-custom
-prefix) may not be covered by your grants. If `SHOW GRANTS` has no
-entry for the schema named in the error, ask the DB admin for an
-explicit `GRANT` on that prefix, or name your custom schemas with a
-prefix you already have grants for.
+Grants are per-schema-prefix on shared installations. A brand-new schema (e.g. `ripple_v1`, `spikesorting_recording`, or a user-custom prefix) may not be covered by your grants. If `SHOW GRANTS` has no entry for the schema named in the error, ask the DB admin for an explicit `GRANT` on that prefix, or name your custom schemas with a prefix you already have grants for.
 
-**2. Filesystem permissions (for analysis / recording / kachery
-directories).**
+**2. Filesystem permissions (for analysis / recording / kachery directories).**
 
 ```bash
 ls -ld /path/to/failing/dir
 python -c "import os; print(os.access('/path/to/failing/dir', os.W_OK))"
 ```
 
-Directories under `${SPYGLASS_BASE_DIR}/analysis/<session>/` and
-`${SPYGLASS_BASE_DIR}/recording/` are created by whichever user first
-populated them, so later writers hit `EACCES` unless the directory is
-group-writable. The data owner runs `chmod -R g+w <dir>` (or the
-admin chmods to `2775` / `2777` depending on lab policy); avoid
-piecemeal chmods that drift. Many labs running Spyglass on a shared
-filesystem operate a cron or admin-run script that periodically
-re-asserts group-write on the whole tree — if yours does, flag to
-the admin instead of chmod-ing piecemeal.
+Directories under `${SPYGLASS_BASE_DIR}/analysis/<session>/` and `${SPYGLASS_BASE_DIR}/recording/` are created by whichever user first populated them, so later writers hit `EACCES` unless the directory is group-writable. The data owner runs `chmod -R g+w <dir>` (or the admin chmods to `2775` / `2777` depending on lab policy); avoid piecemeal chmods that drift. Many labs running Spyglass on a shared filesystem operate a cron or admin-run script that periodically re-asserts group-write on the whole tree — if yours does, flag to the admin instead of chmod-ing piecemeal.
 
-**3. `cautious_delete` prerequisite: your DataJoint user must exist
-in `LabMember.LabMemberInfo`.**
+**3. `LabMember.LabMemberInfo` onboarding (one-time per DataJoint user).** This is a setup-time task even though the failure surfaces at runtime: `cautious_delete` won't run for a DataJoint user that isn't registered. The error you'll see (and the cross-links from `runtime_debugging.md` and `destructive_operations.md` that route here):
 
 ```
 ValueError: Could not find exactly 1 datajoint user <name> in
 common.LabMember.LabMemberInfo. Please add one: []
 ```
 
-Fix (insert both the master and part rows in one shot):
+Insert the master and part rows in one shot — do this once per new lab member, then never again:
 
 ```python
 import spyglass.common as sgc
@@ -140,23 +124,9 @@ sgc.LabMember.LabMemberInfo.insert1({
 }, skip_duplicates=True)
 ```
 
-Setting `admin=1` skips the team-permission check; reserve for lab
-admins. Do NOT reach for `super_delete()` to bypass this — it skips
-Spyglass's analysis-file cleanup and leaves orphan NWBs on disk.
+`admin=1` reserves a member as a lab admin; team-permission semantics, `super_delete()` decisions, and the `force_permission=True` bypass live in [destructive_operations.md](destructive_operations.md) — don't reach for those to "fix" a missing-LabMember error. The fix is the insert above.
 
-Each of the three presents as "permission denied" but has a different
-fix — always run `SHOW GRANTS` and the `LabMember` check before
-assuming it's a filesystem issue.
-
-**On shared lab filesystems.** Analysis, recording, export, and
-kachery directories drift out of group-writable as new subdirs are
-created by different users. If `ls -ld` shows the failing dir isn't
-group-writable, fix it through your lab's shared-permission process
-(cron, admin-run script, or `chown -R`) rather than chmod-ing per
-session. `Nwbfile().cleanup()` removes orphan NWB files from disk but
-does NOT fix permission bits on existing directories —
-filesystem-permission fixes must happen at the filesystem level, not
-via Spyglass helpers.
+**On shared lab filesystems.** Analysis, recording, export, and kachery directories drift out of group-writable as new subdirs are created by different users. If `ls -ld` shows the failing dir isn't group-writable, fix it through your lab's shared-permission process (cron, admin-run script, or `chown -R`) rather than chmod-ing per session. `Nwbfile().cleanup()` removes orphan NWB files from disk but does NOT fix permission bits on existing directories — filesystem-permission fixes must happen at the filesystem level, not via Spyglass helpers.
 
 ## Environment Creation Fails
 
@@ -346,14 +316,17 @@ pip install -U datajoint       # target >= 0.14.6 as of late 2025
 
 ## Setting a DataJoint password on first connect
 
-DataJoint removed `dj.admin.set_password` from its public docs; the
-function still works. Recipe:
+Use `dj.set_password()`. Spyglass's installer (`scripts/install.py:2609`) and the upstream `Management.md:73` both call this directly:
 
 ```python
 import datajoint as dj
 dj.conn()
-dj.admin.set_password()      # prompts for old/new
+dj.set_password()                                  # prompts for old/new
+# or, non-interactively:
+# dj.set_password(new_password=..., update_config=True)
 ```
+
+(`dj.admin.set_password()` still exists for legacy notebooks but is no longer the recommended entry point.)
 
 If the MySQL server is >= 8.0 and the call raises
 `QuerySyntaxError ... near 'PASSWORD('...')'`, you're on a DataJoint
