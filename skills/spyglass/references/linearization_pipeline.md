@@ -89,7 +89,7 @@ from spyglass.linearization.v1 import (
 
 - Key: `track_graph_name`
 - Defines track geometry as a networkx graph
-- Used directly by linearization (`LinearizationSelection` FKs `TrackGraph`). Decoding **does not** FK this Spyglass `TrackGraph` table — it stores / restores `non_local_detector.Environment` parameters and converts the embedded `track_graph` dict via `track_linearization.make_track_graph()` at runtime. Same track-graph *concept*, different table surface.
+- Used directly by linearization (`LinearizationSelection` FKs `TrackGraph` at `linearization/v1/main.py:101`); decoding can use the same track-graph geometry through `non_local_detector.Environment` parameters (Spyglass converts stored environment parameter dicts into Environment objects via `track_linearization.make_track_graph()`, `decoding/v1/dj_decoder_conversion.py:36`), but **decoding tables do not FK the Spyglass `TrackGraph` table directly**.
 
 **LinearizationParameters** (Lookup)
 
