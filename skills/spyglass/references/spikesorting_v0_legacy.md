@@ -8,10 +8,11 @@ v0 is legacy. All new work uses the v1 pipeline — see [spikesorting_v1_pipelin
 - [v0 vs v1 API Divergences](#v0-vs-v1-api-divergences)
 - [Class-name Collisions to Watch For](#class-name-collisions-to-watch-for)
 - [Querying Existing v0 Sortings](#querying-existing-v0-sortings)
+- [`Curation.get_curated_sorting` does not filter rejected units](#curationget_curated_sorting-does-not-filter-rejected-units)
 
 ## When You'll Encounter v0
 
-v0 sortings exist in most long-running labs' databases — they were produced before the v1 pipeline landed, and re-running them under v1 is not required for downstream use. The `SpikeSortingOutput.CuratedSpikeSorting` part table exposes those v0 entries so they participate in the same merge-table interface that v1 sortings use (`get_spike_times`, `get_recording`, `get_sorting`, etc.). If a user's code imports from `spyglass.spikesorting.v0.*`, they are almost certainly reading or querying pre-existing data rather than producing new sortings.
+v0 sortings were produced before the v1 pipeline landed, and re-running them under v1 is not required for downstream use. The `SpikeSortingOutput.CuratedSpikeSorting` part table exposes those v0 entries so they participate in the same merge-table interface that v1 sortings use (`get_spike_times`, `get_recording`, `get_sorting`, etc.). If a user's code imports from `spyglass.spikesorting.v0.*`, they are almost certainly reading or querying pre-existing data rather than producing new sortings.
 
 ## v0 vs v1 API Divergences
 
@@ -63,7 +64,7 @@ for mid in merge_ids:
     spikes = SpikeSortingOutput().get_spike_times({"merge_id": mid})
 ```
 
-Pass `sources=["v0", "v1"]` (or omit `sources`) to mix both. For new sorting/curation work, use v1 — do not populate v0 tables. See `notebooks/10_Spike_SortingV0.ipynb` (or its jupytext mirror `notebooks/py_scripts/10_Spike_SortingV0.py`) for the historical v0 populate flow if you need to read existing v0 code.
+Pass `sources=["v0", "v1"]` (or omit `sources`) to mix both. For new sorting/curation work, use v1 — do not populate v0 tables. Use `notebooks/10_Spike_SortingV0.ipynb` only for the historical tutorial flow; for behavior, inspect the v0 source directly (`spyglass/spikesorting/v0/*`) — the notebook is a walkthrough, not the authority.
 
 ## `Curation.get_curated_sorting` does not filter rejected units
 
