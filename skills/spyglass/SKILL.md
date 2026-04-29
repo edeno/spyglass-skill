@@ -109,8 +109,8 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 | SpyglassMixin helpers (`fetch_nwb`, `cautious_delete`, `<<` / `>>`) | [spyglassmixin_methods.md](references/spyglassmixin_methods.md) |
 | Group tables (`*Group`, `create_group()`) | [group_tables.md](references/group_tables.md) |
 | NWB ingestion / `insert_sessions` | [ingestion.md](references/ingestion.md) |
-| DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) |
-| Common tables — `Session`, `IntervalList`, `Electrode`, `VideoFile`, `CameraDevice`, `TaskEpoch`, `BrainRegion`, `LabTeam` | [common_tables.md](references/common_tables.md) |
+| DataJoint query syntax — restrictions, joins, projections, headings, field ownership | [datajoint_api.md](references/datajoint_api.md) |
+| Common tables — sessions/files, intervals, electrodes/devices, brain regions, lab/team metadata | [common_tables.md](references/common_tables.md) |
 | Spike sorting pipeline (current / v1) | [spikesorting_v1_pipeline.md](references/spikesorting_v1_pipeline.md) |
 | Spike sorting analysis (post-pipeline: `SortedSpikesGroup`, `UnitAnnotation`, spike-time/firing-rate helpers) | [spikesorting_v1_analysis.md](references/spikesorting_v1_analysis.md) |
 | Spike sorting v0 legacy code / v0 data | [spikesorting_v0_legacy.md](references/spikesorting_v0_legacy.md) |
@@ -127,5 +127,5 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 | Export for papers / reproducible snapshots | [export.md](references/export.md) |
 | Syncing / sharing with collaborators (Kachery) | [setup_config.md § Data Sharing Tables (Kachery)](references/setup_config.md#data-sharing-tables-kachery) |
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) |
-| External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) |
+| External packages (SpikeInterface, PyNWB, DLC, non_local_detector) | [dependencies.md](references/dependencies.md) |
 | Authoring custom tables or pipelines / extending existing ones | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) |
