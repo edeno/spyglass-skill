@@ -32,7 +32,8 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 - **Field ownership before query generation**: trace each restriction attribute to the table that *declares* it; secondary attrs on upstream tables don't propagate via FK inheritance. [datajoint_api.md § Field Ownership](references/datajoint_api.md#field-ownership).
 - **Environment**: detect setup; don't assume Jupyter or remote NWB.
 - **DataJoint config files**: `dj_local_conf.json` / `~/.datajoint_config.json` hold plaintext `database.password`. Don't `Read`/`cat`; run `python skills/spyglass/scripts/scrub_dj_config.py` (auto-detects `./dj_local_conf.json` then `~/.datajoint_config.json`; pass a path to override; masks secret leaves). Details: [setup_config.md](references/setup_config.md).
-- **Source of truth**: when the skill and repo disagree, trust the repo. Cite `src/spyglass/...` (drop `src/` for pip installs; locate with `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`). Tutorials drift — cite and read `.ipynb`, not `notebooks/py_scripts/*.py` (auto-generated, only useful for diff review); when a cell fails on a missing parameter/table/column, check source.
+- **Source of truth**: when the skill and repo disagree, trust the repo. Cite `src/spyglass/...` (drop `src/` for pip installs; locate with `python -c "import spyglass, os; print(os.path.dirname(spyglass.__file__))"`). Notebooks are user-facing walkthroughs, not implementation authority.
+
 - **Do not edit the installed Spyglass package.** Edits to `src/spyglass/...` desync the in-DB schema from what other labs run, and `pip install -e .` silently reverts them. Push back if the user insists.
 
 ## Evidence Expectations
