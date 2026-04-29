@@ -298,9 +298,11 @@ The third case is the canonical trap. When the field is only on a selection or u
 
 ```python
 # Wrong shape: assumes the field is on `MyComputed`'s heading. When the
-#              field is only exposed on `MySelection`, the query errors
-#              ("attribute not in heading") or, if the agent never runs
-#              it, ships an answer that doesn't execute.
+#              field is only exposed on `MySelection`, DataJoint silently
+#              drops the dict key and returns an unrestricted or
+#              under-restricted relation — the agent ships an answer
+#              that runs cleanly but returns the wrong (often whole-table)
+#              row set.
 populated = MyComputed & {"interval_list_name": "02_r1"}
 
 # Right shape: restrict the selection (where the field is exposed) and
@@ -312,7 +314,7 @@ populated = MyComputed & (
 
 ### Two failure shapes this guards against
 
-1. **Field not on the downstream heading.** The agent writes a restriction referencing a field that's only exposed upstream. DataJoint errors, or the agent never actually runs the query and trusts the wrong shape.
+1. **Field not on the downstream heading.** The agent writes a restriction referencing a field that's only exposed upstream. Dict restriction silently no-ops (the unknown key is dropped, so the restriction reduces to the full table); SQL-string restriction (`& "that_field = 'x'"`) may error at query-build time when MySQL parses the column name.
 2. **Right name, wrong table.** Reused names introduced independently on multiple tables. Restricting the wrong one runs cleanly but returns the wrong rows.
 
 ### How to verify
