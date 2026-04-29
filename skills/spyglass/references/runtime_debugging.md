@@ -11,6 +11,7 @@ Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin`
 - [When to use this file](#when-to-use-this-file)
 - [Required inputs](#required-inputs)
 - [Core philosophy](#core-philosophy)
+- [`key_source`: what drives `populate()` iteration](#key_source-what-drives-populate-iteration)
 - [Procedure](#procedure)
 - [Failure signatures](#failure-signatures)
   - [A. fetch1() cardinality](#a-fetch1-cardinality)
@@ -94,6 +95,10 @@ Always assume:
 3. **Relational assumptions break as often as Python code does.** Many "DataJoint bugs" are really cardinality bugs — the restriction or join returned a different row count than the code assumed.
 4. **Scientific Python objects are frequent hidden causes.** Array equality, pandas truthiness, dtype surprises, and shape mismatches often masquerade as DataJoint errors.
 5. **The smallest useful diagnostic beats a speculative rewrite.** Prefer a 2-line print over a 50-line refactor until the root cause is confirmed.
+
+## `key_source`: what drives `populate()` iteration
+
+Several failure modes below (G, the empty-populate footnote in C, the upstream-validation hook in D) all turn on the same DataJoint concept, so it is worth pinning once. A `Computed`/`Imported` table's `key_source` is the relation DataJoint iterates over to decide *which keys to call `make()` on*. By default it's the join of the table's parent FKs projected to their primary keys; for many Spyglass tables it's literally the corresponding `*Selection.proj()` (e.g. `SpikeSorting.key_source = SpikeSortingSelection.proj()`). Practical consequences: (1) "I called `populate(key)` and nothing happened" almost always means `len(MyTable.key_source & key) == 0` — the upstream selection row the user thought existed does not, or the restriction misses it; check it explicitly before re-running. (2) The keys `populate()` actually iterates have only the `key_source` heading, not the full restriction the caller passed — so a non-PK field in the restriction filters but does not appear in the iterated key (see signature G). (3) When asked "why didn't this row get processed?", read `MyTable.key_source.heading` (or its source class) before debugging anything inside `make()`. (4) Subclasses can override `key_source` (typically with extra restrictions); read the class body, not assumptions about the FK pattern, when behavior surprises.
 
 ## Procedure
 
