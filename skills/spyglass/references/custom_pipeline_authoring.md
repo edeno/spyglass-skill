@@ -66,7 +66,7 @@ Each FKs to the core table on its primary key, so your new field is queryable as
 For each new step in your analysis, pick the smallest option that fits:
 
 1. **Use an existing upstream table directly** — if your analysis is a one-off and doesn't need to be re-run with different parameters, you may not need any new tables at all. Just query.
-2. **Add a preprocessing / grouping table** (`dj.Manual`) — when you need to combine units, intervals, or electrodes from the raw tables into analysis-ready sets (e.g., "units from these tetrodes during this epoch"). For the master + part `*Group` shape, the existing groups in Spyglass, and the per-table `create_group(...)` semantics, see [group_tables.md](group_tables.md).
+2. **Add a preprocessing / grouping table** (`dj.Manual`) — when you need to combine units, intervals, or electrodes from the raw tables into analysis-ready sets (e.g., "units from these tetrodes during this epoch"). For Spyglass `*Group` patterns, see [group_tables.md](group_tables.md).
 3. **Add a Parameters table** (`dj.Lookup` with `contents`) — any tunable value the analysis reads. Name ends in `Parameters` or `Params`.
 4. **Add a Selection table** (`dj.Manual`) — pairs a specific input (upstream key) with a specific parameter set. Name ends in `Selection`. This is the row you `insert1` before calling `populate`.
 5. **Add a Computed table** (`dj.Computed`) with a `make()` method — takes the Selection row, runs the analysis, writes output (typically to an AnalysisNwbfile) and inserts the row. Part tables hang off this for row-wise results.
