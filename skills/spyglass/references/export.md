@@ -1,5 +1,7 @@
 # Export Pipeline
 
+The export pipeline produces a reproducible snapshot of tables and files used in a paper or analysis. It logs every fetch during an "export session," then bundles the touched tables and the raw + analysis NWB files it logged into an export package. Distinct from interactive sharing ([figurl.md](figurl.md)) and from the Kachery sync surface ([setup_config.md § Data Sharing Tables (Kachery)](setup_config.md#data-sharing-tables-kachery)).
+
 ## Contents
 
 - [Overview](#overview)
@@ -8,8 +10,6 @@
 - [Common Patterns](#common-patterns)
 
 ## Overview
-
-The export pipeline produces a reproducible snapshot of tables and files used in a paper or analysis. It logs every fetch during an "export session," then bundles the touched tables and analysis files into an export package. Distinct from interactive sharing ([figurl.md](figurl.md)) and from the Kachery sync surface ([setup_config.md § Data Sharing Tables (Kachery)](setup_config.md#data-sharing-tables-kachery)).
 
 ```python
 from spyglass.common.common_usage import ExportSelection, Export
@@ -96,7 +96,10 @@ Export().populate_paper(paper_id="smith2024")
 # See the tables captured for the paper
 ExportSelection().preview_tables(paper_id="smith2024")
 
-# List file paths (analysis NWB files) that will be bundled
+# List file paths that will be bundled — both the analysis NWB files
+# logged by `fetch_nwb()` calls AND raw NWB files explicitly logged
+# during the export (the helper composes `_list_analysis_files(...)`
+# + `_list_raw_files(...)`).
 ExportSelection().list_file_paths({"paper_id": "smith2024"})
 ```
 
@@ -106,14 +109,11 @@ Spyglass tables that inherit `SpyglassMixin` get `ExportMixin` by composition. W
 
 ### Scoping an export to a single analysis
 
-`analysis_id` within a `paper_id` lets you run multiple analyses and export them together or separately. Use `paper_export_id(paper_id, return_all=True)` to see all exports for a paper.
+`analysis_id` is a label for log sessions *within* a single `paper_id` — multiple analyses can be logged under one paper and then bundled together by `Export().populate_paper(paper_id=...)`, which keys the export row on the maximum `export_id` for that paper and assembles the restriction graph (via `get_restr_graph(paper_key)`) over every logged row in the paper. There is no `populate_paper` form that exports one `analysis_id` separately from its siblings — if you want a separately packaged export, use a *distinct* `paper_id`. Use `paper_export_id(paper_id, return_all=True)` to see all exports for a paper.
 
 ## Preparing an export for DANDI
 
-`Export().populate_paper(...)` produces analysis NWBs that Spyglass
-wrote with older pynwb conventions; `pynwb.validate()` and Dandi
-upload check against current pynwb rules. Common validation
-failures, grouped by what the patcher does and doesn't address:
+`Export().populate_paper(...)` does *not* produce the analysis NWB files itself — those were written earlier by the upstream analysis pipelines. What `populate_paper` produces is the export *package*: the restriction graph, the SQL dump, and the `Export.File` row list (raw + analysis NWBs) that downstream tooling will consume. The DANDI step then uses `Export().prepare_files_for_export(...)` (`common/common_usage.py:630`) to mutate the files listed in `Export.File` — that's where the older-pynwb-conventions issue lands. Common validation failures from `pynwb.validate()` / DANDI's upload checks, grouped by what the patcher does and doesn't address:
 
 **Fixed by `update_analysis_for_dandi_standard`** (`utils/dandi_file_updates.py:41-63`):
 
