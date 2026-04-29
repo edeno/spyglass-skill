@@ -141,6 +141,8 @@ Use these freely when exploring or finding the right `merge_id`. They are what t
 - `DecodingOutput.fetch_results(key)` — loads an xarray Dataset from an `.nc` file on disk (`src/spyglass/decoding/decoding_merge.py:74`). Decoding-only.
 - `DecodingOutput.fetch_model(key)` — loads the trained decoder model from disk (`src/spyglass/decoding/decoding_merge.py:79`). Decoding-only.
 
+**File-backed data retrieval — prefer accessors over manual paths.** For *retrieving* file-backed data, use the Spyglass accessors above (`fetch_nwb`, `fetch1_dataframe`, decoding `fetch_results` / `fetch_model`). They resolve the stored path via the `(Analysis)Nwbfile` table and call `_download_missing_files` before loading (`utils/mixins/fetch.py:330`) — manual `$SPYGLASS_BASE_DIR/...` construction skips the Kachery/DANDI fetch and breaks on any non-local file. Inspect the *recorded* path source only for file-management / debugging tasks (cleanup, export, missing-file diagnostics, admin work): raw NWBs via `Nwbfile.nwb_file_abs_path` and `Nwbfile.get_abs_path()` (`common/common_nwbfile.py:86`); analysis files via `AnalysisNwbfile.get_abs_path(analysis_file_name)`; decoding outputs via the `filepath@analysis` attribute on the row. Don't reconstruct paths from base-dir conventions unless the question is explicitly about path conventions or the normal accessor failed.
+
 Implications for writing Spyglass code:
 
 1. **Confirm cardinality before committing to a disk fetch.** The cardinality check (see `len(rel)` pattern above) is cheap — it's a DB read. A wrong-key `fetch1_dataframe()` wastes disk I/O *and* raises after the slow operation.
