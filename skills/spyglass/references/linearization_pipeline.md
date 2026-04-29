@@ -20,7 +20,7 @@ from spyglass.linearization.merge import LinearizedPositionOutput
 
 ## Canonical Example
 
-Linearization takes a 2D position (from a `PositionOutput` entry whose source exposes a `position` NWB object with `get_spatial_series()` — typically `TrodesPosV1` or `DLCPosV1`) and projects it onto a track graph. `LinearizedPositionV1.make()` calls `PositionOutput().fetch_nwb({"merge_id": pos_merge_id})[0]` and reads the `"position"` key (`linearization/v1/main.py:135`); other PositionOutput sources don't share that shape. `ImportedPose` reads a `"pose"` key via `fetch_pose_dataframe` (`position/v1/imported_pose.py:129`); legacy `IntervalPositionInfo` exposes per-component `head_position_object_id` (`common/common_position.py:105`); neither resolves through this pipeline as-is.
+Linearization takes a 2D position (from a `PositionOutput` entry whose source exposes a `position` NWB object with `get_spatial_series()` — typically `TrodesPosV1` or `DLCPosV1`) and projects it onto a track graph. `LinearizedPositionV1.make()` calls `PositionOutput().fetch_nwb({"merge_id": pos_merge_id})[0]` and reads the `"position"` key (`linearization/v1/main.py:136-143`); other PositionOutput sources don't share that shape. `ImportedPose` reads a `"pose"` key via `fetch_pose_dataframe` (`position/v1/imported_pose.py:129`); legacy `IntervalPositionInfo` exposes per-component `head_position_object_id` (`common/common_position.py:105`); neither resolves through this pipeline as-is.
 
 Minimal end-to-end flow:
 
@@ -89,13 +89,13 @@ from spyglass.linearization.v1 import (
 
 - Key: `track_graph_name`
 - Defines track geometry as a networkx graph
-- Used by: linearization pipeline and decoding pipeline
+- Used directly by linearization (`LinearizationSelection` FKs `TrackGraph`). Decoding **does not** FK this Spyglass `TrackGraph` table — it stores / restores `non_local_detector.Environment` parameters and converts the embedded `track_graph` dict via `track_linearization.make_track_graph()` at runtime. Same track-graph *concept*, different table surface.
 
 **LinearizationParameters** (Lookup)
 
 - Key: `linearization_param_name`
-- Parameters for nearest-edge or optional HMM-based linearization. The schema's `use_hmm` field defaults to `0` (`linearization/v1/main.py:27`); `track_linearization.get_linearized_position()` uses nearest-edge projection when `use_HMM=False` and switches to HMM only when explicitly enabled. The "default" row is the nearest-edge path.
-- `dj.Lookup` (not `Manual`) at `linearization/v1/main.py:22`. **No `contents`** are declared, so the table is empty by default — `dj.Lookup` only auto-populates when `contents = [...]` is set on the class. Insert a row before using it; the canonical workflow uses `linearization_param_name="default"` and notebook `24_Linearization.py` inserts that row explicitly with `LinearizationParameters().insert1({"linearization_param_name": "default"}, skip_duplicates=True)`. Verify on your install with `code_graph.py describe LinearizationParameters` (no `contents` in the class body) and `(LinearizationParameters & {"linearization_param_name": "default"}).fetch()`.
+- Parameters for nearest-edge or optional HMM-based linearization. The schema's `use_hmm` field defaults to `0` (`linearization/v1/main.py:30`); `track_linearization.get_linearized_position()` uses nearest-edge projection when `use_HMM=False` and switches to HMM only when explicitly enabled. The "default" row is the nearest-edge path.
+- `dj.Lookup` (not `Manual`) at `linearization/v1/main.py:22`. **No `contents`** are declared, so the table is empty by default — `dj.Lookup` only auto-populates when `contents = [...]` is set on the class. Insert a row before using it; the canonical workflow uses `linearization_param_name="default"` and notebook `24_Linearization.py` inserts that row explicitly with `LinearizationParameters().insert1({"linearization_param_name": "default"}, skip_duplicates=True)`. The bare `code_graph.py describe LinearizationParameters` exits with an ambiguity error because v0 also defines a class of the same qualname; pass a file hint to pick the v1 one: `python skills/spyglass/scripts/code_graph.py describe --file spyglass/linearization/v1/main.py LinearizationParameters` (no `contents` in the class body). Then confirm at runtime with `(LinearizationParameters & {"linearization_param_name": "default"}).fetch()`.
 
 **LinearizationSelection** (Lookup)
 
@@ -107,7 +107,7 @@ from spyglass.linearization.v1 import (
   - `linear_position` — 1D position along the track
   - `track_segment_id` — which graph segment the sample is on
   - `projected_x_position`, `projected_y_position` — 2D coordinates of the nearest-edge projection
-- Source: `linearization/v1/main.py:170` writes the dataframe and inserts into `LinearizedPositionOutput`; the column set is what `track_linearization.get_linearized_position()` returns.
+- Source: `linearization/v1/main.py:184-186` calls `LinearizedPositionOutput._merge_insert(...)` after writing the dataframe; the column set is what `track_linearization.get_linearized_position()` returns.
 
 ## Fetch Example
 
