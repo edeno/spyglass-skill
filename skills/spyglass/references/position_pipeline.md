@@ -130,3 +130,7 @@ plt.ylabel('Y Position (cm)')
 plt.axis('equal')
 plt.show()
 ```
+
+## See also
+
+- For "what cascades if I re-run position with new params" or "how do I recover after editing a `TrodesPosParams` / DLC selection row" questions, see [destructive_operations.md → Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template).

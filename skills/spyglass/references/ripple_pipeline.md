@@ -207,3 +207,7 @@ Source algorithms imported at ripple.py:9:
 - `ripple_detection.Karlsson_ripple_detector()` — Karlsson's algorithm.
 
 Registry in `RIPPLE_DETECTION_ALGORITHMS` (ripple.py:23). To add an algorithm, extend this dict; `ripple_param_dict["ripple_detection_algorithm"]` must match a registered key.
+
+## See also
+
+- For "what cascades if I re-run ripple detection with new params" or "how do I recover after editing a `RippleParameters` / `RippleLFPSelection` row" questions, see [destructive_operations.md → Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template).

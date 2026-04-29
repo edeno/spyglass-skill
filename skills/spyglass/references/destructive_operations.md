@@ -14,6 +14,8 @@ This reference owns the canonical paired shapes for every destructive helper in 
   - [Merge-table delete helpers](#merge-table-delete-helpers)
   - [File cleanup](#file-cleanup)
   - [Session-wide cleanup](#session-wide-cleanup)
+- [Counterfactual / recovery / parameter-swap cascade template](#counterfactual--recovery--parameter-swap-cascade-template)
+- [`update1` on params with downstream rows](#update1-on-params-with-downstream-rows)
 - [Cross-references](#cross-references)
 
 ## Required workflow
@@ -196,6 +198,37 @@ Current Spyglass has no single "delete everything downstream of this session" he
 
 - `(Nwbfile & {"nwb_file_name": f}).delete()` — DataJoint's cascade removes rows from tables with a foreign-key path to `Nwbfile`, routed through `cautious_delete` for the team check. Preview with `.fetch(as_dict=True)` on the restricted relation first.
 - For each merge table whose part entries reference the session, call `SomeMergeOutput.merge_delete_parent({"nwb_file_name": f}, dry_run=True)` explicitly. Run `dry_run=True` first, inspect, then `dry_run=False`. `merge_delete_parent` bypasses the team check (see [When a user explicitly asks to bypass](#when-a-user-explicitly-asks-to-bypass)), so treat every call as if the data owner were watching.
+
+## Counterfactual / recovery / parameter-swap cascade template
+
+When the user asks "what changes if I re-run with new params?", "what cascades if I delete X?", or "how do I recover from an in-place edit?", the answer must enumerate four slots — incomplete answers (especially missing the unaffected-branches slot) leave the user without enough information to know what they can re-use vs. what they have to recompute.
+
+**Slot 1 — The new row / new merge_id.** Whether a clean re-run produces a *new* row alongside the old one, or mutates the old row. For Spyglass's pattern, parameter tables (`*Params`) and selection tables (`*Selection`) are typically PK'd on a name; changing values means inserting a *new* parameter row under a *new* name and populating fresh downstream rows from the new selection — the old name still resolves to the old downstream rows. New merge_ids are minted on every fresh populate of a Computed feeding a `*Output` merge.
+
+**Slot 2 — Downstream branches that must be re-selected and re-populated.** Specific table names, walked from the changed table downward. For each branch, name (a) the selection table the user must insert into for the new run, (b) the Computed table whose `populate(key)` must be called, and (c) the merge layer (if any) that gets a new entry. Don't say "downstream pipelines" — name them.
+
+**Slot 3 — Unaffected sibling and upstream branches.** Explicitly enumerated. Symmetric pipelines often re-use the same upstream (LFP, position, sorting, etc.); the unaffected list tells the user what they can keep without recomputing. *Failure mode:* answers that walk only the downstream cascade and leave the user guessing whether LFP / position / sorting are affected. They usually aren't, but say so.
+
+**Slot 4 — Verification step.** Concrete command for confirming the cascade scope. From source: `Table.descendants()` / `Table.ancestors()` (DataJoint's runtime introspection on the `dj.Diagram`-derived graph). From a live DB: `db_graph.py path --down <Class>` / `db_graph.py path --up <Class>`. From source-only (no live DB): `code_graph.py path --down <Class>`. Name the actual command, not "walk the graph."
+
+### Worked-example pattern
+
+For a parameter swap on a `*Params` table:
+
+```text
+1. New row:        insert under a new param_name; old rows survive at the old name.
+2. Re-populate:    *Selection insert with new param_name → *Computed.populate(key)
+                   → new entry in *Output (if merge); each leaf below the merge
+                   that the user wants under the new params needs its own
+                   selection insert + populate.
+3. Unaffected:     <list specific upstream tables that don't depend on the
+                   changed param — typically LFP, position, sorting branches
+                   parallel to the affected one>.
+4. Verify scope:   `Table.descendants(as_objects=True)` from <ChangedTable>;
+                   confirm the union of slot-2 entries matches.
+```
+
+The four-slot template applies equally to deletion-cascade questions (slot 1 reads "rows removed from <Table>"), in-place-edit recovery (slot 1 reads "the row stays at the same key with the new values; existing downstream rows now have stale provenance"), and counterfactual "what if I had run with X" questions.
 
 ## `update1` on params with downstream rows
 

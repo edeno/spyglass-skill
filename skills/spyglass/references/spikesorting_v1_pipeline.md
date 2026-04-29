@@ -460,3 +460,7 @@ For pre-sorted spikes stored in NWB Units table.
 ## Recomputing Across Environments
 
 Before re-running a sort from a different env (different lab, conda setup, or PyNWB pin), check NWB-namespace compatibility: `RecordingRecomputeVersions().this_env` (from `spyglass.spikesorting.v1.recompute`) is a cached property returning the subset of recordings whose stored `nwb_deps` match the currently installed stack. A mismatch means the stored analysis file won't load cleanly — pin the env or re-run from raw, don't assume.
+
+## See also
+
+- For "what cascades if I re-run sorting with new params" or "how do I recover after editing a `SpikeSortingSelection` / `WaveformSelection` row" questions, see [destructive_operations.md → Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template).

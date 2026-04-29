@@ -370,3 +370,7 @@ axes[-1].set_xlabel('Time (s)')
 plt.tight_layout()
 plt.show()
 ```
+
+## See also
+
+- For "what cascades if I re-run LFP with new params" or "how do I recover after editing an `LFPSelection` row in place" questions, see [destructive_operations.md → Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template).

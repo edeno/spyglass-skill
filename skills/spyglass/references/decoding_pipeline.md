@@ -482,3 +482,7 @@ DecodingOutput().cleanup(dry_run=True)   # LOGS paths; returns None
 # After inspecting log output:
 # DecodingOutput().cleanup(dry_run=False)
 ```
+
+## See also
+
+- For "what cascades if I re-run decoding with new params" or "how do I recover after editing a `DecodingParameters` / `*Selection` row" questions, see [destructive_operations.md → Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template).
