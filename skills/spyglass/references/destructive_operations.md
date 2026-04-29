@@ -209,7 +209,7 @@ When the user asks "what changes if I re-run with new params?", "what cascades i
 
 **Slot 3 — Unaffected sibling and upstream branches.** Explicitly enumerated. Symmetric pipelines often re-use the same upstream (LFP, position, sorting, etc.); the unaffected list tells the user what they can keep without recomputing. *Failure mode:* answers that walk only the downstream cascade and leave the user guessing whether LFP / position / sorting are affected. They usually aren't, but say so.
 
-**Slot 4 — Verification step.** Concrete command for confirming the cascade scope. From source: `Table.descendants()` / `Table.ancestors()` (DataJoint's runtime introspection on the `dj.Diagram`-derived graph). From a live DB: `db_graph.py path --down <Class>` / `db_graph.py path --up <Class>`. From source-only (no live DB): `code_graph.py path --down <Class>`. Name the actual command, not "walk the graph."
+**Slot 4 — Verification step.** Concrete command for confirming the cascade scope. In a Python/DataJoint session: `Table.descendants()` / `Table.ancestors()` (DataJoint's runtime introspection on the `dj.Diagram`-derived graph). From a live DB CLI: `db_graph.py path --down <Class>` / `db_graph.py path --up <Class>`. From source-only (no live DB, no Python session): `code_graph.py path --down <Class>`. Name the actual command, not "walk the graph."
 
 ### Worked-example pattern
 
