@@ -95,10 +95,11 @@ tools correctly**. The next baseline is not "skill vs. no skill"; it is
 - **0.2** Run the existing skill-creator eval harness against these
   cases. Score both final correctness and evidence behavior: did the agent
   cite source/runtime evidence for table, key, method, and DAG claims? Save under
-  `skills/spyglass-workspace/runs/<run-id>/iteration-0-baseline/` (the
-  per-run layout introduced in the round-C → round-D migration; see
-  `skills/spyglass-workspace/runs/round-c-2026-04-28/run.json` for the
-  canonical pattern).
+  `runs/<run-id>/iteration-0-baseline/` in the
+  [spyglass-skill-workspace](https://github.com/edeno/spyglass-skill-workspace)
+  repo (the per-run layout introduced in the round-C → round-D migration;
+  see [`runs/round-c-2026-04-28/run.json`](https://github.com/edeno/spyglass-skill-workspace/blob/main/runs/round-c-2026-04-28/run.json)
+  for the canonical pattern).
 - **0.3** Publish the baseline numbers in this file (fill in Phase 0
   table at the end) so Phase 1+ can claim deltas honestly.
 

@@ -4,18 +4,12 @@ __pycache__/
 *.pyo
 .DS_Store
 
-# skill-creator eval workspaces are tracked: full reproducibility, all evidence
-# colocated. Per-run sweeps live under skills/spyglass-workspace/runs/<run-id>/
-# and contain narrative (BATCHES.md, findings.md), per-batch artifacts
-# (iteration-N/, including per-eval responses + grading), the analysis bundle
-# (summary/), and run metadata (run.json). One sweep is ~20 MB / ~1300 files —
-# small enough to ship in-repo and the cost of regenerating is high enough
-# (a real eval rerun) that durability beats parsimony.
-#
-# Old flat layout (pre-runs/ migration) stays gitignored so a stray
-# `iteration-N/` outside `runs/` doesn't accidentally land in a commit.
-*-workspace/iteration-*
-
+# skill-creator eval/iteration output (kept out of VCS; evals/ itself is tracked).
+# Eval sweep artifacts live in a separate repo:
+#     https://github.com/edeno/spyglass-skill-workspace
+# Clone it as a sibling of this repo to run the analysis scripts (see
+# CLAUDE.md and skills/spyglass/evals/dispatch_prompts.md).
+*-workspace/
 /skill-snapshot/
 
 # Packaged skill artifacts

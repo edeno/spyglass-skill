@@ -1,7 +1,7 @@
 # Round-D implementation plan
 
 Round of skill edits and verification driven by the round-C 130-eval sweep
-analysis ([summary](../../skills/spyglass-workspace/runs/round-c-2026-04-28/summary/SUMMARY.md)).
+analysis ([summary](https://github.com/edeno/spyglass-skill-workspace/blob/main/runs/round-c-2026-04-28/summary/SUMMARY.md)).
 This plan is granular: per-edit insertion anchors, validator gates between
 commits, and explicit success/regression criteria for the narrow rerun.
 
@@ -80,7 +80,7 @@ directives find the routing matrix without having to discover it.
 
 Then add the substantive subsection inside Evidence Expectations
 (content already drafted in
-[runs/round-c-2026-04-28/summary/SUMMARY.md](../../skills/spyglass-workspace/runs/round-c-2026-04-28/summary/SUMMARY.md)
+[runs/round-c-2026-04-28/summary/SUMMARY.md](https://github.com/edeno/spyglass-skill-workspace/blob/main/runs/round-c-2026-04-28/summary/SUMMARY.md)
 recommendation #6, the four-bullet routing matrix).
 
 **Validator**: same as 2.1.
@@ -391,7 +391,7 @@ Before any dispatch, create the run directory and metadata:
 
 1. **Pin `$SPYGLASS_SRC`**: record the current upstream Spyglass
    commit hash. Add it to a new
-   `skills/spyglass-workspace/runs/round-d-<date>/run.json`.
+   `runs/round-d-<date>/run.json` in the [spyglass-skill-workspace](https://github.com/edeno/spyglass-skill-workspace) repo.
 2. **Create the run directory**: copy the round-C
    `iteration-N/` skeleton structure (just `eval_metadata.json` +
    empty `outputs/` dirs) for the narrow subset.

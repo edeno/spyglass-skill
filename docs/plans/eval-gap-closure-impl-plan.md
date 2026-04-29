@@ -577,13 +577,15 @@ Runner pattern (executed from a skill-creator workspace adjacent to the skill, p
 
 ```bash
 # Pick a run id (e.g. a date) so multiple sweeps coexist under runs/.
+# Eval workspace lives in a separate repo, cloned as a sibling of spyglass-skill:
+#   git clone https://github.com/edeno/spyglass-skill-workspace ../spyglass-skill-workspace
 RUN_ID="$(date -u +%Y-%m-%d)"   # or e.g. round-d-${RUN_ID}
-WS="$(dirname "$(realpath skills/spyglass)")/spyglass-workspace/runs/$RUN_ID/iteration-1"
+WS="$(dirname "$(realpath skills/spyglass)")/../spyglass-skill-workspace/runs/$RUN_ID/iteration-1"
 mkdir -p "$WS/eval-56/with_skill" "$WS/eval-56/baseline" \
          "$WS/eval-58/with_skill" "$WS/eval-58/baseline"
 ```
 
-(The `runs/<run-id>/` layer was introduced in the round-C → round-D migration; see [`skills/spyglass-workspace/runs/round-c-2026-04-28/run.json`](../../skills/spyglass-workspace/runs/round-c-2026-04-28/run.json) for the per-run metadata pattern.)
+(The `runs/<run-id>/` layer was introduced in the round-C → round-D migration; see [`runs/round-c-2026-04-28/run.json`](https://github.com/edeno/spyglass-skill-workspace/blob/main/runs/round-c-2026-04-28/run.json) for the per-run metadata pattern.)
 
 Then dispatch four `Agent` subagent calls in a single message (run in parallel — they're fully independent). Use the prompt template below for each. The four runs are: `{56, 58} × {with_skill, baseline}`.
 
