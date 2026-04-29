@@ -74,6 +74,8 @@ python3 -c 'import json; d=json.load(open("dj_local_conf.json")); d.pop("databas
 
 Use these forms from the `Bash` tool (not the `Read` tool). Apply the same pattern for `~/.datajoint_config.json`. If you need to inspect `dj.config` at runtime from Python, print `{k: v for k, v in dj.config.items() if k != "database.password"}` — never bare `dict(dj.config)`.
 
+**For *validating* config resolution rather than *reading* config values**, use the skill-side triage script: `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_config --check base_dir_resolved`. It confirms the resolved values without echoing secrets — the right tool when the goal is "does Spyglass see the config it should?" rather than "what's in the file?"
+
 ### Generating Config Programmatically
 
 `SpyglassConfig` can generate and save DataJoint config files:

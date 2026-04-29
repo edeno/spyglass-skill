@@ -258,6 +258,8 @@ Post-install validation script. Run it to check your Spyglass installation:
 python scripts/validate.py
 ```
 
+**Two validators, different scopes.** `python scripts/validate.py` is the upstream post-install validator that ships in the Spyglass repo and runs the full prerequisites / env / install / config / DB / dirs / validation sweep listed below. If install completed but imports / config / base-dir / DB connection still look broken, run the skill-side script instead: `python skills/spyglass/scripts/verify_spyglass_env.py` is focused triage with timeout-bounded DB checks and per-surface `--check` options (e.g. `--check imports`, `--check dj_config`, `--check base_dir_resolved`, `--check dj_connection --timeout 10`). Use the upstream validator for "did the install finish?"; use the skill-side script for "this surface specifically is failing."
+
 **Checks performed:**
 
 | Check | Critical? | What it verifies |
