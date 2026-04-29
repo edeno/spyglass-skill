@@ -16,7 +16,7 @@ Spyglass-managed common-ingest tables — sessions/files, intervals, electrodes/
 - [Table Relationship Summary](#table-relationship-summary)
 - [Discovery Patterns](#discovery-patterns)
 
-Tables in the `spyglass.common` schema. These are the root tables all pipelines depend on.
+Tables exported through the `spyglass.common` module across the common schemas (`common_ephys`, `common_behav`, `common_task`, `common_nwbfile`, etc. — `spyglass.common` is the Python export surface; the DataJoint schemas are split). These are the root tables all pipelines depend on.
 
 **Important**: Always verify table structure before writing queries that
 depend on specific column names. Use `code_graph.py describe` for
@@ -32,7 +32,8 @@ from spyglass.common import (
     Subject, LabMember, LabTeam, Institution, Lab,
     ElectrodeGroup, Electrode, Raw,
     DataAcquisitionDevice, CameraDevice, Probe, ProbeType,
-    RawPosition, VideoFile, DIOEvents,
+    RawPosition, PositionSource, VideoFile, DIOEvents,
+    PositionInfoParameters, IntervalPositionInfoSelection, IntervalPositionInfo,
     Task, TaskEpoch, BrainRegion, SensorData,
     FirFilterParameters,
 )
@@ -292,7 +293,7 @@ must:
    class MyAnalysis(SpyglassMixin, dj.Computed):
        definition = '''
        -> UpstreamTable
-       -> AnalysisNwbfile          # adds the analysis_nwbfile FK
+       -> AnalysisNwbfile          # FKs to the analysis-NWB-file registry; adds `analysis_file_name` to the PK
        ---
        my_object_id: varchar(80)   # match the width used by your source
        '''
