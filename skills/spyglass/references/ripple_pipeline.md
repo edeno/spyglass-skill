@@ -38,7 +38,14 @@ RippleParameters  (Lookup; use insert_default())
 PositionOutput.proj(pos_merge_id='merge_id')  (for speed filtering)
 ```
 
-Source: [`src/spyglass/ripple/v1/ripple.py`](https://github.com/LorenFrankLab/spyglass/blob/master/src/spyglass/ripple/v1/ripple.py). FK declaration `-> LFPBandV1` at ripple.py:35 — `RippleLFPSelection` takes a key from `LFPBandV1`, **not** from `LFPOutput` directly.
+Source: `src/spyglass/ripple/v1/ripple.py`. FK declaration `-> LFPBandV1` at `ripple/v1/ripple.py:35` — `RippleLFPSelection` takes a key from `LFPBandV1`, **not** from `LFPOutput` directly.
+
+**Populate prerequisites checklist** (`RippleTimesV1.populate(key)` will silently no-op if any of these are missing — see SKILL.md `key_source` and [runtime_debugging.md § key_source](runtime_debugging.md#key_source-what-drives-populate-iteration)):
+
+- `RippleLFPSelection` row for the chosen `LFPBandV1` entry — and transitively, the `LFPBandV1` row itself must already be populated for a ripple-band filter (`set_lfp_band_electrodes(...)` + `LFPBandV1.populate(...)`; see [Prerequisite](#prerequisite-populate-lfpbandv1-with-a-ripple-band-filter) below and [lfp_pipeline.md](lfp_pipeline.md)).
+- `RippleParameters` row keyed by `ripple_param_name` — call `RippleParameters().insert_default()` once, or insert a custom row.
+- `PositionOutput` merge entry referenced via `pos_merge_id` (the projected FK; resolve with `merge_get_part(...)`). The PositionOutput source must expose a `speed` or `head_speed` column — `TrodesPosV1`, `DLCPosV1`, or `CommonPos` qualify; `ImportedPose` does not.
+- `IntervalList` row for the speed-filter interval (FK-renamed to `interval_list_name` on the selection's heading).
 
 ## Prerequisite: populate LFPBandV1 with a ripple-band filter
 
@@ -72,8 +79,9 @@ Source: [`src/spyglass/ripple/v1/ripple.py`](https://github.com/LorenFrankLab/sp
   }
   ```
 
-- `RippleParameters().insert_default()` (ripple.py:144) inserts two presets: `"default"` (uses `head_speed`) and `"default_trodes"` (uses `speed`).
-- **Parameter semantics — `speed_threshold` (default 4.0 cm/s).** Movement-exclusion cutoff passed into `ripple_detection` (`ripple.py:146, 219`). Candidate ripple events are kept only when the animal's **immobility** condition holds at start AND end — i.e. `speed <= speed_threshold` at both bounds. **Direction:** raising the threshold (e.g. 4 → 10 cm/s) **loosens** the immobility filter and keeps **more** candidate events (those at speeds up to the new threshold are no longer rejected). Quality tradeoff: a higher threshold lets in more peri-movement events that may not be true sharp-wave ripples (looser immobility conditioning); to get **fewer / cleaner** SWRs, **lower** the threshold.
+- `RippleParameters().insert_default()` (`ripple/v1/ripple.py:144`) inserts two presets: `"default"` (uses `head_speed`) and `"default_trodes"` (uses `speed`).
+- **Parameter semantics — `speed_threshold` (default 4.0 cm/s).** Default declared at `ripple/v1/ripple.py:150` (`"default"`) and `:165` (`"default_trodes"`); the value flows through to the detector call at `ripple/v1/ripple.py:219-224`, and the start/end immobility logic lives in the upstream `ripple_detection/core.py:326-329`. Candidate ripple events are kept only when the animal's **immobility** condition holds at start AND end — i.e. `speed <= speed_threshold` at both bounds. **Direction:** raising the threshold (e.g. 4 → 10 cm/s) **loosens** the immobility filter and keeps **more** candidate events (those at speeds up to the new threshold are no longer rejected). Quality tradeoff: a higher threshold lets in more peri-movement events that may not be true sharp-wave ripples (looser immobility conditioning); to get **fewer / cleaner** SWRs, **lower** the threshold.
+- **Provenance / mutation rule.** Once `RippleTimesV1` rows have been populated against a given `ripple_param_name`, **do not mutate the existing `ripple_param_dict` blob in place** — downstream rows still reference that name, and editing the blob silently invalidates their provenance (the row claims to have been computed with the new params but actually used the old). Insert a *new* `ripple_param_name` for any change instead. Full pattern + recovery: [destructive_operations.md § Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template).
 
 **RippleTimesV1** (Computed) — outputs ripple start/end times.
 
