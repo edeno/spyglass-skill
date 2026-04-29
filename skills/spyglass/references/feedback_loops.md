@@ -28,7 +28,7 @@ Evidence-gathering is a feedback loop too: the question shape determines the rig
 
 **Field-level provenance is not what `path --to` answers.** `path --to` is table-to-table. For "which table *declares* this field?" use `code_graph.py describe`, source-read, or `Table.heading` — see field ownership in [datajoint_api.md](datajoint_api.md).
 
-**Static graph vs runtime use.** `code_graph.py path` and `describe` expose declared class structure: FKs, merge-part bridges, fields, and methods. They do not prove every object a `make()` body reads at runtime. When the user asks what is needed to recreate populated data, rerun an analysis, or explain why a populated result depends on a table not shown in the static FK path, pair the graph output with a source read of the relevant `make()` body. Example: LFP recreation needs `Raw` because `LFPV1.make()` fetches the raw NWB ElectricalSeries at runtime, even though `Raw` is not the direct static FK parent shown in every downstream LFPBand path.
+**Static graph vs runtime use.** `code_graph.py path` exposes declared dependency paths; `code_graph.py describe` exposes one-table structure such as fields, FKs, and methods. Neither proves every object a `make()` body reads at runtime. When the user asks what is needed to recreate populated data, rerun an analysis, or explain why a populated result depends on a table not shown in the static FK path, pair the graph output with a source read of the relevant `make()` body. Example: LFP recreation needs `Raw` because `LFPV1.make()` fetches the raw NWB ElectricalSeries at runtime, even though `Raw` is not the direct static FK parent shown in every downstream LFPBand path.
 
 ## Post-ingestion verification
 
