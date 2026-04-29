@@ -31,7 +31,7 @@ Authoritative source for these patterns is `docs/src/ForDevelopers/` in the spyg
 
 ## Schema Naming and Your Write Surface
 
-Before writing any schema file, know where your user is allowed to write — this rule is enforced by MySQL permissions (`spyglass/utils/database_settings.py`), not just convention. Each user has write access **only** on schemas whose names start with `<database_user>_`. Naming your schema anything else either fails with a MySQL permission error at `dj.schema()` call time or silently targets a lab-shared schema your role happens to allow. Both failure modes are confusing.
+Before writing any schema file, know where your user is allowed to write — this rule is enforced by MySQL permissions (`spyglass/utils/database_settings.py:49`), not just convention. For personal/lab custom schemas, assume the safe writable surface is `<database_user>_<suffix>` unless the user explicitly has `dj_user` (write on shared modules) or `dj_admin` (write on all schemas). Naming your schema anything else either fails with a MySQL permission error at `dj.schema()` call time or silently targets a lab-shared schema your role happens to allow. Both failure modes are confusing.
 
 **The rule.** Your personal schema must be `<database_user>_<suffix>`, where `<database_user>` matches `dj.config["database.user"]`. Other namespaces:
 
@@ -338,7 +338,7 @@ AnalysisNwbfile().add_nwb_object(...)                      # fails
 
 **Constraint**: a table may reference only one AnalysisNwbfile table (either `common.common_nwbfile.AnalysisNwbfile` or a custom per-user one, not both). Spyglass validates this on declaration.
 
-**Discovering what already exists**: import `AnalysisRegistry` from `spyglass.common` (re-exported from `spyglass.common.common_nwbfile`) and use the `all_classes` property — `AnalysisRegistry().all_classes` (`common_nwbfile.py:431`) returns every registered `AnalysisNwbfile` subclass across schemas as a `list[SpyglassAnalysis]`. For one specific team, `AnalysisRegistry().get_class("myteam")` (`common_nwbfile.py:396`) returns just that subclass. Use these when auditing what other teams have already authored before adding your own, or when building cross-pipeline tools that need to iterate all analysis-file tables. (The `AnalysisRegistry` class docstring lists a `get_all_classes()` method — that's stale; the actual surface is the `all_classes` property.)
+**Discovering what already exists**: import `AnalysisRegistry` from `spyglass.common` (re-exported from `spyglass.common.common_nwbfile`) and use the `all_classes` property — `AnalysisRegistry().all_classes` (`common_nwbfile.py:431`) returns every registered `AnalysisNwbfile` subclass across schemas as **initialized table objects** (each entry is the result of `_get_tbl_from_name(...)()`, not a bare class), in a `list[SpyglassAnalysis]`. For one specific team, `AnalysisRegistry().get_class("myteam")` (`common_nwbfile.py:396`) returns just that registered table. Use these when auditing what other teams have already authored before adding your own, or when building cross-pipeline tools that need to iterate all analysis-file tables. (The `AnalysisRegistry` class docstring lists a `get_all_classes()` method — that's stale; the actual surface is the `all_classes` property.)
 
 ## Merge Table Guardrail
 
@@ -354,7 +354,7 @@ When you do add one, follow the conventions in `TableTypes.md`: name it `{Pipeli
 
 ## Permissions and Roles
 
-When authoring a pipeline that other lab members will run, the table tier and `make()` body assume the runner has SELECT on every upstream schema and INSERT/ALTER on the schema your tables live in. Verify those grants before debugging "missing data" — half of `populate()` no-ops trace to a permission gap, not a logic bug.
+When authoring a pipeline that other lab members will run, distinguish *defining/altering* from *running*. Defining or altering tables (`dj.schema()` calls, `Table().alter()` migrations) needs `ALTER` on the target schema — typically only the schema owner or `dj_admin` has it. Running an already-declared pipeline (`Table.populate()`, `cleanup()`, `delete()`) needs `SELECT` on every upstream schema and `INSERT` / `UPDATE` / `DELETE` only where the pipeline actually writes or cleans up — `ALTER` is *not* required for the run path. Verify grants by what the operation does, not by a blanket list — half of `populate()` no-ops trace to a permission gap, not a logic bug, and most of those gaps are missing `SELECT` on a shared upstream rather than missing `ALTER`.
 
 ### Testing for user permissions and roles
 
