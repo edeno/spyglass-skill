@@ -133,6 +133,8 @@ LFPElectrodeGroup.create_lfp_electrode_group(
 
 **How electrode groups work.** `LFPElectrodeGroup` is the named per-session set of electrodes used to make one LFP stream. `create_lfp_electrode_group(...)` validates that every `electrode_id` exists in `Electrode` for that `nwb_file_name`, sorts and deduplicates the list, inserts the master row, then inserts one `LFPElectrodeGroup.LFPElectrode` part row per electrode. Downstream `LFPV1` populated from this group contains exactly that group's electrodes. A later `LFPBandSelection.LFPBandElectrode` can choose a *subset* of the group plus optional reference electrodes for band filtering, but it starts from the upstream LFP group — you can't introduce a new electrode at the band step that wasn't in the LFP group.
 
+**`electrode_list` means electrode IDs, not array indices.** Pass Spyglass `Electrode.electrode_id` values, *not* array column positions in the NWB `ElectricalSeries`, channel names, or any other ordinal — Spyglass translates the IDs to NWB column indices with `get_electrode_indices()` before handing them to the filtering backend (`ghostipy`, called internally; users normally do not invoke it directly). For `LFPBandSelection`, `electrode_list` is the subset of *upstream LFP* electrodes to band-filter, and `reference_electrode_list` entries must likewise be upstream LFP electrode IDs (or `-1` for "no reference"). References do *not* have to appear in the output `electrode_list` — you can reference against an electrode that you don't want band-filtered output for.
+
 ## Step 2: Filter Raw Data
 
 ```python
