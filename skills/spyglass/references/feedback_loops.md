@@ -20,7 +20,8 @@ Evidence-gathering is a feedback loop too: the question shape determines the rig
 | Question shape | Tool | Notes |
 | --- | --- | --- |
 | *"How does X relate to Y?"* — joins, FK chains, table-to-table | `code_graph.py path --to X Y` | Translate the printed path into a DataJoint restriction/join expression. FKs are directed: if X→Y returns no path, flip and try Y→X. |
-| *"What's on table X?"* — fields, tier, methods, FKs on one class | `code_graph.py describe X` (or `Table.heading` runtime) | Don't use `describe` for relationship questions: it returns one class's view, not a path between two. |
+| *"What's on table X?"* — tier, methods, source-declared FKs on one class | `code_graph.py describe X` | Don't use `describe` for relationship questions: it returns one class's view, not a path between two. |
+| *"What runtime fields / PK / secondary attrs does X actually expose?"* — heading-only questions | `Table.heading` in a Python session, or `db_graph.py describe X` | `Table.heading` doesn't carry methods, tier, or source FKs — those need `code_graph.py describe`. For runtime parent/child metadata (live DB), use `db_graph.py describe`. |
 | *"What's the runtime behavior inside `make()`?"* — which fields a `Computed.make()` actually fetches, what blob keys a parameter row's `params` dict carries | source-read the relevant `make()` body | The static graph and `describe` only show the *declared* schema, not the runtime fetches/uses. Especially relevant for blob-bearing parameter tables: `(Params & key).fetch1("params")` shows the keys; `make()` shows how they're consumed. |
 | *"What rows / values are actually in the DB?"* | `db_graph.py find-instance` (bounded lookups) or `db_graph.py path --down/--up <Class>` (runtime walks) | Only works against a live DB. Otherwise hand the user the query and ask them to run it — don't invent row values. |
 
@@ -162,7 +163,7 @@ Identity claims about Spyglass are well-handled by the existing toolchain — `T
 
 **Structural vs. runtime attribution.** Spyglass behavior splits across two layers: *structural* (declared in `Table.definition` strings — FK shapes, projections, secondary attributes) and *runtime* (executed in `make()` or other methods). Footguns living in `definition` surface when the table populates, but they don't *originate* there. Worked example: the cohort-name projection footgun in `src/spyglass/position/v1/position_dlc_selection.py:33-34` (`-> DLCCentroid.proj(dlc_si_cohort_centroid='dlc_si_cohort_selection_name', ...)`) lives in `DLCPosSelection.definition`. Calling it a "`DLCPosV1.populate` footgun" gets the layer wrong even though that's when the user notices it.
 
-**Cross-version asymmetry — eight shapes, one tool per shape.** Spyglass pipelines that ship side-by-side version directories (`spyglass/<pipeline>/<version>/`) are *partial* refactors at best and wholesale redesigns at worst. Symmetry across versions is the exception, not the rule, and the agent's most common hallucination shape is "this helper from version N exists on version N+1 too." Pipelines on master today with multiple version dirs: `spikesorting` (v0/v1), `decoding` (v0/v1), `linearization` (v0/v1), `position` (v1/v2). Single-version pipelines like `lfp`, `behavior`, `mua`, `ripple` aren't immune — their cross-version asymmetry shape is "the new pipeline lives under `<pipeline>/<version>/` while the legacy equivalent lives in `common/`" (e.g. `LFPSelection.set_lfp_electrodes` is the legacy `common/common_ephys.py` form; the v1 equivalent is `LFPElectrodeGroup.create_lfp_electrode_group`, on a different class). New pipelines added later inherit the same risk. Concrete trip-up that motivates this section: `set_group_by_electrode_group` exists on v0 `SortGroup` (`src/spyglass/spikesorting/v0/spikesorting_recording.py:94`) but **not** on v1 `SortGroup`, which exposes only `set_group_by_shank` (`src/spyglass/spikesorting/v1/recording.py:51`).
+**Cross-version asymmetry — eight shapes, one tool per shape.** Spyglass pipelines that ship side-by-side version directories (`spyglass/<pipeline>/<version>/`) are *partial* refactors at best and wholesale redesigns at worst. Symmetry across versions is the exception, not the rule, and the agent's most common hallucination shape is "this helper from version N exists on version N+1 too." Pipelines on master today with multiple version dirs: `spikesorting` (v0/v1), `decoding` (v0/v1), `linearization` (v0/v1) — verify the current set in source (`find $SPYGLASS_SRC/spyglass -maxdepth 3 -type d -name 'v[0-9]*'`) since new version dirs ship over time. Single-version pipelines like `lfp`, `behavior`, `mua`, `ripple` aren't immune — their cross-version asymmetry shape is "the new pipeline lives under `<pipeline>/<version>/` while the legacy equivalent lives in `common/`" (e.g. `LFPSelection.set_lfp_electrodes` is the legacy `common/common_ephys.py` form; the v1 equivalent is `LFPElectrodeGroup.create_lfp_electrode_group`, on a different class). New pipelines added later inherit the same risk. Concrete trip-up that motivates this section: `set_group_by_electrode_group` exists on v0 `SortGroup` (`src/spyglass/spikesorting/v0/spikesorting_recording.py:94`) but **not** on v1 `SortGroup`, which exposes only `set_group_by_shank` (`src/spyglass/spikesorting/v1/recording.py:51`).
 
 The `code_graph.py describe --file <path>` workflow covers presence/absence and structural-shape questions; signature questions still need a source read or `inspect.signature`. Substitute the actual version paths into the examples — the workflow is version-number-agnostic. For each asymmetry shape:
 
@@ -179,71 +180,28 @@ When `describe`'s output reports the same shape on both versions, that's evidenc
 
 **Why a separate loop:** the validator and `KNOWN_CLASSES` catch identity errors at gate time. They cannot catch a behavior claim that names real classes and real methods but describes their interaction wrong. The `AttributeError` you'd normally rely on doesn't fire — the call works, just not the way the answer says it does. Source verification is the only check.
 
-### Three graphs, three primitive families
+### Three graphs — authority and divergence details
 
-**Decision tree — pick the graph before picking the tool:**
+The matrix at the top of this file is the routing surface; this subsection only covers the cross-tool details that the matrix doesn't repeat: source vs runtime authority, custom-table imports, and the exit-code-`5` overlap.
 
-| Question shape | Graph | Where to look |
-| --- | --- | --- |
-| Source class / method / schema dependency (does method Y exist on class X? what FKs does X declare? what's the chain from A to B?) | **Code** | `code_graph.py` |
-| Row existence, counts, merge IDs, intersect / antijoin / join across populated tables, runtime heading vs source heading | **DB / session** | `db_graph.py` (read-only: `find-instance`, `describe`, `path`) — emits `graph: "db"` / `authority: "runtime-db"` so payloads can't be confused with source claims |
-| Custom table outside `$SPYGLASS_SRC` (lab repos, institute forks) | **DB / session** | `db_graph.py describe/find-instance/path --import <module> <module>:<Class>` — pick the subcommand by question shape: `describe` for "does it exist / what's its heading / what parents does runtime know?", `find-instance --class <module>:<Class>` for row evidence, `path --up`/`--down` for runtime adjacency. `--import` is required for any class outside `$SPYGLASS_SRC`; the explicit `module:Class` form bypasses `_index` lookup so the resolution works without a source tree of the user's repo |
-| What does method Y *do* inside its body? | (no graph) | Read the source — no tool substitutes |
-| Where is artifact / NWB object on disk? | **Disk** | `settings.py`, `AnalysisNwbfile.create(nwb_file_name)` in the user's session |
+**Source vs runtime authority.** `code_graph.py` is **source-only** — every JSON payload stamps `"graph": "code"` and `"authority": "source-only"` at the top level. `db_graph.py` stamps `"graph": "db"` and `"authority": "runtime-db"`. When the two disagree (dynamic part registration, runtime FK overrides, aliased-import resolution, schema drift between code and the live DB), **the DB is authoritative** for runtime behavior. Don't paraphrase across the boundary; cite the stamp.
+
+**Custom tables outside `$SPYGLASS_SRC`** (lab repos, institute forks, downstream packages): `code_graph.py` does not see them — its index only walks `$SPYGLASS_SRC`. Skip straight to `db_graph.py` with `--import <module> <module>:<Class>`. The explicit `module:Class` form bypasses index lookup so resolution works without a source tree of the user's repo. Pick the subcommand by question shape: `describe` for "does it exist / what's its heading / what parents does runtime know?", `find-instance --class <module>:<Class>` for row evidence, `path --up`/`--down` for runtime adjacency.
+
+**Exit-code-`5` divergence.** Same code number, different cause:
+- `code_graph.py` exit `5` = **heuristic refusal** (same-qualname collision resolved via same-package preference, only emitted under `--fail-on-heuristic`).
+- `db_graph.py` exit `5` = **DB / session error** (`error.kind` discriminates `connection` / `auth` / `schema` / `datajoint_import`).
+
+The full translation is also in `db_graph.py info --json.comparison`. On `db_graph.py` exit `5`, fall back to user-session snippets — the CLI cannot see notebook-only env vars or imports.
 
 **Try order for a runtime/DB question:**
 
-1. **For stock Spyglass classes**: `code_graph.py describe X` for source declarations (PK, FKs, body methods, mixin inheritance) — fast, no DB connection. **For custom classes outside `$SPYGLASS_SRC`** (lab repos, institute forks, external packages): skip step 1; the source index does not see them. Go straight to step 3 with `--import <module> <module>:<Class>`.
-2. `db_graph.py find-instance --class X --key f=v` for row evidence; merge masters → `--merge-master M --part P`; intersections / antijoins / per-group counts → `--intersect`/`--except`/`--join`/`--group-by-table` with `--count-distinct`.
-3. `db_graph.py describe X` when source and runtime disagree (schema drift) or for runtime-only relationships; check `describe.relationship_metadata_status.<rel>.status` before treating an empty list as "no parents/children/parts." (Pass `--import <module> <module>:<Class>` for custom classes.)
-4. `db_graph.py path --to A B` / `--up X` / `--down X` for runtime adjacency walks; check `incomplete` before concluding "no path" — empty `hops` plus `incomplete: true` means the traversal failed, not that no path exists.
-5. If `db_graph.py` returns exit `5` (DB error: connection, auth, schema, datajoint_import), fall back to user-session snippets and explain that the CLI cannot see notebook-only env vars or imports.
+1. Stock Spyglass class → `code_graph.py describe X` (no DB). Custom class → skip to step 2 with `--import`.
+2. `db_graph.py find-instance` for row evidence (merge masters: `--merge-master M --part P`).
+3. `db_graph.py describe` when source and runtime disagree, or for runtime-only relationships. Check `describe.relationship_metadata_status.<rel>.status` before treating an empty list as "no parents/children/parts."
+4. `db_graph.py path --to A B` / `--up X` / `--down X` for runtime adjacency. Check `incomplete` before concluding "no path"; empty `hops` + `incomplete: true` means traversal failed, not absence.
 
-**Exit-code-`5` divergence between the two graphs:** `code_graph.py` exit `5` means **heuristic refusal** (a same-qualname collision was resolved via same-package preference and `--fail-on-heuristic` was passed). `db_graph.py` exit `5` means **DB / session error** (with `error.kind` discriminating `connection` / `auth` / `schema` / `datajoint_import`). Same code number, different cause. The full delta is also surfaced in `db_graph.py info --json.comparison` so an LLM consuming both tools' contracts gets the explicit translation.
-
-`code_graph.py` is **source-only** — every JSON payload stamps `"graph": "code"` and `"authority": "source-only"` at the top level so an agent reading the output can't mistake it for runtime truth. When the source-graph answer disagrees with observed runtime behavior, the DB / session is authoritative.
-
-Spyglass has at least three overlapping graphs. Hallucinations come from confusing one for another, or from not traversing the relevant one fast enough to verify before answering. Match the question shape to its graph before reaching for a tool:
-
-- **Code graph** — what the source declares. Classes, methods, bases, `definition` strings, `->` declarations. Authoritative for "what does the source say?" Source-only; works without a DB connection.
-
-  ```bash
-  python skills/spyglass/scripts/code_graph.py path --to A B   # FK chain A → B (eval 81's merge-hop case)
-  python skills/spyglass/scripts/code_graph.py path --up X     # full upstream dep-trace
-  python skills/spyglass/scripts/code_graph.py path --down X   # what breaks if I modify X? (counterfactual cascade)
-  python skills/spyglass/scripts/code_graph.py describe X      # node view: tier, bases, structured PK / FK / renames, methods (incl. mixin-inherited)
-  python skills/spyglass/scripts/code_graph.py find-method Y   # which class owns method Y?
-  ```
-
-  Every output carries `file:line` plus an `evidence` source-line so the agent has a citation per claim, not a paraphrase. Add `--json` for machine-readable output (each node also carries a stable `record_id` of the form `<file>:<line>:<qualname>`, and a top-level `warnings` block lists any same-qualname collisions resolved by same-package preference). Exit codes: `0` = ok; `2` = usage error; `3` = user-supplied input ambiguous (re-run with `--from-file`/`--to-file`/`--file`); `4` = class/method not in the index; `5` = traversal needed a heuristic to disambiguate a same-qualname collision (only emitted when `--fail-on-heuristic` is passed, for validators that should refuse to guess).
-
-- **DB graph** — runtime relationship metadata DataJoint exposes from the live server. `db_graph.py path` walks it through `dj.FreeTable(dj.conn(), full_name).parents()` / `.children()`; `db_graph.py describe` reads heading + per-table `parents()` / `children()` / `parts()`. (The same primitives a notebook session reaches via `Table.parents()` / `Table.descendants()` / `dj.Diagram`.) Authoritative for runtime behavior — the code graph is usually a faithful approximation, but dynamic part registration, runtime FK overrides, aliased-import resolution, and **custom tables defined outside `$SPYGLASS_SRC`** (lab-member analysis repos, institute forks, downstream pip packages) can make them diverge. Requires a DB connection AND (for stock Spyglass classes) that the relevant Spyglass module is importable in the subprocess.
-
-  ```bash
-  # Row evidence and merge-id resolution.
-  python skills/spyglass/scripts/db_graph.py find-instance --class Session --key nwb_file_name=X
-  python skills/spyglass/scripts/db_graph.py find-instance --merge-master PositionOutput --part TrodesPosV1 --key nwb_file_name=X --key interval_list_name=Y
-
-  # Set ops + grouped counts. Routes restrictions narrowest-owner-first;
-  # zero-shared-attribute ops are refused (no Cartesian-product accidents).
-  python skills/spyglass/scripts/db_graph.py find-instance --class TrodesPosV1 --except DLCPosV1 --fields KEY
-  python skills/spyglass/scripts/db_graph.py find-instance --class Electrode --key subject_id=aj80 --group-by-table Session --count-distinct electrode_group_name
-
-  # Runtime introspection: heading + parent/child/part metadata. Inspect
-  # `relationship_metadata_status` to distinguish "confirmed empty" from
-  # "metadata unavailable / errored."
-  python skills/spyglass/scripts/db_graph.py describe Session --count
-
-  # Runtime graph traversal — sibling of code_graph.py path. Check
-  # `incomplete` before concluding "no path"; check `truncated_at_depth`
-  # before assuming a walk hit every reachable node.
-  python skills/spyglass/scripts/db_graph.py path --down Session --max-depth 3
-
-  # Custom table outside $SPYGLASS_SRC (lab-member analysis repo). --import
-  # runs the user's module's normal import side effects; --class names the
-  # specific class (--import alone does NOT register a short name).
-  python skills/spyglass/scripts/db_graph.py find-instance --import labrepo.tables --class labrepo.tables:CustomCuration --key sorting_id=Z
-  ```
+For the question-shape → tool mapping, see the matrix at the top of this file. For the full bash command surface and exit-code semantics, see `code_graph.py --help` / `db_graph.py info --json`.
 
   Every payload stamps `graph: "db"` / `authority: "runtime-db"` so an LLM cannot mistake a runtime row for a source claim. JSON envelopes are advertised in `info --json.payload_envelopes`; the planned and emitted shapes match (no envelope drift).
 
