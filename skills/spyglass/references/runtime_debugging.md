@@ -98,7 +98,17 @@ Always assume:
 
 ## `key_source`: what drives `populate()` iteration
 
-Several failure modes below (G, the empty-populate footnote in C, the upstream-validation hook in D) all turn on the same DataJoint concept, so it is worth pinning once. A `Computed`/`Imported` table's `key_source` is the relation DataJoint iterates over to decide *which keys to call `make()` on*. By default it's the join of the table's parent FKs projected to their primary keys; for many Spyglass tables it's literally the corresponding `*Selection.proj()` (e.g. `SpikeSorting.key_source = SpikeSortingSelection.proj()`). Practical consequences: (1) "I called `populate(key)` and nothing happened" almost always means `len(MyTable.key_source & key) == 0` — the upstream selection row the user thought existed does not, or the restriction misses it; check it explicitly before re-running. (2) The keys `populate()` actually iterates have only the `key_source` heading, not the full restriction the caller passed — so a non-PK field in the restriction filters but does not appear in the iterated key (see signature G). (3) When asked "why didn't this row get processed?", read `MyTable.key_source.heading` (or its source class) before debugging anything inside `make()`. (4) Subclasses can override `key_source` (typically with extra restrictions); read the class body, not assumptions about the FK pattern, when behavior surprises.
+Several failure modes below (G, the empty-populate footnote in C, the upstream-validation hook in D) all turn on the same DataJoint concept, so it is worth pinning once. A `Computed`/`Imported` table's `key_source` is the relation DataJoint iterates over to decide *which keys to call `make()` on*. By default it's the join of the table's parent FKs projected to their primary keys; for many Spyglass tables it's literally the corresponding `*Selection.proj()` (e.g. `SpikeSorting.key_source = SpikeSortingSelection.proj()`). Practical consequences:
+
+1. **"I called `populate(key)` and nothing happened"** has three distinct causes: no candidate (`key_source & key` is empty), already populated (`key_source & key` minus the table itself is empty), or reserved by another worker. Check all three explicitly:
+   ```python
+   candidates = MyTable.key_source & key
+   pending = candidates - MyTable.proj()
+   print(len(candidates), len(pending), len(MyTable & key))
+   ```
+2. `populate()` restricts against `key_source`, not the full Selection table. A field that is not in `key_source.heading` may not filter the candidate keys at all (the `SpikeSorting.populate({"sorter": ...})` trap in signature G); even when a field is usable for filtering, only the `key_source` primary-key fields are passed to `make()`.
+3. When asked "why didn't this row get processed?", read `MyTable.key_source.heading` (or its source class) before debugging anything inside `make()`.
+4. Subclasses can override `key_source` (typically with extra restrictions); read the class body, not assumptions about the FK pattern, when behavior surprises.
 
 ## Procedure
 
