@@ -124,7 +124,7 @@ Plus the staticmethod `Nwbfile.cleanup(delete_files=False)` at `src/spyglass/com
 
 - a DataJoint restriction **dict** (e.g. `{"nwb_file_name": f}`) — most common;
 - a **SQL WHERE string** (e.g. `"nwb_file_name = 'j1620210710_.nwb'"`);
-- a **table/query expression** (e.g. `PositionOutput & session_key`);
+- a **table/query expression** whose restriction is valid on the merge master or parts (e.g. `PositionOutput & {"merge_id": merge_id}`); be careful here — a query expression built with an *upstream* field like `nwb_file_name` (which isn't on the master's heading) silently no-ops at the `&` step and reduces to the whole table, exactly the silent-wrong-count footgun above;
 - or the literal default `True` — which restricts to the whole table and is what makes the classmethod-discard shape so dangerous.
 
 **Always pass the restriction as an argument:**
