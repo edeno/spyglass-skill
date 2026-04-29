@@ -73,7 +73,7 @@ merge_key = LFPOutput.merge_get_part(key).fetch1("KEY")
 lfp_df = (LFPOutput & merge_key).fetch1_dataframe()
 ```
 
-> `Raw` is a runtime-fetch handle, not a stored pipeline output: a `Raw` row carries the NWB-object pointer + sampling rate, and the actual ephys array is read from the underlying NWB file at fetch time (`(Raw & key).fetch_nwb()[0]["raw"]`). So restricting `Raw` is cheap, but materializing the signal hits disk — and "is the raw data in Spyglass?" really means "is there a `Raw` row pointing at the NWB file the user expects?" Note: static FK walks (`code_graph.py path --up LFPV1`) may not surface this dependency, since `LFPV1` consumes `Raw` inside `make()` rather than via a declared FK; when asked what is needed to recreate populated LFP data, pair `code_graph.py` output with a source read of `LFPV1.make()`.
+> `Raw` is a runtime-fetch handle, not a stored pipeline output: a `Raw` row carries the NWB-object pointer + sampling rate, and the actual ephys array is read from the underlying NWB file at fetch time (`(Raw & key).fetch_nwb()[0]["raw"]`). So restricting `Raw` is cheap, but materializing the signal hits disk — and "is the raw data in Spyglass?" really means "is there a `Raw` row pointing at the NWB file the user expects?" For LFP recreation specifically, `LFPV1.make()` reads `Raw` at runtime, so static FK walks alone understate the inputs needed to reproduce the filtered output (general principle in [feedback_loops.md → Static graph vs runtime use](feedback_loops.md#tool-routing-for-relationship-and-lookup-questions)).
 
 ## LFPOutput Merge Table
 
