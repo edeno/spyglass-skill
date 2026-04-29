@@ -27,7 +27,7 @@ Evidence-gathering is a feedback loop too: the question shape determines the rig
 
 **Translation gap to watch.** `code_graph.py path --to A B` prints a path; the user-facing answer is the corresponding DataJoint expression. Don't stop at "the script told me the path" — produce the runnable form, preserving projections, merge-master hops (`merge_restrict` / `merge_get_part`), and any FK renames the path traversed. Not every path collapses to a simple `A * B * C` natural join.
 
-**Field-level provenance is not what `path --to` answers.** `path --to` is table-to-table. For "which table *declares* this field?" use `code_graph.py describe`, source-read, or `Table.heading` — see field ownership in [datajoint_api.md](datajoint_api.md).
+**Field-level provenance is not what `path --to` answers.** `path --to` is table-to-table. For "which table *declares* this field?" use `code_graph.py describe` or a source-read; `Table.heading` only shows which table *exposes* the field at runtime (PK inheritance can put a field on a downstream heading without that table being the declaring source). See field ownership in [datajoint_api.md](datajoint_api.md).
 
 **Static graph vs runtime use.** `code_graph.py path` exposes declared dependency paths; `code_graph.py describe` exposes one-table structure such as fields, FKs, and methods. Neither proves every object a `make()` body reads at runtime. When the user asks what is needed to recreate populated data, rerun an analysis, or explain why a populated result depends on a table not shown in the static FK path, pair the graph output with a source read of the relevant `make()` body. Example: LFP recreation needs `Raw` because `LFPV1.make()` fetches the raw NWB ElectricalSeries at runtime, even though `Raw` is not the direct static FK parent shown in every downstream LFPBand path.
 
@@ -202,15 +202,3 @@ The full translation is also in `db_graph.py info --json.comparison`. On `db_gra
 4. `db_graph.py path --to A B` / `--up X` / `--down X` for runtime adjacency. Check `incomplete` before concluding "no path"; empty `hops` + `incomplete: true` means traversal failed, not absence.
 
 For the question-shape → tool mapping, see the matrix at the top of this file. For the full bash command surface and exit-code semantics, see `code_graph.py --help` / `db_graph.py info --json`.
-
-  Every payload stamps `graph: "db"` / `authority: "runtime-db"` so an LLM cannot mistake a runtime row for a source claim. JSON envelopes are advertised in `info --json.payload_envelopes`; the planned and emitted shapes match (no envelope drift).
-
-- **Disk graph** — where artifacts live on disk (raw NWBs at `$SPYGLASS_BASE_DIR/raw/`, analysis NWBs at `$SPYGLASS_BASE_DIR/analysis/<nwb_file_name>/`, kachery sandboxes, DLC project dirs). Authoritative for "where is the file?" Path conventions live in `settings.py` and `AnalysisNwbfile`.
-
-  *Out of scope for this skill — read `settings.py` directly for path conventions, or call `AnalysisNwbfile.create(nwb_file_name)` in the user's session to get a concrete path. The path-construction logic is small enough that wrapping it in a CLI would just add a layer over the same string formatting.*
-
-For version-asymmetry questions ("is method Y on this class in v0 and v1?"), `code_graph.py` is single-version-aware (it shows whichever class has the unique top-level qualname). For now, run `code_graph.py describe` against each version's class explicitly (e.g. `describe Curation --file <v0 path>` and `describe CurationV1 --file <v1 path>`) and diff the two payloads, or read the source files directly.
-
-For behavior questions ("what does method Y do inside its body?"), read the source — no script substitutes for actually reading the function.
-
-**When the code-graph answer disagrees with observed runtime behavior, the DB graph is authoritative.** Specifically: if `code_graph.py describe MyTable` reports `not_found` but the user knows `MyTable` exists in their schema, the right fallback is `db_graph.py describe --import labrepo.tables labrepo.tables:MyTable` — the runtime resolver bypasses `_index` for explicit `module:Class` forms, so a custom table outside `$SPYGLASS_SRC` (lab-member or external-package code) resolves cleanly. (Note: `describe` takes the class as a positional argument, unlike `find-instance` which takes `--class`. `path` is positional too for `--up CLASS` / `--down CLASS`, and takes two positionals for `--to FROM TO`.) Rare alternative: the class lives inside `$SPYGLASS_SRC` but under a module layout `_index.py` doesn't walk — flag and have the user verify. Don't conclude the table doesn't exist.
