@@ -4,6 +4,7 @@ Quality-critical Spyglass operations have a **validator → fix → proceed** sh
 
 ## Contents
 
+- [Tool routing for relationship and lookup questions](#tool-routing-for-relationship-and-lookup-questions)
 - [Post-ingestion verification](#post-ingestion-verification)
 - [Pre-insert check on parameter/selection tables](#pre-insert-check-on-parameterselection-tables)
 - [Pre-`populate()` upstream check](#pre-populate-upstream-check)
@@ -11,6 +12,21 @@ Quality-critical Spyglass operations have a **validator → fix → proceed** sh
 - [Post-`populate()` verification](#post-populate-verification)
 - [Inspect-before-destroy](#inspect-before-destroy)
 - [Verify behavior, trust identity](#verify-behavior-trust-identity)
+
+## Tool routing for relationship and lookup questions
+
+Evidence-gathering is a feedback loop too: the question shape determines the right tool. Picking the wrong subcommand produces under-powered answers — `describe` doesn't answer relationship questions, `path --to` doesn't answer column-ownership questions, static graphs don't answer runtime-behavior questions.
+
+| Question shape | Tool | Notes |
+| --- | --- | --- |
+| *"How does X relate to Y?"* — joins, FK chains, table-to-table | `code_graph.py path --to X Y` | Translate the printed path into a DataJoint restriction/join expression. FKs are directed: if X→Y returns no path, flip and try Y→X. |
+| *"What's on table X?"* — fields, tier, methods, FKs on one class | `code_graph.py describe X` (or `Table.heading` runtime) | Don't use `describe` for relationship questions: it returns one class's view, not a path between two. |
+| *"What's the runtime behavior inside `make()`?"* — which fields a `Computed.make()` actually fetches, what blob keys a parameter row's `params` dict carries | source-read the relevant `make()` body | The static graph and `describe` only show the *declared* schema, not the runtime fetches/uses. Especially relevant for blob-bearing parameter tables: `(Params & key).fetch1("params")` shows the keys; `make()` shows how they're consumed. |
+| *"What rows / values are actually in the DB?"* | `db_graph.py find-instance` (bounded lookups) or `db_graph.py path --down/--up <Class>` (runtime walks) | Only works against a live DB. Otherwise hand the user the query and ask them to run it — don't invent row values. |
+
+**Translation gap to watch.** `code_graph.py path --to A B` prints a path; the user-facing answer is the corresponding DataJoint restriction/join expression. Don't stop at "the script told me the path" — produce the `(A * B * C & key)` form the user can run.
+
+**Field-level provenance is not what `path --to` answers.** `path --to` is table-to-table. For "which table *declares* this field?" use `code_graph.py describe`, source-read, or `Table.heading` — see field ownership in [datajoint_api.md](datajoint_api.md).
 
 ## Post-ingestion verification
 
