@@ -49,7 +49,7 @@ See `dj_local_conf_example.json` in the repo root for a complete template. The k
 
 - **`database.host`**: MySQL server hostname. Use `localhost` for Docker, or your lab's database server address for remote
 - **`database.port`**: Default 3306
-- **`database.use_tls`**: TLS encryption for the connection. Automatically enabled for remote hosts by the installer; typically `false` for localhost
+- **`database.use_tls`**: TLS encryption for the connection. The installer auto-detects (enabled for remote hosts, disabled for localhost). The programmatic path differs: `SpyglassConfig.save_dj_config()` forwards `**kwargs` to `_generate_dj_config`, which defaults `database_use_tls=True` (`spyglass/settings.py:346`). So when calling `save_dj_config()` for a localhost setup, pass `database_use_tls=False` explicitly.
 - **`database.password`**: **Strongly prefer to omit this field.** Storing a plaintext password in a config file means every `cat`, `Read`, or screen-share exposes it — and since `dj_local_conf.json` is the first thing people inspect to debug connection errors, the exposure surface is large. Move the password to the `DJ_PASS` env var, a `~/.my.cnf` MySQL defaults file, or let DataJoint prompt interactively. If you must keep it in the file, restrict perms (`chmod 600 dj_local_conf.json`).
 - **`filepath_checksum_size_limit`**: Max file size (bytes) for checksum verification of externally stored files. Default is 1 GB
 
@@ -249,6 +249,8 @@ config.export_dir      # Export directory
 config.dlc_project_dir # DLC projects
 config.dlc_video_dir   # DLC video
 config.dlc_output_dir  # DLC output
+config.moseq_project_dir  # MoSeq projects (`settings.py:628`)
+config.moseq_video_dir    # MoSeq video
 ```
 
 All directories are created automatically on first config load if they do not exist.
@@ -309,10 +311,14 @@ assert 'raw' in dj.config['stores'] and 'analysis' in dj.config['stores']
 
 ## Data Sharing Tables (Kachery)
 
-Two tables configure kachery-cloud sharing alongside the env vars above:
+Three tables configure kachery-cloud sharing alongside the env vars above. The chain is `KacheryZone` (lookup of available zones) → `AnalysisNwbfileKacherySelection` (manual selection pairing a zone with an analysis-NWB row) → `AnalysisNwbfileKachery` (computed; FKs to the selection at `sharing/sharing_kachery.py:113`). Skip the selection in your mental model and the populate path doesn't make sense.
 
 ```python
-from spyglass.sharing import AnalysisNwbfileKachery, KacheryZone
+from spyglass.sharing import (
+    KacheryZone,
+    AnalysisNwbfileKacherySelection,
+    AnalysisNwbfileKachery,
+)
 ```
 
 **KacheryZone** (Manual)
@@ -348,14 +354,21 @@ manage access via the kachery-gateway admin page at
 ```python
 import os
 from spyglass.settings import config
-print('KACHERY_ZONE      =', os.environ.get('KACHERY_ZONE'))
-print('KACHERY_CLOUD_DIR =', os.environ.get('KACHERY_CLOUD_DIR'))
-print('spyglass config   =', config.get('kachery_cloud_dir'))
+# SpyglassConfig.load_config() stores env-var-style keys, so the
+# spyglass-side lookup uses the SAME name as the env var:
+print('KACHERY_ZONE (env)        =', os.environ.get('KACHERY_ZONE'))
+print('KACHERY_CLOUD_DIR (env)   =', os.environ.get('KACHERY_CLOUD_DIR'))
+print('KACHERY_CLOUD_DIR (config)=', config.get('KACHERY_CLOUD_DIR'))
+print('KACHERY_ZONE (config)     =', config.get('KACHERY_ZONE'))
 ```
 
-If the three don't agree, align them (set both env vars to the spyglass
-config value, OR put `kachery_dirs` in `dj.config['custom']` so a single
-source of truth covers every user), then re-run `kachery-cloud-init`.
+`KACHERY_CLOUD_DIR` (a path) and `KACHERY_ZONE` (a zone name) are
+distinct concepts — check each independently. If the directory env
+var and the spyglass-config value of `KACHERY_CLOUD_DIR` don't agree,
+align them (set the env var to the spyglass config value, OR put
+`kachery_dirs` in `dj.config['custom']` so a single source of truth
+covers every user), then re-run `kachery-cloud-init`. Do the same
+zone-vs-zone check for `KACHERY_ZONE`.
 
 VSCode-over-SSH frequently drops env vars from `~/.bashrc`; prefer
 `dj.config['custom']['kachery_dirs']` + `dj.config.save_global()` over
