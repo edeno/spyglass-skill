@@ -1,4 +1,5 @@
-# Behavior Pipeline
+<!-- pipeline-version: v1 -->
+# Moseq Pipeline
 
 Behavioral analysis: group keypoint pose data, train a motion-sequencing (MoSeq) model, then apply it to convert pose trajectories into behavioral syllables.
 
@@ -27,10 +28,15 @@ The pipeline has two phases that are always run in order: **train** a model on a
 ## Pipeline Flow
 
 ```text
-PositionOutput (merge — pose-bearing sources only: DLC, ImportedPose,
-or other parts that implement fetch_pose_dataframe + fetch_video_path;
-NOT TrodesPosV1, whose fetch_pose_dataframe raises NotImplementedError
-at position/v1/position_trodes_position.py:274) ──┐
+PositionOutput (merge — pose + video-path sources only: DLCPosV1, or
+custom/source parts that implement BOTH fetch_pose_dataframe AND
+fetch_video_path. ImportedPose has pose data but no fetch_video_path
+in current source (position/v1/imported_pose.py:18-110), so
+PoseGroup.fetch_pose_datasets / MoSeq helpers will fail on it unless
+a custom source supplies video-path support. NOT TrodesPosV1,
+CommonPos, or IntervalPositionInfo — their fetch_pose_dataframe raises
+NotImplementedError (common_position.py:543,
+position/v1/position_trodes_position.py:274)) ──┐
                                              │
                                              ▼
                     PoseGroup  ◄──── PoseGroup.Pose — one row per video/merge_id
@@ -55,7 +61,7 @@ at position/v1/position_trodes_position.py:274) ──┐
 
 - Key: `pose_group_name` only — **PoseGroup is global, not session-scoped** (`core.py:19-23`). The same `pose_group_name` cannot coexist for two different datasets; pick names that won't collide across sessions / cohorts (e.g. `subjectA_run1_v1`).
 - Part table: `PoseGroup.Pose` — one row per `PositionOutput` merge entry joined in (via `pose_merge_id`).
-- Helpers: `create_group(group_name, merge_ids, bodyparts)` inserts master + part rows in one call; `fetch_pose_datasets(key, format_for_moseq=True)` returns a **tuple `(coordinates, confidences)`** — both are arrays keyed by video, NOT a dict (`core.py:101, 164`); `fetch_video_paths(key)` returns the videos for grid-movie generation.
+- Helpers: `create_group(group_name, merge_ids, bodyparts)` inserts master + part rows in one call. **Not append-like**: if `pose_group_name` already exists, the helper warns and returns *before* inserting any part rows (`core.py:51`). To add new merge_ids to an existing group, pick a new group name or delete the existing master + parts first. `fetch_pose_datasets(key, format_for_moseq=True)` returns a **tuple `(coordinates, confidences)`** — both are arrays keyed by video, NOT a dict (`core.py:101, 164`); `fetch_video_paths(key)` returns the videos for grid-movie generation.
 
 **MoseqModelParams** (Lookup) — `moseq.py`
 
