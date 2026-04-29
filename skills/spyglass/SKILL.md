@@ -91,38 +91,42 @@ From here, open the relevant pipeline reference — each starts with a Canonical
 
 **Load one reference at a time.** Pick the most relevant row; open a second only if needed. This table routes by topic; repo paths live in each reference file.
 
-| User question is about... | Load this reference | Canonical notebook |
-| ------------------------- | ------------------- | ------------------ |
-| Installing Spyglass | [setup_install.md](references/setup_install.md) | `QUICKSTART.md` + `scripts/install.py`; `00_Setup.ipynb` fallback |
-| Configuring the database / directories / env vars | [setup_config.md](references/setup_config.md) | `00_Setup.ipynb` |
-| Setup errors and troubleshooting | [setup_troubleshooting.md](references/setup_troubleshooting.md) | — |
-| Runtime debugging — populate/make failures, fetch1 cardinality, join multiplicity, one-key-fails | [runtime_debugging.md](references/runtime_debugging.md) | — |
-| `populate_all_common` silently skipped tables | [populate_all_common_debugging.md](references/populate_all_common_debugging.md) | — |
-| Destructive operations — deletes, cleanup, inspect-before-destroy | [destructive_operations.md](references/destructive_operations.md) | — |
-| Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) | — |
-| Source-graph questions — FK chain A→B, what X declares, owner of method Y, up/downstream | [feedback_loops.md](references/feedback_loops.md) "Three graphs..." → `code_graph.py` | — |
-| Runtime / DB-graph questions — row existence, counts, merge IDs, set ops, runtime heading vs source heading, source/runtime disagreement, custom tables outside `$SPYGLASS_SRC` | [feedback_loops.md](references/feedback_loops.md) "Three graphs..." → `db_graph.py` | — |
-| Common Spyglass footguns | [common_mistakes.md](references/common_mistakes.md) | — |
-| Merge tables (`_Merge` methods) or SpyglassMixin helpers (`fetch_nwb`, `cautious_delete`, `<<`/`>>`) | [merge_methods.md](references/merge_methods.md), [spyglassmixin_methods.md](references/spyglassmixin_methods.md) | `01_Concepts.ipynb`, `04_Merge_Tables.ipynb` |
-| Group tables (`*Group`, `create_group()`) | [group_tables.md](references/group_tables.md) | — |
-| NWB ingestion / insert_sessions | [ingestion.md](references/ingestion.md) | `02_Insert_Data.ipynb` |
-| DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) | — |
-| Session, IntervalList, Electrode tables | [common_tables.md](references/common_tables.md) | — |
-| Spike sorting pipeline (current / v1) | [spikesorting_v1_pipeline.md](references/spikesorting_v1_pipeline.md) | `10_Spike_SortingV1.ipynb` |
-| Spike sorting analysis (post-pipeline: `SortedSpikesGroup`, `UnitAnnotation`, spike-time/firing-rate helpers) | [spikesorting_v1_analysis.md](references/spikesorting_v1_analysis.md) | `11_Spike_Sorting_Analysis.ipynb` |
-| Reading v0 legacy code / v0 data | [spikesorting_v0_legacy.md](references/spikesorting_v0_legacy.md) | `10_Spike_SortingV0.ipynb` |
-| Position tracking — overview / merge layer / imported pose | [position_pipeline.md](references/position_pipeline.md) | — |
-| Position tracking — Trodes (LED) | [position_trodes_v1_pipeline.md](references/position_trodes_v1_pipeline.md) | `20_Position_Trodes.ipynb` |
-| Position tracking — DeepLabCut | [position_dlc_v1_pipeline.md](references/position_dlc_v1_pipeline.md) | `21_DLC.ipynb` |
-| Linearization | [linearization_pipeline.md](references/linearization_pipeline.md) | `24_Linearization.ipynb` |
-| LFP / theta | [lfp_pipeline.md](references/lfp_pipeline.md) | `30_LFP.ipynb`, `31_Theta.ipynb` |
-| Ripple detection | [ripple_pipeline.md](references/ripple_pipeline.md) | `32_Ripple_Detection.ipynb` |
-| Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) | `40_Extracting_Clusterless_Waveform_Features.ipynb`, `41_Decoding_Clusterless.ipynb`, `42_Decoding_SortedSpikes.ipynb` |
-| MUA detection | [mua_pipeline.md](references/mua_pipeline.md) | `50_MUA_Detection.ipynb` |
-| Behavior / MoSeq | [behavior_pipeline.md](references/behavior_pipeline.md) | `60_MoSeq.ipynb` |
-| Cross-table exploration | [workflows.md](references/workflows.md) | — |
-| Export for papers / reproducible snapshots | [export.md](references/export.md) | `05_Export.ipynb` |
-| Syncing / sharing with collaborators (Kachery) | [setup_config.md](references/setup_config.md) — "Data Sharing Tables (Kachery)" | `03_Data_Sync.ipynb` |
-| Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) | — |
-| External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) | — |
-| Authoring custom tables or pipelines / extending existing ones | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) | — |
+| User question is about... | Load this reference |
+| ------------------------- | ------------------- |
+| Installing Spyglass | [setup_install.md](references/setup_install.md) |
+| Configuring the database / directories / env vars | [setup_config.md](references/setup_config.md) |
+| Setup errors and troubleshooting | [setup_troubleshooting.md](references/setup_troubleshooting.md) |
+| Runtime debugging — populate/make failures, fetch1 cardinality, join multiplicity, one-key-fails | [runtime_debugging.md](references/runtime_debugging.md) |
+| `populate_all_common` silently skipped tables | [populate_all_common_debugging.md](references/populate_all_common_debugging.md) |
+| Destructive operations — deletes, cleanup, inspect-before-destroy | [destructive_operations.md](references/destructive_operations.md) |
+| Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) |
+| Source-graph questions — FK chain A→B, what X declares, owner of method Y, up/downstream | [feedback_loops.md § Tool routing](references/feedback_loops.md#tool-routing-for-relationship-and-lookup-questions) → `code_graph.py` |
+| Runtime / DB-graph questions — row existence, counts, merge IDs, set ops, runtime heading vs source heading, source/runtime disagreement, custom tables outside `$SPYGLASS_SRC` | [feedback_loops.md § Tool routing](references/feedback_loops.md#tool-routing-for-relationship-and-lookup-questions) → `db_graph.py` |
+| Cross-version comparison or versioned class/table behavior (v0 vs v1, sorter quirks, etc.) | [feedback_loops.md § Verify behavior, trust identity](references/feedback_loops.md#verify-behavior-trust-identity) + `code_graph.py describe` / `find-method` / source-read |
+| Common Spyglass footguns | [common_mistakes.md](references/common_mistakes.md) |
+| Merge tables / `_Merge` methods (`merge_get_part`, `merge_restrict`, `merge_delete`) | [merge_methods.md](references/merge_methods.md) |
+| SpyglassMixin helpers (`fetch_nwb`, `cautious_delete`, `<<` / `>>`) | [spyglassmixin_methods.md](references/spyglassmixin_methods.md) |
+| Group tables (`*Group`, `create_group()`) | [group_tables.md](references/group_tables.md) |
+| NWB ingestion / `insert_sessions` | [ingestion.md](references/ingestion.md) |
+| DataJoint query syntax | [datajoint_api.md](references/datajoint_api.md) |
+| Common tables — `Session`, `IntervalList`, `Electrode`, `VideoFile`, `CameraDevice`, `TaskEpoch`, `BrainRegion`, `LabTeam` | [common_tables.md](references/common_tables.md) |
+| Spike sorting pipeline (current / v1) | [spikesorting_v1_pipeline.md](references/spikesorting_v1_pipeline.md) |
+| Spike sorting analysis (post-pipeline: `SortedSpikesGroup`, `UnitAnnotation`, spike-time/firing-rate helpers) | [spikesorting_v1_analysis.md](references/spikesorting_v1_analysis.md) |
+| Spike sorting v0 legacy code / v0 data | [spikesorting_v0_legacy.md](references/spikesorting_v0_legacy.md) |
+| Position tracking — overview / merge layer / imported pose | [position_pipeline.md](references/position_pipeline.md) |
+| Position tracking — Trodes (LED) | [position_trodes_v1_pipeline.md](references/position_trodes_v1_pipeline.md) |
+| Position tracking — DeepLabCut | [position_dlc_v1_pipeline.md](references/position_dlc_v1_pipeline.md) |
+| Linearization | [linearization_pipeline.md](references/linearization_pipeline.md) |
+| LFP / LFPBand / theta / ripple-band inputs | [lfp_pipeline.md](references/lfp_pipeline.md) |
+| Ripple detection | [ripple_pipeline.md](references/ripple_pipeline.md) |
+| Decoding (clusterless / sorted) | [decoding_pipeline.md](references/decoding_pipeline.md) |
+| MUA detection | [mua_pipeline.md](references/mua_pipeline.md) |
+| Behavior / MoSeq | [behavior_pipeline.md](references/behavior_pipeline.md) |
+| Cross-table exploration | [workflows.md](references/workflows.md) |
+| Export for papers / reproducible snapshots | [export.md](references/export.md) |
+| Syncing / sharing with collaborators (Kachery) | [setup_config.md § Data Sharing Tables (Kachery)](references/setup_config.md) |
+| Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) |
+| External packages (SI, PyNWB, DLC) | [dependencies.md](references/dependencies.md) |
+| Authoring custom tables or pipelines / extending existing ones | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) |
+
+If the user asks to run or follow a tutorial, the selected reference names the canonical `.ipynb`; do not open `notebooks/py_scripts/*.py` unless reviewing diffs.
