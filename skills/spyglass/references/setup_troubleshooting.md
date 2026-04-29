@@ -74,7 +74,7 @@ Or in a DataJoint config file (`~/.datajoint_config.json` if you want it global,
 
 ## Stores Mismatch Warning
 
-If `SpyglassConfig` logs a stores mismatch warning, the `raw` or `analysis` paths in `dj.config['stores']` differ from the resolved directory paths. This is auto-corrected at startup. To fix permanently, update your config file so `stores.raw.location` matches `custom.spyglass_dirs.raw`.
+If `SpyglassConfig` logs a stores mismatch warning, the `raw` or `analysis` paths in `dj.config['stores']` differ from the resolved directory paths. This is auto-corrected **in memory** at startup (the on-disk config file is *not* rewritten). To fix permanently, update your config file so `stores.raw.location` matches `custom.spyglass_dirs.raw`.
 
 ## `AccessError` / `PermissionError` on a shared installation
 
@@ -331,10 +331,13 @@ dj.set_password()                                  # prompts for old/new
 If the MySQL server is >= 8.0 and the call raises
 `QuerySyntaxError ... near 'PASSWORD('...')'`, you're on a DataJoint
 version from before <https://github.com/datajoint/datajoint-python/pull/1106>.
-Upgrade datajoint: `pip install -U datajoint`. One-off workaround:
+Upgrade datajoint: `pip install -U datajoint`. One-off workaround (substitute a placeholder; **do not paste a real password into a chat, log, terminal history, or notebook output** — read it from a prompt or env var so it never lands in transcripts):
 
 ```python
-dj.conn().query("ALTER USER user() IDENTIFIED BY 'your_new_password'")
+import getpass
+new_pw = getpass.getpass("New MySQL password: ")
+dj.conn().query("ALTER USER user() IDENTIFIED BY %s", (new_pw,))
+del new_pw
 ```
 
 ## `Access denied for CREATE command` on shared-prefix schemas
