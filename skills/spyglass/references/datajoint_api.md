@@ -1,5 +1,7 @@
 # DataJoint & Spyglass API Reference
 
+DataJoint queries and Spyglass extensions — restrictions, joins, projections, headings, the `make()` / tri-part-make body shape, Spyglass-specific operators (`<<` / `>>`, `restrict_by`), and the field-ownership rules that gate restriction-attribute correctness.
+
 ## Contents
 
 - [DataJoint Core Operators](#datajoint-core-operators)
@@ -10,8 +12,6 @@
 - [NWB File Commands](#nwb-file-commands)
 - [DataFrame Commands](#dataframe-commands)
 - [Best Practices](#best-practices)
-
-DataJoint queries and Spyglass extensions — restrictions, joins, projections, headings, the `make()` / tri-part-make body shape, Spyglass-specific operators (`<<` / `>>`, `restrict_by`), and the field-ownership rules that gate restriction-attribute correctness.
 
 ## DataJoint Core Operators
 
@@ -64,8 +64,11 @@ Session * Subject
 Rename, compute, or select specific attributes.
 
 ```python
-# Select specific columns only
-Session.proj('nwb_file_name', 'subject_id')
+# Select specific columns. Primary-key fields are ALWAYS retained
+# automatically — name only the secondary attributes you want kept.
+# Here `nwb_file_name` is the PK and stays on the result without being
+# named; `subject_id` is the secondary we explicitly keep.
+Session.proj('subject_id')
 
 # Rename attribute
 Session.proj(session_date='session_start_time')
@@ -291,7 +294,7 @@ A candidate restriction field for a downstream table falls into one of:
 2. A secondary attribute the downstream table introduced itself — declared directly, or parent PK fields introduced as secondary attributes by an `-> Other` FK below the `---` divider.
 3. Not exposed on the downstream heading at all — present only on an upstream / selection table.
 
-The third case is the canonical trap. When the field is only on a selection or upstream table, restrict *that* table first and project its primary key into the downstream restriction. The naive shape `Downstream & {"that_field": ...}` errors at query-build time when the attribute isn't in the downstream heading.
+The third case is the canonical trap. When the field is only on a selection or upstream table, restrict *that* table first and project its primary key into the downstream restriction. The naive shape `Downstream & {"that_field": ...}` is worse than an error: DataJoint **silently drops** unknown dict-restriction keys (the dict-form behavior is consistent across `db_graph.py:1898`, `common_mistakes.md`, `feedback_loops.md`, and `runtime_debugging.md`), so the restriction reduces to no-op and `Downstream & {...}` returns the full table. (SQL-string restrictions like `Downstream & "that_field = 'x'"` *do* raise, because MySQL parses the column name; the silent-drop trap is specific to dict form.) Either way, the right move is to restrict the upstream table that owns the field.
 
 ```python
 # Wrong shape: assumes the field is on `MyComputed`'s heading. When the
@@ -411,7 +414,7 @@ pose_df = (PositionOutput & merge_key).fetch_pose_dataframe()
 
 ## Best Practices
 
-1. **Always limit large queries**: Use `limit=` to avoid memory issues
+1. **Limit large queries if possible**: Use `limit=` to avoid memory issues
 2. **Use evidence before code**: For source facts, run `code_graph.py`; for runtime headings, row counts, merge IDs, or custom tables, run `db_graph.py`. For merge discovery, start with friendly keys like `nwb_file_name`, then resolve candidate `merge_id` values with merge-aware helpers.
 3. **Preview before fetching**: Use `.fetch(limit=1)` or `.merge_view()` to check structure
 4. **Check table relationships**: Use `.describe()`, `.parents()`, `.children()` when joining
