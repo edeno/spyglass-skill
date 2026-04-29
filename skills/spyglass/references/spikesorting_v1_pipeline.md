@@ -462,7 +462,17 @@ For pre-sorted spikes stored in NWB Units table.
 
 ## Recomputing Across Environments
 
-Before re-running a sort from a different env (different lab, conda setup, or PyNWB pin), check NWB-namespace compatibility: `RecordingRecomputeVersions().this_env` (from `spyglass.spikesorting.v1.recompute`) is a cached property returning the subset of recordings whose stored `nwb_deps` match the currently installed stack. A mismatch means the stored analysis file won't load cleanly — pin the env or re-run from raw, don't assume.
+Recompute is *only* for verifying or recreating existing `SpikeSortingRecording` analysis files across different software environments (lab, conda stack, PyNWB pin). It is **not** the path for changing sorter / preprocessing params — for that, see [destructive_operations.md § Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template) and the See-also link below.
+
+The recompute-specific tables (all in `spyglass.spikesorting.v1.recompute`, source: `spikesorting/v1/recompute.py:1-15, 55-103, 188-230`):
+
+- **`RecordingRecomputeVersions`** inventories NWB namespaces and dependencies (`nwb_deps`) extracted from the stored analysis file — the version-fingerprint side of the table.
+- **`RecordingRecomputeVersions().this_env`** is a cached property returning the subset of recordings whose stored `nwb_deps` match the *currently installed* PyNWB / namespace stack. It filters by NWB-namespace compatibility, **ignoring Spyglass version** — same Spyglass code can still mismatch if PyNWB / extension namespaces differ.
+- **`RecordingRecomputeSelection`** records an attempted recompute environment by FK'ing `UserEnvironment` (the stored env identity), pairing it with the recording row to recompute.
+- **`RecordingRecompute`** (computed) writes a temporary recomputed analysis file and compares it to the original — by hash and by content diff. Mismatches are **logged**, not silently accepted, so a "succeeded" populate row plus mismatch logs means the recompute didn't reproduce.
+- A mismatch means the stored analysis file won't load cleanly under your current stack. Either pin the env that produced it or re-run from raw — don't assume the file is portable.
+
+If the goal is "rerun sort with different params," skip these tables entirely and follow the cascade-template path (new selection row → repopulate downstream) instead.
 
 ## See also
 
