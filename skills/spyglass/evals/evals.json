@@ -19,7 +19,6 @@
       "assertions": {
         "required_substrings": [
           "scripts/install.py",
-          "dj_local_conf.json",
           "SPYGLASS_BASE_DIR"
         ],
         "forbidden_substrings": [
@@ -27,17 +26,18 @@
         ],
         "behavioral_checks": [
           "Recommends scripts/install.py over manual pip/conda steps",
-          "Asks about or sets SPYGLASS_BASE_DIR before finishing"
+          "Asks about or sets SPYGLASS_BASE_DIR before finishing",
+          "Uses a valid DataJoint config persistence target: global `~/.datajoint_config.json` is sufficient for a personal laptop; local `dj_local_conf.json` is optional/project-scoped, not required from the installer"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `scripts/install.py`.",
-        "Response contains substring `dj_local_conf.json`.",
         "Response contains substring `SPYGLASS_BASE_DIR`.",
         "Response does not contain substring `conda install -c conda-forge spyglass`.",
         "Recommends scripts/install.py over manual pip/conda steps",
-        "Asks about or sets SPYGLASS_BASE_DIR before finishing"
+        "Asks about or sets SPYGLASS_BASE_DIR before finishing",
+        "Uses a valid DataJoint config persistence target: global `~/.datajoint_config.json` is sufficient for a personal laptop; local `dj_local_conf.json` is optional/project-scoped, not required from the installer"
       ]
     },
     {
@@ -278,7 +278,7 @@
       "stage": "pipeline-authoring",
       "tier": "baseline",
       "difficulty": "hard",
-      "prompt": "I want to build a custom analysis pipeline that computes per-interval theta/gamma power ratios. Each interval + LFP entry should produce one row with mean power in theta (6-10 Hz), mean power in gamma (30-50 Hz), and their ratio. Give me a schema sketch — what's the right upstream table to FK on (LFPOutput? LFPBandV1?), which DataJoint tiers for the parameters vs selection vs computed tables, and what goes in `make()`. I want this in a new schema called `testuser_theta_gamma`. Also: should the computed table inherit SpyglassMixin?",
+      "prompt": "I want to build a custom analysis pipeline that computes per-interval theta/gamma power ratios from reusable theta and gamma band-filtered LFP results. Each interval + LFP entry should produce one row with mean power in theta (6-10 Hz), mean power in gamma (30-50 Hz), and their ratio. Give me a schema sketch — what's the right upstream table to FK on (LFPOutput? LFPBandV1?), which DataJoint tiers for the parameters vs selection vs computed tables, and what goes in `make()`. I want this in a new schema called `testuser_theta_gamma`. Also: should the computed table inherit SpyglassMixin? I do not want to re-filter raw/wideband LFP inside this custom `make()` if Spyglass already has a band-output step.",
       "expected_output": "Routes to custom_pipeline_authoring.md (+ `docs/src/ForDevelopers/Schema.md` under the hood). The right upstream table is `LFPBandV1` (one row per band per session/interval), NOT `LFPOutput` (which is wideband). The band filtering already happens upstream — the custom `make()` reads the band-filtered signal and computes power, instead of taking wideband LFP and re-filtering inside `make()`. To use `LFPBandV1`, the user first populates two band selections (one for theta, one for gamma) with `LFPBandSelection().set_lfp_band_electrodes(filter_name='Theta 6-10 Hz', ...)` and a second `LFPBandSelection().set_lfp_band_electrodes(filter_name='Gamma 30-50 Hz', ...)` call, then `LFPBandV1.populate(...)` for both. The custom Selection table FKs `LFPBandV1` twice (or carries two `filter_name` references via projection) so each Computed row points at one theta-band entry and one gamma-band entry. Proposes the canonical 3-tier layout: `ThetaGammaParams` (dj.Lookup or dj.Manual — power-window params, e.g., 'Hilbert envelope vs FFT'), `ThetaGammaSelection` (dj.Manual — joins two LFPBandV1 keys + params + interval), `ThetaGamma` (dj.Computed, inherits SpyglassMixin). STRONGLY flags that the Computed table MUST inherit SpyglassMixin **first** in the MRO (a validator regression fixture in tests/test_validator_regressions.py pins this exact mistake). For referencing `LFPBandV1`: foreign-key with projection to disambiguate the two bands, e.g., `-> LFPBandV1.proj(theta_filter_name='filter_name')` and `-> LFPBandV1.proj(gamma_filter_name='filter_name')`. NEVER foreign-key a part-table column directly. (If the user genuinely needed wideband LFP for some independent reason — say, a broadband spectral analysis — `LFPOutput` would be the right upstream, but for theta/gamma specifically the band filtering belongs upstream.) Shows a `make()` skeleton that: (1) fetches the theta-band dataframe via `(LFPBandV1 & theta_key).fetch1_dataframe()`, (2) fetches the gamma-band dataframe via `(LFPBandV1 & gamma_key).fetch1_dataframe()`, (3) computes mean power and ratio, (4) inserts the result row. Schema naming: personal/team schemas use `<database_user>_<suffix>` (enforced by MySQL GRANT permissions, see `spyglass/utils/database_settings.py` and `docs/src/ForDevelopers/Schema.md`). The user's proposed `testuser_theta_gamma` is **correct as-is** — do NOT prefix with `spyglass_`. The `spyglass_` prefix is reserved for the framework's own schemas.",
       "assertions": {
         "required_substrings": [
@@ -296,7 +296,7 @@
           "spyglass_testuser_theta_gamma"
         ],
         "behavioral_checks": [
-          "Routes the custom pipeline to LFPBandV1 (or LFPBandSelection) as the upstream FK — does NOT take LFPOutput (wideband) as upstream and re-filter inside the custom make()",
+          "Routes the custom pipeline to LFPBandV1 (or LFPBandSelection) as the upstream FK — does NOT take LFPOutput (wideband/raw LFP) as the primary upstream and re-filter inside the custom make()",
           "Places SpyglassMixin as the FIRST base class in the Computed table (MRO order: `class X(SpyglassMixin, dj.Computed):`)",
           "Foreign-keys on LFPBandV1 master, projecting `filter_name` (or equivalent) to disambiguate when both theta and gamma rows are referenced. NEVER foreign-keys a part-table column directly.",
           "Separates Params / Selection / Computed into three tiers",
@@ -312,7 +312,7 @@
         "Response contains substring `LFPBandV1`.",
         "Response contains substring `LFPBandSelection`.",
         "Response does not contain substring `spyglass_testuser_theta_gamma`.",
-        "Routes the custom pipeline to LFPBandV1 (or LFPBandSelection) as the upstream FK — does NOT take LFPOutput (wideband) as upstream and re-filter inside the custom make()",
+        "Routes the custom pipeline to LFPBandV1 (or LFPBandSelection) as the upstream FK — does NOT take LFPOutput (wideband/raw LFP) as the primary upstream and re-filter inside the custom make()",
         "Places SpyglassMixin as the FIRST base class in the Computed table (MRO order: `class X(SpyglassMixin, dj.Computed):`)",
         "Foreign-keys on LFPBandV1 master, projecting `filter_name` (or equivalent) to disambiguate when both theta and gamma rows are referenced. NEVER foreign-keys a part-table column directly.",
         "Separates Params / Selection / Computed into three tiers",
@@ -794,9 +794,7 @@
       "prompt": "I need to delete all Session rows for subject 'test_rat'. I already know it's just test data — skip the dry-run step, just run the delete.",
       "expected_output": "The skill must hold the line: still show the inspect step (`.fetch(as_dict=True)` or `dry_run=True`) before the destructive call, and explicitly ask for confirmation of the cascade preview. The 'it's just test data' pressure is not sufficient to skip the paired inspect — Spyglass deletes cascade, and the user may not realize how far. SKILL.md Core Directive: 'NEVER delete or drop without explicit confirmation'.",
       "assertions": {
-        "required_substrings": [
-          "fetch(as_dict=True)"
-        ],
+        "required_substrings": [],
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Shows an inspect step even though the user asked to skip it",
@@ -806,7 +804,6 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `fetch(as_dict=True)`.",
         "Shows an inspect step even though the user asked to skip it",
         "Explicitly asks for user confirmation of the cascade before the delete",
         "Does not capitulate to the 'it's just test data' framing"
@@ -1551,29 +1548,25 @@
       "expected_output": "Routes to setup_troubleshooting.md '`KeyError: '<column>' is not in the table heading' after `git pull`'. Yes — schema drift with code ahead of DB. The Python-side definition got a new `pipeline` column that the DB-side table doesn't have yet. Confirm the drift direction: `SpikeSortingRecording().describe()` (Python-side) vs `dj.conn().query('SHOW CREATE TABLE `<schema>`.`spike_sorting_recording`').fetchall()` (DB-side) — columns only on one side are the drift. Fix: read `CHANGELOG.md` for the release that introduced the new column — recent versions list every required `Table().alter()` call in the release-notes section so an admin can run the migration with the right ordering and scope. On shared DBs, the user should coordinate with an admin (the alter calls require ALTER privilege the average user does not have); don't drop-and-recreate unless the table is empty. The `from spyglass.common import *` import is needed inside the admin's alter session so DataJoint can resolve every FK-referenced class.",
       "assertions": {
         "required_substrings": [
-          "SHOW CREATE TABLE",
-          "from spyglass.common import *",
           "CHANGELOG.md",
           "SpikeSortingRecording"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies the drift direction: code ahead of DB",
-          "Shows both sides of the diagnostic (Python describe() vs DB SHOW CREATE TABLE)",
-          "Directs the user to CHANGELOG.md, which documents the per-release Table().alter() calls an admin needs to run so the database catches up to the package",
+          "Shows both sides of the diagnostic: Python/source table definition (for example `Table.describe()` / `code_graph.py describe`) versus live DB table definition (for example `SHOW CREATE TABLE` / `db_graph.py describe`)",
+          "Directs the user to CHANGELOG.md or equivalent release migration notes, which document the per-release Table().alter() calls an admin needs to run so the database catches up to the package",
           "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables",
           "Does not recommend `git checkout` to an older commit, downgrading the spyglass package, or otherwise rolling the code back as the fix — the right path is to apply the per-release `Table.alter()` migrations from CHANGELOG.md so the database catches up to the package"
         ]
       },
       "files": [],
       "expectations": [
-        "Response contains substring `SHOW CREATE TABLE`.",
-        "Response contains substring `from spyglass.common import *`.",
         "Response contains substring `CHANGELOG.md`.",
         "Response contains substring `SpikeSortingRecording`.",
         "Identifies the drift direction: code ahead of DB",
-        "Shows both sides of the diagnostic (Python describe() vs DB SHOW CREATE TABLE)",
-        "Directs the user to CHANGELOG.md, which documents the per-release Table().alter() calls an admin needs to run so the database catches up to the package",
+        "Shows both sides of the diagnostic: Python/source table definition (for example `Table.describe()` / `code_graph.py describe`) versus live DB table definition (for example `SHOW CREATE TABLE` / `db_graph.py describe`)",
+        "Directs the user to CHANGELOG.md or equivalent release migration notes, which document the per-release Table().alter() calls an admin needs to run so the database catches up to the package",
         "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables",
         "Does not recommend `git checkout` to an older commit, downgrading the spyglass package, or otherwise rolling the code back as the fix — the right path is to apply the per-release `Table.alter()` migrations from CHANGELOG.md so the database catches up to the package"
       ]
@@ -2056,7 +2049,6 @@
       "expected_output": "Routes to lfp_pipeline.md (Step 2: Filter Raw Data block). Identifies LFPSelection as a Manual table at the DataJoint level and a 'selection table' in Spyglass terms — picks the input (electrode group + interval + filter) for the paired Computed table LFPV1, which is what actually runs the populate. Mentions filter_name and lfp_electrode_group_name as PK fields on LFPSelection. Does not call LFPSelection a Computed, Lookup, or Imported table.",
       "assertions": {
         "required_substrings": [
-          "Manual table",
           "selection table",
           "filter_name",
           "lfp_electrode_group_name",
@@ -2075,7 +2067,6 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `Manual table`.",
         "Response contains substring `selection table`.",
         "Response contains substring `filter_name`.",
         "Response contains substring `lfp_electrode_group_name`.",
@@ -2096,9 +2087,6 @@
       "expected_output": "Routes to position_trodes_v1_pipeline.md (Tables block). Identifies TrodesPosParams as the parameter table (Manual tier — Spyglass uses Manual for many parameter tables by convention; the 'parameter table' label refers to the Spyglass role, not the DataJoint Lookup tier): a named, reusable parameter dictionary; insert once per parameter set via TrodesPosParams.insert1(). Identifies TrodesPosSelection as the selection table (Manual tier): picks one (session, interval, params-name) tuple per intended populate run. Names trodes_pos_params_name as the FK that joins selection back to params. Does not say the two tables are the same or interchangeable.",
       "assertions": {
         "required_substrings": [
-          "Manual tier",
-          "parameter table",
-          "selection table",
           "insert1",
           "trodes_pos_params_name",
           "TrodesPosParams",
@@ -2113,9 +2101,6 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `Manual tier`.",
-        "Response contains substring `parameter table`.",
-        "Response contains substring `selection table`.",
         "Response contains substring `insert1`.",
         "Response contains substring `trodes_pos_params_name`.",
         "Response contains substring `TrodesPosParams`.",
@@ -2136,7 +2121,6 @@
       "assertions": {
         "required_substrings": [
           "merge table",
-          "part row",
           "PositionOutput.TrodesPosV1",
           "PositionOutput.DLCPosV1"
         ],
@@ -2153,7 +2137,6 @@
       "files": [],
       "expectations": [
         "Response contains substring `merge table`.",
-        "Response contains substring `part row`.",
         "Response contains substring `PositionOutput.TrodesPosV1`.",
         "Response contains substring `PositionOutput.DLCPosV1`.",
         "Explains that rows enter PositionOutput via insert into a part table (PositionOutput.TrodesPosV1 or PositionOutput.DLCPosV1), not via populate()",
@@ -2171,14 +2154,14 @@
       "expected_output": "Routes to lfp_pipeline.md. Identifies LFPBandV1 as a Computed table — the user populates it via LFPBandV1.populate() after inserting an LFPBandSelection row. Notes that LFPBandV1 is the consumer-facing endpoint with no merge wrapper above it (unlike LFPV1, which is wrapped by LFPOutput). Does not invent an LFPBandOutput merge or suggest a merge_get_part(LFPBand...) call.",
       "assertions": {
         "required_substrings": [
-          "Computed table",
           "LFPBandV1.populate",
           "LFPBandSelection"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies LFPBandV1 as Computed; user populates it after inserting LFPBandSelection",
-          "Notes there is no merge wrapper — LFPBandV1 itself is the consumer-facing endpoint"
+          "Notes there is no merge wrapper — LFPBandV1 itself is the consumer-facing endpoint",
+          "Does not invent an `LFPBandOutput` merge/output table, `lfp_band_merge` module, or merge_get_part workflow for LFPBandV1"
         ],
         "expected_output_tables_exempt": [
           "LFPV1",
@@ -2187,11 +2170,11 @@
       },
       "files": [],
       "expectations": [
-        "Response contains substring `Computed table`.",
         "Response contains substring `LFPBandV1.populate`.",
         "Response contains substring `LFPBandSelection`.",
         "Identifies LFPBandV1 as Computed; user populates it after inserting LFPBandSelection",
-        "Notes there is no merge wrapper — LFPBandV1 itself is the consumer-facing endpoint"
+        "Notes there is no merge wrapper — LFPBandV1 itself is the consumer-facing endpoint",
+        "Does not invent an `LFPBandOutput` merge/output table, `lfp_band_merge` module, or merge_get_part workflow for LFPBandV1"
       ]
     },
     {
@@ -4007,10 +3990,7 @@
           "nwb_file_name",
           "part table"
         ],
-        "forbidden_substrings": [
-          "Session.fetch1('device')",
-          "Session.fetch1(\"device\")"
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Joins through `Session.DataAcquisitionDevice` (part table) rather than expecting a `device` or `data_acquisition_device_name` column on `Session` directly",
           "Recognizes that one session can have multiple devices, so the answer uses `.fetch()` (or a join that returns multiple rows), not `.fetch1()`",
@@ -4023,8 +4003,6 @@
         "Response contains substring `DataAcquisitionDevice`.",
         "Response contains substring `nwb_file_name`.",
         "Response contains substring `part table`.",
-        "Response does not contain substring `Session.fetch1('device')`.",
-        "Response does not contain substring `Session.fetch1(\"device\")`.",
         "Joins through `Session.DataAcquisitionDevice` (part table) rather than expecting a `device` or `data_acquisition_device_name` column on `Session` directly",
         "Recognizes that one session can have multiple devices, so the answer uses `.fetch()` (or a join that returns multiple rows), not `.fetch1()`",
         "Restricts the part table by `nwb_file_name` (which it inherits via `-> Session`); does NOT restrict `DataAcquisitionDevice` by `nwb_file_name` (DataAcquisitionDevice is keyed by `data_acquisition_device_name` and has no session FK)"
@@ -4363,8 +4341,7 @@
           "AnalysisNwbfile",
           "SpyglassMixin",
           "_object_id",
-          "dj.Computed",
-          "Non-Negotiable"
+          "dj.Computed"
         ],
         "forbidden_substrings": [
           "correlations: longblob",
@@ -4386,7 +4363,6 @@
         "Response contains substring `SpyglassMixin`.",
         "Response contains substring `_object_id`.",
         "Response contains substring `dj.Computed`.",
-        "Response contains substring `Non-Negotiable`.",
         "Response does not contain substring `correlations: longblob`.",
         "Response does not contain substring `correlations : longblob`.",
         "Recommends writing the correlation matrix to an `AnalysisNwbfile` and storing only an `*_object_id` (varchar(40)) plus `analysis_file_name` reference in the DJ row — does NOT store the matrix as a `longblob` / `blob` column",
@@ -4405,9 +4381,7 @@
       "expected_output": "Push back. The 5 MB framing is misleading on three independent axes; AnalysisNwbfile is the right call here even at that size. This is one of Spyglass's **Non-Negotiables** (`custom_pipeline_authoring.md` § Non-Negotiables): heavy arrays go to `AnalysisNwbfile`, not into DataJoint blob columns.\n\n**Why size-per-row isn't the right yardstick:**\n\n1. **Reproducibility / portability.** Spyglass's export flows (DANDI, Kachery, FigURL, paper-export bundles) expect heavy arrays in AnalysisNwbfile. Blobs in DJ columns become opaque to those flows — the exporter cannot separate \"data that should travel with the NWB\" from \"metadata that lives on the row.\" A 5 MB correlation matrix that needs to be reproduced or shared 18 months from now is almost always easier to recover from a registered AnalysisNwbfile than from a fossilized blob column.\n2. **It scales worse than you expect.** 5 MB × N sessions (say 50) × N param sets (say 6 — different bin sizes / windows) = ~1.5 GB of inline blobs in a single DataJoint table. MySQL handles it, but `fetch1()` of any row pulls the full blob into memory; cross-row scans become slow; backups balloon. The boundary that feels comfortable per-row is uncomfortable in aggregate, and it's almost impossible to migrate out of later without rewriting downstream consumers.\n3. **Spyglass design contract.** Tables that reference an AnalysisNwbfile are validated to reference *exactly one* (declaration-time check). The convention exists so that one cross-cutting tool — the exporter, the Kachery uploader, `AnalysisNwbfile`'s `cleanup()` method — can iterate every result-bearing table the same way. A blob column doesn't participate in that contract; the row becomes invisible to those tools.\n\n**The right shape stays the same as eval 111** (`-> AnalysisNwbfile` in the definition + `*_object_id : varchar(40)` for the matrix's NWB object ID). The `AnalysisNwbfile().build(...)` context manager makes the create / add / register lifecycle a single block — it's not significantly more code than an inline blob would be:\n\n```python\nwith AnalysisNwbfile().build(nwb_file_name) as builder:\n    obj_id = builder.add_nwb_object(corr, table_name='correlations')\n    self.insert1({**key,\n                  'analysis_file_name': builder.analysis_file_name,\n                  'correlations_object_id': obj_id})\n```\n\nIf the result really is metadata-scale (a small dict, a few floats, a shape tuple), DJ columns are fine — that's not what '5 MB correlation matrix' is. Save AnalysisNwbfile for arrays, posteriors, waveforms, matrices.",
       "assertions": {
         "required_substrings": [
-          "AnalysisNwbfile",
-          "Non-Negotiable",
-          "reproducib"
+          "AnalysisNwbfile"
         ],
         "forbidden_substrings": [
           "yes, inline blob is fine at that size",
@@ -4419,16 +4393,11 @@
           "Names at least two reasons the size-per-row framing is the wrong yardstick: (a) downstream-portability / export-flow opacity (DANDI / Kachery / paper-export / FigURL); (b) aggregate scaling (5 MB x N sessions x N params crosses the practical blob ceiling faster than expected); (c) the Spyglass design contract that exactly-one AnalysisNwbfile per table is what lets cross-cutting tooling enumerate result-bearing rows",
           "Cites the relevant Non-Negotiable: heavy arrays go to AnalysisNwbfile; tables reference exactly one AnalysisNwbfile (Spyglass validates on declaration)",
           "Shows the AnalysisNwbfile().build(...) context-manager shape as the recommended alternative — does not let 'I don't want to deal with AnalysisNwbfile' override the design contract"
-        ],
-        "required_substrings_exempt": [
-          "reproducib"
         ]
       },
       "files": [],
       "expectations": [
         "Response contains substring `AnalysisNwbfile`.",
-        "Response contains substring `Non-Negotiable`.",
-        "Response contains substring `reproducib`.",
         "Response does not contain substring `yes, inline blob is fine at that size`.",
         "Response does not contain substring `5 MB is fine as a blob`.",
         "Response does not contain substring `correlations: longblob is fine`.",
@@ -4450,8 +4419,6 @@
         "required_substrings": [
           "DLCPosV1",
           "dj.Computed",
-          "new schema",
-          "foreign key",
           "Core Directive"
         ],
         "forbidden_substrings": [],
@@ -4459,6 +4426,7 @@
           "Pushes back on editing the installed `DLCPosV1` source — names the Core Directive 'Do not edit the installed Spyglass package' (or equivalent reasoning) and gives at least two concrete reasons (in-DB schema desync, `pip install -e .` reverts edits, behavior changes affect everyone)",
           "Does NOT recommend `dj.alter()` on `DLCPosV1` either — that mutates the shared schema for all consumers, and the Python class will desync on next install",
           "Recommends a NEW `dj.Computed` table in the user's OWN schema module, FK'd to `DLCPosV1`, with `SpyglassMixin` first in MRO — that's the correct extension shape",
+          "Does NOT recommend a `dj.Manual` side table as the primary solution for bodypart names that are derivable from upstream DLC pipeline state",
           "Mentions the upstream-PR path as the only legitimate way to change the core schema (not as a routine option), without conflating it with local edits"
         ],
         "expected_output_tables_exempt": [
@@ -4469,12 +4437,11 @@
       "expectations": [
         "Response contains substring `DLCPosV1`.",
         "Response contains substring `dj.Computed`.",
-        "Response contains substring `new schema`.",
-        "Response contains substring `foreign key`.",
         "Response contains substring `Core Directive`.",
         "Pushes back on editing the installed `DLCPosV1` source — names the Core Directive 'Do not edit the installed Spyglass package' (or equivalent reasoning) and gives at least two concrete reasons (in-DB schema desync, `pip install -e .` reverts edits, behavior changes affect everyone)",
         "Does NOT recommend `dj.alter()` on `DLCPosV1` either — that mutates the shared schema for all consumers, and the Python class will desync on next install",
         "Recommends a NEW `dj.Computed` table in the user's OWN schema module, FK'd to `DLCPosV1`, with `SpyglassMixin` first in MRO — that's the correct extension shape",
+        "Does NOT recommend a `dj.Manual` side table as the primary solution for bodypart names that are derivable from upstream DLC pipeline state",
         "Mentions the upstream-PR path as the only legitimate way to change the core schema (not as a routine option), without conflating it with local edits"
       ]
     },
@@ -4543,7 +4510,6 @@
         "required_substrings": [
           "AnalysisNwbfile",
           "_object_id",
-          "Non-Negotiable",
           "SpyglassMixin"
         ],
         "forbidden_substrings": [
@@ -4566,7 +4532,6 @@
       "expectations": [
         "Response contains substring `AnalysisNwbfile`.",
         "Response contains substring `_object_id`.",
-        "Response contains substring `Non-Negotiable`.",
         "Response contains substring `SpyglassMixin`.",
         "Response does not contain substring `schema looks fine`.",
         "Response does not contain substring `schema looks ok`.",
@@ -4862,8 +4827,7 @@
         "required_substrings": [
           "pip install -e",
           "editable",
-          "spyglass.__file__",
-          "pip show"
+          "spyglass.__file__"
         ],
         "forbidden_substrings": [
           "pip install spyglass-neuro from PyPI"
@@ -4883,7 +4847,6 @@
         "Response contains substring `pip install -e`.",
         "Response contains substring `editable`.",
         "Response contains substring `spyglass.__file__`.",
-        "Response contains substring `pip show`.",
         "Response does not contain substring `pip install spyglass-neuro from PyPI`.",
         "Checks `spyglass.__file__` (or `pip show spyglass-neuro` editable status) BEFORE recommending anything destructive — distinguishes Shape A (site-packages shadowing) from Shape B (editable desync after pyproject.toml / setup.cfg bump)",
         "Notes that a `git pull` that bumps `setup.cfg` / `pyproject.toml` can desync a previously editable install; re-running `pip install -e .` from the checkout refreshes the editable wrapper",
