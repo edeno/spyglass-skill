@@ -54,9 +54,14 @@ from spyglass.position.v1 import (
 )
 ```
 
-(All four `*Selection` classes are exported from
-`spyglass.position.v1`'s `__init__.py` — they appear in the pipeline
-flow above and are required by their respective `populate` calls.)
+(The downstream `*Selection` classes shown above are exported from
+`spyglass.position.v1`'s `__init__.py` — `DLCModelSelection`,
+`DLCPoseEstimationSelection`, `DLCSmoothInterpSelection`,
+`DLCSmoothInterpCohortSelection`, `DLCCentroidSelection`,
+`DLCOrientationSelection`, and `DLCPosSelection`, plus training /
+video selections — and are required by their respective `populate`
+calls. Verify the full export list against
+`spyglass/position/v1/__init__.py:20, :43, :50` on your install.)
 
 ## Key DLC Invariants
 
@@ -85,10 +90,10 @@ convert_epoch_interval_name_to_position_interval_name(
 )
 ```
 
-**DLC-only sessions** (no Trodes-derived position). The converter only accepts interval names that pass `PositionSource._is_valid_name()` (matches `pos N valid times`, `common/common_behav.py:955`); when none are present it inserts a *null* map row rather than raising (`common/common_behav.py:886`). Two paths exist:
+**DLC-only sessions** (no Trodes-derived position). The converter only accepts interval names that pass `PositionSource._is_valid_name()` (matches `pos N valid times`, `common/common_behav.py:955`); when none are present it inserts a *null* map row and the converter helper returns `[]` rather than `None` (`common/common_behav.py:991`) — diagnostic checks should test for an empty list, not `None`. Two paths exist:
 
 - **Raw position is available for the session.** Populate `PositionSource` / `RawPosition` first so the `pos N valid times` intervals exist, then the mapper can resolve them.
-- **Genuinely DLC-only.** `DLCPoseEstimation.make()` already falls back to the source video's timestamps when the mapper returns no position-interval name (`position/v1/position_dlc_pose_estimation.py:264`) — you don't need to invent a `RawPosition` row to make pose estimation run. Failures further downstream (`DLCCentroid`, `DLCOrientation`) only appear if those selections were inserted and *those* steps require a position interval; configure the DLC pipeline to stop after `DLCPoseEstimation` if your session has no Trodes-side position.
+- **Genuinely DLC-only.** `DLCPoseEstimation.make()` already falls back to the source video's timestamps when the mapper returns no position-interval name (`position/v1/position_dlc_pose_estimation.py:264`) — you don't need to invent a `RawPosition` row to make pose estimation run. `DLCCentroid` and `DLCOrientation` use `RawPosition` only if available and otherwise fall back to empty metadata (`position/v1/position_dlc_centroid.py:311`, `position/v1/position_dlc_orient.py:188`), so they don't strictly require a Trodes position interval either. If a downstream stage fails on a DLC-only session, verify whether the failure is actually missing bodypart / cohort data, parameter mismatch, or metadata lookup — not just absent Trodes position — before assuming you have to inject a fake `RawPosition` row.
 
 ## Gotcha — DLC env vars must be set in the kernel
 
@@ -135,7 +140,7 @@ Sanity check if the training keeps stopping early even with a proper bool: look 
 | `DLCCentroidParams` | `dlc_centroid_params_name` |
 | `DLCOrientationParams` | `dlc_orientation_params_name` |
 
-Use `TableName.describe()` to see exact parameter fields for each.
+These tables store their tunables in a `params: longblob` column, so `TableName.describe()` only shows the outer `params` column — not the keys *inside* the blob. To inspect the actual blob-internal keys, fetch a populated row (`fetch1('params')`) or read the table's `insert_default()` source for the shipped defaults (e.g. `DLCSmoothInterpParams` defines `params: longblob` at `position/v1/position_dlc_position.py:55` and the default keys live in `insert_default` at `:67`). For top-level table fields, `describe()` is fine; for blob-internal parameter keys, treat it as insufficient.
 
 **Validating a proposed params dict before insert.** `spyglass.position.v1.dlc_utils` exposes `validate_option`, `validate_list`, and `validate_smooth_params` — the same validators the DLC pipeline uses internally. Call them before inserting a custom Params row to catch bad values at author time instead of `populate()` time. These are also the idiomatic validators to reuse when authoring a new params table for a custom pipeline downstream of DLC.
 
