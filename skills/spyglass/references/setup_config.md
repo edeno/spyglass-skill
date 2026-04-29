@@ -340,7 +340,7 @@ Use `KACHERY_ZONE` / `KACHERY_CLOUD_EPHEMERAL` env vars above to pick the zone a
 
 **Common kachery failure modes + diagnostics.**
 
-**`KACHERY_CLOUD_DIR` mismatch.** By default, Spyglass sets `KACHERY_CLOUD_DIR` to `${SPYGLASS_BASE_DIR}/.kachery-cloud` on import (note the hyphen — see `directory_schema.json` `kachery.cloud: ".kachery-cloud"`). The default can be overridden by exporting `KACHERY_CLOUD_DIR` before import or by setting `dj.config['custom']['kachery_dirs']`.
+**`KACHERY_CLOUD_DIR` mismatch.** By default, Spyglass sets `KACHERY_CLOUD_DIR` to `${SPYGLASS_BASE_DIR}/.kachery-cloud` on import (note the hyphen — see `directory_schema.json` `kachery.cloud: ".kachery-cloud"`). The default can be overridden by `dj.config['custom']['kachery_dirs']` or, if no custom config value is set, by exporting `KACHERY_CLOUD_DIR` before import — `dj.config['custom']['kachery_dirs']` takes precedence over the env var.
 `kachery-cloud-init` by default writes a `client_id` to
 `~/.kachery-cloud`. If the two don't agree, the Spyglass process can't
 find the client and Kachery calls fail with "Client not registered" or
