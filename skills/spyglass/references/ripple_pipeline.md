@@ -45,7 +45,7 @@ Source: `src/spyglass/ripple/v1/ripple.py`. FK declaration `-> LFPBandV1` at `ri
 - `RippleLFPSelection` row for the chosen `LFPBandV1` entry — and transitively, the `LFPBandV1` row itself must already be populated for a ripple-band filter (`set_lfp_band_electrodes(...)` + `LFPBandV1.populate(...)`; see [Prerequisite](#prerequisite-populate-lfpbandv1-with-a-ripple-band-filter) below and [lfp_pipeline.md](lfp_pipeline.md)).
 - `RippleParameters` row keyed by `ripple_param_name` — call `RippleParameters().insert_default()` once, or insert a custom row.
 - `PositionOutput` merge entry referenced via `pos_merge_id` (the projected FK; resolve with `merge_get_part(...)`). The PositionOutput source must expose a `speed` or `head_speed` column — `TrodesPosV1`, `DLCPosV1`, or `CommonPos` qualify; `ImportedPose` does not.
-- `IntervalList` row for the speed-filter interval (FK-renamed to `interval_list_name` on the selection's heading).
+- `IntervalList` row for the ripple/LFP target interval — carried through the selection key as `target_interval_list_name` (declared as `IntervalList.proj(target_interval_list_name='interval_list_name')` at `lfp/analysis/v1/lfp_band.py:28`), then used by `RippleTimesV1.make()` to restrict `IntervalList.interval_list_name` (`ripple/v1/ripple.py:288`).
 
 ## Prerequisite: populate LFPBandV1 with a ripple-band filter
 
