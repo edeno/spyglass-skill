@@ -18,7 +18,7 @@ Current spike-sorting pipeline (`SpikeSortingRecording` → `SpikeSorting` → `
 - [Step 6: Burst-Pair Curation (Optional)](#step-6-burst-pair-curation-optional)
 - [Post-pipeline analysis](#post-pipeline-analysis)
 - [Imported Spike Sorting](#imported-spike-sorting)
-- [Recomputing Across Environments](#recomputing-across-environments)
+- [Recomputing Deleted Recording Files](#recomputing-deleted-recording-files)
 
 ## Overview
 
@@ -460,19 +460,18 @@ For pre-sorted spikes stored in NWB Units table.
 - `add_annotation(key, id, label, annotations)` — Add unit annotations
 - Auto-inserts into `SpikeSortingOutput.ImportedSpikeSorting`
 
-## Recomputing Across Environments
+## Recomputing Deleted Recording Files
 
-Recompute is *only* for verifying or recreating existing `SpikeSortingRecording` analysis files across different software environments (lab, conda stack, PyNWB pin). It is **not** the path for changing sorter / preprocessing params — for that, see [destructive_operations.md § Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template) and the See-also link below.
+`SpikeSortingRecording` writes a large preprocessed recording analysis file. Labs may delete that file to save storage, then recreate it later from the raw NWB plus the stored `SpikeSortingRecordingSelection` row.
 
-The recompute-specific tables (all in `spyglass.spikesorting.v1.recompute`, source: `spikesorting/v1/recompute.py:1-15, 55-103, 188-230`):
+The recompute tables (all in `spyglass.spikesorting.v1.recompute`, source: `spikesorting/v1/recompute.py:1-15, 55-103, 188-230`) support that storage-reclamation workflow:
 
-- **`RecordingRecomputeVersions`** inventories NWB namespaces and dependencies (`nwb_deps`) extracted from the stored analysis file — the version-fingerprint side of the table.
-- **`RecordingRecomputeVersions().this_env`** is a cached property returning the subset of recordings whose stored `nwb_deps` match the *currently installed* PyNWB / namespace stack. It filters by NWB-namespace compatibility, **ignoring Spyglass version** — same Spyglass code can still mismatch if PyNWB / extension namespaces differ.
-- **`RecordingRecomputeSelection`** records an attempted recompute environment by FK'ing `UserEnvironment` (the stored env identity), pairing it with the recording row to recompute.
-- **`RecordingRecompute`** (computed) writes a temporary recomputed analysis file and compares it to the original — by hash and by content diff. Mismatches are **logged**, not silently accepted, so a "succeeded" populate row plus mismatch logs means the recompute didn't reproduce.
-- A mismatch means the stored analysis file won't load cleanly under your current stack. Either pin the env that produced it or re-run from raw — don't assume the file is portable.
+- `RecordingRecomputeVersions` records the NWB namespace / dependency versions associated with the stored recording file.
+- `RecordingRecomputeVersions().this_env` is a cached property that filters to recordings compatible with the current PyNWB / namespace stack.
+- `RecordingRecomputeSelection` records a recompute attempt and the `UserEnvironment` used.
+- `RecordingRecompute` recreates the same preprocessed recording intermediate.
 
-If the goal is "rerun sort with different params," skip these tables entirely and follow the cascade-template path (new selection row → repopulate downstream) instead.
+Use recompute when the `SpikeSortingRecording` analysis file is missing or intentionally deleted and you want to restore the same intermediate. Normal lifecycle: recompute / match first (`RecordingRecompute.make()` compares old vs. new hashes, `recompute.py:794-860`), *then* delete the old file via `RecordingRecompute.delete_files(...)` — which only removes files for `matched=1` entries (`recompute.py:882-938`); a later recompute recreates the same intermediate from the stored selection row. Do **not** use recompute to change preprocessing, sorter, curation, or metric parameters — insert a new selection row and repopulate downstream instead (see [destructive_operations.md § Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template)).
 
 ## See also
 
