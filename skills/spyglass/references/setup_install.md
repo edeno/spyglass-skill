@@ -31,11 +31,11 @@ pip install spyglass-neuro
 
 This installs Spyglass and its core Python dependencies but does not create a conda environment or configure the database. Set up DataJoint manually — most users put credentials in `~/.datajoint_config.json` (the path Spyglass's installer writes; see "What the installer actually does" below) or a per-project `dj_local_conf.json` next to your code; both are honored by DataJoint. Environment variables work too.
 
-Pure pip skips two things the conda path provides automatically: the environment itself and the DataJoint config. It is also less reliable for **optional / heavier pipeline extras** — spike-sorting binaries (`mountainsort4`) and filtering / FFT libraries (`ghostipy` — used by `common/common_filter.py`, not a sorter; `pyfftw`) often need conda-forge binaries, and DLC has its own environment file (`environments/environment_dlc.yml`). Verify against the install you need: `pyproject.toml` lists what pure pip will install; the `environments/*.yml` files list the extras conda-forge provides. Use the automated installer or `mamba env create -f environments/environment.yml` + `pip install -e .` unless you have a specific reason to avoid conda.
+Pure pip skips two things the conda path provides automatically: the environment itself and the DataJoint config. It is also less reliable for **optional / heavier pipeline extras** — spike-sorting binaries (`mountainsort4`) and filtering / FFT libraries (`ghostipy` — used by `common/common_filter.py`, not a sorter; `pyfftw`) often need conda-forge binaries, and DLC has its own environment file (`environments/environment_dlc.yml`). Verify against the install you need: `pyproject.toml` lists what pure pip will install; the `environments/*.yml` files list the extras conda-forge provides. Use the automated installer or `conda env create -f environments/environment.yml` + `pip install -e .` unless you have a specific reason to avoid conda.
 
 ### conda (from environment file)
 
-Spyglass provides environment files in the `environments/` directory. The Setup notebook (`notebooks/00_Setup.ipynb`) recommends the minimal file as the starting point — `environment.yml` is the full, heavier install.
+Spyglass provides environment files in the `environments/` directory. The Setup notebook (`notebooks/00_Setup.ipynb`) recommends the minimal file as the starting point — `environment.yml` is the full, heavier install. Examples in this section use `conda` for consistency; `mamba` is a faster drop-in alternative for `env create` / `update` / `remove` if installed (`scripts/validate.py` accepts either, and the automated installer prefers `mamba` when available).
 
 ```bash
 # Minimal environment (recommended default — faster install)
@@ -59,7 +59,7 @@ pip install -e .
 
 ### From Source — inside an existing Spyglass environment (development)
 
-This snippet assumes a Spyglass conda env is already active (created via the automated installer or one of the `environments/*.yml` files). For a *fresh* setup, run `python scripts/install.py` or `mamba env create -f environments/environment_min.yml` first; install order matters — env creation first, then `pip install -e .` against that env.
+This snippet assumes a Spyglass conda env is already active (created via the automated installer or one of the `environments/*.yml` files). For a *fresh* setup, run `python scripts/install.py` or `conda env create -f environments/environment_min.yml` first; install order matters — env creation first, then `pip install -e .` against that env.
 
 ```bash
 git clone https://github.com/LorenFrankLab/spyglass.git
@@ -84,9 +84,9 @@ and breaks otherwise-working installs. Symptoms include:
 **Fix.** Recreate the env from the current env file under `environments/` — `environments/environment_min.yml` is the recommended default per [§ conda (from environment file)](#conda-from-environment-file); `environments/environment.yml` is the heavier full install:
 
 ```bash
-mamba env update --file environments/environment_min.yml --prune
+conda env update --file environments/environment_min.yml --prune
 # OR for a clean rebuild:
-mamba env remove -n spyglass && mamba env create -f environments/environment_min.yml
+conda env remove -n spyglass && conda env create -f environments/environment_min.yml
 ```
 
 Do NOT `pip install <pkg>` piecemeal into a working env — the next `pip
@@ -205,7 +205,7 @@ Frank Lab.
 - After editing env vars in `~/.bashrc`, run `source ~/.bashrc` OR
   open a new shell — the existing kernel sees the old environment.
 - Renaming the conda env: edit the `name:` field at the top of
-  `environments/environment.yml` before running `mamba env create`;
+  `environments/environment.yml` before running `conda env create`;
   the default name is `spyglass`.
 - `numpy` is unpinned in current Spyglass (`pyproject.toml:58`,
   `environments/environment.yml:26`). The historical `numpy<1.24`
