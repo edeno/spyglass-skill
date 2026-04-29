@@ -68,7 +68,13 @@ for T in [Session, Raw, DIOEvents]:                    # SpyglassIngestion only
 # Non-SpyglassIngestion tables — derive the key from upstream parents
 # (the driver does this via `parents().proj()` joins; the simplest
 # manual form when one parent is `Session` is to pass the registered
-# Nwbfile name) and call .make(key) directly.
+# Nwbfile name) and call .make(key) directly. Note: the driver
+# special-cases a few of these before the generic make() loop —
+# PositionSource (nwb_file_name only; populate_all_common.py:137),
+# and ImportedPose / ImportedLFP / OptogeneticProtocol (`:141-143`,
+# imported via the late-import block at `:180-181`). For those, the
+# faithful isolation is `Table().make({"nwb_file_name": copy_name})`
+# rather than reconstructing the parent-derived key.
 # from spyglass.common.<module> import OtherTable
 # OtherTable().make({"nwb_file_name": copy_name})
 ```
