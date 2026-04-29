@@ -22,6 +22,7 @@ Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin`
   - [F. Interval / epoch mismatch across pipelines](#f-interval--epoch-mismatch-across-pipelines)
   - [G. `populate(key)` with a non-PK dict iterates the whole Selection](#g-populatekey-with-a-non-pk-dict-iterates-the-whole-selection)
   - [H. IntegrityError on insert often means an ancestor row is missing](#h-integrityerror-on-insert-often-means-an-ancestor-row-is-missing)
+  - [I. `populate()` or a query hangs indefinitely](#i-populate-or-a-query-hangs-indefinitely)
 - [Debugging `populate_all_common`](#debugging-populate_all_common)
 - [Automatic heuristics](#automatic-heuristics)
 - [Sub-modes](#sub-modes)
@@ -300,7 +301,7 @@ print(type(x).__name__, getattr(x, "shape", None), getattr(x, "dtype", None))
 
 **Most likely root cause.** A relation you assumed was one-to-one is actually one-to-many. Common culprits: merge tables (one `nwb_file_name` → many parts), parameter tables (one session → many parameter sets), interval lists (one session → many intervals).
 
-**Why that explanation fits.** DataJoint joins are natural joins over shared primary-key fields; any field that looks like a foreign key but is actually repeated across the upstream table multiplies rows.
+**Why that explanation fits.** DataJoint joins are natural joins over shared attribute names, as long as each shared attribute is primary on at least one side (DataJoint's `assert_join_compatibility` refuses only the secondary-on-both-sides case, `datajoint/condition.py:104`; same rule documented in [datajoint_api.md § Join](datajoint_api.md)). Any field that looks like a foreign key but is actually repeated across the upstream table multiplies rows.
 
 **Fastest confirmation checks.**
 
@@ -548,7 +549,7 @@ Populate/insert the missing ancestor first, then retry.
 
 ### I. `populate()` or a query hangs indefinitely
 
-Long idle stalls (no CPU, no progress) usually mean **lock contention** — another worker or an abandoned transaction is holding a MySQL lock your call is waiting on, not a slow `make()` body. First rule out "the DB isn't reachable at all" with `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_connection --timeout 10` — `check_threads` itself needs a live connection and will hang the same way if the server's unreachable. Once connectivity is confirmed, diagnose with `AnyTable().check_threads(detailed=True)` (any `SpyglassMixin` table works); it returns a DataFrame of live threads from `performance_schema` including blockers. Coordinate with the lab before killing an abandoned transaction.
+Long idle stalls (no CPU, no progress) usually mean **lock contention** — another worker or an abandoned transaction is holding a MySQL lock your call is waiting on, not a slow `make()` body. First rule out "the DB isn't reachable at all" with `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_connection --timeout 10` — `check_threads` itself needs a live connection and will hang the same way if the server's unreachable. Once connectivity is confirmed, diagnose with `AnyTable().check_threads(detailed=True)` — any `SpyglassMixin` table works because the helper lives on `HelperMixin` (`check_threads` at `utils/mixins/helpers.py:206-233`). It returns a DataFrame of live threads from `performance_schema` including lock owner / status and per-thread state — there is no explicit blocker→waiter graph, so inspect the **Lock Status** and **State** columns to infer which thread is the blocker. Coordinate with the lab before killing an abandoned transaction.
 
 If a `.fetch()` or `.fetch1()` call hangs with no CPU activity — not slow compute, just an *idle* long fetch — go straight to `check_threads(detailed=True)`. User-perceived "this fetch is taking forever" is almost always lock contention, not query plan.
 
