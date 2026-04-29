@@ -85,10 +85,13 @@ from spyglass.common import convert_epoch_interval_name_to_position_interval_nam
 # EMPTY list ([]) means it inserted a null map row and there's no
 # position interval to resolve (`common/common_behav.py:886, 955,
 # 991`). Test `if not result:`, not `if result is None:`.
-convert_epoch_interval_name_to_position_interval_name(
-    {'nwb_file_name': nwb_file, 'epoch': epoch_id},
+result = convert_epoch_interval_name_to_position_interval_name(
+    {"nwb_file_name": nwb_file, "epoch": epoch_id},
     populate_missing=True,
 )
+if not result:
+    print(f"No position-interval map for epoch={epoch_id}; "
+          "session is DLC-only or RawPosition not populated.")
 ```
 
 **DLC-only sessions** (no Trodes-derived position). The converter only accepts interval names that pass `PositionSource._is_valid_name()` (matches `pos N valid times`, `common/common_behav.py:955`); when none are present it inserts a *null* map row and the converter helper returns `[]` rather than `None` (`common/common_behav.py:991`) — diagnostic checks should test for an empty list, not `None`. Two paths exist:
