@@ -104,7 +104,13 @@ view = DecodingOutput.create_decoding_view(
     head_direction_name="head_orientation",  # position DataFrame column
     interval_idx=None,                        # or an int to filter one interval
 )
-# view is a figurl view object; call .url(label=...) to get the browser URL string
+# `create_decoding_view` already returns a browser URL *string* — the
+# non_local_detector helpers (`create_1D_decode_view` /
+# `create_2D_decode_view`) call `.url(label="1D Decoding" / "2D Decoding")`
+# internally, so do NOT call `.url()` again on the return value.
+# Print or open it directly. (For raw sortingview/FigURL view objects
+# elsewhere — e.g. ripple/MUA viewers — the call shape is
+# `view.url(label="...")` with an explicit label, not bare `.url()`.)
 ```
 
 Under the hood, this routes to `non_local_detector.visualization.figurl_1D.create_1D_decode_view` or `figurl_2D.create_2D_decode_view` based on the decoder's environment dimensionality.
