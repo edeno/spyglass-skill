@@ -406,7 +406,16 @@ errors = jobs & {
     "status": "error",
 }
 errors.fetch(as_dict=True)
-errors.delete_quick()   # only after confirming you want to re-run those keys
+
+# Narrow to the exact key first if possible — a bare delete on the
+# table+status filter clears EVERY errored job for that table, not
+# just yours. Add the failing key fields, fetch again to verify, and
+# confirm no worker is still actively retrying before deleting.
+errors_for_key = errors & {**failing_key}      # tighten to your key
+errors_for_key.fetch(as_dict=True)             # re-inspect
+# ... then, only after confirming the rows are exactly the ones you
+# want to re-run and no live worker is still holding them:
+errors_for_key.delete_quick()
 ```
 
 **Minimal fix.** Debug with orchestration off. Once the true cause is fixed, re-enable reservation/parallelism for the full run.
@@ -549,9 +558,13 @@ Populate/insert the missing ancestor first, then retry.
 
 ### I. `populate()` or a query hangs indefinitely
 
-Long idle stalls (no CPU, no progress) usually mean **lock contention** — another worker or an abandoned transaction is holding a MySQL lock your call is waiting on, not a slow `make()` body. First rule out "the DB isn't reachable at all" with `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_connection --timeout 10` — `check_threads` itself needs a live connection and will hang the same way if the server's unreachable. Once connectivity is confirmed, diagnose with `AnyTable().check_threads(detailed=True)` — any `SpyglassMixin` table works because the helper lives on `HelperMixin` (`check_threads` at `utils/mixins/helpers.py:206-233`). It returns a DataFrame of live threads from `performance_schema` including lock owner / status and per-thread state — there is no explicit blocker→waiter graph, so inspect the **Lock Status** and **State** columns to infer which thread is the blocker. Coordinate with the lab before killing an abandoned transaction.
+Long idle stalls (no CPU, no progress) often mean **lock contention** — another worker or an abandoned transaction is holding a MySQL lock your call is waiting on, not a slow `make()` body. But that's not the only cause: large result materialization (a `.fetch()` returning many MB of blob columns), network / server latency, and bad query shape (missing index, accidental cross-product) all look like idle hangs from the user's seat. Triage in order:
 
-If a `.fetch()` or `.fetch1()` call hangs with no CPU activity — not slow compute, just an *idle* long fetch — go straight to `check_threads(detailed=True)`. User-perceived "this fetch is taking forever" is almost always lock contention, not query plan.
+1. **Rule out connectivity first.** `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_connection --timeout 10` — `check_threads` itself needs a live connection and will hang the same way if the server is unreachable.
+2. **Check query size / shape next.** Print `len(rel)` (cheap, single COUNT) and the column list — a `.fetch()` returning thousands of rows × multiple `longblob` columns is materialization-bound, not lock-bound. Fix with `.proj()` to drop heavy columns, `limit=...`, or restricting before fetching.
+3. **Then check threads.** `AnyTable().check_threads(detailed=True)` — any `SpyglassMixin` table works because the helper lives on `HelperMixin` (`check_threads` at `utils/mixins/helpers.py:206-233`). It returns a DataFrame of live threads from `performance_schema` including lock owner / status and per-thread state — there is no explicit blocker→waiter graph, so inspect the **Lock Status** and **State** columns to infer which thread is the blocker. Coordinate with the lab before killing an abandoned transaction.
+
+A `.fetch()` / `.fetch1()` that hangs *and* the row count is small *and* the column list is light — that's when "this fetch is taking forever" is most likely lock contention rather than query plan or materialization.
 
 ## Debugging `populate_all_common`
 
