@@ -1,7 +1,7 @@
 <!-- pipeline-version: v1 -->
 # Spike Sorting Pipeline (v1)
 
-Current spike-sorting pipeline (`SpikeSortingRecording` → `SpikeSorting` → `CurationV1` → metrics → `SpikeSortingOutput`). If the question is about dependency paths, upstream/downstream impact, runtime row existence, or cascade/recovery, use [feedback_loops.md](feedback_loops.md) or [destructive_operations.md](destructive_operations.md) first; this file supplies spike-sorting-specific table details. For analysis surfaces *downstream* of curation (`SortedSpikesGroup`, `UnitAnnotation`), see [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md). For v0 legacy, see [spikesorting_v0_legacy.md](spikesorting_v0_legacy.md).
+Current spike-sorting pipeline (`SpikeSortingRecording` → `SpikeSorting` → `CurationV1` → metrics → `SpikeSortingOutput`). If the question is about dependency paths, upstream/downstream impact, runtime row existence, or destructive/parameter-swap cascade recovery, use [feedback_loops.md](feedback_loops.md) or [destructive_operations.md](destructive_operations.md) first; this file supplies spike-sorting-specific table details. For analysis surfaces *downstream* of curation (`SortedSpikesGroup`, `UnitAnnotation`), see [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md). For v0 legacy, see [spikesorting_v0_legacy.md](spikesorting_v0_legacy.md).
 
 ## Contents
 

@@ -23,7 +23,7 @@ For table-to-table relationship questions, run the path command first:
 python skills/spyglass/scripts/code_graph.py path --to A B
 ```
 
-If no path appears, flip the endpoints before concluding there is no relationship. Use `code_graph.py` when the prompt says "depends on," "upstream," "downstream," "FK chain," "how do I get from A to B," "what declares X," "which class owns this method/field," or asks about v0/v1 class, method, or definition behavior.
+If no path appears, flip the endpoints before concluding there is no relationship. Use `code_graph.py path --to` when the prompt says "depends on," "upstream," "downstream," "FK chain," or "how do I get from A to B." Use `code_graph.py describe` or source-read when the prompt asks "what declares X," "which class owns this method/field," or about v0/v1 class, method, or definition behavior.
 
 Use `db_graph.py` for live database questions:
 
