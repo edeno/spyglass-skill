@@ -43,7 +43,9 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 
 Treat table, key, attribute, method, dependency, parameter, and row-state claims as evidence-backed. Static/source facts: `code_graph.py`, source, or `inspect.signature`. Runtime facts: `db_graph.py`, `Table.heading`, counts, or fetches. Blob keys need source `make()`/builders, docs, or rows. If unavailable, abstain or flag uncertainty.
 
-`code_graph.py`/`db_graph.py` means `python skills/spyglass/scripts/<name>`.
+**Bundled evidence tools**
+- Source graph: `python skills/spyglass/scripts/code_graph.py ...` for FK paths, declarations, methods, upstream/downstream, v0/v1 source comparisons.
+- Live DB graph: `python skills/spyglass/scripts/db_graph.py ...` for runtime headings, counts, merge IDs, live graph, custom/lab tables.
 
 ## Common Mistakes
 
