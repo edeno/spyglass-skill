@@ -1,6 +1,6 @@
 # Decoding Pipeline
 
-State space position decoding from neural activity (clusterless and sorted-spikes) via `non_local_detector`. Covers `DecodingOutput`, the shared user-inputs-vs-`make()`-plumbing rule, and recovery patterns when `populate()` yields no work.
+State space position decoding from neural activity (clusterless waveform features and sorted spikes) via `non_local_detector`. Use this file for `DecodingOutput`, `ClusterlessDecodingV1`, `SortedSpikesDecodingV1`, decoding selections/parameters, and recovery when `populate()` yields no work. Adjacent input references are [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md) and [position_pipeline.md](position_pipeline.md); for track-graph / linear-track geometry concepts, see [linearization_pipeline.md](linearization_pipeline.md); for parameter-swap cascades, see [destructive_operations.md](destructive_operations.md).
 
 ## Contents
 

@@ -1,7 +1,7 @@
 <!-- pipeline-version: v1 -->
 # Ripple Detection Pipeline
 
-Detects sharp-wave ripple events from ripple-band-filtered LFP. No merge table — outputs directly from `RippleTimesV1`.
+Detects sharp-wave ripple events from ripple-band-filtered LFP. Use this file for `RippleLFPSelection`, `RippleParameters`, and `RippleTimesV1` workflows; the required signal prerequisite is a populated ripple-band `LFPBandV1` row, not raw wideband LFP. No merge table — outputs directly from `RippleTimesV1`. For LFP-band setup, see [lfp_pipeline.md](lfp_pipeline.md); for parameter swaps or re-run cascades, see [destructive_operations.md](destructive_operations.md).
 
 ## Contents
 

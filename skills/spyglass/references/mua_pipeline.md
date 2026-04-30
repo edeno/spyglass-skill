@@ -1,6 +1,6 @@
 # Multi-Unit Activity (MUA) Pipeline
 
-Detects multi-unit high-synchrony events (population bursts) from sorted spike data. No merge table — outputs directly from `MuaEventsV1`.
+Detects multi-unit high-synchrony events (population bursts) from `SortedSpikesGroup`, position speed, and a detection interval. Use this file for `MuaEventsParameters`, `MuaEventsV1`, and `MuaEventsV1.create_figurl()`; there is no selection table and no merge table — outputs directly from `MuaEventsV1`. For spike-sorting setup and curated spike outputs, see [spikesorting_v1_pipeline.md](spikesorting_v1_pipeline.md) and [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md); for FigURL viewer mechanics, see [figurl.md](figurl.md).
 
 ## Contents
 

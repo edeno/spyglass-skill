@@ -1,7 +1,7 @@
 <!-- pipeline-version: v1 -->
 # Linearization Pipeline
 
-Converts 2D position to 1D linearized position using track graphs. Essential for decoding on linear/W-track environments.
+Converts 2D position to 1D linearized position using `TrackGraph` rows and `LinearizedPositionV1` / `LinearizedPositionOutput`. Use this file for track-graph setup, linearized-position fetches, and linear/W-track geometry concepts. For raw position extraction, see [position_pipeline.md](position_pipeline.md); for decoders that use related track-graph / environment geometry through `non_local_detector`, see [decoding_pipeline.md](decoding_pipeline.md).
 
 ## Contents
 

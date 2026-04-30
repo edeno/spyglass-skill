@@ -1,7 +1,7 @@
 <!-- pipeline-version: v1 -->
 # FigURL Interactive Visualization
 
-FigURL interactive viewers for spike-sorting curation, decoding visualization, and MUA event visualization; distinct from reproducible paper export ([export.md](export.md)).
+FigURL creates interactive, browser-based viewers for spike-sorting curation, decoding visualization, and MUA event visualization. Use this file when the user needs a shareable viewer URL, Kachery-backed upload, or the required `label` / state arguments for Spyglass FigURL helpers. FigURL links are interactive viewing surfaces, not reproducible paper snapshots; for export/package workflows, see [export.md](export.md).
 
 ## Contents
 
