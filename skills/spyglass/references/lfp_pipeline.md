@@ -1,7 +1,7 @@
 <!-- pipeline-version: v1 -->
 # LFP Pipeline
 
-LFP at any band — wideband via `LFPV1` / `LFPOutput` and bandpass via `LFPBandV1` / `LFPBandSelection` (theta, ripple-band, gamma, custom). `LFPV1.make()` reads `Raw` at runtime, so static FK walks alone understate the inputs needed to reproduce filtered output.
+LFP at any band — wideband via `LFPV1` / `LFPOutput` and bandpass via `LFPBandV1` / `LFPBandSelection` (theta, ripple-band, gamma, custom). `LFPV1.make()` reads `Raw` at runtime, so static FK walks alone understate the inputs needed to reproduce filtered output. If the question is about dependency paths, upstream/downstream impact, runtime row existence, or cascade/recovery, use [feedback_loops.md](feedback_loops.md) or [destructive_operations.md](destructive_operations.md) first; this file supplies LFP-specific table details.
 
 ## Contents
 
