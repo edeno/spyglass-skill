@@ -92,7 +92,7 @@ If Spyglass is not installed/configured, route to [setup_install.md](references/
 | Setup errors and troubleshooting | [setup_troubleshooting.md](references/setup_troubleshooting.md) |
 | Runtime debugging — populate/make failures, fetch1 cardinality, join multiplicity, one-key-fails | [runtime_debugging.md](references/runtime_debugging.md) |
 | `populate_all_common` silently skipped tables | [populate_all_common_debugging.md](references/populate_all_common_debugging.md) |
-| Destructive operations — deletes, cleanup, inspect-before-destroy | [destructive_operations.md](references/destructive_operations.md) |
+| Destructive / recovery / cascade operations — deletes, cleanup, parameter swaps, re-run impact, inspect-before-destroy | [destructive_operations.md](references/destructive_operations.md) |
 | Validator→fix→proceed loops — post-ingest, pre-fetch1, post-populate, inspect-before-destroy | [feedback_loops.md](references/feedback_loops.md) |
 | Source-graph questions — FK chain A→B, what X declares, owner of method Y, up/downstream | [feedback_loops.md § Tool routing](references/feedback_loops.md#tool-routing-for-relationship-and-lookup-questions) → `code_graph.py` |
 | Runtime / DB-graph questions — row existence, counts, merge IDs, set ops, runtime heading vs source heading, source/runtime disagreement, custom tables outside `$SPYGLASS_SRC` | [feedback_loops.md § Tool routing](references/feedback_loops.md#tool-routing-for-relationship-and-lookup-questions) → `db_graph.py` |
@@ -121,4 +121,4 @@ If Spyglass is not installed/configured, route to [setup_install.md](references/
 | Syncing / sharing with collaborators (Kachery) | [setup_config.md § Data Sharing Tables (Kachery)](references/setup_config.md#data-sharing-tables-kachery) |
 | Interactive viz / web curation (FigURL) | [figurl.md](references/figurl.md) |
 | External packages (SpikeInterface, PyNWB, DLC/DeepLabCut, non_local_detector, MoSeq) | [dependencies.md](references/dependencies.md) |
-| Authoring custom tables or pipelines / extending existing ones | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) |
+| Custom authoring decisions — new tables/pipelines, upstream FK choice, side tables, storage pattern | [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md) |
