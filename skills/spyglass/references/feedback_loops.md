@@ -17,6 +17,23 @@ Quality-critical Spyglass operations have a **validator → fix → proceed** sh
 
 Evidence-gathering is a feedback loop too: the question shape determines the right tool. Picking the wrong subcommand produces under-powered answers — `describe` doesn't answer relationship questions, `path --to` doesn't answer column-ownership questions, static graphs don't answer runtime-behavior questions.
 
+For table-to-table relationship questions, run the path command first:
+
+```bash
+python skills/spyglass/scripts/code_graph.py path --to A B
+```
+
+If no path appears, flip the endpoints before concluding there is no relationship. Use `code_graph.py` when the prompt says "depends on," "upstream," "downstream," "FK chain," "how do I get from A to B," "what declares X," "which class owns this method/field," or asks about v0/v1 class, method, or definition behavior.
+
+Use `db_graph.py` for live database questions:
+
+```bash
+python skills/spyglass/scripts/db_graph.py describe TableName --count --json
+python skills/spyglass/scripts/db_graph.py find-instance --class TableName --key field=value --count --json
+```
+
+Reach for this when the prompt asks how many rows exist, what values exist, which `merge_id` matches a key, what the runtime heading shows, whether source and DB disagree, or when custom/lab tables outside `$SPYGLASS_SRC` are involved.
+
 | Question shape | Tool | Notes |
 | --- | --- | --- |
 | *"How does X relate to Y?"* — joins, FK chains, table-to-table | `code_graph.py path --to X Y` | Translate the printed path into a DataJoint restriction/join expression. FKs are directed: if X→Y returns no path, flip and try Y→X. |
