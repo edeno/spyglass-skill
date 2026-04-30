@@ -225,9 +225,11 @@ For a parameter swap on a `*Params` table:
                    → new entry in *Output (if merge); each leaf below the merge
                    that the user wants under the new params needs its own
                    selection insert + populate.
-3. Unaffected:     <list specific upstream tables that don't depend on the
-                   changed param — typically LFP, position, sorting branches
-                   parallel to the affected one>.
+3. Unaffected:     for a RippleParameters swap, `LFPV1`, `LFPBandV1`,
+                   `TrodesPosV1`/`DLCPosV1`, and v1 `SpikeSorting` are all
+                   upstream of or parallel to `RippleTimesV1` and are *not*
+                   invalidated — keep their existing rows. Enumerate the
+                   actual sibling/upstream tables for the user's case.
 4. Verify scope:   `Table.descendants(as_objects=True)` from <ChangedTable>;
                    confirm the union of slot-2 entries matches.
 ```
