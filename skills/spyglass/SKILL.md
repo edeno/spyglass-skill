@@ -77,10 +77,6 @@ Users may span stages. Infer from imports/table names; ask only when the answer 
 
 **Decision rule for the 5 merge masters** (`SpikeSortingOutput`, `LFPOutput`, `PositionOutput`, `LinearizedPositionOutput`, `DecodingOutput` — tables with `merge_id` as their only PK field): (1) `& {"nwb_file_name": f}` silently returns the whole table — use `merge_restrict` or `merge_get_part` instead. (2) Load via `merge_get_part(key).fetch1('KEY')` → `(Master & merge_key).fetch1_dataframe()`. (3) `get_restricted_merge_ids` is `SpikeSortingOutput`-only; `fetch_results` is `DecodingOutput`-only. Registry + worked-example: [merge_methods.md](references/merge_methods.md).
 
-## Querying an Already-Configured DB
-
-If Spyglass is not installed/configured, route to [setup_install.md](references/setup_install.md). For a working DB, start from `Session` / `IntervalList` discovery in [common_tables.md](references/common_tables.md), then open the relevant pipeline reference.
-
 ## Reference Routing
 
 **Load one reference at a time.** Pick the most relevant row; open a second only if needed. This table routes by topic; repo paths live in each reference file.
