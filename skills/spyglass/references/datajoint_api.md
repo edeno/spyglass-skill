@@ -1,16 +1,17 @@
 # DataJoint & Spyglass API Reference
 
+DataJoint queries and Spyglass extensions — restrictions, joins, projections, headings, the `make()` / tri-part-make body shape, Spyglass-specific operators (`<<` / `>>`, `restrict_by`), and the field-ownership rules that gate restriction-attribute correctness.
+
 ## Contents
 
 - [DataJoint Core Operators](#datajoint-core-operators)
 - [Computed Tables: `make()` and tri-part make](#computed-tables-make-and-tri-part-make)
 - [Spyglass-Specific Operators](#spyglass-specific-operators)
+- [Field Ownership](#field-ownership)
 - [Table Inspection Commands](#table-inspection-commands)
 - [NWB File Commands](#nwb-file-commands)
 - [DataFrame Commands](#dataframe-commands)
 - [Best Practices](#best-practices)
-
-Complete reference for querying and analyzing neural data with DataJoint operators and Spyglass extensions.
 
 ## DataJoint Core Operators
 
@@ -63,8 +64,11 @@ Session * Subject
 Rename, compute, or select specific attributes.
 
 ```python
-# Select specific columns only
-Session.proj('nwb_file_name', 'subject_id')
+# Select specific columns. Primary-key fields are ALWAYS retained
+# automatically — name only the secondary attributes you want kept.
+# Here `nwb_file_name` is the PK and stays on the result without being
+# named; `subject_id` is the secondary we explicitly keep.
+Session.proj('subject_id')
 
 # Rename attribute
 Session.proj(session_date='session_start_time')
@@ -136,6 +140,13 @@ Use these freely when exploring or finding the right `merge_id`. They are what t
 - `.fetch1_dataframe()` — loads a DataFrame from an AnalysisNwbfile. Defined on many tables that store time series, including the `PositionOutput`, `LFPOutput`, and `LinearizedPositionOutput` merge tables and V1 tables like `LFPV1`, `LFPBandV1`, `TrodesPosV1`, `RippleTimesV1`. **Not** on `SpikeSortingOutput` or `DecodingOutput` — those use different data-loading paths.
 - `DecodingOutput.fetch_results(key)` — loads an xarray Dataset from an `.nc` file on disk (`src/spyglass/decoding/decoding_merge.py:74`). Decoding-only.
 - `DecodingOutput.fetch_model(key)` — loads the trained decoder model from disk (`src/spyglass/decoding/decoding_merge.py:79`). Decoding-only.
+
+**File-backed data retrieval — prefer accessors over manual paths.** For *retrieving* file-backed data, use the Spyglass accessors above; they split into two families with different resolution paths:
+
+- **`fetch_nwb` / `fetch1_dataframe`** resolve via `Nwbfile` / `AnalysisNwbfile`, get the per-table path-resolver function, and call `_download_missing_files` before loading (`utils/mixins/fetch.py:330`) — so they handle Kachery/DANDI pulls when the file isn't local. Manual `$SPYGLASS_BASE_DIR/...` construction skips that fetch path and breaks on any non-local file.
+- **Decoding `DecodingOutput.fetch_results` / `fetch_model`** dispatch through the merge to the source decoding class (`ClusterlessDecodingV1` / `SortedSpikesDecodingV1`). Each source class declares `results_path` and `classifier_path` as `filepath@analysis` columns (`decoding/v1/clusterless.py:99-100`, `decoding/v1/sorted_spikes.py:65-66`); `fetch_results` reads `results_path` and calls the detector's `load_results(...)` (`clusterless.py:468`, `sorted_spikes.py:411`); `fetch_model` reads `classifier_path` and calls `load_model(...)` (`clusterless.py:472`, `sorted_spikes.py:415`). They do *not* route through `(Analysis)Nwbfile` or `_download_missing_files`. Still prefer the accessor over manual path construction, but don't expect Kachery/DANDI download semantics — if the `.nc` / `.pkl` file is missing, you'll get `FileNotFoundError`, not a remote pull.
+
+Inspect the *recorded* path source only for file-management / debugging tasks (cleanup, export, missing-file diagnostics, admin work): raw NWBs via `Nwbfile.nwb_file_abs_path` and `Nwbfile.get_abs_path()` (`common/common_nwbfile.py:86`); analysis files via `AnalysisNwbfile.get_abs_path(analysis_file_name)`; decoding outputs via the `filepath@analysis` attribute on the row. Don't reconstruct paths from base-dir conventions unless the question is explicitly about path conventions or the normal accessor failed.
 
 Implications for writing Spyglass code:
 
@@ -276,6 +287,51 @@ Session().restrict_by(
 )
 ```
 
+## Field Ownership
+
+DataJoint queries depend on attributes living where you think they live. **Reused names** — `nwb_file_name`, `interval_list_name`, `merge_id`, `electrode_id`, `recording_id` — are introduced on many tables via different paths. Before writing a join or restriction, trace every attribute used as a join key or in a restriction dict back to the table whose heading actually exposes it.
+
+### What FK inheritance actually propagates
+
+DataJoint FK inheritance propagates upstream **primary-key fields** into the downstream table's heading. Secondary attributes do *not* propagate just because the downstream table depends on the upstream table — they stay on the table that introduced them.
+
+A candidate restriction field for a downstream table falls into one of:
+
+1. Part of the downstream table's primary key (declared by the table or PK-inherited from a parent FK).
+2. A secondary attribute the downstream table introduced itself — declared directly, or parent PK fields introduced as secondary attributes by an `-> Other` FK below the `---` divider.
+3. Not exposed on the downstream heading at all — present only on an upstream / selection table.
+
+The third case is the canonical trap. When the field is only on a selection or upstream table, restrict *that* table first and project its primary key into the downstream restriction. The naive shape `Downstream & {"that_field": ...}` is worse than an error: DataJoint **silently drops** unknown dict-restriction keys (the dict-form behavior is consistent across `db_graph.py:1898`, `common_mistakes.md`, `feedback_loops.md`, and `runtime_debugging.md`), so the restriction reduces to no-op and `Downstream & {...}` returns the full table. (SQL-string restrictions like `Downstream & "that_field = 'x'"` *do* raise, because MySQL parses the column name; the silent-drop trap is specific to dict form.) Either way, the right move is to restrict the upstream table that owns the field.
+
+```python
+# Wrong shape: assumes the field is on `MyComputed`'s heading. When the
+#              field is only exposed on `MySelection`, DataJoint silently
+#              drops the dict key and returns an unrestricted or
+#              under-restricted relation — the agent ships an answer
+#              that runs cleanly but returns the wrong (often whole-table)
+#              row set.
+populated = MyComputed & {"interval_list_name": "02_r1"}
+
+# Right shape: restrict the selection (where the field is exposed) and
+#              project its PK forward into the downstream.
+populated = MyComputed & (
+    MySelection & {"interval_list_name": "02_r1"}
+).proj()
+```
+
+### Two failure shapes this guards against
+
+1. **Field not on the downstream heading.** The agent writes a restriction referencing a field that's only exposed upstream. Dict restriction silently no-ops (the unknown key is dropped, so the restriction reduces to the full table); SQL-string restriction (`& "that_field = 'x'"`) may error at query-build time when MySQL parses the column name.
+2. **Right name, wrong table.** Reused names introduced independently on multiple tables. Restricting the wrong one runs cleanly but returns the wrong rows.
+
+### How to verify
+
+If you can't cite where a field is exposed, treat the query as a hypothesis. Three verification paths:
+
+- `code_graph.py describe <Table>` — shows the table's PK / secondary attributes / FKs from source.
+- Source-read the table's `definition` block — declarations and `-> Other` FK rows, with the `---` divider separating PK from secondary attrs.
+- `Table.heading` (against a live DB) — shows the downstream table's exposed attributes (its own fields plus PK-inherited fields from upstream FKs). Don't confuse "appears in the upstream table's source" with "appears on the downstream table's heading" — only PK fields propagate down.
+
 ## Table Inspection Commands
 
 For LLM answers, prefer the bundled scripts when they can answer the
@@ -367,7 +423,7 @@ pose_df = (PositionOutput & merge_key).fetch_pose_dataframe()
 
 ## Best Practices
 
-1. **Always limit large queries**: Use `limit=` to avoid memory issues
+1. **Preview large queries safely**: Use `limit=` for preview fetches; use real restrictions for analysis logic
 2. **Use evidence before code**: For source facts, run `code_graph.py`; for runtime headings, row counts, merge IDs, or custom tables, run `db_graph.py`. For merge discovery, start with friendly keys like `nwb_file_name`, then resolve candidate `merge_id` values with merge-aware helpers.
 3. **Preview before fetching**: Use `.fetch(limit=1)` or `.merge_view()` to check structure
 4. **Check table relationships**: Use `.describe()`, `.parents()`, `.children()` when joining

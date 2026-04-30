@@ -1,6 +1,8 @@
 <!-- pipeline-version: v1 -->
 # LFP Pipeline
 
+LFP at any band — wideband via `LFPV1` / `LFPOutput` and bandpass via `LFPBandV1` / `LFPBandSelection` (theta, ripple-band, gamma, custom). `LFPV1.make()` reads `Raw` at runtime, so static FK walks alone understate the inputs needed to reproduce filtered output.
+
 ## Contents
 
 - [Overview](#overview)
@@ -73,6 +75,8 @@ merge_key = LFPOutput.merge_get_part(key).fetch1("KEY")
 lfp_df = (LFPOutput & merge_key).fetch1_dataframe()
 ```
 
+> `Raw` is a runtime-fetch handle, not a stored pipeline output: a `Raw` row carries the NWB-object pointer + sampling rate, and the actual ephys array is read from the underlying NWB file at fetch time (`(Raw & key).fetch_nwb()[0]["raw"]`). So restricting `Raw` is cheap, but materializing the signal hits disk — and "is the raw data in Spyglass?" really means "is there a `Raw` row pointing at the NWB file the user expects?" For LFP recreation specifically, `LFPV1.make()` reads `Raw` at runtime, so static FK walks alone understate the inputs needed to reproduce the filtered output (general principle in [feedback_loops.md → Static graph vs runtime use](feedback_loops.md#tool-routing-for-relationship-and-lookup-questions)).
+
 ## LFPOutput Merge Table
 
 **Primary Key**: `merge_id` (UUID)
@@ -127,6 +131,10 @@ LFPElectrodeGroup.create_lfp_electrode_group(
 - Key: `nwb_file_name`, `lfp_electrode_group_name`
 - Part table: `LFPElectrodeGroup.LFPElectrode` (adds `electrode_id`)
 
+**How electrode groups work.** `LFPElectrodeGroup` is the named per-session set of electrodes used to make one LFP stream. `create_lfp_electrode_group(...)` validates that every `electrode_id` exists in `Electrode` for that `nwb_file_name`, sorts and deduplicates the list, inserts the master row, then inserts one `LFPElectrodeGroup.LFPElectrode` part row per electrode. Downstream `LFPV1` populated from this group contains exactly that group's electrodes. A later `LFPBandSelection.LFPBandElectrode` can choose a *subset* of the group plus optional reference electrodes for band filtering, but it starts from the upstream LFP group — you can't introduce a new electrode at the band step that wasn't in the LFP group.
+
+**`electrode_list` means electrode IDs, not array indices.** Pass Spyglass `Electrode.electrode_id` values, *not* array column positions in the NWB `ElectricalSeries`, channel names, or any other ordinal — Spyglass translates the IDs to NWB column indices with `get_electrode_indices()` before handing them to the filtering backend (`ghostipy`, called internally; users normally do not invoke it directly). For `LFPBandSelection`, `electrode_list` is the subset of *upstream LFP* electrodes to band-filter, and `reference_electrode_list` entries must likewise be upstream LFP electrode IDs (or `-1` for "no reference"). References do *not* have to appear in the output `electrode_list` — you can reference against an electrode that you don't want band-filtered output for.
+
 ## Step 2: Filter Raw Data
 
 ```python
@@ -139,6 +147,8 @@ from spyglass.lfp.v1 import LFPSelection, LFPV1
 - Also stores: `target_sampling_rate`
 
 **Nyquist note on filter/sampling-rate fields.** The three sampling-rate fields interact strictly; mis-setting any one aliases real signal into the passband. The rules: `filter_sampling_rate` must match the actual sampling rate of the input the filter will be applied to (typically 20–30 kHz for raw neural recordings), `target_sampling_rate` must strictly exceed 2× the filter's high cutoff (e.g., `LFP 0-400 Hz` → target > 800; Spyglass's 1000 Hz LFP default is the canonical choice), and a downstream `LFPBandSelection` picking a band filter must choose a `filter_sampling_rate` that matches LFPV1's `target_sampling_rate` (1000 Hz), with the band's high cutoff strictly below 500 Hz (Nyquist of the LFP stream). `FirFilterParameters` keys on `(filter_name, filter_sampling_rate)` — a filter named for one rate won't apply to a stream at another rate. Picking an arbitrary `target_sampling_rate` without checking it against the filter passband is the most common mis-configuration.
+
+**Sampling-rate divisibility.** `LFPV1.make()` and `LFPBandV1.make()` use integer decimation. If your requested `target_sampling_rate` (or `lfp_band_sampling_rate` downstream) does not divide the input rate cleanly, the *actual* stored / normalized rate can differ from what you asked for. Prefer the canonical 1000 Hz, and confirm the rate that was actually used before treating the user-provided value as ground truth: after `set_lfp_band_electrodes()`, fetch the full `LFPBandSelection` key to see the normalized `lfp_band_sampling_rate`; after `LFPV1.populate()`, check `LFPV1.lfp_sampling_rate` on the computed row.
 
 **LFPV1** (Computed)
 
@@ -207,6 +217,13 @@ from spyglass.lfp.v1 import (
 - Detects artifacts and creates clean interval lists
 - Outputs: `artifact_times` (array), `artifact_removed_valid_times` (array), `artifact_removed_interval_list_name`
 
+**Artifact algorithms and channel scope.** Detection runs on the populated `LFPV1` data, so the channel set is the full upstream `LFPElectrodeGroup` — not an arbitrary per-call electrode list. The two algorithms differ in how they decide a time is bad:
+
+- **`difference`** detects large temporal changes / baseline shifts and marks a time as artifact when *enough* electrodes exceed thresholds. "Enough" is controlled by `proportion_above_thresh_1st` / `_2nd`.
+- **`mad`** scales each electrode by its median absolute deviation and marks a time as artifact when more than `proportion_above_thresh` of electrodes exceed `mad_thresh`.
+
+With a one-electrode LFP group, both effectively become single-electrode detectors. With multi-electrode groups, they are cross-electrode consensus detectors. Output is **interval-level** (`artifact_times`, `artifact_removed_valid_times`) — not per-electrode artifact labels, so you can't recover which electrode triggered a flagged interval after the fact.
+
 ```python
 # 0. Make sure the default preset rows exist.
 LFPArtifactDetectionParameters().insert_default()
@@ -243,10 +260,12 @@ from spyglass.lfp.analysis.v1.lfp_band import LFPBandSelection, LFPBandV1
 
 **LFPBandSelection** (Manual)
 
-- FKs `LFPOutput.proj(lfp_merge_id='merge_id')` (`lfp/analysis/v1/lfp_band.py:25-26`), NOT `LFPV1` directly. Any merge entry pointing at any concrete LFP source (commonly an `LFPV1` part, but also `ImportedLFP` / `CommonLFP`) is a valid input — that's the point of the merge layer.
+- FKs `LFPOutput.proj(lfp_merge_id='merge_id')` (`lfp/analysis/v1/lfp_band.py:25-26`), NOT `LFPV1` directly. Valid inputs are any modern merge entry the helper accepts — commonly `LFPV1`, also `ImportedLFP`. **`CommonLFP` is present in `LFPOutput`** but `set_lfp_band_electrodes()` explicitly rejects it with `ValueError` (`lfp_band.py:98`); if you need band-filtered LFP from legacy common LFP, you have to bypass the helper and `insert1` directly with caution.
 - Key: includes `nwb_file_name`, `lfp_merge_id`, `filter_name`, `filter_sampling_rate`, `target_interval_list_name`, `lfp_band_sampling_rate`.
 - Part table: `LFPBandSelection.LFPBandElectrode` (`lfp_band.py:34`) — per-electrode reference configuration.
 - Entry method (preferred over manual `insert1`): `set_lfp_band_electrodes(nwb_file_name, lfp_merge_id, electrode_list, filter_name, interval_list_name, reference_electrode_list, lfp_band_sampling_rate)`. Populates both the main table and the part table.
+- **Helper interval pre-check is not the authority.** The helper validates the interval by querying `IntervalList` with `{"interval_name": interval_list_name}` (`lfp_band.py:130`), but the actual field is `interval_list_name` (`common_interval.py:28`); the eventual FK still depends on `target_interval_list_name`. The pre-check therefore can pass or fail in ways that don't match what the FK ultimately accepts — if you see a cryptic FK error after the helper said "ok," the cause is the FK, not the pre-check, and the fix is on the `target_interval_list_name` value.
+- **`reference_electrode_list` semantics.** `-1` means "no reference" (use the raw band-filtered signal). A scalar (or one-element list `[-1]` / `[k]`) applies to *every* selected electrode. A multi-element list must match `electrode_list` length 1:1 — each entry is the reference electrode for the corresponding selected electrode.
 
 **LFPBandV1** (Computed)
 
@@ -267,6 +286,12 @@ from spyglass.lfp import LFPOutput
 from spyglass.lfp.analysis.v1.lfp_band import LFPBandSelection, LFPBandV1
 
 # 1. Register the band filter (once per filter_name, site-wide).
+#    band_edges semantics for filter_type="bandpass":
+#    [low_stop, low_pass, high_pass, high_stop] — the passband is
+#    [low_pass, high_pass]; the gap between low_stop and low_pass
+#    (and between high_pass and high_stop) is the transition band.
+#    "Theta 5-11 Hz" with [4, 5, 11, 12] = 5-11 Hz passband, 1 Hz
+#    transition bands on either side.
 FirFilterParameters().add_filter(
     filter_name="Theta 5-11 Hz",
     fs=1000.0,                       # must match the LFPV1 target_sampling_rate
@@ -370,3 +395,7 @@ axes[-1].set_xlabel('Time (s)')
 plt.tight_layout()
 plt.show()
 ```
+
+## See also
+
+- For "what cascades if I re-run LFP with new params" or "how do I recover after editing an `LFPSelection` row in place" questions, see [destructive_operations.md → Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template).

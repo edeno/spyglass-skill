@@ -1,13 +1,13 @@
 # External Dependencies Reference
 
+How Spyglass uses its key external packages — DataJoint, PyNWB / HDMF, SpikeInterface, `non_local_detector`, `track_linearization`, `position_tools`, `ripple_detection`, DLC / DeepLabCut, MoSeq / `keypoint_moseq`, Kachery. Only Spyglass-specific integration patterns are documented here; generic package usage (NumPy, pandas, matplotlib) is omitted.
+
 ## Contents
 
 - [Core Dependencies](#core-dependencies)
 - [Analysis Dependencies](#analysis-dependencies)
 - [Optional Dependencies](#optional-dependencies)
 - [Dependency Tiers](#dependency-tiers)
-
-How Spyglass uses its key external packages. Only Spyglass-specific integration patterns are documented here — generic package usage (NumPy, Pandas, Matplotlib) is omitted.
 
 ## Core Dependencies
 
@@ -55,7 +55,7 @@ unit_ids = sorting.get_unit_ids()
 spike_train = sorting.get_unit_spike_train(unit_id=0)
 ```
 
-Available sorters in current Spyglass `SpikeSorterParameters` defaults: `mountainsort4`, `mountainsort5`, `kilosort2_5`, `kilosort3`, `ironclust`, `clusterless_thresholder` (`spikesorting/v1/sorting.py:158-168, 446`). Note `kilosort2_5` (with the underscore-5), not `kilosort2`. Other sorters may be reachable through SpikeInterface but require their own per-sorter wrappers / params rows.
+Sorters in `SpikeSorterParameters.contents`: Spyglass hard-codes two — `mountainsort4` (with two preset rows for tetrode vs probe) and `clusterless_thresholder` (`spikesorting/v1/sorting.py:158-184`). The list then `extend()`s with `[sorter, "default", sis.get_default_sorter_params(sorter)]` for every sorter that **SpikeInterface wraps** (`sis.available_sorters()` at `spikesorting/v1/sorting.py:185-190`). Important: `available_sorters()` returns the wrapper list — every sorter SpikeInterface knows how to drive — *not* the locally usable list. So the default-parameter row exists for `kilosort2_5`, `kilosort3`, `ironclust`, `mountainsort5`, etc. on every install, but **runtime execution** is where a missing Kilosort / IronClust / etc. binary or env actually fails (typically a `SpikeSortingException` / `FileNotFoundError` at sort time, not at row-insert time). Use `sis.installed_sorters()` (not `available_sorters()`) to enumerate what your environment can actually run; cross-check before inserting a `SpikeSortingSelection` row that points at a non-installed sorter. Note `kilosort2_5` (with the underscore-5), not `kilosort2`. Other sorters require their own per-sorter wrappers / params rows.
 
 ### SpikeInterface / Spyglass version coupling
 
@@ -68,7 +68,7 @@ public API across minor releases.
 
 ```bash
 python -c 'import spikeinterface; print(spikeinterface.__version__)'
-grep -E 'spikeinterface' environment.yml pyproject.toml
+grep -E 'spikeinterface' pyproject.toml environments/environment*.yml
 ```
 
 Common symptom → upstream version that changed it:
@@ -93,7 +93,7 @@ in sync with modern SpikeInterface; migrate to v1.
 
 ## Analysis Dependencies
 
-### non_local_detector (Bayesian Decoding)
+### non_local_detector (State Space Decoding)
 
 The decoding pipeline uses non_local_detector classifiers to decode position from clusterless waveform features or sorted spike trains.
 
@@ -170,7 +170,8 @@ The boundary between "installed by Spyglass core" and "optional / extra-required
 
 | Tier | Packages | Source |
 | ------ | ---------- | ----------- |
-| **Core** (always installed) | datajoint, pynwb, hdmf, spikeinterface, probeinterface, **sortingview, kachery-cloud, kachery-client, kachery, non_local_detector, track_linearization, position_tools, ripple_detection, xarray, ndx-franklab-novela, ndx-optogenetics, ndx-ophys-devices, ndx-pose** | `pyproject.toml` `dependencies = [...]` |
-| **Pose Estimation** | deeplabcut | Optional install extra `[dlc]` |
-| **Behavior** | keypoint_moseq | Optional install extras `[moseq-cpu]` / `[moseq-gpu]` |
-| **Not installed by Spyglass** | pynapple | Required separately (`pip install pynapple`) when calling `fetch_pynapple()` |
+| **Core** (always installed) — PyPI distribution name → Python import name where they differ | `datajoint`, `pynwb`, `hdmf`, `spikeinterface`, `probeinterface`, `sortingview`, `kachery-cloud` (`import kachery_cloud`), `non-local-detector` (`import non_local_detector`), `track-linearization` (`import track_linearization`), `position-tools` (`import position_tools`), `ripple-detection` (`import ripple_detection`), `xarray`, `ndx-franklab-novela`, `ndx-optogenetics`, `ndx-ophys-devices`, `ndx-pose` | `pyproject.toml` `dependencies = [...]` (lines 43–71 in current source) |
+| **Pose Estimation** | `deeplabcut` (extras include `ffmpeg`) | Optional install extra `[dlc]` |
+| **Behavior** | `keypoint-moseq` (`import keypoint_moseq`), `jax-moseq`, `jax` | Optional install extras `[moseq-cpu]` / `[moseq-gpu]` |
+| **Test/dev only — NOT core** | `kachery`, `kachery-client`, `ghostipy`, `pytest`, `docker`, `netcdf4` | Optional install extra `[test]` (`pyproject.toml:101-113`). The legacy `kachery` / `kachery-client` packages are *not* part of the runtime Spyglass install; only `kachery-cloud` is. Do not assume them on a fresh install. |
+| **Not installed by Spyglass** | `pynapple` | Required separately (`pip install pynapple`) when calling `fetch_pynapple()` |

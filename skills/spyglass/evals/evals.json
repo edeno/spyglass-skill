@@ -1555,9 +1555,10 @@
         "behavioral_checks": [
           "Identifies the drift direction: code ahead of DB",
           "Shows both sides of the diagnostic: Python/source table definition (for example `Table.describe()` / `code_graph.py describe`) versus live DB table definition (for example `SHOW CREATE TABLE` / `db_graph.py describe`)",
-          "Directs the user to CHANGELOG.md or equivalent release migration notes, which document the per-release Table().alter() calls an admin needs to run so the database catches up to the package",
+          "Routes the user to CHANGELOG.md or equivalent per-release migration notes as the place that documents which migration calls a given release introduced",
+          "Names `Table.alter()` (or `Table().alter(...)`) as the migration mechanism the admin runs to bring the DB schema forward to match the package",
           "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables",
-          "Does not recommend `git checkout` to an older commit, downgrading the spyglass package, or otherwise rolling the code back as the fix — the right path is to apply the per-release `Table.alter()` migrations from CHANGELOG.md so the database catches up to the package"
+          "Does not recommend rolling the code back as the fix — i.e., does not propose `git checkout` to an older commit, downgrading the spyglass package, pinning to yesterday's version, or otherwise stepping the package backwards to match the DB. Semantic check: the failure shape is any phrasing of 'roll back to make the error go away,' not just the literal substring `git checkout`. The correct path is forward (apply migrations) not backward (revert the code)."
         ]
       },
       "files": [],
@@ -1566,9 +1567,10 @@
         "Response contains substring `SpikeSortingRecording`.",
         "Identifies the drift direction: code ahead of DB",
         "Shows both sides of the diagnostic: Python/source table definition (for example `Table.describe()` / `code_graph.py describe`) versus live DB table definition (for example `SHOW CREATE TABLE` / `db_graph.py describe`)",
-        "Directs the user to CHANGELOG.md or equivalent release migration notes, which document the per-release Table().alter() calls an admin needs to run so the database catches up to the package",
+        "Routes the user to CHANGELOG.md or equivalent per-release migration notes as the place that documents which migration calls a given release introduced",
+        "Names `Table.alter()` (or `Table().alter(...)`) as the migration mechanism the admin runs to bring the DB schema forward to match the package",
         "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables",
-        "Does not recommend `git checkout` to an older commit, downgrading the spyglass package, or otherwise rolling the code back as the fix — the right path is to apply the per-release `Table.alter()` migrations from CHANGELOG.md so the database catches up to the package"
+        "Does not recommend rolling the code back as the fix — i.e., does not propose `git checkout` to an older commit, downgrading the spyglass package, pinning to yesterday's version, or otherwise stepping the package backwards to match the DB. Semantic check: the failure shape is any phrasing of 'roll back to make the error go away,' not just the literal substring `git checkout`. The correct path is forward (apply migrations) not backward (revert the code)."
       ]
     },
     {
@@ -2281,7 +2283,7 @@
       "tier": "parameter-semantics",
       "difficulty": "hard",
       "prompt": "In `TrodesPosParams.insert_default()`'s params dict I see smoothing / filter fields. What happens to my resulting `speed` column if I turn smoothing off?",
-      "expected_output": "Routes to position_trodes_v1_pipeline.md and to `TrodesPosParams.describe()` / `.heading` for field discovery. Identifies TWO distinct smoothing fields, BOTH of which affect the returned `speed` column — the eval-time mistake to flag is claiming one of them doesn't. Per `src/spyglass/common/common_position.py:407-481`: (1) `speed_smoothing_std_dev` is a Gaussian sigma in seconds. It's used in two places: per-LED speed for outlier rejection (lines ~407-419), AND inside `get_velocity` when computing the final velocity from the smoothed centroid (line ~478). Shrinking it makes the velocity (and therefore speed) trace noisier directly. (2) `position_smoothing_duration` sets a moving-average window over the front and back LED positions BEFORE the final centroid is computed (lines ~432-438). Because the final velocity is computed from that smoothed centroid, shrinking `position_smoothing_duration` propagates noise through the centroid into the velocity derivative and into speed. So 'turning smoothing off' on either field will make the speed trace noisier and produce more spurious threshold crossings downstream — they just enter the speed pipeline at different points (velocity-stage Gaussian vs. position-stage moving-average). Recommends `TrodesPosParams.describe()` / `.heading` to discover the exact field names instead of guessing, and warns against assuming either field is decoupled from the speed column.",
+      "expected_output": "Routes to position_trodes_v1_pipeline.md. The fields the user is asking about live *inside* the `params` blob on `TrodesPosParams`, not as columns in the table heading — so `TrodesPosParams.describe()` / `.heading` only confirms that a `params` blob column exists, it cannot reveal which keys are inside it. The right field-discovery moves are: (a) `(TrodesPosParams & key).fetch1('params')` on an existing row to read the actual blob keys, (b) reading `TrodesPosParams.default_params` / `insert_default()` source to see the shipped default keys, and (c) source-reading `src/spyglass/common/common_position.py` to see how each blob key is actually consumed. `.heading` / `.describe()` is fine as a preliminary table-shape check (does the table even have a `params` column?) but is not sufficient for parameter semantics. Identifies TWO distinct smoothing keys *inside the params blob*, BOTH of which affect the returned `speed` column — the eval-time mistake to flag is claiming one of them doesn't. Per `src/spyglass/common/common_position.py:407-481`: (1) `speed_smoothing_std_dev` is a Gaussian sigma in seconds. It's used in two places: per-LED speed for outlier rejection (lines ~407-419), AND inside `get_velocity` when computing the final velocity from the smoothed centroid (line ~478). Shrinking it makes the velocity (and therefore speed) trace noisier directly. (2) `position_smoothing_duration` sets a moving-average window over the front and back LED positions BEFORE the final centroid is computed (lines ~432-438). Because the final velocity is computed from that smoothed centroid, shrinking `position_smoothing_duration` propagates noise through the centroid into the velocity derivative and into speed. So 'turning smoothing off' on either field will make the speed trace noisier and produce more spurious threshold crossings downstream — they just enter the speed pipeline at different points (velocity-stage Gaussian vs. position-stage moving-average). Warns against assuming either field is decoupled from the speed column.",
       "assertions": {
         "required_substrings": [
           "TrodesPosParams",
@@ -2293,17 +2295,18 @@
           "Names `speed_smoothing_std_dev` (Gaussian sigma) as the field that controls speed-trace noise",
           "Distinguishes `speed_smoothing_std_dev` (Gaussian sigma applied at the velocity stage inside `get_velocity`, common_position.py:475) from `position_smoothing_duration` (moving-average applied to the LED positions BEFORE centroid / velocity / speed are computed, common_position.py:431-435). Both affect the returned `speed` column — they just enter the pipeline at different stages — and shrinking either produces a noisier speed trace. Does NOT claim either field is decoupled from `speed`, and does NOT claim `position_smoothing_duration` is applied after speed is computed.",
           "Predicts: shrinking / disabling `speed_smoothing_std_dev` gives a noisier speed trace, causing spurious crossings of downstream thresholds",
-          "Recommends inspecting `TrodesPosParams.describe()` / `.heading` for exact field names rather than guessing"
+          "Recommends a blob-aware field-discovery move for these *blob-internal* keys — at least one of: `(TrodesPosParams & key).fetch1('params')` on an existing row, reading `TrodesPosParams.default_params` / `insert_default()` source, or source-reading `common_position.py` to see how each key is consumed. `.describe()` / `.heading` alone is insufficient because those only confirm a `params` blob column exists; they cannot reveal blob-internal keys like `speed_smoothing_std_dev`. Recommending `.heading` as a preliminary table-shape check is fine, but it must not be presented as the primary mechanism for finding blob-internal field names."
         ]
       },
       "files": [],
       "expectations": [
+        "Response contains substring `TrodesPosParams`.",
         "Response contains substring `speed_smoothing_std_dev`.",
         "Response contains substring `position_smoothing_duration`.",
         "Names `speed_smoothing_std_dev` (Gaussian sigma) as the field that controls speed-trace noise",
         "Distinguishes `speed_smoothing_std_dev` (Gaussian sigma applied at the velocity stage inside `get_velocity`, common_position.py:475) from `position_smoothing_duration` (moving-average applied to the LED positions BEFORE centroid / velocity / speed are computed, common_position.py:431-435). Both affect the returned `speed` column — they just enter the pipeline at different stages — and shrinking either produces a noisier speed trace. Does NOT claim either field is decoupled from `speed`, and does NOT claim `position_smoothing_duration` is applied after speed is computed.",
         "Predicts: shrinking / disabling `speed_smoothing_std_dev` gives a noisier speed trace, causing spurious crossings of downstream thresholds",
-        "Recommends inspecting `TrodesPosParams.describe()` / `.heading` for exact field names rather than guessing"
+        "Recommends a blob-aware field-discovery move for these *blob-internal* keys — at least one of: `(TrodesPosParams & key).fetch1('params')` on an existing row, reading `TrodesPosParams.default_params` / `insert_default()` source, or source-reading `common_position.py` to see how each key is consumed. `.describe()` / `.heading` alone is insufficient because those only confirm a `params` blob column exists; they cannot reveal blob-internal keys like `speed_smoothing_std_dev`. Recommending `.heading` as a preliminary table-shape check is fine, but it must not be presented as the primary mechanism for finding blob-internal field names."
       ]
     },
     {
@@ -3851,15 +3854,14 @@
           "PositionGroup",
           "DecodingParameters",
           "ClusterlessDecodingSelection",
-          "IntervalList",
-          "key_source"
+          "IntervalList"
         ],
         "forbidden_substrings": [
           "populate_all_common(",
           "edit the ClusterlessDecodingV1 schema"
         ],
         "behavioral_checks": [
-          "First diagnostic step is `len(ClusterlessDecodingSelection & key)` (or equivalent inspection of the selection key) — because `ClusterlessDecodingV1`'s only direct parent is `ClusterlessDecodingSelection`, an empty key_source most directly means the selection row is missing or the restriction does not match",
+          "First diagnostic step works in *restricted* candidate / pending terms — i.e., `len(ClusterlessDecodingSelection & key)` and/or `(ClusterlessDecodingV1.key_source & key)` (and optionally `(ClusterlessDecodingV1.key_source & key) - ClusterlessDecodingV1.proj()` for the pending count). The reasoning is: because `ClusterlessDecodingV1`'s only direct parent is `ClusterlessDecodingSelection`, an empty key_source most directly means the selection row is missing or the restriction does not match. Bare unrestricted forms like `len(ClusterlessDecodingV1.key_source - ClusterlessDecodingV1)` do NOT satisfy this check — the diagnostic must be restricted by the user's `key`, otherwise it conflates this session's missing row with global lab state.",
           "Walks `ClusterlessDecodingSelection.parents()` and checks `(parent & key)` for each *only* if building the selection or if the selection insert itself is blocked by a missing FK target — names UnitWaveformFeaturesGroup AND PositionGroup AND DecodingParameters AND IntervalList as those parents"
         ],
         "expected_output_tables_exempt": [
@@ -3869,9 +3871,6 @@
           "PositionOutput",
           "UnitWaveformFeaturesSelection",
           "ClusterlessDecodingV1"
-        ],
-        "required_substrings_exempt": [
-          "key_source"
         ]
       },
       "files": [],
@@ -3881,10 +3880,9 @@
         "Response contains substring `DecodingParameters`.",
         "Response contains substring `ClusterlessDecodingSelection`.",
         "Response contains substring `IntervalList`.",
-        "Response contains substring `key_source`.",
         "Response does not contain substring `populate_all_common(`.",
         "Response does not contain substring `edit the ClusterlessDecodingV1 schema`.",
-        "First diagnostic step is `len(ClusterlessDecodingSelection & key)` (or equivalent inspection of the selection key) — because `ClusterlessDecodingV1`'s only direct parent is `ClusterlessDecodingSelection`, an empty key_source most directly means the selection row is missing or the restriction does not match",
+        "First diagnostic step works in *restricted* candidate / pending terms — i.e., `len(ClusterlessDecodingSelection & key)` and/or `(ClusterlessDecodingV1.key_source & key)` (and optionally `(ClusterlessDecodingV1.key_source & key) - ClusterlessDecodingV1.proj()` for the pending count). The reasoning is: because `ClusterlessDecodingV1`'s only direct parent is `ClusterlessDecodingSelection`, an empty key_source most directly means the selection row is missing or the restriction does not match. Bare unrestricted forms like `len(ClusterlessDecodingV1.key_source - ClusterlessDecodingV1)` do NOT satisfy this check — the diagnostic must be restricted by the user's `key`, otherwise it conflates this session's missing row with global lab state.",
         "Walks `ClusterlessDecodingSelection.parents()` and checks `(parent & key)` for each *only* if building the selection or if the selection insert itself is blocked by a missing FK target — names UnitWaveformFeaturesGroup AND PositionGroup AND DecodingParameters AND IntervalList as those parents"
       ]
     },
@@ -4728,8 +4726,8 @@
       "stage": "runtime-debugging",
       "tier": "runtime-errors",
       "difficulty": "medium",
-      "prompt": "traceback from `LFPV1.populate()`: `PermissionError: [Errno 13] Permission denied: '/stelmo/nwb/analysis/j1620210710_/j1620210710_<hash>.nwb'`. other lab members can populate fine. what's going on?",
-      "expected_output": "**Filesystem-permission layer**, not a Spyglass-code bug. The path `/stelmo/nwb/analysis/...` is the resolved `analysis_dir` derived from `SPYGLASS_BASE_DIR` (`SpyglassConfig.analysis_dir` in `src/spyglass/settings.py`). Spyglass writes new AnalysisNwbfiles into that tree at populate time; the kernel raised `Errno 13` because the user can't write to that directory. The fix is upstream of the Python call — at the filesystem / group-permission layer.\n\n**Diagnose, don't blanket-chmod.** Three layers to check, in order:\n\n**(1) Group membership.** Lab installs typically own `analysis/` under a shared group (e.g. `spyglass`, `franklab`). Confirm the user is in that group:\n\n```bash\nid                                       # what groups am I in?\nls -ld /stelmo/nwb/analysis              # owner:group on the dir\n```\n\nIf the listed group is missing from `id`, ask the admin to add the user. Other lab members work because they're already in the group; the new user is the only difference.\n\n**(2) Group-write bit + setgid on the dir.** Even if the user is in the group, the directory needs `g+w` AND the setgid bit (`g+s`, drwxrws---) so newly-created files inherit the group rather than the user's primary group:\n\n```bash\nls -ld /stelmo/nwb/analysis/j1620210710_   # wants drwxrws---, group=spyglass\n# admin fix:\n# chown :spyglass /stelmo/nwb/analysis/j1620210710_\n# chmod 2775 /stelmo/nwb/analysis/j1620210710_   # 2 = setgid; 775 = rwxrwxr-x\n```\n\n**(3) `umask` on the user's shell.** Files Spyglass writes inherit the user's `umask`. Most labs set `umask 002` so newly-created files are group-writable; if the user has `umask 022` from a personal dotfile, their files won't be writable by others. Check `umask` in the shell, and set `umask 002` in the user's `.bashrc` / `.zshrc` if the lab convention requires it.\n\n**Don't:** `chmod -R 777 /stelmo/nwb/analysis`. That removes the permission gate entirely (any user / any process can rewrite arbitrary analysis files), and a lab admin will revert it the next time they audit. Use the targeted fixes above.\n\nRoutes to setup_troubleshooting.md and setup_config.md.",
+      "prompt": "traceback from `LFPV1.populate()`: `PermissionError: [Errno 13] Permission denied: '${SPYGLASS_BASE_DIR}/analysis/j1620210710_/j1620210710_<hash>.nwb'`. other lab members can populate fine. what's going on?",
+      "expected_output": "**Filesystem-permission layer**, not a Spyglass-code bug. The path `${SPYGLASS_BASE_DIR}/analysis/...` is the resolved `analysis_dir` derived from `SPYGLASS_BASE_DIR` (`SpyglassConfig.analysis_dir` in `src/spyglass/settings.py`). Spyglass writes new AnalysisNwbfiles into that tree at populate time; the kernel raised `Errno 13` because the user can't write to that directory. The fix is upstream of the Python call — at the filesystem / group-permission layer.\n\n**Diagnose, don't blanket-chmod.** Three layers to check, in order:\n\n**(1) Group membership.** Lab installs typically own `analysis/` under a shared group (e.g. `spyglass`, `example-lab`). Confirm the user is in that group:\n\n```bash\nid                                       # what groups am I in?\nls -ld ${SPYGLASS_BASE_DIR}/analysis              # owner:group on the dir\n```\n\nIf the listed group is missing from `id`, ask the admin to add the user. Other lab members work because they're already in the group; the new user is the only difference.\n\n**(2) Group-write bit + setgid on the dir.** Even if the user is in the group, the directory needs `g+w` AND the setgid bit (`g+s`, drwxrws---) so newly-created files inherit the group rather than the user's primary group:\n\n```bash\nls -ld ${SPYGLASS_BASE_DIR}/analysis/j1620210710_   # wants drwxrws---, group=spyglass\n# admin fix:\n# chown :spyglass ${SPYGLASS_BASE_DIR}/analysis/j1620210710_\n# chmod 2775 ${SPYGLASS_BASE_DIR}/analysis/j1620210710_   # 2 = setgid; 775 = rwxrwxr-x\n```\n\n**(3) `umask` on the user's shell.** Files Spyglass writes inherit the user's `umask`. Most labs set `umask 002` so newly-created files are group-writable; if the user has `umask 022` from a personal dotfile, their files won't be writable by others. Check `umask` in the shell, and set `umask 002` in the user's `.bashrc` / `.zshrc` if the lab convention requires it.\n\n**Don't:** `chmod -R 777 ${SPYGLASS_BASE_DIR}/analysis`. That removes the permission gate entirely (any user / any process can rewrite arbitrary analysis files), and a lab admin will revert it the next time they audit. Use the targeted fixes above.\n\nRoutes to setup_troubleshooting.md and setup_config.md.",
       "assertions": {
         "required_substrings": [
           "SPYGLASS_BASE_DIR",

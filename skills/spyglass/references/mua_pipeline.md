@@ -18,10 +18,11 @@ from spyglass.mua.v1 import MuaEventsV1, MuaEventsParameters
 
 MUA detection uses the same `ripple_detection` library as ripple detection (`multiunit_HSE_detector`). `MuaEventsV1.make()` runs the detector only over samples inside `detection_interval` (`mua/v1/mua.py:100, 111`); the z-score baseline and event-rate threshold are estimated on those samples. Too-short, sparse-spike, or otherwise unrepresentative `detection_interval` choices skew the z-scoring and the resulting event set — pick an interval long enough that the baseline statistics are stable, and don't reuse one that overlaps poorly with the spike data. Same shape of gotcha as ripple detection — see [ripple_pipeline.md](ripple_pipeline.md).
 
-**Prerequisites** — `MuaEventsV1` depends on three populated upstream tables, plus a named detection interval:
+**Prerequisites** — `MuaEventsV1` depends on one parameter row plus three upstream inputs:
 
+- `MuaEventsParameters` — the `mua_param_dict` row (see "Key Tables" below) keyed by `mua_param_name`.
 - `SortedSpikesGroup` — sorted spikes aggregated into a group, see [spikesorting_v1_pipeline.md](spikesorting_v1_pipeline.md).
-- A populated `PositionOutput` row (the FK is renamed to `pos_merge_id` — see "renamed FKs" below). `pos_merge_id` identifies one specific computed position row, including its **source / interval / params**, not just the session — restrict by the full upstream key (e.g. `nwb_file_name + interval_list_name + trodes_pos_params_name` for Trodes, or the equivalent DLC tuple) when fetching the merge_id, not by `nwb_file_name` alone. The source must also be one whose `fetch1_dataframe()` returns a `speed` or `head_speed` column — `MuaEventsV1.get_speed()` reads `"speed" if "speed" in position_info.columns else "head_speed"` (`mua/v1/mua.py:144-150`). `TrodesPosV1` and `DLCPosV1` qualify; `ImportedPose` does not (it exposes `fetch_pose_dataframe()` instead). See [position_pipeline.md](position_pipeline.md).
+- A populated `PositionOutput` row (the FK is renamed to `pos_merge_id` — see "renamed FKs" below). `pos_merge_id` identifies one specific computed position row, including its **source / interval / params**, not just the session — restrict by the full upstream key (e.g. `nwb_file_name + interval_list_name + trodes_pos_params_name` for Trodes, or the equivalent DLC tuple) when fetching the merge_id, not by `nwb_file_name` alone. The source must also be one whose `fetch1_dataframe()` returns a `speed` or `head_speed` column — `MuaEventsV1.get_speed()` reads `"speed" if "speed" in position_info.columns else "head_speed"` (`mua/v1/mua.py:144-150`). `TrodesPosV1` and `DLCPosV1` qualify directly; the `CommonPos` part of `PositionOutput` (backed by `IntervalPositionInfo`, `position_merge.py:14`) also qualifies. `IntervalPositionInfo.fetch1_dataframe()` starts at `common/common_position.py:491` and routes through `_data_to_df` (`common/common_position.py:497-510`), where the column list `f"{prefix}speed"` with `prefix="head_"` (line 510) composes to the literal `head_speed` column that `MuaEventsV1.get_speed()` then accepts. `ImportedPose` and raw DLC `DLCPoseEstimation` remain poor choices for this path (different fetch surface). See [position_pipeline.md](position_pipeline.md).
 - `IntervalList` — a named interval (passed as `detection_interval`, FK-renamed from `interval_list_name`).
 
 ## Pipeline Flow
@@ -62,7 +63,7 @@ Source: [`src/spyglass/mua/v1/mua.py`](https://github.com/LorenFrankLab/spyglass
 
 ## Canonical Example
 
-Mirrors `50_MUA_Detection.ipynb`. Assumes `SortedSpikesGroup` and `PositionOutput` are already populated. The PositionOutput source must be one whose `fetch1_dataframe()` returns a `speed` or `head_speed` column — `TrodesPosV1` or `DLCPosV1` (see prerequisites above for why `ImportedPose` doesn't qualify).
+Mirrors `50_MUA_Detection.ipynb`. Assumes `SortedSpikesGroup` and `PositionOutput` are already populated. The PositionOutput source must be one whose `fetch1_dataframe()` returns a `speed` or `head_speed` column — `TrodesPosV1`, `DLCPosV1`, or `CommonPos`/`IntervalPositionInfo` qualify (see prerequisites above for why `ImportedPose` and raw `DLCPoseEstimation` don't).
 
 ```python
 from spyglass.mua.v1 import MuaEventsV1, MuaEventsParameters
@@ -122,8 +123,8 @@ MuaEventsV1().populate(mua_key)
 mua_times = (MuaEventsV1 & mua_key).fetch1_dataframe()   # start_time, end_time columns
 ```
 
-`MuaEventsV1` also exposes `get_speed`, `get_firing_rate`, and `create_figurl` for post-populate plotting and interactive visualization — see [figurl.md](figurl.md) for the FigURL workflow; introspect the rest with `help(MuaEventsV1)` or `dir(MuaEventsV1)`.
+`MuaEventsV1` also exposes `get_speed`, `get_firing_rate`, and `create_figurl` for post-populate plotting and interactive visualization — see [figurl.md](figurl.md) for the FigURL workflow; introspect the rest with `python skills/spyglass/scripts/code_graph.py describe MuaEventsV1` (no DB or import required) — see [feedback_loops.md § Tool routing](feedback_loops.md#tool-routing-for-relationship-and-lookup-questions).
 
 ## Dependency: ripple_detection
 
-`multiunit_HSE_detector` from the `ripple_detection` package (imported at mua.py:5). The four `mua_param_dict` keys (`minimum_duration`, `zscore_threshold`, `close_event_threshold`, `speed_threshold`) flow through the detector as `mua_params` at mua.py:111-112. To change detector behavior, either update the params dict (still using `multiunit_HSE_detector`) or swap in a different detector by subclassing and overriding `make()`.
+`multiunit_HSE_detector` from the `ripple_detection` package (imported at mua.py:5). The four `mua_param_dict` keys (`minimum_duration`, `zscore_threshold`, `close_event_threshold`, `speed_threshold`) flow through the detector as `mua_params` at mua.py:111-112. To change detector behavior on the same algorithm, update the params dict and re-populate. To use a *different* detector, author a custom Computed table in your own (lab/user) schema that FKs the same upstream inputs (`SortedSpikesGroup`, `PositionOutput`, `IntervalList`) and runs your detector inside `make()` — see [custom_pipeline_authoring.md](custom_pipeline_authoring.md). Do not subclass `MuaEventsV1` or patch its `make()` body in your local checkout: it's a schema-registered `dj.Computed` table, and local edits to `src/spyglass/...` desync your code from the shared Spyglass schema other labs run. Editable install (`pip install -e .`) just points Python at your checkout — it does not "revert" edits — but those edits are easy to lose: a branch switch, `git pull`, reinstall, or upgrade can overwrite them silently. Push that work upstream as a PR if it should ship in the canonical pipeline.

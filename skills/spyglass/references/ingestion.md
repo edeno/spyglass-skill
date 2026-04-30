@@ -1,5 +1,7 @@
 # NWB Ingestion
 
+Loading NWB files into Spyglass via `insert_sessions` — filename rules, the post-ingest verification triplet, and the `reinsert=True` re-ingestion path. For the tables ingest writes into, see [common_tables.md](common_tables.md).
+
 ## Contents
 
 - [Overview](#overview)
@@ -16,7 +18,7 @@
 
 Ingestion is the first-contact flow for a new NWB file: it walks the file, populates a large set of Spyglass common tables (Session, Subject, Electrode, ElectrodeGroup, Raw, DIOEvents, RawPosition, TaskEpoch, …), and registers the file under `Nwbfile`. Most first-time Spyglass tasks start with ingestion.
 
-Entry point: `spyglass.data_import.insert_sessions`. Canonical notebook: `notebooks/02_Insert_Data.ipynb` (run this one; `notebooks/py_scripts/02_Insert_Data.py` is the jupytext mirror kept for PR review). Docs: `docs/src/Features/Ingestion.md`.
+Entry point: `spyglass.data_import.insert_sessions`. Canonical tutorial notebook: `notebooks/02_Insert_Data.ipynb` (a worked walkthrough; for schema/API facts trust `src/spyglass/...`. `notebooks/py_scripts/02_Insert_Data.py` is the jupytext mirror kept for PR review). Docs: `docs/src/Features/Ingestion.md`.
 
 Some lab-specific or custom metadata (labs, probes, devices) is often populated manually before calling `insert_sessions`, since those lookup tables are shared across sessions.
 
@@ -160,7 +162,10 @@ sgi.insert_sessions("my_session.nwb", reinsert=True)
 
 **What `reinsert=True` actually does.** `insert_sessions` checks whether `Nwbfile & {nwb_file_name: ...}` already exists; if so AND `reinsert=True`, it calls `query.delete(safemode=False)` on the Nwbfile row first, then re-copies and re-runs `populate_all_common` (`data_import/insert_sessions.py:73-92`). If `reinsert=False` and the file already exists, it warns and **skips** — does NOT raise. So:
 
-- `reinsert=True` is **destructive**: the cascade deletes every downstream row that FKs the Nwbfile (Session, IntervalList rows for this file, all populate-tier outputs). Cautious-delete protections apply (the deletion runs through SpyglassMixin's cautious_delete flow); permission failures or missing `Session.Experimenter` linkage can stop the delete partway. Inspect downstream topology before deleting — `Session.descendants()` returns table names / `FreeTable` objects, not a restrictable relation, so use `python skills/spyglass/scripts/db_graph.py path --down Session` for the topology view, or loop `Session.descendants(as_objects=True)` and restrict each table individually by `nwb_file_name`. Back up `analysis/` files if you want them.
+- `reinsert=True` is **destructive — full cascade**. Deletes every downstream row that FKs the Nwbfile: `Session`, `IntervalList` rows for this file, and every populate-tier output produced from them.
+- **Permission gating.** The deletion runs through SpyglassMixin's cautious_delete flow; missing `Session.Experimenter` linkage or a permission failure can stop the delete partway, leaving a partially-deleted state that subsequent `reinsert=True` calls have to clean up before they can re-ingest.
+- **Inspect topology before running.** `Session.descendants()` returns table names / `FreeTable` objects, not a restrictable relation. For the dependency view use `python skills/spyglass/scripts/db_graph.py path --down Session`, or loop `Session.descendants(as_objects=True)` and restrict each table by `nwb_file_name` to count rows that will be lost.
+- **Back up analysis outputs you care about before running.** Spyglass cleanup *will* remove unused DataJoint-managed external files (raw and analysis stores; `cautious_delete.py:238` calls DataJoint external cleanup with `delete_external_files=True` after the row delete), but it will not preserve arbitrary lab-managed files, hand-curated derivatives, or exports living outside the tracked external stores. Copy out anything in that second category before `reinsert=True`.
 - `reinsert=False` (default) on an already-ingested file is a no-op with a warning. Don't expect re-ingestion behavior unless you pass `reinsert=True` explicitly.
 
 ### Delete Quirks (read before deleting a Session)

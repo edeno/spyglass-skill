@@ -1,5 +1,7 @@
 <!-- pipeline-version: v1 -->
-# Spike Sorting Pipeline
+# Spike Sorting Pipeline (v1)
+
+Current spike-sorting pipeline (`SpikeSortingRecording` → `SpikeSorting` → `CurationV1` → metrics → `SpikeSortingOutput`). For analysis surfaces *downstream* of curation (`SortedSpikesGroup`, `UnitAnnotation`), see [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md). For v0 legacy, see [spikesorting_v0_legacy.md](spikesorting_v0_legacy.md).
 
 ## Contents
 
@@ -16,7 +18,7 @@
 - [Step 6: Burst-Pair Curation (Optional)](#step-6-burst-pair-curation-optional)
 - [Post-pipeline analysis](#post-pipeline-analysis)
 - [Imported Spike Sorting](#imported-spike-sorting)
-- [Recomputing Across Environments](#recomputing-across-environments)
+- [Recomputing Deleted Recording Files](#recomputing-deleted-recording-files)
 
 ## Overview
 
@@ -34,7 +36,7 @@ Use v1 for new work. If you're reading v0 code or querying existing v0 sortings,
 
 ## Canonical Example (v1)
 
-End-to-end v1 flow: recording → artifact detection → sorting → curation → publish to `SpikeSortingOutput`. Each step uses the `insert_selection()` classmethod convention to generate UUIDs and validate keys — calling `.insert1()` directly on a v1 Selection table skips that validation. Artifact detection is included because the merge layer's downstream lookup (`get_restricted_merge_ids`) defaults to `restrict_by_artifact=True` and routes the interval through the artifact-selection table (`spikesorting/spikesorting_merge.py:95`); skipping the artifact step makes that lookup return zero merge_ids unless the caller passes `restrict_by_artifact=False` explicitly.
+End-to-end v1 flow: recording → artifact detection → sorting → curation → publish to `SpikeSortingOutput`. Each step uses the `insert_selection()` classmethod convention to generate the UUID PK and check for an existing matching row before inserting (`SpikeSortingRecordingSelection.insert_selection` at `recording.py:176-182`; `SpikeSortingSelection.insert_selection` at `sorting.py:224-230`; `ArtifactDetectionSelection.insert_selection` at `artifact.py:120-126`) — the helpers are not a separate key-validation layer beyond DataJoint's normal insert/FK checks; calling `.insert1()` directly on a v1 Selection table skips the UUID-mint and the existing-row check (you'd insert a fresh row with a new UUID even when an identical row already exists). Artifact detection is included because the merge layer's downstream lookup (`get_restricted_merge_ids`) defaults to `restrict_by_artifact=True` and routes the interval through the artifact-selection table (`spikesorting/spikesorting_merge.py:95`); skipping the artifact step makes that lookup return zero merge_ids unless the caller passes `restrict_by_artifact=False` explicitly.
 
 **Return-value gotcha — several v1 `insert_*` methods are rerun-tolerant.**
 `SpikeSortingRecordingSelection.insert_selection` (`recording.py:176-182`),
@@ -170,10 +172,11 @@ SpikeSortingRecordingSelection → SpikeSortingRecording (preprocessing)
 SpikeSortingSelection → SpikeSorting (run sorter)
     ↓
 CurationV1 (labels + merge groups)
+    ↓                          ├─→ FigURLCurationSelection → FigURLCuration (manual curation UI; FKs CurationV1 directly, not MetricCuration)
     ↓                          ↓
     ↓               MetricCurationSelection → MetricCuration (quality metrics)
-    ↓                          │        ├─→ FigURLCurationSelection → FigURLCuration (manual curation UI)
-    ↓                          │        └─→ BurstPairSelection → BurstPair (optional burst-pair analysis)
+    ↓                          │
+    ↓                          └─→ BurstPairSelection → BurstPair (optional burst-pair analysis)
     ↓                          ↓
 SpikeSortingOutput.CurationV1 (merge table)
     ↓
@@ -306,7 +309,7 @@ from spyglass.spikesorting.v1 import (
 
 - Key: `artifact_param_name`
 - Defaults: `"default"`, `"none"`
-- Use `ArtifactDetectionParameters.describe()` for exact parameter fields
+- `artifact_params` is a `blob` column (`spikesorting/v1/artifact.py:55`), so `ArtifactDetectionParameters.describe()` only shows the outer column — it cannot reveal blob-internal keys. Discover blob-internal fields via `ArtifactDetectionParameters().insert_default()` (then read a stock row), `(ArtifactDetectionParameters & key).fetch1("artifact_params")` on an existing row, or source: read the `contents` list and `_get_artifact_times` for the keys actually consumed.
 
 ## Step 3: Spike Sorting
 
@@ -340,7 +343,7 @@ from spyglass.spikesorting.v1 import CurationV1
 **CurationV1** (Manual)
 
 - Key: `sorting_id`, `curation_id`
-- Valid labels: `"reject"`, `"noise"`, `"artifact"`, `"mua"`, `"accept"`
+- Conventional labels used by Spyglass curation/display/filtering: `"reject"`, `"noise"`, `"artifact"`, `"mua"`, `"accept"`. The constant lives in source as `valid_labels`, but `insert_curation` does not enforce membership; downstream filters and viewers expect this set, so other strings will store but won't be recognized by the standard tooling.
 - Methods:
   - `insert_curation(sorting_id, parent_curation_id, labels, merge_groups, apply_merge, metrics, description)`
   - `get_recording(key)` — SpikeInterface BaseRecording
@@ -443,7 +446,7 @@ BurstPair.populate({
 
 ## Post-pipeline analysis
 
-`SortedSpikesGroup` (aggregating units across sort groups for decoding / MUA / population analysis), `UnitAnnotation`, and the post-curation common patterns (spike-time fetch, firing-rate compute, SpikeInterface accessors) live in [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md). That file mirrors `notebooks/11_Spike_Sorting_Analysis.ipynb`. This file stays focused on the pipeline itself (preprocessing → sorting → curation → metrics → burst-pair).
+`SortedSpikesGroup` (aggregating units across sort groups for decoding / MUA / population analysis), `UnitAnnotation`, and the post-curation common patterns (spike-time fetch, firing-rate compute, SpikeInterface accessors) live in [spikesorting_v1_analysis.md](spikesorting_v1_analysis.md). For tutorial flow, see `notebooks/11_Spike_Sorting_Analysis.ipynb`; for schema/API authority trust `src/spyglass/...` over the notebook prose. This file stays focused on the pipeline itself (preprocessing → sorting → curation → metrics → burst-pair).
 
 ## Imported Spike Sorting
 
@@ -457,6 +460,19 @@ For pre-sorted spikes stored in NWB Units table.
 - `add_annotation(key, id, label, annotations)` — Add unit annotations
 - Auto-inserts into `SpikeSortingOutput.ImportedSpikeSorting`
 
-## Recomputing Across Environments
+## Recomputing Deleted Recording Files
 
-Before re-running a sort from a different env (different lab, conda setup, or PyNWB pin), check NWB-namespace compatibility: `RecordingRecomputeVersions().this_env` (from `spyglass.spikesorting.v1.recompute`) is a cached property returning the subset of recordings whose stored `nwb_deps` match the currently installed stack. A mismatch means the stored analysis file won't load cleanly — pin the env or re-run from raw, don't assume.
+`SpikeSortingRecording` writes a large preprocessed recording analysis file. Labs may delete that file to save storage, then recreate it later from the raw NWB plus the stored `SpikeSortingRecordingSelection` row.
+
+The recompute tables (all in `spyglass.spikesorting.v1.recompute`, source: `spikesorting/v1/recompute.py:1-15, 55-103, 188-230`) support that storage-reclamation workflow:
+
+- `RecordingRecomputeVersions` records the NWB namespace / dependency versions associated with the stored recording file.
+- `RecordingRecomputeVersions().this_env` is a cached property that filters to recordings compatible with the current PyNWB / namespace stack.
+- `RecordingRecomputeSelection` records a recompute attempt and the `UserEnvironment` used.
+- `RecordingRecompute` recreates the same preprocessed recording intermediate.
+
+Use recompute when the `SpikeSortingRecording` analysis file is missing or intentionally deleted and you want to restore the same intermediate. Normal lifecycle: recompute / match first (`RecordingRecompute.make()` compares old vs. new hashes, `recompute.py:794-860`), *then* delete the old file via `RecordingRecompute.delete_files(...)` — which only removes files for `matched=1` entries (`recompute.py:882-938`); a later recompute recreates the same intermediate from the stored selection row. Do **not** use recompute to change preprocessing, sorter, curation, or metric parameters — insert a new selection row and repopulate downstream instead (see [destructive_operations.md § Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template)).
+
+## See also
+
+- For "what cascades if I re-run sorting with new params" or "how do I recover after editing a `SpikeSortingSelection` / `WaveformSelection` row" questions, see [destructive_operations.md → Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template).

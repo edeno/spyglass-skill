@@ -121,7 +121,7 @@ def test_check_dj_config_skips_when_datajoint_missing(verify_module, monkeypatch
 
 def test_check_dj_config_fails_when_host_missing(verify_module, monkeypatch):
     fake_dj = mock.MagicMock()
-    fake_dj.config = {"database.user": "alice"}
+    fake_dj.config = {"database.user": "testuser"}
     monkeypatch.setitem(sys.modules, "datajoint", fake_dj)
     result = verify_module.check_dj_config_loaded()
     assert result.status == "fail"
@@ -131,11 +131,11 @@ def test_check_dj_config_fails_when_host_missing(verify_module, monkeypatch):
 
 def test_check_dj_config_ok_when_both_set(verify_module, monkeypatch):
     fake_dj = mock.MagicMock()
-    fake_dj.config = {"database.host": "db.example.test", "database.user": "alice"}
+    fake_dj.config = {"database.host": "db.example.test", "database.user": "testuser"}
     monkeypatch.setitem(sys.modules, "datajoint", fake_dj)
     result = verify_module.check_dj_config_loaded()
     assert result.status == "ok"
-    assert result.evidence == {"host": "db.example.test", "user": "alice"}
+    assert result.evidence == {"host": "db.example.test", "user": "testuser"}
 
 
 # ---------------------------------------------------------------------------

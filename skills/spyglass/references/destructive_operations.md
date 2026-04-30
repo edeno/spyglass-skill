@@ -14,11 +14,13 @@ This reference owns the canonical paired shapes for every destructive helper in 
   - [Merge-table delete helpers](#merge-table-delete-helpers)
   - [File cleanup](#file-cleanup)
   - [Session-wide cleanup](#session-wide-cleanup)
+- [Counterfactual / recovery / parameter-swap cascade template](#counterfactual--recovery--parameter-swap-cascade-template)
+- [`update1` on params with downstream rows](#update1-on-params-with-downstream-rows)
 - [Cross-references](#cross-references)
 
 ## Required workflow
 
-Every call to `delete()`, `drop()`, `cleanup()`, `merge_delete()`, `merge_delete_parent()`, `super_delete()`, or `delete_quick()` proceeds through these phases. Do not skip any, and do not collapse Phase 2 and Phase 3 into a single message — give the user time to actually read the inspect output before expecting confirmation.
+Every call to `delete()`, `cleanup()`, `merge_delete()`, `merge_delete_parent()`, or `super_delete()` proceeds through these phases. Do not skip any, and do not collapse Phase 2 and Phase 3 into a single message — give the user time to actually read the inspect output before expecting confirmation. **`drop()` and `delete_quick()` are not in the routine destructive surface** — `drop()` removes a whole table from the schema (admin / schema-maintenance only; never use as a row-delete workaround), and `delete_quick()` deletes without cascading and without prompts (per the DataJoint docstring: it fails if any dependent table holds matching rows — so it doesn't leave dangling FKs at the MySQL layer, but it does bypass DataJoint's cascade planning, the user prompt, and Spyglass's permission/audit/file-cleanup behavior; admin-debug only). If the user reaches for either, surface the alternative (`.delete()` for rows; coordinate with the schema owner for table drops) before proceeding.
 
 ### Phase 1 — Inspect
 
@@ -38,7 +40,7 @@ Output to the user in one message, before asking for confirmation:
 - Sample rows (`.fetch(as_dict=True, limit=5)` or similar)
 - What will cascade: child tables that will also lose rows
 - For file-cleanup helpers, list filenames that will be deleted
-- For large deletes, also report total disk that will be reclaimed: `rel.get_table_storage_usage(human_readable=True)` (sums sizes of referenced analysis files — useful for "is this worth doing" decisions before the user confirms).
+- For large deletes, also report total disk that will be reclaimed: `rel.get_table_storage_usage(human_readable=True)` (sums sizes of referenced **analysis** files — useful for "is this worth doing" decisions before the user confirms). **Caveat:** the helper only works on tables that carry `analysis_file_name` in their heading (`utils/helpers.py:321`); on tables without it (`Session`, `Nwbfile`, raw merge masters, parameter/selection rows that don't reference an analysis file), it logs a warning and returns 0. Don't report a literal "0 MiB will be reclaimed" on those — the disk impact lives in the *raw* external store, not the analysis-file store, and needs a different measurement (see `Nwbfile.cleanup` notes below).
 
 ### Phase 3 — Wait for explicit confirmation
 
@@ -59,13 +61,14 @@ When the user intended to delete a subset, confirm the remainder matches expecta
 
 - **DataJoint**: `delete()`, `drop()`, `cautious_delete()`, `super_delete()`, `delete_quick()`
 - **Merge-table helpers**: `merge_delete()`, `merge_delete_parent()`
-- **File cleanup**: `cleanup()`, `delete_orphans()` — these remove analysis files from disk
+- **Row-orphan cleanup**: `Table().delete_orphans(dry_run=True)` finds rows with no children and, when `dry_run=False`, calls `orphans.super_delete(...)` (`HelperMixin.delete_orphans` in `utils/mixins/helpers.py`). It removes **rows**, not files.
+- **File cleanup**: `AnalysisNwbfile().cleanup(...)`, `DecodingOutput().cleanup(...)`, `Nwbfile.cleanup(...)` — these remove files from disk; behavior and `dry_run` support varies per helper (see [File cleanup](#file-cleanup) below).
 
 Any helper that removes rows or files goes through this file's patterns.
 
 ## Team-based protection: `.delete()` is `cautious_delete()`
 
-**Spyglass enforces team-based permissions on deletes.** On any `SpyglassMixin` table, `.delete()` is aliased to `cautious_delete()` — calling `.delete()` automatically invokes the permission check. You do not need to (and should not) reach for `cautious_delete()` by name; just call `.delete()`.
+**Spyglass enforces team-based permissions on deletes.** On ordinary `SpyglassMixin` tables, `.delete()` is aliased to `cautious_delete()` — calling `.delete()` automatically invokes the permission check. You do not need to (and should not) reach for `cautious_delete()` by name; just call `.delete()`. **Carve-out for merge masters:** `_Merge.delete()` overrides the alias (`utils/dj_merge_tables.py:860`) — it dispatches through the merge part tables, then calls `super_delete()` on the master rows it just orphaned. So a delete on `PositionOutput` / `LFPOutput` / `SpikeSortingOutput` / `DecodingOutput` etc. follows the merge-cascade path, not the bare cautious_delete path. The team check still fires (via the underlying part tables), but the master's row removal is intentionally a `super_delete`, not a cautious_delete — that is the merge-table contract, not a bypass.
 
 **How the check works** (`_check_delete_permission` at `src/spyglass/utils/mixins/cautious_delete.py:90-150`):
 
@@ -81,9 +84,9 @@ Any helper that removes rows or files goes through this file's patterns.
 # You ran:
 (Session & {"nwb_file_name": "j1620210710_.nwb"}).delete()
 # It raised:
-# PermissionError: User 'edeno' is not on a team with 'jsmith', an experimenter for session(s):
+# PermissionError: User 'testuser' is not on a team with 'otheruser', an experimenter for session(s):
 #   nwb_file_name: j1620210710_.nwb
-# -> Talk to jsmith, not to super_delete().
+# -> Talk to otheruser, not to super_delete().
 ```
 
 **Default response to a `PermissionError`: coordinate, don't bypass.** The error names the experimenter who owns the blocking session(s) — talk to them. If the experimenter is no longer reachable (left the lab, on extended leave), contact a lab admin. The bypass mechanisms exist but are not the first response — they live in [When a user explicitly asks to bypass](#when-a-user-explicitly-asks-to-bypass) below.
@@ -104,11 +107,14 @@ Only enter this subsection when the user has explicitly named one of `super_dele
 
 Appropriate scenarios are narrow: admin cleanup after a lab member leaves, fixing a misconfigured experimenter row, or the data owner deleting their own data when the team check is misfiring for a known reason. In every case, run the bypass with `dry_run=True` first when the helper supports it, and report the preview before the actual call.
 
-- **`(Table & key).super_delete(warn=True)`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` by default; `warn=False` suppresses both the warning and the log, so the audit trail depends on the default. **`super_delete` does NOT run Spyglass's file cleanup** — analysis / raw NWB files stay on disk because `Nwbfile.cleanup(delete_files=True)` is never called. After a `super_delete`, run the cleanup helpers explicitly (see [File cleanup](#file-cleanup) below).
+- **`(Table & key).super_delete(warn=True)`** (`cautious_delete.py:249-254`) — aliases directly to `datajoint.Table.delete`, skipping the permission check entirely. Logs the bypass to `common_usage.CautiousDelete` by default; `warn=False` suppresses both the warning and the log, so the audit trail depends on the default. **`super_delete` does NOT run Spyglass's file cleanup** — by jumping straight to `datajoint.Table.delete`, it skips `CautiousDeleteMixin.cautious_delete()` and the per-`ext_type` external-file cleanup loop at `cautious_delete.py:238-241`, so neither analysis-file nor raw-NWB external rows get the cleanup pass that a normal `.delete()` would do. After a `super_delete`, run the appropriate cleanup helper explicitly (see [File cleanup](#file-cleanup) below — match the helper to the kind of orphan).
 - **`(Table & key).delete(force_permission=True)`** — skips the team check (`cautious_delete.py:226`) but **stays on the cautious_delete path** for the rest, so the per-`ext_type` external-file cleanup loop at `cautious_delete.py:238-241` still runs. Disk cleanup is NOT skipped here, in contrast with `super_delete`.
 - **`MergeMaster.merge_delete_parent(key, dry_run=True)`** — bypasses the team check structurally (see Coverage gaps above). The classmethod form is required; the restricted form `(MergeMaster & key).merge_delete_parent()` silently drops the restriction and would delete every parent.
 
-After a bypass call, treat the next message as a verification step: fetch the post-state, confirm only the intended rows are gone, and run `Nwbfile.cleanup(delete_files=True)` and any pipeline-scoped `cleanup()` helpers to reclaim the disk space `cautious_delete` would have handled.
+After a bypass call, treat the next message as a verification step: fetch the post-state, confirm only the intended rows are gone, and reclaim the disk space `cautious_delete` would have handled. Match the cleanup helper to the kind of orphan, since the bypass paths above almost always leave **analysis-file** orphans, not raw-NWB orphans:
+
+- **Analysis-file orphans (the common case):** `AnalysisNwbfile().cleanup(dry_run=True)` first — it logs the paths it would remove. Inspect the log; only then `AnalysisNwbfile().cleanup(dry_run=False)`. Pair with any pipeline-scoped helpers (`DecodingOutput().cleanup(dry_run=True/False)`, etc.) that wrap the same pattern.
+- **Raw-NWB orphans (rare — only when the bypass deleted a `Nwbfile` row whose external file is no longer referenced):** `Nwbfile.cleanup(delete_files=...)` has **no `dry_run` mode** — both `delete_files=True` and `delete_files=False` are destructive (the `False` form removes the DataJoint external-tracking row but leaves the file; the `True` form removes both). Inspect orphans first with `schema.external["raw"].unused()` (DataJoint's external-tracking enumerate), confirm the listed files are not still referenced upstream, and only then call `Nwbfile.cleanup(delete_files=True)`. Do not reach for it casually after a bypass — the analysis-file cleanup is almost always what you want.
 
 ## Paired shapes
 
@@ -196,6 +202,37 @@ Current Spyglass has no single "delete everything downstream of this session" he
 
 - `(Nwbfile & {"nwb_file_name": f}).delete()` — DataJoint's cascade removes rows from tables with a foreign-key path to `Nwbfile`, routed through `cautious_delete` for the team check. Preview with `.fetch(as_dict=True)` on the restricted relation first.
 - For each merge table whose part entries reference the session, call `SomeMergeOutput.merge_delete_parent({"nwb_file_name": f}, dry_run=True)` explicitly. Run `dry_run=True` first, inspect, then `dry_run=False`. `merge_delete_parent` bypasses the team check (see [When a user explicitly asks to bypass](#when-a-user-explicitly-asks-to-bypass)), so treat every call as if the data owner were watching.
+
+## Counterfactual / recovery / parameter-swap cascade template
+
+When the user asks "what changes if I re-run with new params?", "what cascades if I delete X?", or "how do I recover from an in-place edit?", the answer must enumerate four slots — incomplete answers (especially missing the unaffected-branches slot) leave the user without enough information to know what they can re-use vs. what they have to recompute.
+
+**Slot 1 — The new row / new merge_id.** Whether a clean re-run produces a *new* row alongside the old one, or mutates the old row. For Spyglass's pattern, parameter tables (`*Params`) and selection tables (`*Selection`) are typically PK'd on a name; changing values means inserting a *new* parameter row under a *new* name and populating fresh downstream rows from the new selection — the old name still resolves to the old downstream rows. New merge_ids are minted on every fresh populate of a Computed feeding a `*Output` merge.
+
+**Slot 2 — Downstream branches that must be re-selected and re-populated.** Specific table names, walked from the changed table downward. For each branch, name (a) the selection table the user must insert into for the new run, (b) the Computed table whose `populate(key)` must be called, and (c) the merge layer (if any) that gets a new entry. Don't say "downstream pipelines" — name them.
+
+**Slot 3 — Unaffected sibling and upstream branches.** Explicitly enumerated. Symmetric pipelines often re-use the same upstream (LFP, position, sorting, etc.); the unaffected list tells the user what they can keep without recomputing. *Failure mode:* answers that walk only the downstream cascade and leave the user guessing whether LFP / position / sorting are affected. They usually aren't, but say so.
+
+**Slot 4 — Verification step.** Concrete command for confirming the cascade scope. In a Python/DataJoint session: `Table.descendants()` / `Table.ancestors()` (DataJoint's runtime introspection on the `dj.Diagram`-derived graph). From a live DB CLI: `db_graph.py path --down <Class>` / `db_graph.py path --up <Class>`. From source-only (no live DB, no Python session): `code_graph.py path --down <Class>`. Name the actual command, not "walk the graph."
+
+### Worked-example pattern
+
+For a parameter swap on a `*Params` table:
+
+```text
+1. New row:        insert under a new param_name; old rows survive at the old name.
+2. Re-populate:    *Selection insert with new param_name → *Computed.populate(key)
+                   → new entry in *Output (if merge); each leaf below the merge
+                   that the user wants under the new params needs its own
+                   selection insert + populate.
+3. Unaffected:     <list specific upstream tables that don't depend on the
+                   changed param — typically LFP, position, sorting branches
+                   parallel to the affected one>.
+4. Verify scope:   `Table.descendants(as_objects=True)` from <ChangedTable>;
+                   confirm the union of slot-2 entries matches.
+```
+
+The four-slot template applies equally to deletion-cascade questions (slot 1 reads "rows removed from <Table>"), in-place-edit recovery (slot 1 reads "the row stays at the same key with the new values; existing downstream rows now have stale provenance"), and counterfactual "what if I had run with X" questions.
 
 ## `update1` on params with downstream rows
 

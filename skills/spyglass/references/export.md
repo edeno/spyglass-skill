@@ -1,5 +1,7 @@
 # Export Pipeline
 
+The export pipeline produces a reproducible snapshot of tables and files used in a paper or analysis. It logs every fetch during an "export session," then bundles the touched tables and the raw + analysis NWB files it logged — plus files reached transitively through the restriction graph from logged tables and any linked files those resolve to (`common/common_usage.py:550`) — into an export package. Distinct from interactive sharing ([figurl.md](figurl.md)) and from the Kachery sync surface ([setup_config.md § Data Sharing Tables (Kachery)](setup_config.md#data-sharing-tables-kachery)).
+
 ## Contents
 
 - [Overview](#overview)
@@ -8,8 +10,6 @@
 - [Common Patterns](#common-patterns)
 
 ## Overview
-
-The export pipeline produces a reproducible snapshot of tables and files used in a paper or analysis. It logs every fetch during an "export session," then bundles the touched tables and analysis files into an export package.
 
 ```python
 from spyglass.common.common_usage import ExportSelection, Export
@@ -67,7 +67,7 @@ Logs errors encountered during export.
 1. **Only one export can be active per Python instance.** Calling `start_export` while another is running silently stops the first. If multiple people share a Python process (e.g., shared notebook kernel), coordinate export sessions or use separate processes.
 2. **Direct calls on tables without `SpyglassMixin` aren't logged.** Tables that inherit plain `dj.Manual`/`dj.Computed` (no `ExportMixin` via `SpyglassMixin`) won't write log entries when *they* are the entry point of a fetch — no error, the call is just invisible to `ExportSelection`. The export bundle isn't necessarily missing those tables' rows, though: ancestor tables can still be reached through the restriction graph from logged Spyglass tables and pulled into the export that way. The failure shape to watch for is "I called `MyCustomTable & key` directly and the rows didn't show up in `preview_tables`" — fix by adding `SpyglassMixin` so direct accesses also log.
 3. **Compound `&` restrictions inside an export are logged as OR, not AND.** A query built like `(Table & a) & b` during an active export produces an export bundle that includes every row matching `a` OR `b`, not just the intersection. For AND semantics, use `Table & dj.AndList([a, b])` or a single SQL string `Table & "a AND b"`. Verify with `preview_tables(paper_id=...)` after stopping the export.
-4. **`Export().populate_paper(paper_id="foo")` overwrites any previous export for the same `paper_id`.** No prompt, no confirmation — the prior bash script and `Export` rows are replaced. Use a new `paper_id` (or a new `analysis_id` within the same paper) for iterative exports.
+4. **`Export().populate_paper(paper_id="foo")` overwrites any previous export for the same `paper_id`.** No prompt, no confirmation — the prior bash script and `Export` rows are replaced. For a separately packaged export, use a **new `paper_id`**. Logging a new `analysis_id` under the same `paper_id` does *not* produce a separate package — it adds another log session that gets bundled into the same combined paper export on the next `populate_paper(paper_id=...)` call (see [Scoping an export to a single analysis](#scoping-an-export-to-a-single-analysis)).
 
 ## Common Patterns
 
@@ -96,7 +96,10 @@ Export().populate_paper(paper_id="smith2024")
 # See the tables captured for the paper
 ExportSelection().preview_tables(paper_id="smith2024")
 
-# List file paths (analysis NWB files) that will be bundled
+# List file paths that will be bundled — both the analysis NWB files
+# logged by `fetch_nwb()` calls AND raw NWB files explicitly logged
+# during the export (the helper composes `_list_analysis_files(...)`
+# + `_list_raw_files(...)`).
 ExportSelection().list_file_paths({"paper_id": "smith2024"})
 ```
 
@@ -106,18 +109,15 @@ Spyglass tables that inherit `SpyglassMixin` get `ExportMixin` by composition. W
 
 ### Scoping an export to a single analysis
 
-`analysis_id` within a `paper_id` lets you run multiple analyses and export them together or separately. Use `paper_export_id(paper_id, return_all=True)` to see all exports for a paper.
+`analysis_id` is a label for log sessions *within* a single `paper_id` — multiple analyses can be logged under one paper and then bundled together by `Export().populate_paper(paper_id=...)`, which keys the export row on the maximum `export_id` for that paper and assembles the restriction graph (via `get_restr_graph(paper_key)`) over every logged row in the paper. There is no `populate_paper` form that exports one `analysis_id` separately from its siblings — if you want a separately packaged export, use a *distinct* `paper_id`. Use `paper_export_id(paper_id, return_all=True)` to see all exports for a paper.
 
 ## Preparing an export for DANDI
 
-`Export().populate_paper(...)` produces analysis NWBs that Spyglass
-wrote with older pynwb conventions; `pynwb.validate()` and Dandi
-upload check against current pynwb rules. Common validation
-failures, grouped by what the patcher does and doesn't address:
+`Export().populate_paper(...)` does *not* produce the analysis NWB files itself — those were written earlier by the upstream analysis pipelines. What `populate_paper` produces is the export *package*: the restriction graph, the SQL dump, and the `Export.File` row list (raw + analysis NWBs) that downstream tooling will consume. The DANDI step then uses `Export().prepare_files_for_export(...)` (`common/common_usage.py:630`) to mutate the files listed in `Export.File` — that's where the older-pynwb-conventions issue lands. Common validation failures from `pynwb.validate()` / DANDI's upload checks, grouped by what the patcher does and doesn't address:
 
 **Fixed by `update_analysis_for_dandi_standard`** (`utils/dandi_file_updates.py:41-63`):
 
-- `general/source_script` — missing `source_script_file_name` attribute
+- `general/source_script` — missing `file_name` attribute (the patcher writes `grp.attrs["file_name"] = script_name`, `dandi_file_updates.py:98-103`)
 - `/general/subject/sex` — non-single-letter values (e.g. `"Female"` → `"F"`)
 - `/general/subject/species` — `"Rat"` → `"Rattus norvegicus"`
 - Missing `/general/subject/age` (default `"P4M/P8M"`)

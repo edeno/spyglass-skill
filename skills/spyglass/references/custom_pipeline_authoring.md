@@ -1,9 +1,12 @@
 # Custom Pipeline Authoring
 
+Authoring guide for new pipelines that plug into Spyglass — schema-naming, the params/selection/computed/merge tier decision tree, `AnalysisNwbfile` storage, and core-table extension policy. For *using* existing-table methods, see [spyglassmixin_methods.md](spyglassmixin_methods.md).
+
 ## Contents
 
 - [Overview](#overview)
 - [Schema Naming and Your Write Surface](#schema-naming-and-your-write-surface)
+- [Adding a column to a core Spyglass table](#adding-a-column-to-a-core-spyglass-table)
 - [Five-Step Decision Tree](#five-step-decision-tree)
 - [Non-Negotiables](#non-negotiables)
 - [Single Custom Table (Not a Pipeline)](#single-custom-table-not-a-pipeline)
@@ -17,7 +20,7 @@
 
 ## Overview
 
-This reference is for **authoring** a new pipeline that plugs into Spyglass — not for *using* existing pipelines. Typical authoring cases:
+This reference is for **authoring** a new pipeline that plugs into Spyglass — not for *using* existing pipelines. For calling methods on tables that already exist (`fetch_nwb`, `cautious_delete`, `merge_get_part`, etc.), see [spyglassmixin_methods.md](spyglassmixin_methods.md); this file is for authoring new schema modules. Typical authoring cases:
 
 - You want to run a new analysis downstream of an existing merge table (`PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`).
 - You want to run a new analysis on raw/ingested data directly (`Session`, `Raw`, `IntervalList`, `RawPosition`, `Electrode`).
@@ -28,14 +31,14 @@ Authoritative source for these patterns is `docs/src/ForDevelopers/` in the spyg
 
 ## Schema Naming and Your Write Surface
 
-Before writing any schema file, know where your user is allowed to write — this rule is enforced by MySQL permissions (`spyglass/utils/database_settings.py`), not just convention. Each user has write access **only** on schemas whose names start with `<database_user>_`. Naming your schema anything else either fails with a MySQL permission error at `dj.schema()` call time or silently targets a lab-shared schema your role happens to allow. Both failure modes are confusing.
+Before writing any schema file, know where your user is allowed to write — this rule is enforced by MySQL permissions (`spyglass/utils/database_settings.py:49`), not just convention. For personal/lab custom schemas, assume the safe writable surface is `<database_user>_<suffix>` unless the user explicitly has `dj_user` (write on shared modules) or `dj_admin` (write on all schemas). Naming your schema anything else either fails with a MySQL permission error at `dj.schema()` call time or silently targets a lab-shared schema your role happens to allow. Both failure modes are confusing.
 
 **The rule.** Your personal schema must be `<database_user>_<suffix>`, where `<database_user>` matches `dj.config["database.user"]`. Other namespaces:
 
 - **Lab-shared** (reserved names, `SHARED_MODULES` in `database_settings.py`): `behavior`, `common`, `decoding`, `figurl`, `lfp`, `linearization`, `mua`, `position`, `ripple`, `sharing`, `spikesorting`. Writes to these require `dj_user` or `dj_admin` and are coordinated across the lab — never pick one of these as a prefix for personal work.
 - **Other users' prefixes**: off-limits unless you have `dj_admin`.
 
-> **Common hallucination to avoid.** Do NOT prefix personal schemas with `spyglass_` (as in `spyglass_<user>_<topic>`). User `edeno`'s personal theta/gamma analysis belongs in `edeno_theta_gamma`, not `spyglass_edeno_theta_gamma` — the latter raises a MySQL permission error at `dj.schema(...)` call time because `spyglass_` ≠ `database.user`. There is no implicit "framework namespace" for `spyglass_*`; lab-shared names are the explicit `SHARED_MODULES` listed above.
+> **Common hallucination to avoid.** Do NOT prefix personal schemas with `spyglass_` (as in `spyglass_<user>_<topic>`). User `testuser`'s personal theta/gamma analysis belongs in `testuser_theta_gamma`, not `spyglass_testuser_theta_gamma` — the latter raises a MySQL permission error at `dj.schema(...)` call time because `spyglass_` ≠ `database.user`. There is no implicit "framework namespace" for `spyglass_*`; lab-shared names are the explicit `SHARED_MODULES` listed above.
 
 **Roles your account might hold** (set by whoever admin'd your DB account):
 
@@ -48,17 +51,31 @@ Before writing any schema file, know where your user is allowed to write — thi
 
 `dj_collab` is the common default for new lab members — you own your prefix and can read everything, but can't extend lab-shared schemas. This rule applies equally to custom pipelines and to single custom tables.
 
+## Adding a column to a core Spyglass table
+
+If the user asks to add a column to a Spyglass core table (`Session`, `Electrode`, `IntervalList`, `Raw`, `LFPV1`, `SpikeSorting`, anything in `spyglass.common` or a maintained pipeline), **do not edit the core schema**. The right pattern is a companion table in your user/lab schema that FKs to the core table:
+
+- `dj.Computed` — derived values that come from a deterministic function of upstream rows (write a `make()` body, populate after the upstream populates).
+- `dj.Manual` — human annotations, free-form metadata, lab-specific labels (insert by hand or by a small loader script).
+- `dj.Lookup` — controlled vocabularies, code-defined enums (`contents` baked into the class).
+
+Each FKs to the core table on its primary key, so your new field is queryable as a join (`CoreTable * MyCompanion`) wherever it would have appeared as a "real" column. Reasons to keep this discipline: (1) core schema changes require an upstream PR + per-release `Table.alter()` migration documented in CHANGELOG.md ([datajoint_api.md → Field Ownership](datajoint_api.md#field-ownership) explains why; ALTER privilege is admin-only on shared DBs), so this is not a routine user workflow; (2) a companion table is reversible — you can drop your schema without touching the canonical pipeline; (3) downstream Spyglass consumers won't break because the canonical heading is unchanged. Push back if the user insists on editing core: route them to opening an issue / PR upstream rather than locally patching their checkout.
+
 ## Five-Step Decision Tree
 
 For each new step in your analysis, pick the smallest option that fits:
 
 1. **Use an existing upstream table directly** — if your analysis is a one-off and doesn't need to be re-run with different parameters, you may not need any new tables at all. Just query.
-2. **Add a preprocessing / grouping table** (`dj.Manual`) — when you need to combine units, intervals, or electrodes from the raw tables into analysis-ready sets (e.g., "units from these tetrodes during this epoch").
+2. **Add a preprocessing / grouping table** (`dj.Manual`) — when you need to combine units, intervals, or electrodes from the raw tables into analysis-ready sets (e.g., "units from these tetrodes during this epoch"). For Spyglass `*Group` patterns, see [group_tables.md](group_tables.md).
 3. **Add a Parameters table** (`dj.Lookup` with `contents`) — any tunable value the analysis reads. Name ends in `Parameters` or `Params`.
 4. **Add a Selection table** (`dj.Manual`) — pairs a specific input (upstream key) with a specific parameter set. Name ends in `Selection`. This is the row you `insert1` before calling `populate`.
 5. **Add a Computed table** (`dj.Computed`) with a `make()` method — takes the Selection row, runs the analysis, writes output (typically to an AnalysisNwbfile) and inserts the row. Part tables hang off this for row-wise results.
 
 **Add a merge table only if** you end up with multiple interchangeable implementations of the same analysis (e.g., `FooV1`, `FooV2`, `FooImported`) and downstream consumers want a single `merge_id` interface. Do not introduce a merge table for a single-source pipeline — it adds complexity without benefit.
+
+**Group tables are the right option when one analysis input is a named set of upstream rows.** Common cases: a chosen subset of sorted units, a set of electrodes, a bundle of position streams, the pose videos used for one MoSeq run. Don't put variable-length membership directly into a Selection-table PK (the cardinality blows up the dependency graph), and don't re-derive the membership inside every `make()` (each downstream consumer would re-pick the same set inconsistently). Reuse-first: if Spyglass already has `SortedSpikesGroup`, `PositionGroup`, `UnitWaveformFeaturesGroup`, `PoseGroup`, or `LFPElectrodeGroup`, FK your Selection to that group rather than authoring a new one. Authoring details, the master + part shape, and the per-table `create_group(...)` recreate semantics live in [group_tables.md](group_tables.md).
+
+**Pick the narrowest populated upstream that already represents the scientific object you consume.** When the FK choice is between a broad merge/output table and a specific computed endpoint Spyglass already populates, FK to the specific endpoint, not the merge — and do not re-derive that object inside your own `make()`. Concrete: for an analysis that runs on band-filtered LFP, FK to `LFPBandV1` / `LFPBandSelection`, not `LFPOutput` (which exposes wideband LFP and would force you to re-filter inside `make()`). For sorted spikes used downstream, FK to `SortedSpikesGroup` rather than reaching back through `SpikeSortingOutput`. The principle: prefer the upstream whose populated rows are *already* the object you consume; FK'ing one level too broad invites silent recomputation drift between your pipeline and the canonical Spyglass one.
 
 ## Non-Negotiables
 
@@ -81,7 +98,7 @@ import datajoint as dj
 from spyglass.common import Session
 from spyglass.utils import SpyglassMixin
 
-schema = dj.schema("edeno_annotations")  # <database_user>_<suffix>, per above
+schema = dj.schema("testuser_annotations")  # <database_user>_<suffix>, per above
 
 @schema
 class SessionAnnotations(SpyglassMixin, dj.Manual):
@@ -286,7 +303,7 @@ Common upstream tables for authoring: `Session`, `IntervalList`, `Raw`, `RawPosi
 
 ## AnalysisNwbfile Storage Pattern
 
-Outputs too large for DataJoint columns (arrays, waveforms, posteriors, timeseries) go into an AnalysisNwbfile. The DataJoint row stores only the filename and object IDs.
+Heavy results — arrays, correlation/connectivity matrices, embeddings, decoded posteriors, time series, anything that would fit a `longblob` only by being squeezed in — go into an `AnalysisNwbfile`, not a `longblob` column. The DataJoint row stores `analysis_file_name` plus the per-object IDs needed to retrieve them. The non-negotiable here is **reproducibility, exportability, and shareability**, not just write/read performance: the DANDI / Kachery / paper-snapshot export workflows, the cleanup tooling (`AnalysisNwbfile.cleanup`), and the provenance tracking that lets a future reader regenerate or audit a result *all* assume heavy outputs live in addressable analysis files. A `longblob` may travel as a database row if the table is logged by Spyglass export, but it is not an addressable `AnalysisNwbfile` object: it has no `analysis_file_name`, no object ID, no `AnalysisNwbfile.cleanup` path, no `fetch_nwb` retrieval surface, and no standalone file artifact to publish in DANDI / Kachery-style sharing or cite from a paper snapshot.
 
 **Use the `build()` context manager** for all analysis-file writes. It handles the CREATE → POPULATE → REGISTER lifecycle atomically and prevents the common "Cannot call add_nwb_object() in state: REGISTERED" error that arises when separate `create()`, `add_nwb_object()`, `add()` calls are interleaved.
 
@@ -323,7 +340,7 @@ AnalysisNwbfile().add_nwb_object(...)                      # fails
 
 **Constraint**: a table may reference only one AnalysisNwbfile table (either `common.common_nwbfile.AnalysisNwbfile` or a custom per-user one, not both). Spyglass validates this on declaration.
 
-**Discovering what already exists**: import `AnalysisRegistry` from `spyglass.common` (re-exported from `spyglass.common.common_nwbfile`) and use the `all_classes` property — `AnalysisRegistry().all_classes` (`common_nwbfile.py:431`) returns every registered `AnalysisNwbfile` subclass across schemas as a `list[SpyglassAnalysis]`. For one specific team, `AnalysisRegistry().get_class("myteam")` (`common_nwbfile.py:396`) returns just that subclass. Use these when auditing what other teams have already authored before adding your own, or when building cross-pipeline tools that need to iterate all analysis-file tables. (The `AnalysisRegistry` class docstring lists a `get_all_classes()` method — that's stale; the actual surface is the `all_classes` property.)
+**Discovering what already exists**: import `AnalysisRegistry` from `spyglass.common` (re-exported from `spyglass.common.common_nwbfile`) and use the `all_classes` property — `AnalysisRegistry().all_classes` (`common_nwbfile.py:431`) returns every registered `AnalysisNwbfile` subclass across schemas as **initialized table objects** (each entry is the result of `_get_tbl_from_name(...)()`, not a bare class), in a `list[SpyglassAnalysis]`. For one specific team, `AnalysisRegistry().get_class("myteam")` (`common_nwbfile.py:396`) returns just that registered table. Use these when auditing what other teams have already authored before adding your own, or when building cross-pipeline tools that need to iterate all analysis-file tables. (The `AnalysisRegistry` class docstring lists a `get_all_classes()` method — that's stale; the actual surface is the `all_classes` property.)
 
 ## Merge Table Guardrail
 
@@ -339,7 +356,7 @@ When you do add one, follow the conventions in `TableTypes.md`: name it `{Pipeli
 
 ## Permissions and Roles
 
-When authoring a pipeline that other lab members will run, the table tier and `make()` body assume the runner has SELECT on every upstream schema and INSERT/ALTER on the schema your tables live in. Verify those grants before debugging "missing data" — half of `populate()` no-ops trace to a permission gap, not a logic bug.
+When authoring a pipeline that other lab members will run, distinguish *defining*, *altering*, *dropping*, and *running* — each maps to a different SQL privilege. Defining new tables (`dj.schema()` declarations) needs `CREATE` on the target schema; altering existing tables (`Table().alter()` migrations) needs `ALTER`; dropping schemas or tables (`dj.schema(...).drop()`, `Table.drop()`) needs `DROP`. Typically only the schema owner or `dj_admin` has the full `CREATE` / `ALTER` / `DROP` set. Running an already-declared pipeline (`Table.populate()`, `cleanup()`, `delete()`) needs `SELECT` on every upstream schema and `INSERT` / `UPDATE` / `DELETE` only where the pipeline actually writes, updates, deletes, or cleans up — none of `CREATE` / `ALTER` / `DROP` is required for the run path. Verify grants by what the operation does, not by a blanket list — half of `populate()` no-ops trace to a permission gap, not a logic bug, and most of those gaps are missing `SELECT` on a shared upstream rather than missing a DDL grant.
 
 ### Testing for user permissions and roles
 
@@ -355,7 +372,7 @@ for row in grants:
     print(row[0])
 ```
 
-Look for `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `ALTER` on the schema names you care about. A user without `ALTER` cannot run `dj.schema(...).drop()` or `Table.alter()`, regardless of admin status in `LabMember`. A user without `DELETE` on a downstream schema gets the IntegrityError-1217 / NoneType-groupdict failure mode documented in [destructive_operations.md](destructive_operations.md#when-delete-raises-integrityerror-1217-or-nonetype-object-has-no-attribute-groupdict).
+Look for `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER`, `DROP` on the schema names you care about. A user without `DROP` cannot run `dj.schema(...).drop()` or `Table.drop()`; a user without `ALTER` cannot run `Table.alter()`; a user without `CREATE` cannot declare new tables under `dj.schema(...)` — regardless of admin status in `LabMember`. A user without `DELETE` on a downstream schema gets the IntegrityError-1217 / NoneType-groupdict failure mode documented in [destructive_operations.md](destructive_operations.md#when-delete-raises-integrityerror-1217-or-nonetype-object-has-no-attribute-groupdict).
 
 **Spyglass-level — whether the user is a recognized lab member with team membership.** This is what `cautious_delete` checks before allowing a delete (`src/spyglass/utils/mixins/cautious_delete.py:195`). Replicate the same lookup yourself when an authoring decision depends on it (e.g., a `make()` that branches on whether the runner is the data owner). The `datajoint_user_name` lives on the part table `LabMember.LabMemberInfo`, not on `LabMember` itself — restricting `LabMember & {"datajoint_user_name": ...}` would silently match every row (the `_Merge`-style silent footgun, but on a regular table). Restrict the part:
 

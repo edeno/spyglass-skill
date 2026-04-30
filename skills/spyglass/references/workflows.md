@@ -1,13 +1,13 @@
 # Spyglass Analysis Workflows
 
+Cross-table workflow planning and multi-pipeline analysis recipes — patterns for assembling queries that span session, position, sorting, and decoding tables. **Not a catch-all.** For pipeline-specific workflows (position, LFP, spike sorting, decoding), see the corresponding pipeline reference files; for relationship and runtime questions, route via [feedback_loops.md § Tool routing](feedback_loops.md#tool-routing-for-relationship-and-lookup-questions); for runtime failures use [runtime_debugging.md](runtime_debugging.md); for DataJoint query syntax (restrictions, joins, projections, headings, field ownership) use [datajoint_api.md](datajoint_api.md). Open this file only when the question is "how do I assemble a multi-pipeline recipe."
+
 ## Contents
 
 - [Exploring Available Data](#exploring-available-data)
 - [Cross-Table Joins](#cross-table-joins)
 - [Common Patterns](#common-patterns)
-- [Troubleshooting](#troubleshooting)
-
-For pipeline-specific workflows (position, LFP, spike sorting, decoding), see the corresponding pipeline reference files. For canonical end-to-end examples, run the `notebooks/*.ipynb` tutorials in Jupyter (the `notebooks/py_scripts/*.py` files are a jupytext mirror of the same content, kept for PR-review diffs).
+- [Workflow sanity checks (no-results recipes)](#workflow-sanity-checks-no-results-recipes)
 
 ## Exploring Available Data
 
@@ -112,6 +112,7 @@ Session() >> 'trodes_pos_params_name="default"'
 ### Batch Processing (One Merge, Many Sessions)
 
 ```python
+import datajoint as dj                        # for dj.DataJointError below
 from spyglass.common import Session
 from spyglass.position import PositionOutput
 
@@ -120,11 +121,11 @@ sessions = (Session & {"subject_id": "J16"}).fetch("KEY")
 results = []
 for sk in sessions:
     key = {**sk, "interval_list_name": "task"}
-    # `merge_get_part(key)` raises (DataJointError / ValueError)
-    # before returning when zero or multiple parts match — see
-    # `utils/dj_merge_tables.py:624-636` ("Found N potential parts:
-    # ..."). A `len(part) == 1` guard never executes on the failure
-    # branches, so wrap the call in try/except and use
+    # `merge_get_part(key)` raises (ValueError on the strict-source
+    # path, `utils/dj_merge_tables.py:634`; DataJointError on other
+    # internal failure modes) before returning when zero or multiple
+    # parts match. A `len(part) == 1` guard never executes on the
+    # failure branches, so wrap the call in try/except and use
     # `multi_source=True` to opt out of the strict-one check when
     # multiple matches are acceptable.
     try:
@@ -159,39 +160,42 @@ intervals.fetch(limit=5)
 
 ### Interval Arithmetic
 
-Spyglass ships a NumPy-based interval-manipulation suite in `spyglass.common.common_interval` that users routinely reinvent because the tutorials don't mention it. Input/output shape is the standard `(N, 2)` start/stop array.
+Spyglass ships a NumPy-based interval-manipulation suite in `spyglass.common.common_interval` that users routinely reinvent because the tutorials don't mention it. Use the `Interval` class (`common/common_interval.py:323`); the older module-level wrappers `interval_list_intersect`, `interval_list_union`, `interval_list_complement`, `intervals_by_length`, etc. log deprecation notices and forward to `Interval.intersect` / `Interval.by_length` / similar (`common_interval.py:1020, 1123`). Input shape is the standard `(N, 2)` start/stop array.
 
 ```python
-from spyglass.common.common_interval import (
-    interval_list_intersect,   # AND across two interval lists
-    interval_list_union,       # OR across two interval lists
-    interval_list_complement,  # intervals1 \ intervals2
-    consolidate_intervals,     # merge overlapping/adjacent ranges
-    intervals_by_length,       # filter by min/max duration
-)
+from spyglass.common import IntervalList
+from spyglass.common.common_interval import Interval
+from spyglass.ripple.v1.ripple import RippleTimesV1
 
-# Example: ripple intervals AND task intervals, ≥ 50 ms only.
+# Example: ripple intervals AND task intervals, >= 50 ms only.
 # `RippleTimesV1` stores the ripple intervals as an NWB object — only
 # `ripple_times_object_id` is on the heading (`ripple/v1/ripple.py:189`);
 # the per-row dataframe comes via `fetch1_dataframe()` /
 # `fetch_dataframe()` (`ripple.py:240, 245`), each row of which has
 # `start_time` / `end_time` columns. Convert to (start, end) pairs
-# before passing into `interval_list_intersect`.
-ripple_df = (RippleTimesV1 & key).fetch1_dataframe()
+# before constructing the Interval.
+ripple_key = {                  # build a fully-specified RippleTimesV1 key
+    "nwb_file_name": nwb_file,  # use the same nwb_file_name throughout
+    # ... + the rest of the RippleTimesV1 primary key:
+    #     RippleLFPSelection fields (filter_name, target_interval_list_name,
+    #     filter_sampling_rate, lfp_band_sampling_rate),
+    #     ripple_param_name (from RippleParameters),
+    #     pos_merge_id (projected from PositionOutput.merge_id).
+}
+ripple_df = (RippleTimesV1 & ripple_key).fetch1_dataframe()
 ripples = ripple_df[["start_time", "end_time"]].to_numpy()
-task = (IntervalList & {"nwb_file_name": f, "interval_list_name": "run1"}
-        ).fetch1("valid_times")
 
-long_ripples_in_task = intervals_by_length(
-    interval_list_intersect(ripples, task), min_length=0.050
-)
+task = (IntervalList & {"nwb_file_name": nwb_file,
+                        "interval_list_name": "run1"}).fetch1("valid_times")
+
+long_ripples_in_task = Interval(ripples).intersect(task).by_length(min_length=0.050)
 ```
 
 Reach for these before writing a for-loop over intervals. They're correct at the edge cases (zero-overlap, touching-boundaries) that naive implementations get wrong.
 
 ---
 
-## Troubleshooting
+## Workflow sanity checks (no-results recipes)
 
 ### No Results Found
 

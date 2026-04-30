@@ -1,5 +1,7 @@
 # Decoding Pipeline
 
+State space position decoding from neural activity (clusterless and sorted-spikes) via `non_local_detector`. Covers `DecodingOutput`, the shared user-inputs-vs-`make()`-plumbing rule, and recovery patterns when `populate()` yields no work.
+
 ## Contents
 
 - [Overview](#overview)
@@ -7,6 +9,7 @@
 - [DecodingOutput Merge Table](#decodingoutput-merge-table)
 - [Results Structure (xarray.Dataset)](#results-structure-xarraydataset)
 - [Shared Components](#shared-components)
+- [User inputs vs `populate()` plumbing](#user-inputs-vs-populate-plumbing)
 - [Clusterless Decoding Flow](#clusterless-decoding-flow)
 - [Sorted Spikes Decoding Flow](#sorted-spikes-decoding-flow)
 - [Common Patterns](#common-patterns)
@@ -14,7 +17,7 @@
 
 ## Overview
 
-The decoding pipeline performs Bayesian position decoding from neural activity using the `non_local_detector` package. It supports two approaches: **clusterless** (from waveform features) and **sorted spikes** (from clustered spike times).
+The decoding pipeline performs state space position decoding from neural activity using the `non_local_detector` package. It supports two approaches: **clusterless** (from waveform features) and **sorted spikes** (from clustered spike times).
 
 ```python
 from spyglass.decoding import DecodingOutput
@@ -172,7 +175,7 @@ decoding_params  : LONGBLOB             # model initialization parameters
 decoding_kwargs  = NULL : LONGBLOB      # additional keyword arguments
 ```
 
-**`decoding_params` and `decoding_kwargs` are SIBLING top-level attributes**, not nested inside one another. This matters when inserting a custom param set — a common mistake is to nest `decoding_kwargs` inside `decoding_params`, which silently discards the runtime kwargs.
+**`decoding_params` and `decoding_kwargs` are SIBLING top-level attributes**, not nested inside one another. This matters when inserting a custom param set — a common mistake is to nest `decoding_kwargs` inside `decoding_params`. The runtime kwargs then never reach `get_valid_kwargs`; instead, they get spread into the classifier constructor (`ClusterlessDetector(**decoding_params)`, `decoding/v1/clusterless.py:287`), and current `non_local_detector` constructors have explicit signatures (no catch-all `**kwargs`), so this usually raises `TypeError: unexpected keyword argument 'decoding_kwargs'` at classifier construction rather than degrading silently.
 
 - `decoding_params` — classifier constructor kwargs (model architecture, state bins, transitions). Consumed as `ClusterlessDetector(**decoding_params)` inside `make_compute`.
 - `decoding_kwargs` — runtime kwargs passed through to the classifier call. The `make()` handler has two branches gated on `estimate_decoding_params` (table default `1`; both `clusterless.py:90` and `sorted_spikes.py:55`):
@@ -226,6 +229,22 @@ cols = list((DLCPosV1 & key).fetch1_dataframe().columns)
 # Pass matching names:
 PositionGroup().create_group(..., position_variables=cols[:2])
 ```
+
+## User inputs vs `populate()` plumbing
+
+Applies to both clusterless and sorted-spikes decoding. The user-side surface is small; the rest is plumbing inside `*DecodingV1.make()`. Listing plumbing as a user input over-scopes the answer; missing a real input under-scopes it.
+
+**User inputs** — must exist before `*DecodingSelection.insert1`:
+
+- **Neural-data group**: `UnitWaveformFeaturesGroup` for clusterless, `SortedSpikesGroup` for sorted spikes; upstream features/spikes already populated.
+- **`PositionGroup`**: row pointing at a populated `PositionOutput`.
+- **`DecodingParameters`**: stock defaults are version-suffixed `f"<shape>_<source>_{non_local_detector_version}"` and are *not* auto-inserted on import; lab/custom rows may use any name, so query `DecodingParameters` rather than assuming the suffix.
+- **`encoding_interval` and `decoding_interval`**: `IntervalList` names; can be the same row.
+- **`estimate_decoding_params`**: 0 = fixed params from `DecodingParameters`; 1 = re-fit via Baum-Welch during populate.
+
+Reaching `UnitWaveformFeaturesGroup` from a fresh `SpikeSorting.populate` run additionally requires a `CurationV1` row surfaced through `SpikeSortingOutput`: `SpikeSortingOutput.insert([curation_key], part_name="CurationV1")`, where `curation_key` is a `CurationV1` row key — *not* a `SpikeSortingSelection` or `SpikeSorting` key. `UnitWaveformFeaturesSelection` FKs to `SpikeSortingOutput` (`decoding/v1/waveform_features.py:106`), and v1 feature computation reads `SpikeSortingOutput.CurationV1` to recover `sorting_id` (`decoding/v1/waveform_features.py:154`). The decoder consumes the waveform features, not the accept/reject curation labels.
+
+**Plumbing inside `make()`** — not user-inserted rows: aligning spike (or feature) times to the position grid; building track graph / environment from `PositionGroup`; constructing the HMM transition matrix + observation model (clusterless mark intensity vs sorted-spikes place fields) from `DecodingParameters`; fitting on `encoding_interval` + forward-backward on `decoding_interval`; writing `results_path` (.nc) + `classifier_path` (.pkl) — populated outputs, not inputs. For "what do I need to run decoding?" answer with the user-input list. For "why is the decoder wrong?" debug user inputs first, then source-read the relevant `make()`.
 
 ## Clusterless Decoding Flow
 
@@ -441,21 +460,7 @@ import os
 os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = '0.99'
 ```
 
-**Workaround for `n_chunks` being ignored when
-`estimate_decoding_params=False`:** set `estimate_decoding_params=True`
-on the selection row; the kwarg reaches the decoder that way. **Caveat:**
-the `True` branch calls `classifier.estimate_parameters(...)` (see
-`src/spyglass/decoding/v1/clusterless.py:320`), which **re-runs EM
-parameter estimation** — that is *not* the normal inference path the
-user wants for routine decoding. Use this workaround only when you
-genuinely need the parameter-estimation pass too (or as a one-off to
-get past OOM); otherwise prefer fixing the kwarg-pass-through in the
-`False` branch (e.g. by upgrading `non_local_detector` to a version
-whose `predict()` accepts `n_chunks`). This behavior depends on the
-installed `non_local_detector` version — if both branches accept
-`n_chunks` in your installed copy, the workaround is unnecessary.
-Verify with `inspect.signature` on the relevant classifier method to
-confirm.
+**Legacy workaround — only if your installed `non_local_detector.predict()` is missing `n_chunks`.** Current `non_local_detector` accepts `n_chunks` and `cache_likelihood` directly on `predict()` for both clusterless and sorted-spikes (in the package's `base.py`), and Spyglass routes valid kwargs through `get_valid_kwargs` (`decoding/v1/utils.py`) — so on a current install the False branch passes `n_chunks` through and no workaround is needed. **First** run `inspect.signature(classifier.predict)` to confirm. If — and only if — your installed `predict()` truly lacks `n_chunks`, flipping `estimate_decoding_params=True` on the selection row will reach the kwarg via the True branch. **Do not flip casually:** the True branch calls `classifier.estimate_parameters(...)` (`clusterless.py:320`), which **re-runs EM parameter estimation** — a scientifically different path from routine inference. The right long-term fix is to upgrade `non_local_detector` (or fix the kwarg pass-through in the False branch), not to rely on EM as an OOM workaround.
 
 ## Storage
 
@@ -482,3 +487,7 @@ DecodingOutput().cleanup(dry_run=True)   # LOGS paths; returns None
 # After inspecting log output:
 # DecodingOutput().cleanup(dry_run=False)
 ```
+
+## See also
+
+- For "what cascades if I re-run decoding with new params" or "how do I recover after editing a `DecodingParameters` / `*Selection` row" questions, see [destructive_operations.md → Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template).

@@ -49,9 +49,9 @@ For the source-specific canonical examples, gotchas, and parameter tables, open 
 
 | Method | TrodesPosV1 | DLCPosV1 | CommonPos (`IntervalPositionInfo`) | ImportedPose |
 | --- | --- | --- | --- | --- |
-| `fetch1_dataframe()` | DataFrame: position_x, position_y, orientation, velocity_x, velocity_y, speed | same as Trodes | same shape (`common/common_position.py:491`) | **not implemented** — `ImportedPose` exposes `fetch_pose_dataframe(key)` (`position/v1/imported_pose.py:110`) instead. Calling `PositionOutput.fetch1_dataframe()` against an imported-pose merge entry routes to a method that doesn't exist on the part. |
+| `fetch1_dataframe()` | `TrodesPosV1.fetch1_dataframe` (`position/v1/position_trodes_position.py:255`) returns columns `position_x`, `position_y`, `orientation`, `velocity_x`, `velocity_y`, `speed` — plus `video_frame_ind` when `add_frame_ind=True` (default). | `DLCPosV1.fetch1_dataframe` (`position/v1/position_dlc_selection.py:175`) returns the same column set: `video_frame_ind`, `position_x`, `position_y`, `orientation`, `velocity_x`, `velocity_y`, `speed`. | `IntervalPositionInfo.fetch1_dataframe` (`common/common_position.py:491`) routes through `_data_to_df` (`:497`) with `prefix="head_"`, so columns are **legacy `head_`-prefixed**: `head_position_x`, `head_position_y`, `head_orientation`, `head_velocity_x`, `head_velocity_y`, `head_speed`. NOT the same column names as Trodes/DLC; downstream consumers expecting bare `speed` / `position_x` won't match. | **not implemented** — `ImportedPose` exposes `fetch_pose_dataframe(key)` (`position/v1/imported_pose.py:110`) instead. Calling `PositionOutput.fetch1_dataframe()` against an imported-pose merge entry routes to a method that doesn't exist on the part. |
 | `fetch_video_path(key=dict())` | video path (`position/v1/position_trodes_position.py:278`) | video path (`position/v1/position_dlc_selection.py:315`) | video path (`common/common_position.py:546`) | **not implemented** — `ImportedPose` has no `fetch_video_path`. |
-| `fetch_pose_dataframe(key)` | not present | per-bodypart DLC pose | not present | per-bodypart imported pose (`imported_pose.py:110`) |
+| `fetch_pose_dataframe()` *(merge-level dispatcher; no `key` arg — operates on the restricted merge relation, `position_merge.py:94`)* | not present | per-bodypart DLC pose | not present | per-bodypart imported pose. The source-class method `ImportedPose.fetch_pose_dataframe(key=None)` (`imported_pose.py:110`) *does* accept an explicit key — call that form only when bypassing the merge layer. |
 
 In short: for Trodes/DLC/CommonPos, use the merge-level `fetch1_dataframe` / `fetch_video_path`. For imported pose, the merge-level `PositionOutput.fetch_pose_dataframe()` dispatcher routes to `ImportedPose.fetch_pose_dataframe(key)` for you (or to `DLCPosV1`'s pose helper for DLC merge entries); call `ImportedPose().fetch_pose_dataframe(key)` directly only when you don't need the merge layer.
 
@@ -117,16 +117,23 @@ PositionOutput.merge_restrict({'nwb_file_name': nwb_file})
 ```python
 import matplotlib.pyplot as plt
 
-# Only valid for merge entries whose source supports fetch1_dataframe
-# (TrodesPosV1, DLCPosV1, CommonPos). For ImportedPose, use
-# ImportedPose().fetch_pose_dataframe(key) instead — see the method
-# matrix above.
+# This example uses bare 'position_x' / 'position_y' — valid for
+# TrodesPosV1 and DLCPosV1. CommonPos (IntervalPositionInfo)
+# returns 'head_position_x' / 'head_position_y' instead (see the
+# method matrix above), so swap the column names if the merge
+# entry resolves to CommonPos. ImportedPose has no
+# fetch1_dataframe — use ImportedPose().fetch_pose_dataframe(key).
 position_df = (PositionOutput & merge_key).fetch1_dataframe()
+x_col, y_col = "position_x", "position_y"   # CommonPos: "head_position_x", "head_position_y"
 plt.figure(figsize=(10, 8))
-plt.plot(position_df['position_x'], position_df['position_y'],
+plt.plot(position_df[x_col], position_df[y_col],
          'b-', alpha=0.5, linewidth=0.5)
 plt.xlabel('X Position (cm)')
 plt.ylabel('Y Position (cm)')
 plt.axis('equal')
 plt.show()
 ```
+
+## See also
+
+- For "what cascades if I re-run position with new params" or "how do I recover after editing a `TrodesPosParams` / DLC selection row" questions, see [destructive_operations.md → Counterfactual / recovery / parameter-swap cascade template](destructive_operations.md#counterfactual--recovery--parameter-swap-cascade-template).

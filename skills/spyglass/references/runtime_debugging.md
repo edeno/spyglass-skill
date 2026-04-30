@@ -11,6 +11,7 @@ Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin`
 - [When to use this file](#when-to-use-this-file)
 - [Required inputs](#required-inputs)
 - [Core philosophy](#core-philosophy)
+- [`key_source`: what drives `populate()` iteration](#key_source-what-drives-populate-iteration)
 - [Procedure](#procedure)
 - [Failure signatures](#failure-signatures)
   - [A. fetch1() cardinality](#a-fetch1-cardinality)
@@ -21,6 +22,7 @@ Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin`
   - [F. Interval / epoch mismatch across pipelines](#f-interval--epoch-mismatch-across-pipelines)
   - [G. `populate(key)` with a non-PK dict iterates the whole Selection](#g-populatekey-with-a-non-pk-dict-iterates-the-whole-selection)
   - [H. IntegrityError on insert often means an ancestor row is missing](#h-integrityerror-on-insert-often-means-an-ancestor-row-is-missing)
+  - [I. `populate()` or a query hangs indefinitely](#i-populate-or-a-query-hangs-indefinitely)
 - [Debugging `populate_all_common`](#debugging-populate_all_common)
 - [Automatic heuristics](#automatic-heuristics)
 - [Sub-modes](#sub-modes)
@@ -94,6 +96,22 @@ Always assume:
 3. **Relational assumptions break as often as Python code does.** Many "DataJoint bugs" are really cardinality bugs — the restriction or join returned a different row count than the code assumed.
 4. **Scientific Python objects are frequent hidden causes.** Array equality, pandas truthiness, dtype surprises, and shape mismatches often masquerade as DataJoint errors.
 5. **The smallest useful diagnostic beats a speculative rewrite.** Prefer a 2-line print over a 50-line refactor until the root cause is confirmed.
+
+## `key_source`: what drives `populate()` iteration
+
+Several failure modes below (G, the empty-populate footnote in C, the upstream-validation hook in D) all turn on the same DataJoint concept, so it is worth pinning once. A `Computed`/`Imported` table's `key_source` is the relation DataJoint iterates over to decide *which keys to call `make()` on*. By default it's the join of the table's parent FKs projected to their primary keys; for many Spyglass tables it's literally the corresponding `*Selection.proj()` (e.g. `SpikeSorting.key_source = SpikeSortingSelection.proj()`). Practical consequences:
+
+1. **"I called `populate(key)` and nothing happened"** has three distinct causes: no candidate (`key_source & key` is empty), already populated (`key_source & key` minus the table itself is empty), or reserved by another worker. Start with candidate / pending / target counts; if candidates exist and `pending` is nonzero but `populate()` still does nothing, inspect the jobs table as in [Signature E](#e-transaction--reservation-confusion).
+
+   ```python
+   candidates = MyTable.key_source & key
+   pending = candidates - MyTable.proj()
+   print(len(candidates), len(pending), len(MyTable & key))
+   ```
+
+2. `populate()` restricts against `key_source`, not the full Selection table. A field that is not in `key_source.heading` may not filter the candidate keys at all (the `SpikeSorting.populate({"sorter": ...})` trap in signature G); even when a field is usable for filtering, only the `key_source` primary-key fields are passed to `make()`.
+3. When asked "why didn't this row get processed?", read `MyTable.key_source.heading` (or its source class) before debugging anything inside `make()`.
+4. Subclasses can override `key_source` (typically with extra restrictions); read the class body, not assumptions about the FK pattern, when behavior surprises.
 
 ## Procedure
 
@@ -283,7 +301,7 @@ print(type(x).__name__, getattr(x, "shape", None), getattr(x, "dtype", None))
 
 **Most likely root cause.** A relation you assumed was one-to-one is actually one-to-many. Common culprits: merge tables (one `nwb_file_name` → many parts), parameter tables (one session → many parameter sets), interval lists (one session → many intervals).
 
-**Why that explanation fits.** DataJoint joins are natural joins over shared primary-key fields; any field that looks like a foreign key but is actually repeated across the upstream table multiplies rows.
+**Why that explanation fits.** DataJoint joins are natural joins over shared attribute names, as long as each shared attribute is primary on at least one side (DataJoint's `assert_join_compatibility` refuses only the secondary-on-both-sides case, `datajoint/condition.py:104`; same rule documented in [datajoint_api.md § Join](datajoint_api.md#join-)). Any field that looks like a foreign key but is actually repeated across the upstream table multiplies rows.
 
 **Fastest confirmation checks.**
 
@@ -388,7 +406,16 @@ errors = jobs & {
     "status": "error",
 }
 errors.fetch(as_dict=True)
-errors.delete_quick()   # only after confirming you want to re-run those keys
+
+# Narrow to the exact key first if possible — a bare delete on the
+# table+status filter clears EVERY errored job for that table, not
+# just yours. Add the failing key fields, fetch again to verify, and
+# confirm no worker is still actively retrying before deleting.
+errors_for_key = errors & {**failing_key}      # tighten to your key
+errors_for_key.fetch(as_dict=True)             # re-inspect
+# ... then, only after confirming the rows are exactly the ones you
+# want to re-run and no live worker is still holding them:
+errors_for_key.delete_quick()
 ```
 
 **Minimal fix.** Debug with orchestration off. Once the true cause is fixed, re-enable reservation/parallelism for the full run.
@@ -531,9 +558,13 @@ Populate/insert the missing ancestor first, then retry.
 
 ### I. `populate()` or a query hangs indefinitely
 
-Long idle stalls (no CPU, no progress) usually mean **lock contention** — another worker or an abandoned transaction is holding a MySQL lock your call is waiting on, not a slow `make()` body. First rule out "the DB isn't reachable at all" with `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_connection --timeout 10` — `check_threads` itself needs a live connection and will hang the same way if the server's unreachable. Once connectivity is confirmed, diagnose with `AnyTable().check_threads(detailed=True)` (any `SpyglassMixin` table works); it returns a DataFrame of live threads from `performance_schema` including blockers. Coordinate with the lab before killing an abandoned transaction.
+Long idle stalls (no CPU, no progress) often mean **lock contention** — another worker or an abandoned transaction is holding a MySQL lock your call is waiting on, not a slow `make()` body. But that's not the only cause: large result materialization (a `.fetch()` returning many MB of blob columns), network / server latency, and bad query shape (missing index, accidental cross-product) all look like idle hangs from the user's seat. Triage in order:
 
-If a `.fetch()` or `.fetch1()` call hangs with no CPU activity — not slow compute, just an *idle* long fetch — go straight to `check_threads(detailed=True)`. User-perceived "this fetch is taking forever" is almost always lock contention, not query plan.
+1. **Rule out connectivity first.** `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_connection --timeout 10` — `check_threads` itself needs a live connection and will hang the same way if the server is unreachable.
+2. **Check query size / shape next.** Print `len(rel)` (cheap, single COUNT) and the column list — a `.fetch()` returning thousands of rows × multiple `longblob` columns is materialization-bound, not lock-bound. Fix with `.proj()` to drop heavy columns, `limit=...`, or restricting before fetching.
+3. **Then check threads.** `AnyTable().check_threads(detailed=True)` — any `SpyglassMixin` table works because the helper lives on `HelperMixin` (`check_threads` at `utils/mixins/helpers.py:206-233`). It returns a DataFrame of live threads from `performance_schema` including lock owner / status and per-thread state — there is no explicit blocker→waiter graph, so inspect the **Lock Status** and **State** columns to infer which thread is the blocker. Coordinate with the lab before killing an abandoned transaction.
+
+A `.fetch()` / `.fetch1()` that hangs *and* the row count is small *and* the column list is light — that's when "this fetch is taking forever" is most likely lock contention rather than query plan or materialization.
 
 ## Debugging `populate_all_common`
 
