@@ -1,6 +1,6 @@
 # Position Tracking Pipeline
 
-The position pipeline tracks animal location using multiple methods, all consolidated through the `PositionOutput` merge table. This file is the umbrella: it covers the merge layer, per-source method dispatch, and the manual-import path for pre-computed pose. The two populate-driven sources have their own files:
+The position pipeline tracks animal location using multiple methods, all consolidated through the `PositionOutput` merge table. This file is the umbrella: it covers the merge layer, per-source method dispatch, and the manual-import path for pre-computed pose. If the question is about dependency paths, upstream/downstream impact, runtime row existence, or cascade/recovery, use [feedback_loops.md](feedback_loops.md) or [destructive_operations.md](destructive_operations.md) first; this file supplies position-specific table details. The two populate-driven sources have their own files:
 
 - **Trodes (LED)** — [position_trodes_v1_pipeline.md](position_trodes_v1_pipeline.md)
 - **DeepLabCut** — [position_dlc_v1_pipeline.md](position_dlc_v1_pipeline.md)
