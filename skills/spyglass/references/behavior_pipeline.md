@@ -1,7 +1,7 @@
 <!-- pipeline-version: v1 -->
 # MoSeq Pipeline
 
-Behavioral analysis: group keypoint pose data, train a motion-sequencing (MoSeq) model, then apply it to convert pose trajectories into behavioral syllables.
+Behavioral analysis: group keypoint pose data, train a motion-sequencing (MoSeq) model, then apply it to convert pose trajectories into behavioral syllables. For creating the pose / DLC input rows that feed `PoseGroup`, see [position_dlc_v1_pipeline.md](position_dlc_v1_pipeline.md); for the reusable master + part group-table pattern behind `PoseGroup`, see [group_tables.md](group_tables.md); for install extras (the `[moseq-cpu]` / `[moseq-gpu]` extras and the `keypoint_moseq` dependency), see [setup_install.md](setup_install.md) and [dependencies.md](dependencies.md).
 
 ## Contents
 

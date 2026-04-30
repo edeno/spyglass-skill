@@ -1,13 +1,13 @@
 # Spyglass Analysis Workflows
 
+Cross-table workflow planning and multi-pipeline analysis recipes — patterns for assembling queries that span session, position, sorting, and decoding tables. **Not a catch-all.** For pipeline-specific workflows (position, LFP, spike sorting, decoding), see the corresponding pipeline reference files; for relationship and runtime questions, route via [feedback_loops.md § Tool routing](feedback_loops.md#tool-routing-for-relationship-and-lookup-questions); for runtime failures use [runtime_debugging.md](runtime_debugging.md); for DataJoint query syntax (restrictions, joins, projections, headings, field ownership) use [datajoint_api.md](datajoint_api.md). Open this file only when the question is "how do I assemble a multi-pipeline recipe."
+
 ## Contents
 
 - [Exploring Available Data](#exploring-available-data)
 - [Cross-Table Joins](#cross-table-joins)
 - [Common Patterns](#common-patterns)
 - [Troubleshooting](#troubleshooting)
-
-Cross-table workflow planning and multi-pipeline analysis recipes — patterns for assembling queries that span session, position, sorting, and decoding tables. For pipeline-specific workflows (position, LFP, spike sorting, decoding), see the corresponding pipeline reference files; for relationship and runtime questions, route via [feedback_loops.md § Tool routing](feedback_loops.md#tool-routing-for-relationship-and-lookup-questions) instead of treating this file as a catch-all.
 
 ## Exploring Available Data
 
