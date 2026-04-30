@@ -176,7 +176,11 @@ from spyglass.ripple.v1.ripple import RippleTimesV1
 # before constructing the Interval.
 ripple_key = {                  # build a fully-specified RippleTimesV1 key
     "nwb_file_name": nwb_file,  # use the same nwb_file_name throughout
-    # ... + the rest of the RippleTimesV1 PK (filter_name, params, etc.)
+    # ... + the rest of the RippleTimesV1 primary key:
+    #     RippleLFPSelection fields (filter_name, target_interval_list_name,
+    #     filter_sampling_rate, lfp_band_sampling_rate),
+    #     ripple_param_name (from RippleParameters),
+    #     pos_merge_id (projected from PositionOutput.merge_id).
 }
 ripple_df = (RippleTimesV1 & ripple_key).fetch1_dataframe()
 ripples = ripple_df[["start_time", "end_time"]].to_numpy()
