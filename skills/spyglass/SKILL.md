@@ -81,6 +81,8 @@ Users may span stages. Infer from imports/table names; ask only when the answer 
 
 **Load one reference at a time.** Pick the most relevant row; open a second only if needed. This table routes by topic; repo paths live in each reference file.
 
+**Route by question shape before pipeline noun.** For relationships, dependencies, field ownership, live DB values, destructive/cascade recovery, or custom schema design, use the cross-cutting row first; open pipeline refs second for domain details.
+
 | User question is about... | Load this reference |
 | ------------------------- | ------------------- |
 | Installing Spyglass | [setup_install.md](references/setup_install.md) |
