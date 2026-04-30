@@ -7,7 +7,7 @@ Cross-table workflow planning and multi-pipeline analysis recipes — patterns f
 - [Exploring Available Data](#exploring-available-data)
 - [Cross-Table Joins](#cross-table-joins)
 - [Common Patterns](#common-patterns)
-- [Troubleshooting](#troubleshooting)
+- [Workflow sanity checks (no-results recipes)](#workflow-sanity-checks-no-results-recipes)
 
 ## Exploring Available Data
 
@@ -195,7 +195,7 @@ Reach for these before writing a for-loop over intervals. They're correct at the
 
 ---
 
-## Troubleshooting
+## Workflow sanity checks (no-results recipes)
 
 ### No Results Found
 
