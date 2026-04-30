@@ -118,7 +118,7 @@ sgc.LabMember.insert1({
 
 sgc.LabMember.LabMemberInfo.insert1({
     'lab_member_name': 'Jane Doe',
-    'google_user_name': 'jane@lab.org',
+    'google_user_name': 'jane@example.test',
     'datajoint_user_name': dj.config['database.user'],
     'admin': 0,
 }, skip_duplicates=True)
@@ -191,7 +191,7 @@ from spyglass.settings import SpyglassConfig
 an unwritable path.**
 
 Symptom: `PermissionError: [Errno 13] Permission denied:
-'/nimbus/deeplabcut'` (or similar) during `from spyglass.settings ...`
+'/path/to/shared/storage/deeplabcut'` (or whatever the install resolved as the DLC base) during `from spyglass.settings ...`
 — you can't even call `save_dj_config` to fix it because the error
 happens during import.
 

@@ -88,8 +88,8 @@ config.save_dj_config(
     save_method="global",          # "global", "local", or "custom"
     output_filename="~/my_config.json",  # for custom
     base_dir="/path/to/data",
-    database_user="myuser",
-    database_host="db.lab.edu",
+    database_user="testuser",
+    database_host="db.example.test",
     database_port=3306,
 )
 ```

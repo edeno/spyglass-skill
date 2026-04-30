@@ -155,7 +155,7 @@ at a MySQL 5 image whose SSL ciphers don't handshake with modern
 For connecting to a lab's shared database:
 
 ```bash
-python scripts/install.py --remote --db-host db.lab.edu --db-user myuser
+python scripts/install.py --remote --db-host db.example.test --db-user testuser
 ```
 
 You will be prompted for your password. The installer enables TLS automatically for remote hosts.
@@ -167,7 +167,7 @@ For automated environments, set variables and use CLI flags:
 ```bash
 export SPYGLASS_BASE_DIR=/data/spyglass
 export SPYGLASS_DB_PASSWORD=secret
-python scripts/install.py --minimal --remote --db-host db.lab.edu --db-user ci_user
+python scripts/install.py --minimal --remote --db-host db.example.test --db-user testuser
 ```
 
 ### Config-Only Mode (No Environment Creation)
@@ -175,7 +175,7 @@ python scripts/install.py --minimal --remote --db-host db.lab.edu --db-user ci_u
 To generate just the DataJoint config file without creating a conda environment:
 
 ```bash
-python scripts/install.py --config-only --remote --db-host db.lab.edu --db-user alice --base-dir ~/data
+python scripts/install.py --config-only --remote --db-host db.example.test --db-user testuser --base-dir ~/data
 ```
 
 This writes `~/.datajoint_config.json` (the global DataJoint config). The installer's `run_config_only()` / `create_database_config()` helpers in `scripts/install.py` always target the home-directory file (`scripts/install.py:1407, 3070`), not a per-project `dj_local_conf.json`. The file contains a plaintext `database.password` — never `Read` / `cat` it; use `python skills/spyglass/scripts/scrub_dj_config.py` to inspect safely. See [setup_config.md](setup_config.md) § "Reading the config file safely".
