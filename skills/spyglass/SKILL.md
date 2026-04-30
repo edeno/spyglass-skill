@@ -64,7 +64,7 @@ Quality-critical ops use validator → fix → proceed. Four loops: post-ingesti
 
 Stages orient vague questions; the Reference Routing table resolves clear topics.
 
-1. **Setup/install** → `scripts/install.py` is the canonical fast path per `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md), [setup_config.md](references/setup_config.md), or [setup_troubleshooting.md](references/setup_troubleshooting.md); `00_Setup.ipynb` for walkthrough requests only.
+1. **Setup/install** → the Spyglass repo's `$SPYGLASS_SRC/scripts/install.py` is the canonical fast path per `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md), [setup_config.md](references/setup_config.md), or [setup_troubleshooting.md](references/setup_troubleshooting.md); `00_Setup.ipynb` for walkthrough requests only.
 2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md); `02_Insert_Data.ipynb` for tutorial walkthroughs.
 3. **Framework concepts** (first time using Spyglass) → [merge_methods.md](references/merge_methods.md) for merge tables, [spyglassmixin_methods.md](references/spyglassmixin_methods.md) for `fetch_nwb` / `cautious_delete` / `<<` / `>>`; `01_Concepts.ipynb` for tutorial walkthroughs.
 4. **Pipeline usage** (running or querying existing analyses) → pipeline reference files in the table below.
