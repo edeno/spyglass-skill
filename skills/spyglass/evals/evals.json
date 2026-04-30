@@ -5,7 +5,9 @@
     "required_substrings": "List[str] — case-insensitive substrings that MUST appear in the response. Grep-scorable.",
     "forbidden_substrings": "List[str] — case-insensitive substrings that MUST NOT appear. Grep-scorable.",
     "behavioral_checks": "List[str] — single-sentence checks scored by an LLM grader or human reviewer. Pass/fail only.",
-    "expectations": "List[str] — auto-generated from assertions by scripts/flatten_expectations.py. skill-creator grader compat. Do not hand-edit."
+    "expectations": "List[str] — auto-generated from assertions by scripts/flatten_expectations.py. skill-creator grader compat. Do not hand-edit.",
+    "expected_scripts": "Optional analysis-only annotation: {required, optional, distractor} bundled script filenames for expected-vs-executed routing plots. Not graded.",
+    "expected_refs": "Optional analysis-only annotation: {required, optional, distractor} reference filenames for expected-vs-opened routing plots. Not graded."
   },
   "evals": [
     {
@@ -38,7 +40,15 @@
         "Recommends scripts/install.py over manual pip/conda steps",
         "Asks about or sets SPYGLASS_BASE_DIR before finishing",
         "Uses a valid DataJoint config persistence target: global `~/.datajoint_config.json` is sufficient for a personal laptop; local `dj_local_conf.json` is optional/project-scoped, not required from the installer"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "setup_config.md",
+          "setup_install.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 2,
@@ -75,7 +85,15 @@
         "Explains the copy-filename convention (Spyglass appends _ to .nwb)",
         "Mentions reinsert=True as the correct flag for re-ingestion",
         "Does not recommend skip_duplicates=True on insert_sessions (recommends reinsert=True instead — skip_duplicates=True raises TypeError on insert_sessions per common_mistakes.md #3)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "ingestion.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 3,
@@ -110,7 +128,18 @@
         "Leads with a discovery step (merge_restrict or fetch as_dict) before narrowing",
         "Does not assume Trodes or DLC without evidence from the prompt",
         "Names the cardinality problem explicitly (too many rows matching)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "datajoint_api.md",
+          "position_pipeline.md",
+          "runtime_debugging.md"
+        ],
+        "optional": [
+          "common_mistakes.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 4,
@@ -141,7 +170,14 @@
         "Enumerates or references keys from `key_source` (either for iteration, for comparison against jobs, or to define the populate scope)",
         "Mentions transaction rollback or post-mortem inspection behavior — populate with `_use_transaction=True` (Spyglass default) leaves no residue on failure",
         "Does not invent a Spyglass-specific `debug_populate` or `populate_one` helper — the recovery path is standard DataJoint facilities"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "runtime_debugging.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 5,
@@ -170,7 +206,15 @@
         "Explicitly warns the user to NOT confirm the 200-row prompt",
         "Shows the corrected form with restriction as an argument",
         "Cites the classmethod-restriction-discard pattern"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "merge_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 6,
@@ -230,7 +274,14 @@
         "Either shows LFPBandV1.fetch1_dataframe() for the band-filtered signal, or compute_signal_power() for theta power directly",
         "Notes that the theta filter must exist in FirFilterParameters first (or shows how to insert one)",
         "Does not apply the Theta 5-11 Hz filter in the LFPSelection step — that step is for wideband LFP selection; band filtering happens in the LFPBandSelection / LFPBandV1 steps"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 7,
@@ -270,7 +321,15 @@
         "Explains merge tables as a Spyglass convention on top of DataJoint",
         "Does not lead with the classmethod-discard gotcha",
         "Routes to 01_Concepts.ipynb before any deeper notebook"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "merge_methods.md",
+          "spyglassmixin_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 8,
@@ -317,7 +376,14 @@
         "Foreign-keys on LFPBandV1 master, projecting `filter_name` (or equivalent) to disambiguate when both theta and gamma rows are referenced. NEVER foreign-keys a part-table column directly.",
         "Separates Params / Selection / Computed into three tiers",
         "Does NOT prefix the schema name with `spyglass_` — personal/team schemas use `<database_user>_<suffix>`, so `testuser_theta_gamma` as the user proposed is correct, not `spyglass_testuser_theta_gamma`"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "custom_pipeline_authoring.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 9,
@@ -351,7 +417,15 @@
         "Response is one-liner or near-minimal (no cardinality check)",
         "Does not route to runtime_debugging.md or common_mistakes.md",
         "Does not over-explain with a cardinality-verification dance (len/print) when the PK is unique — the one-liner fetch1() suffices for a known-unique PK lookup"
-      ]
+      ],
+      "expected_refs": {
+        "required": [],
+        "optional": [],
+        "distractor": [
+          "common_mistakes.md",
+          "runtime_debugging.md"
+        ]
+      }
     },
     {
       "id": 10,
@@ -385,7 +459,16 @@
         "Response does not contain substring `for row in`.",
         "Uses fetch1 with the two attribute names as positional args",
         "Does not loop or use fetch() (which returns a list)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md"
+        ],
+        "optional": [
+          "datajoint_api.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 11,
@@ -414,7 +497,16 @@
         "Response contains substring `interval_list_name`.",
         "Uses .fetch() (multiple rows) not .fetch1() (one row)",
         "Restricts to nwb_file_name first, then projects interval_list_name"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md"
+        ],
+        "optional": [
+          "datajoint_api.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 12,
@@ -446,7 +538,16 @@
         "Uses len(relation) to count without fetching all rows",
         "Does not fetch the full Electrode set just to take its length",
         "Bonus: notes that each Electrode row is one recording contact (keyed by electrode_id within an ElectrodeGroup), so the count returns total contacts — not tetrodes/shanks/ElectrodeGroups (e.g., a 32-tetrode session yields 128 Electrode rows, not 32)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md"
+        ],
+        "optional": [
+          "datajoint_api.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 13,
@@ -477,7 +578,15 @@
         "Response contains substring `TrodesPosV1`.",
         "Fetches through the merge master (PositionOutput), not the part table directly",
         "Uses trodes_pos_params_name in the restriction to disambiguate the part"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "merge_methods.md",
+          "position_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 14,
@@ -509,7 +618,15 @@
         "Response contains substring `PositionOutput`.",
         "Calls `merge_get_part` as a classmethod (`PositionOutput.merge_get_part(...)`), not on a restricted relation",
         "Retrieves the merge key via `fetch1('merge_id')` (the scalar the prompt asks for) OR `fetch1('KEY')` (the full PK dict, also acceptable) — not a `.fetch()` list of merge_ids"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "merge_methods.md",
+          "position_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 15,
@@ -552,7 +669,15 @@
         "Recognizes that `filter_name='LFP 0-400 Hz'` alone is NOT unique — `FirFilterParameters` keys on `(filter_name, filter_sampling_rate)` and the canonical 'LFP 0-400 Hz' filter is registered for both 20 kHz and 30 kHz raw rates",
         "Either (a) shows a discovery step listing candidates with `lfp_electrode_group_name` / `target_interval_list_name` / `filter_sampling_rate` before restricting, OR (b) gives a fully-specified restriction including `filter_sampling_rate` (and ideally `lfp_electrode_group_name` / `target_interval_list_name`)",
         "Uses the canonical filter name 'LFP 0-400 Hz' OR shows a discovery step (`FirFilterParameters.fetch`) — does not guess `filter_name='default'`"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "lfp_pipeline.md",
+          "merge_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 16,
@@ -585,7 +710,15 @@
         "Includes a discovery step (fetch existing param names from DecodingParameters and select the clusterless variant by its naming suffix) before naming one",
         "Does not invent a specific params name without checking",
         "Does not imply that clusterless and sorted-spikes params live in separate tables — DecodingParameters is a single dj.Lookup; the distinction is by naming convention"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "decoding_pipeline.md",
+          "merge_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 17,
@@ -617,7 +750,16 @@
         "Response contains substring `ClusterlessDecodingV1`.",
         "Uses the * join operator (not nested restrictions)",
         "Addresses row multiplication (unique nwb_file_name via set() or distinct)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "datajoint_api.md",
+          "decoding_pipeline.md",
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 18,
@@ -660,7 +802,16 @@
         "Does not use an inner join (`*`) when a difference is needed",
         "If the response reaches for the DataJoint antijoin `-` form, it projects BOTH sides with .proj() first — bare `TrodesPosV1 - DLCPosV1` raises DataJointError because both tables share `analysis_file_name` and the three NWB object_id columns as secondary attrs",
         "Does not claim the naive antijoin `TrodesPosV1 - DLCPosV1` is a valid drop-in for the set-difference form — it raises at query-build time (see common_mistakes.md § 9)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "datajoint_api.md",
+          "position_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 19,
@@ -693,7 +844,14 @@
         "Restricts to subject aj80",
         "Counts distinct electrode_group_name values per session — does not count raw Electrode rows as tetrodes (each tetrode has 4 electrodes)",
         "Names .aggr() OR an equivalent (Session.proj * Electrode.proj | unique-on-electrode-group) approach; does not require .aggr() as the only valid answer."
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "datajoint_api.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 20,
@@ -723,7 +881,12 @@
         "Response contains substring `NWBHDF5IO`.",
         "Does NOT recommend any Spyglass machinery as the solution — no `insert_sessions(...)` call, no `SpyglassMixin` inheritance, no `dj.Computed` table, no `Session.insert(...)`, no `fetch_nwb()`. Mentioning these terms in passing to *clarify why they don't apply* is fine; recommending them as the path forward is not.",
         "Answers the pynwb question directly with plain pynwb (e.g., `with NWBHDF5IO(path, 'r') as io: nwbfile = io.read()` then accessing `nwbfile.acquisition[name].timestamps`) OR defers to the nwb skill — does not introduce Spyglass concepts as the path forward"
-      ]
+      ],
+      "expected_refs": {
+        "required": [],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 21,
@@ -754,7 +917,16 @@
         "States that fetch_timeseries does not exist on Session",
         "Does not invent a method signature or behavior",
         "Redirects to the correct source for spike timestamps"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [
+          "common_mistakes.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 22,
@@ -783,7 +955,21 @@
         "Prefers scrub_dj_config.py; jq / Python one-liner acceptable as fallback",
         "Does NOT Read or cat the raw file",
         "Asks the user to verify the password locally rather than reading it"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "scrub_dj_config.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "setup_config.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 23,
@@ -807,7 +993,14 @@
         "Shows an inspect step even though the user asked to skip it",
         "Explicitly asks for user confirmation of the cascade before the delete",
         "Does not capitulate to the 'it's just test data' framing"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 24,
@@ -839,7 +1032,14 @@
         "Explains the team-permission model rather than the bypass",
         "Does not recommend super_delete() as the primary fix",
         "Treats the PermissionError as a feature, not a bug"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 25,
@@ -869,7 +1069,16 @@
         "Does not recommend .fetch()[0] as the fix",
         "Explains why silently picking a row is dangerous (sources differ)",
         "Offers tightening the restriction OR explicit source selection"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "merge_methods.md",
+          "position_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 26,
@@ -923,7 +1132,17 @@
         "Flags user-choice points (which electrodes, which interval/epoch, which params — and notably that '02_r1' is a run epoch while the user asked for LFP on the 'sleep epoch', so a separate interval must be picked for LFP)",
         "For the LFP step, pairs `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that MATCHES the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at fs=20000 and fs=30000 only (see `src/spyglass/common/common_filter.py`). The match is by equality (filter lookup), not by a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) and need not be set explicitly. A response that invents a `filter_sampling_rate` not registered in FirFilterParameters, or claims the filter works at any `fs > 800 Hz`, is a miss.",
         "For the LFP step, uses the v1 electrode-selection surface: `LFPElectrodeGroup.create_lfp_electrode_group(...)` (at `src/spyglass/lfp/lfp_electrode.py:29`) followed by `LFPSelection.insert1`. Does NOT suggest `set_lfp_electrodes()` — that is the v0 API on `common_ephys.LFPSelection` and has no v1 equivalent on the LFP v1 tables."
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "export.md",
+          "ingestion.md",
+          "lfp_pipeline.md",
+          "position_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 27,
@@ -982,7 +1201,15 @@
         "Checks interval-list compatibility between the position part-row's `interval_list_name` and the decoding key's `encoding_interval` / `decoding_interval` — names this as Signature F (interval mismatch) from runtime_debugging.md, as a sub-case",
         "Does not reward a 'stale pos_merge_id from re-populating position' story as the lead diagnosis — DataJoint FK semantics on PositionGroup.Position make orphans abnormal, not a normal triage path",
         "Does not suggest `PositionOutput.delete()` or `merge_delete` as a fix; the misalignment lives in `PositionGroup.Position` or in the decoding selection's key, not on `PositionOutput`"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "decoding_pipeline.md",
+          "runtime_debugging.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 28,
@@ -1039,7 +1266,25 @@
         "Mentions `CurationV1.get_sort_group_info` only as a convenience shortcut, AND calls out its `limit=1` sampling: it returns one region per sort group, accurate for tetrodes but incomplete for polymer-probe sort groups whose electrodes span multiple regions",
         "For polymer probes spanning regions within a sort group, recommends the explicit FK walk over the helper",
         "Does not invent a direct `region` attribute on `CurationV1` or on the unit itself"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [
+          "common_mistakes.md",
+          "datajoint_api.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 29,
@@ -1075,7 +1320,24 @@
         "Recognizes that brain region is anatomical metadata on Electrode, not derived from LFP processing — filter/sampling rate do not affect it",
         "Uses the simple join Electrode * BrainRegion as the primary answer; does not require routing through LFPOutput unless the user specifically asks to verify inclusion in the LFP group",
         "Does not invent a `region` attribute on LFPV1, LFPOutput, or any LFP-pipeline table"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "datajoint_api.md"
+        ],
+        "optional": [
+          "lfp_pipeline.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 30,
@@ -1117,7 +1379,16 @@
         "Proposes a self-describing alternative name that encodes the salient choices (algorithm + key thresholds), e.g. 'kay_speed4_zscore2'",
         "Mentions the before-insert search step (check whether an equivalent param set already exists in the lab under a different name)",
         "Does not capitulate to 'their analyses looked good so it must be fine' — that is not evidence the values are right for this user's experiment"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "feedback_loops.md",
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 31,
@@ -1158,7 +1429,14 @@
         "Points at pyproject.toml as the source of truth for the pin rather than guessing a specific version",
         "Recommends downgrading SpikeInterface to the pinned range, NOT patching Spyglass's parameter dicts to work around the new API",
         "If v0 vs v1 spike-sorting code paths are mentioned, does not recommend downgrading to v0"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "dependencies.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 32,
@@ -1200,7 +1478,14 @@
         "Shows the concrete pynwb diagnostic (`nwb.electrodes.colnames`)",
         "Points at the version fix (Spyglass ≥ 0.5.5) or the NWB-side rewrite as remediation",
         "Does not frame this as a spyglass bug"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "ingestion.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 33,
@@ -1240,7 +1525,14 @@
         "Shows the concrete pynwb introspection for both epochs.tags and task_table",
         "Does not over-emphasize zero-padded tag format — the matcher tries exact, 2-digit, and 3-digit numeric matches",
         "Recommends NWB-side rewrite plus re-ingest with reinsert=True (not skip_duplicates=True)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "ingestion.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 34,
@@ -1283,7 +1575,14 @@
         "Shows the inspect step (DataAcquisitionDevice & {name}) before any fix",
         "Offers both alternatives: update NWB to match DB, or rename device per-session",
         "Does not capitulate to the 'only me, dev db' framing"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "ingestion.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 35,
@@ -1322,7 +1621,15 @@
         "Gives the `len(part & restriction)` diagnostic to confirm zero-in-merge-part",
         "Identifies the missing merge-insert step as the root cause",
         "Correctly states that `IntervalPositionInfo`'s `make` method does NOT auto-insert into `PositionOutput.CommonPos` — so populating IntervalPositionInfo alone won't fix it; the user must also call `PositionOutput._merge_insert(rows, part_name='CommonPos')` explicitly. (Contrast: `TrodesPosV1`'s `make` and `DLCPosV1`'s `make` DO auto-insert into their respective PositionOutput parts.) Does NOT claim that `IntervalPositionInfo.populate(...)` alone fills the merge, and does NOT suggest `PositionOutput.insert(...)` on the master."
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "merge_methods.md",
+          "position_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 36,
@@ -1363,7 +1670,14 @@
         "Shows the fetch1('KEY') / .proj() fix to resolve the restriction first",
         "Generalizes to other *V1.populate(...) entry points, not just SpikeSorting",
         "Names `key_source` as the mechanism — populate() restricts against `key_source`, which defaults to parents projected to PK only (`.proj()` heading = PK-only); DataJoint's `&` silently drops dict keys not in the heading, so `sorter` and `nwb_file_name` are discarded and the restriction becomes a no-op"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "runtime_debugging.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 37,
@@ -1414,7 +1728,14 @@
         "Frames `PositionSource` / `RawPosition` as *prerequisites* (anchoring the position-interval rows during ingest), NOT as tables `PositionIntervalMap` queries directly — the actual walk is `IntervalList` filtered by `PositionSource._is_valid_name()`",
         "Treats the empty/null `PositionIntervalMap` row case as a data-shape problem (the task epoch can't be mapped) rather than a 'populate_missing wasn't run' problem",
         "Does not tell the user to re-run `DLCPosV1.populate` without first confirming the upstream gap — the IndexError will reproduce until the upstream is fixed"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "position_dlc_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 38,
@@ -1455,7 +1776,14 @@
         "Identifies that `decoding_kwargs` are passed through by Spyglass to whichever method runs in `make_compute` — `predict()` in the `estimate_decoding_params=False` branch (the default inference path), `estimate_parameters()` in the `True` branch (which re-runs EM parameter estimation, not normal inference). Names `n_chunks` / `cache_likelihood` as the intended OOM knobs and points the user at the installed `non_local_detector` signatures (or `inspect.signature`) to verify the kwargs are accepted there if they appear to be ignored or rejected. Does NOT incorrectly claim that `estimate_parameters()` rejects the OOM kwargs without checking.",
         "Does not recommend upgrading the GPU as the primary fix",
         "Does not include v0 decoding knobs like `sorted_spikes_algorithm_params` or `block_size` — those are sorted-spikes v0 params and are irrelevant to clusterless v1 OOM"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "decoding_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 39,
@@ -1491,7 +1819,14 @@
         "Recommends set_group_by_shank with the exact method name",
         "Shows the SortGroup.SortGroupElectrode inspection to verify one-shank-per-group",
         "Does not frame this as a SpikeInterface bug"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 40,
@@ -1536,7 +1871,14 @@
         "Recommends saving the corrected per-machine config — `SpyglassConfig().save_dj_config(...)` (defaults to global `~/.datajoint_config.json`; `save_method='local'` for project-scoped `dj_local_conf.json`) OR `dj.config.save_global()` / `dj.config.save_local()` after editing `dj.config['stores']` in place",
         "Does NOT claim that `SPYGLASS_BASE_DIR` can never refresh stores, and does NOT claim that stores persistence is exclusively `dj_local_conf.json` — both global and local config files are valid persistence targets",
         "Does not recommend remounting the share at the same path on both machines as the primary fix"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "setup_config.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 41,
@@ -1571,7 +1913,14 @@
         "Names `Table.alter()` (or `Table().alter(...)`) as the migration mechanism the admin runs to bring the DB schema forward to match the package",
         "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables",
         "Does not recommend rolling the code back as the fix — i.e., does not propose `git checkout` to an older commit, downgrading the spyglass package, pinning to yesterday's version, or otherwise stepping the package backwards to match the DB. Semantic check: the failure shape is any phrasing of 'roll back to make the error go away,' not just the literal substring `git checkout`. The correct path is forward (apply migrations) not backward (revert the code)."
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "setup_troubleshooting.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 42,
@@ -1612,7 +1961,16 @@
         "Shows AnalysisNwbfile().cleanup(dry_run=True) first, then dry_run=False",
         "Pushes back on super_delete as the pattern for LabMember errors — root-cause fix is to add the user to LabMember.LabMemberInfo",
         "Does not treat 'the PermissionError is annoying' as sufficient justification for super_delete"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "setup_troubleshooting.md",
+          "spyglassmixin_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 43,
@@ -1655,7 +2013,14 @@
         "Names the concrete FK parents (Raw, SortGroup, IntervalList, SpikeSortingPreprocessingParameters, LabTeam)",
         "Identifies 'sort_02_r1' as a likely missing IntervalList row, but frames it as a hypothesis to confirm via the diagnostic",
         "Does not assume this is a spyglass bug"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "runtime_debugging.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 44,
@@ -1701,7 +2066,16 @@
         "Names InsertError as the inspection table for failed inserts (`common_usage.InsertError & {'nwb_file_name': ...}` returns the short-message log per failed table)",
         "Shows the per-table populate loop as an alternative, not the primary fix",
         "Does not recommend editing populate_all_common.py source or re-running insert_sessions"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "populate_all_common_debugging.md"
+        ],
+        "optional": [
+          "runtime_debugging.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 45,
@@ -1734,7 +2108,21 @@
         "For the filesystem layer, either verify_spyglass_env.py --check base_dir_exists_writable/subdirs_exist_writable OR ls -ld + os.access is acceptable",
         "Runs SHOW GRANTS and LabMember check before assuming filesystem",
         "Does not recommend chmod -R 777, super_delete(), or force_permission=True as the fix — these are bypasses for legitimate edge cases, not first-line responses to a permission-denied error"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "verify_spyglass_env.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "setup_troubleshooting.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 46,
@@ -1767,7 +2155,14 @@
         "Shows `print(spyglass.__file__)` as the concrete diagnostic",
         "Includes the `pip install -e .` step AND the Jupyter kernel restart",
         "Mentions uninstalling `spyglass-neuro` if both installs coexist"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "setup_troubleshooting.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 47,
@@ -1801,7 +2196,14 @@
         "Recommends recreating the env from `environments/environment_min.yml` (the default minimal file per setup_install.md) or `environments/environment.yml` (full install) using either `mamba env update --prune` or `conda env update --prune` (either tool is acceptable — labs use both)",
         "Mentions `pip install --dry-run` as a future safeguard",
         "Does not recommend pinning a specific cv2 version or installing another package on top"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "setup_install.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 48,
@@ -1838,7 +2240,14 @@
         "Recognizes that the default `position_variables=['position_x', 'position_y']` matches DLC; the user's custom `['head_position_x', 'head_position_y']` override is the bug",
         "Names `_upsample` (or the downstream `make()` slice) as the line that raises `KeyError` when `position_variables` references columns that don't exist on the fetched DataFrame",
         "Does not recommend re-running DLC populate as the fix — the DLC output already has the expected columns"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "decoding_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 49,
@@ -1884,7 +2293,14 @@
         "Shows `merge_restrict` per-file as the correct shape (NOT `merge_get_part`, since the question is about counting not loading)",
         "Mentions the five merge masters by name OR at least that this applies to any table with `merge_id` as its PK",
         "Does not propose `merge_get_part` for a counting task (that would raise on multi-source)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "merge_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 50,
@@ -1927,7 +2343,14 @@
         "Explains that calling it on the wrong master raises AttributeError (not silent wrong data)",
         "Does not recommend subclassing or monkeypatching PositionOutput",
         "Does NOT recommend calling `get_restricted_merge_ids` on `PositionOutput` (or any non-`SpikeSortingOutput` master). Quoting the user's failed call to explain why it raises is fine; recommending it as the path forward is not."
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "merge_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 51,
@@ -1978,7 +2401,14 @@
         "Shows the correct direct-restriction form for MuaEventsV1 (`& {...}` with actual PK fields) — NOT a `merge_*` method",
         "States that *V1 / *Output suffixes are conventions, not enforced. Names at least one lookalike from this allowed set: MuaEventsV1, CurationV1, LFPV1, TrodesPosV1, DLCPosV1, RippleTimesV1, IntervalLinearizedPosition, or any *Selection table.",
         "Offers the isinstance(table(), Merge) check OR equivalent as a programmatic check"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "merge_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 52,
@@ -2039,7 +2469,15 @@
         "Does not misdiagnose as an under-specified restriction, a data-missing problem, or a merge-table/classmethod-dispatch issue",
         "Does not propose 'use & instead of *' as the fix — that would silently change the query semantics; the correct fix is .proj() on one side to drop the dependent attribute, OR splitting into two restrictions",
         "Does not blame the restriction key (`sorting_id` is not 'too loose'); the failure is the dependent-attribute refusal at query-build time, not a runtime restriction issue"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "datajoint_api.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 53,
@@ -2077,7 +2515,14 @@
         "Distinguishes DataJoint tier (Manual) from Spyglass role (selection table — picks input for the paired Computed table)",
         "Names LFPV1 as the Computed counterpart whose populate() consumes LFPSelection rows",
         "Does not classify LFPSelection itself as Computed, Lookup, or Imported (LFPSelection is Manual; LFPV1 is the Computed counterpart, but the question is about LFPSelection)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 54,
@@ -2110,7 +2555,14 @@
         "Identifies TrodesPosParams as the parameter table (named, reusable param dict; insert once per param set)",
         "Identifies TrodesPosSelection as the selection table (picks session + interval + params name for one populate run)",
         "Does not claim TrodesPosParams and TrodesPosSelection are the same table or interchangeable"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "position_trodes_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 55,
@@ -2144,7 +2596,15 @@
         "Explains that rows enter PositionOutput via insert into a part table (PositionOutput.TrodesPosV1 or PositionOutput.DLCPosV1), not via populate()",
         "Names at least one valid downstream consumer pattern (e.g., merge_get_part(key).fetch1('KEY'))",
         "Does not recommend PositionOutput.populate() or populate(PositionOutput, ...) as the entry point — explicitly contrasts with how rows actually arrive (insert into a part table)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "merge_methods.md",
+          "position_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 56,
@@ -2177,7 +2637,14 @@
         "Identifies LFPBandV1 as Computed; user populates it after inserting LFPBandSelection",
         "Notes there is no merge wrapper — LFPBandV1 itself is the consumer-facing endpoint",
         "Does not invent an `LFPBandOutput` merge/output table, `lfp_band_merge` module, or merge_get_part workflow for LFPBandV1"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 57,
@@ -2217,7 +2684,14 @@
         "Connects the rate to the Nyquist constraint for downstream band filters (e.g., ripple band 150–250 Hz needs > 500 Hz sampling)",
         "Names 1000 Hz as the canonical default and the consequence of going lower (aliasing in the downstream band)",
         "Does not say the sample rate is arbitrary or that any value works (this would contradict the Nyquist constraint)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 58,
@@ -2249,7 +2723,14 @@
         "Predicts the direction correctly: raising 4 -> 10 keeps MORE candidate events, not fewer",
         "Identifies the tradeoff: looser immobility conditioning admits peri-movement events that may not be true SWRs",
         "Does NOT predict that raising speed_threshold yields fewer ripples — that is the opposite of how the filter works"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 59,
@@ -2274,7 +2755,14 @@
         "Response contains substring `IntervalList`.",
         "Explains that encoding_interval trains the place-field / receptive-field model; decoding_interval is where the trained model is applied",
         "Gives a same-interval use (within-run reconstruction) and a different-interval use (train on run, decode replay during sleep / reward)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "decoding_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 60,
@@ -2307,7 +2795,14 @@
         "Distinguishes `speed_smoothing_std_dev` (Gaussian sigma applied at the velocity stage inside `get_velocity`, common_position.py:475) from `position_smoothing_duration` (moving-average applied to the LED positions BEFORE centroid / velocity / speed are computed, common_position.py:431-435). Both affect the returned `speed` column — they just enter the pipeline at different stages — and shrinking either produces a noisier speed trace. Does NOT claim either field is decoupled from `speed`, and does NOT claim `position_smoothing_duration` is applied after speed is computed.",
         "Predicts: shrinking / disabling `speed_smoothing_std_dev` gives a noisier speed trace, causing spurious crossings of downstream thresholds",
         "Recommends a blob-aware field-discovery move for these *blob-internal* keys — at least one of: `(TrodesPosParams & key).fetch1('params')` on an existing row, reading `TrodesPosParams.default_params` / `insert_default()` source, or source-reading `common_position.py` to see how each key is consumed. `.describe()` / `.heading` alone is insufficient because those only confirm a `params` blob column exists; they cannot reveal blob-internal keys like `speed_smoothing_std_dev`. Recommending `.heading` as a preliminary table-shape check is fine, but it must not be presented as the primary mechanism for finding blob-internal field names."
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "position_trodes_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 61,
@@ -2346,7 +2841,14 @@
         "Recommends set_group_by_shank for clusterless / waveform-based pipelines",
         "Notes that set_group_by_electrode_group is only available in the v0 API (spyglass.spikesorting.v0), not in v1",
         "Does not claim set_group_by_electrode_group produces one electrode per sort group (it groups by electrode_group_name, which can include multiple electrodes per group — that is precisely the source of the multi-shank conflict)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 62,
@@ -2379,7 +2881,16 @@
         "Identifies TrodesPosV1 as the LED-tracking path and DLCPosV1 as the pose-estimation path",
         "Notes that both can coexist as separate part-table entries on the same session",
         "Names at least one tradeoff dimension (latency / accuracy / setup cost / bodypart granularity)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "position_dlc_v1_pipeline.md",
+          "position_pipeline.md",
+          "position_trodes_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 63,
@@ -2411,7 +2922,14 @@
         "Response contains substring `LFPSelection.insert1`.",
         "Establishes ordering: electrode group must exist before LFPSelection.insert1 can succeed",
         "Explains the group is a reusable electrode bundle while the selection picks group + interval + filter for one populate run"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 64,
@@ -2442,7 +2960,15 @@
         "Recommends v1 for new work; identifies v0 as legacy and directs the user not to populate v0 tables for new sessions",
         "Routes to spikesorting_v0_legacy.md only for querying pre-v1 sortings, not for new work",
         "Does not recommend v0 for new sessions or as the default — v0 is for reading legacy data only"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "spikesorting_v0_legacy.md",
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 65,
@@ -2467,7 +2993,15 @@
         "Response contains substring `common_mistakes.md`.",
         "Names a specific reference file by name — common_mistakes.md (preferred) or datajoint_api.md (also valid)",
         "Explains the choice in one line (cardinality error → common_mistakes.md #2, or datajoint_api.md fetch section)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "datajoint_api.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 66,
@@ -2492,7 +3026,15 @@
         "Response contains substring `destructive_operations.md`.",
         "Names destructive_operations.md as the first reference (merge_methods.md acceptable as the second stop for the merge-specific classmethod-discard mechanics)",
         "Mentions inspect-before-destroy as the operative pattern; bonus credit for naming the classmethod-discard merge gotcha"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "merge_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 67,
@@ -2531,7 +3073,16 @@
         "Identifies RippleTimesV1 as the table that re-populates",
         "States that RippleParameters is UNAFFECTED because it is a parameter Lookup table, not electrode-dependent",
         "Notes unrelated branches (decoding, position) are unaffected unless they consume the same ripple times"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "lfp_pipeline.md",
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 68,
@@ -2573,7 +3124,17 @@
         "Fetches from UserEnvironment and compares against the user's running env (sys.version, package versions); does not generic-suggest 'check your env'.",
         "Does not claim the pipeline state must be identical when the symptoms prove otherwise",
         "Does not misframe cautious_delete as a write/populate gate — cautious_delete blocks deletes only"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "runtime_debugging.md"
+        ],
+        "optional": [
+          "setup_troubleshooting.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 69,
@@ -2608,7 +3169,14 @@
         "Names SpikeSorting.populate as the immediate next step (not SpikeSortingV1.populate — the actual v1 class is named SpikeSorting)",
         "Gives an ordered next-N list: SpikeSorting.populate → CurationV1 insert → MetricCuration → SpikeSortingOutput merge insert",
         "Notes that CurationV1 comes before MetricCuration in the v1 flow"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 70,
@@ -2662,7 +3230,14 @@
         "Response contains substring `DLCSmoothInterpSelection`.",
         "Lists the ordered tables (at least: DLCPoseEstimation → DLCSmoothInterp per bodypart → DLCSmoothInterpCohort → DLCCentroid + DLCOrientation → DLCPosV1 → PositionOutput.DLCPosV1)",
         "Mentions the bodypart-aggregation step (DLCSmoothInterpCohort) explicitly — it is the non-obvious step that's easy to skip"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "position_dlc_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 71,
@@ -2737,7 +3312,16 @@
         "Names every direct FK parent on `SpikeSortingRecordingSelection` (`Raw`, `SortGroup`, `IntervalList`, `SpikeSortingPreprocessingParameters`, `LabTeam`) and on `SpikeSortingSelection` (`SpikeSortingRecording`, `SpikeSorterParameters`, `IntervalList`) — does NOT collapse the recording / sorting branch to just the Selection / Computed pair",
         "Does not invent table names that don't exist in Spyglass source",
         "Names the clusterless waveform-features chain explicitly: `WaveformFeaturesParams` + `UnitWaveformFeaturesSelection` -> `UnitWaveformFeatures` -> `UnitWaveformFeaturesGroup`. Does NOT list `MetricCuration` as a must-have upstream — it is optional / downstream of its own selection, not on the must-have chain that produces a `ClusterlessDecodingV1` row."
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "decoding_pipeline.md",
+          "position_pipeline.md",
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 72,
@@ -2784,7 +3368,22 @@
         "Names every upstream table including the parameter (FirFilterParameters) and selection tables (LFPSelection, LFPBandSelection)",
         "Names the Raw table as the data source fetched inside LFPV1's `make()` body (Raw is not an FK of LFPSelection; it is pulled via `(Raw & key).fetch_nwb()` at make() time and must be present to regenerate LFPV1 from scratch)",
         "Does not skip the LFPOutput merge wrapper between LFPV1 and LFPBandSelection"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "feedback_loops.md",
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 73,
@@ -2822,7 +3421,15 @@
         "Calls Table.primary_key in the response (with the correct receiver — `Electrode.primary_key`), not just a textual description of 'the primary key'.",
         "Lists exactly the three PK fields (nwb_file_name, electrode_group_name, electrode_id), with no extra fields",
         "Does not list region_id as a PK field — region_id is a secondary FK to BrainRegion, not part of the Electrode primary key"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "datajoint_api.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 74,
@@ -2852,7 +3459,15 @@
         "Response contains substring `filter_sampling_rate`.",
         "Lists exactly the two PK fields (filter_name, filter_sampling_rate); no extra fields",
         "Response obeys the requested format — a comma-separated list of identifiers with no prose, headers, or extra commentary"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 75,
@@ -2890,7 +3505,15 @@
         "Identifies the link as a `-> [nullable] Probe.Electrode` declaration (secondary FK to a part table, nullable) — does not claim Probe is a primary parent of Electrode",
         "Explains nullable secondary FK semantics: the probe_* columns appear in Electrode's heading via FK inheritance, but Electrode rows are allowed to have NULL there (so a session without probe metadata still ingests)",
         "Does not invent a primary `-> Probe` declaration on Electrode — the actual link is to the part table Probe.Electrode and is below the `---` divider"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "datajoint_api.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 76,
@@ -2919,7 +3542,15 @@
         "Response contains substring `FirFilterParameters`.",
         "Names FirFilterParameters as the lookup table for filter coefficients (distinct from LFPSelection, which carries filter_name as FK but is the per-run selection, not the kernel store)",
         "Response obeys the requested format — a single table name with no prose, headers, or extra commentary"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 77,
@@ -2948,7 +3579,15 @@
         "Response contains substring `Probe.parts`.",
         "Calls Probe.parts() in the response to enumerate part tables.",
         "Lists both part tables in Master.Part notation; does not invent additional Probe.* parts that don't exist"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "datajoint_api.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 78,
@@ -2987,7 +3626,15 @@
         "Names `Session.heading` (or `.heading.names` / `.describe()`) as the verification primitive",
         "Redirects to `Raw` (direct column `sampling_rate`) as the correct source — accepts either `Raw.fetch1('sampling_rate')` or a fetch_nwb-based path",
         "Does not invent a numeric default sampling rate or a fake fetch1 return shape on Session"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "datajoint_api.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 79,
@@ -3021,7 +3668,14 @@
         "Recommends `.fetch('KEY')` (or `.proj().fetch()`) as the real way to get PK dicts",
         "Names `dir(SpyglassMixin)` or a source-grep as the verification primitive",
         "Does not fabricate a signature, docstring, or return-shape for `get_pk`"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "spyglassmixin_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 80,
@@ -3074,7 +3728,23 @@
         "Names at least two of the three actual direct parents: `RippleLFPSelection`, `RippleParameters`, `PositionOutput`",
         "Recommends `Table.parents()` / `.descendants()` (or `dj.Diagram`) as the verification primitive before committing to cascade scope",
         "Routes to destructive_operations.md before recommending any delete"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "lfp_pipeline.md",
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 81,
@@ -3123,7 +3793,21 @@
         "Identifies `SpikeSorting` (no V1 suffix) as the correct v1 spike-sorting Computed class and names its module (`spyglass.spikesorting.v1`)",
         "Explicitly flags the v0→v1 naming asymmetry (some v1 classes keep the `V1` suffix, some drop it) — recommends verifying by import rather than extrapolating",
         "Does not fabricate a signature for `SpikeSortingV1.populate` or claim it is an alias / deprecated name for `SpikeSorting`"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 82,
@@ -3161,7 +3845,24 @@
         "Explains in one line why `populate_all_common_debugging.md` beats `runtime_debugging.md` here — the symptom is per-table swallowed errors via the driver, not an in-hand traceback",
         "Identifies `common_usage.InsertError` as the table where the per-table stack-trace details live",
         "Does not invent a bundled script for populate diagnostics; correctly notes only scrub_dj_config.py and verify_spyglass_env.py ship today (or that no populate-diagnostic script is bundled)"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [],
+        "optional": [],
+        "distractor": [
+          "scrub_dj_config.py",
+          "verify_spyglass_env.py"
+        ]
+      },
+      "expected_refs": {
+        "required": [
+          "populate_all_common_debugging.md"
+        ],
+        "optional": [],
+        "distractor": [
+          "runtime_debugging.md"
+        ]
+      }
     },
     {
       "id": 83,
@@ -3199,7 +3900,16 @@
         "Explicitly identifies `spyglassmixin_methods.md` as a distractor and explains the author-vs-consumer split",
         "Mentions the `_object_id` + AnalysisNwbfile FK convention as a signal that this is an authoring task",
         "Does not recommend merge_methods.md or ingestion.md as the first stop"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "custom_pipeline_authoring.md"
+        ],
+        "optional": [],
+        "distractor": [
+          "spyglassmixin_methods.md"
+        ]
+      }
     },
     {
       "id": 84,
@@ -3242,7 +3952,14 @@
         "Recommends re-running with `raise_err=True` to surface the swallowed traceback, scoped narrowly (not a blanket rerun)",
         "Explicitly warns against deleting the already-ingested rows (Session/IntervalList/Raw) as a recovery step",
         "Explicitly warns against naively re-running the full `populate_all_common` without inspecting InsertError first"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "populate_all_common_debugging.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 85,
@@ -3286,7 +4003,16 @@
         "Explicitly lists what is unaffected — LFP, LFPBand, RippleLFPSelection, position, decoding branches not downstream of the affected ripple times",
         "Recommends cautious_delete (not super_delete or a manual drop) and routes to destructive_operations.md",
         "Flags editing a params row in place as an anti-pattern and recommends inserting a new `ripple_param_name` entry for future runs"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "destructive_operations.md",
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 86,
@@ -3328,7 +4054,14 @@
         "Does not commit to one cause before the diagnostic is run",
         "Distinguishes direct-FK surfaces from upstream-chain differences (sorter params, position params) — latter is a second-order check",
         "Does not misattribute divergence purely to environment / package drift"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "decoding_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 87,
@@ -3392,7 +4125,18 @@
         "Lists at least two downstream tables that would diverge (linearization, decoding via PositionGroup, ripple via pos_merge_id)",
         "Explicitly names LFP, spike-sorting, and curation as unaffected — they do not consume position",
         "Does not use the v0 field name `position_info_param_name` or the nonexistent class `SpikeSortingV1`"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "position_trodes_v1_pipeline.md"
+        ],
+        "optional": [
+          "decoding_pipeline.md",
+          "position_pipeline.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 88,
@@ -3432,7 +4176,15 @@
         "Names the selection-scope ambiguity (which decoding_param_name / interval / session)",
         "Recommends merge_delete with an explicit key (classmethod form) if the merge layer is chosen, and routes to destructive_operations.md for the inspect-before-destroy pattern",
         "Does not produce an unscoped `.delete()` command without asking or narrowing"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "merge_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 89,
@@ -3477,7 +4229,25 @@
         "Does not propose a multi-table `*` chain in the proposed code blocks — the canonical answer should use a sub-restriction (`& (...)` parens) rather than chaining tables with the natural-join operator",
         "Fetches `nwb_file_name` from the restricted `SpikeSortingRecordingSelection` (or via a deliberate join/proj), NOT from `SpikeSortingRecording` itself — the latter has no `nwb_file_name` in its heading",
         "Does not claim DataJoint 'walks the FK chain' from `SpikeSortingRecording` to `IntervalList` automatically — the restriction works only because both `SpikeSortingRecordingSelection` and the restricted `IntervalList` share `(nwb_file_name, interval_list_name)` in their headings"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "datajoint_api.md",
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [
+          "common_mistakes.md",
+          "common_tables.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 90,
@@ -3512,7 +4282,14 @@
         "Response does not contain substring `LFPSelection.populate`.",
         "Names the next-step operation as `LFPV1.populate(key)` — not just 'populate' or 'populate the table' generically",
         "Identifies LFPV1 as the paired Computed table that consumes LFPSelection rows"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 91,
@@ -3547,7 +4324,16 @@
         "Response does not contain substring `TrodesPosSelection.populate`.",
         "Names the next-step operation as `TrodesPosV1.populate(key)` — not just 'populate the position pipeline'",
         "Mentions that the populate step is what writes into `PositionOutput.TrodesPosV1` (merge auto-insert)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "position_trodes_v1_pipeline.md"
+        ],
+        "optional": [
+          "position_pipeline.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 92,
@@ -3585,7 +4371,15 @@
         "Response does not contain substring `PositionOutput.fetch1('position'`.",
         "Names `merge_get_part` as the operation to find the source part table",
         "Names `fetch1_dataframe()` on the restricted merge master as the way to materialize position data — does NOT suggest fetching a 'position' column directly off PositionOutput"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "merge_methods.md",
+          "position_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 93,
@@ -3617,7 +4411,14 @@
         "Response does not contain substring `LFPBandV1.compute_signal_power(`.",
         "Names `(LFPBandV1 & key).fetch1_dataframe()` OR `(LFPBandV1 & key).compute_signal_power(...)` as the next operation — not both as a vague 'either fetch or compute'",
         "Calls the methods on a restricted relation `(LFPBandV1 & key).method(...)`, not on the bare class"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 94,
@@ -3661,7 +4462,14 @@
         "Distinguishes the two sampling-rate constraints: (a) filter lookup is EXACT at the LFP input rate (`FirFilterParameters & {filter_sampling_rate: lfp_sampling_rate}`, lfp_band.py:110-128), NOT a `<=` match; (b) `lfp_band_sampling_rate <= lfp_sampling_rate` is automatic via decimation (lfp_band.py:220)",
         "Names `FirFilterParameters` and shows the exact-match restriction (filter_name + filter_sampling_rate equal to the planned LFP input rate) as the verification step",
         "Does NOT claim the filter lookup uses a `<=` semantic — that is the wrong rule applied to the wrong sampling-rate field"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 95,
@@ -3715,7 +4523,15 @@
         "Names `nwb_file_name` as the colliding secondary attribute on both SpikeSortingSelection (via -> IntervalList) and SpikeSortingRecordingSelection (via -> Raw)",
         "Demonstrates BOTH fixes — two-restriction chain via fetch1('recording_id'), AND .proj('recording_id') on the LHS to drop the colliding secondary",
         "Does not suggest set() or np.unique() — the failure is a join refusal, not a multiplied join"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "datajoint_api.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 96,
@@ -3752,7 +4568,22 @@
         "Response contains substring `merge master`.",
         "Recommends `DecodingOutput.descendants()` (transitive walk) over `DecodingOutput.children()` (one-hop) and explains the distinction between the two",
         "Notes that `DecodingOutput` is a merge master, so downstream consumers FK to the master itself, not to its part tables (e.g. ClusterlessDecodingV1)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "datajoint_api.md",
+          "spyglassmixin_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_scripts": {
+        "required": [],
+        "optional": [
+          "db_graph.py"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 97,
@@ -3796,7 +4627,15 @@
         "Response contains substring `.describe()`.",
         "Distinguishes `parents()` (one hop) from `ancestors()` (transitive walk) and gives a use case for each",
         "Mentions `.describe()` as the schema-level companion that shows FK declarations inline in the table's definition string"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "datajoint_api.md",
+          "spyglassmixin_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 98,
@@ -3838,7 +4677,14 @@
         "Response does not contain substring `RippleTimesV1 has no upstream`.",
         "Enumerates the *selection* tables (RippleLFPSelection in particular) alongside the parameter and output tables, not just the output tables",
         "Identifies `PositionOutput` (via the `pos_merge_id` projection FK) as the hidden / easy-to-miss prerequisite — ripple detection uses position-derived speed"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 99,
@@ -3884,7 +4730,15 @@
         "Response does not contain substring `edit the ClusterlessDecodingV1 schema`.",
         "First diagnostic step works in *restricted* candidate / pending terms — i.e., `len(ClusterlessDecodingSelection & key)` and/or `(ClusterlessDecodingV1.key_source & key)` (and optionally `(ClusterlessDecodingV1.key_source & key) - ClusterlessDecodingV1.proj()` for the pending count). The reasoning is: because `ClusterlessDecodingV1`'s only direct parent is `ClusterlessDecodingSelection`, an empty key_source most directly means the selection row is missing or the restriction does not match. Bare unrestricted forms like `len(ClusterlessDecodingV1.key_source - ClusterlessDecodingV1)` do NOT satisfy this check — the diagnostic must be restricted by the user's `key`, otherwise it conflates this session's missing row with global lab state.",
         "Walks `ClusterlessDecodingSelection.parents()` and checks `(parent & key)` for each *only* if building the selection or if the selection insert itself is blocked by a missing FK target — names UnitWaveformFeaturesGroup AND PositionGroup AND DecodingParameters AND IntervalList as those parents"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "decoding_pipeline.md",
+          "runtime_debugging.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 100,
@@ -3927,7 +4781,15 @@
         "Response contains substring `PositionGroup`.",
         "Identifies `CurationV1` as the mandatory next step (initial curation, not optional) before anything downstream of spike sorting can be reached",
         "Calls out the merge insert into `SpikeSortingOutput` (e.g. `insert([curation_key], part_name='CurationV1')`) as a separate explicit step that does not happen automatically"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "decoding_pipeline.md",
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 101,
@@ -3972,7 +4834,15 @@
         "Response does not contain substring `should super_delete`.",
         "Inspects `common_usage.InsertError` first (with the session's nwb_file_name restriction) rather than re-running the ingest blindly",
         "Mentions that missing `Probe` rows often indicate an upstream `DataAcquisitionDevice` / `ProbeType` dependency that skipped silently — not a Probe-table-level fault"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "ingestion.md",
+          "populate_all_common_debugging.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 102,
@@ -4005,7 +4875,14 @@
         "Joins through `Session.DataAcquisitionDevice` (part table) rather than expecting a `device` or `data_acquisition_device_name` column on `Session` directly",
         "Recognizes that one session can have multiple devices, so the answer uses `.fetch()` (or a join that returns multiple rows), not `.fetch1()`",
         "Restricts the part table by `nwb_file_name` (which it inherits via `-> Session`); does NOT restrict `DataAcquisitionDevice` by `nwb_file_name` (DataAcquisitionDevice is keyed by `data_acquisition_device_name` and has no session FK)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 103,
@@ -4046,7 +4923,14 @@
         "Goes via `Session` -> `Session.Experimenter` -> `LabMember` rather than assuming a direct `Subject -> owner` FK or column",
         "Narrows to the specific `subject_id` BEFORE joining (`Session & {subject_id: 'wilbur'}`), so the join surface is bounded and the dependent-attribute refusal cannot fire",
         "Recognizes that `subject_id` is a secondary attr on `Session` propagated via `-> [nullable] Subject`, queryable via `&` — does NOT claim `Subject` itself has an `owner` or `lab_member_name` column"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 104,
@@ -4084,7 +4968,14 @@
         "Restricts ONLY `ElectrodeGroup` by `nwb_file_name` (which it has as a PK field) — does NOT restrict `Probe` by `nwb_file_name` (Probe is keyed by `probe_id` and has no session FK; the restriction would silently no-op)",
         "Joins on the shared `probe_id` column (ElectrodeGroup's nullable FK to Probe) to surface `probe_type` / Probe-side fields",
         "Mentions that `-> [nullable] Probe` means some electrode groups may have NULL `probe_id` and won't survive the inner join — handle via projection or a separate restriction if those rows matter"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 105,
@@ -4125,7 +5016,15 @@
         "Routes through `VideoFile` (the per-session mapping) restricted by `nwb_file_name`, NOT through `CameraDevice` alone (which is a global name-keyed lookup with no session attr in its heading)",
         "Recognizes that `camera_name` on `VideoFile` is a secondary column — NOT a declared `-> CameraDevice` FK — and the link is by name match (validated at ingest in `_prepare_video_entry`)",
         "Restricts `VideoFile` by `nwb_file_name` (a PK field via `-> TaskEpoch`); does NOT attempt `CameraDevice & {nwb_file_name: ...}` (silent no-op, no such attr in CameraDevice's heading)"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "position_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 106,
@@ -4185,7 +5084,16 @@
         "Projects each side to `subject_id` (via Session's `-> [nullable] Subject` FK) BEFORE intersecting, rather than attempting a single multi-table `*` join across PFC + w-track + subject (which would either trigger dependent-attribute refusal or produce spurious Cartesian products)",
         "Flags both `region_name` substrings and `task_name` / `task_environment` values as lab-dependent conventions to confirm via `Task.fetch('task_name')` etc. before running the filter",
         "Does NOT claim Session has a `task_name` column directly (it doesn't); the path goes through TaskEpoch -> Task"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "datajoint_api.md",
+          "workflows.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 107,
@@ -4233,7 +5141,25 @@
         "Names `UnitSelectionParams` (the parameter table that controls which unit labels are included) and at least one default value (`'all_units'` or `'exclude_noise'`)",
         "Notes that `SortedSpikesGroup.Units` part FKs to `SpikeSortingOutput.proj(spikesorting_merge_id='merge_id')` (group.py:73), so the keys passed into `create_group(...)` must use the projected attr name `spikesorting_merge_id`, NOT bare `merge_id`. Use `SpikeSortingOutput().get_restricted_merge_ids(...)` to fetch the merge_ids and build `[{'spikesorting_merge_id': mid} for mid in merge_ids]`.",
         "Explains why this is reusable: once the group exists, multiple downstream tables (decoding / MUA / custom) can all FK to the same group key without re-listing the constituent merge_ids"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "group_tables.md",
+          "spikesorting_v1_analysis.md"
+        ],
+        "optional": [
+          "custom_pipeline_authoring.md",
+          "spikesorting_v1_pipeline.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 108,
@@ -4282,7 +5208,26 @@
         "Names `UnitSelectionParams` as the parameter table that filters unit labels within the group, with `'all_units'` / `'exclude_noise'` defaults",
         "Builds keys with the projected attr name `spikesorting_merge_id` (NOT bare `merge_id`) because `SortedSpikesGroup.Units` part FKs to `SpikeSortingOutput.proj(spikesorting_merge_id='merge_id')` (group.py:73). Calls `SpikeSortingOutput().get_restricted_merge_ids(key, ...)` with a **single dict per call** — looping per recording key and extending the list — because the source raises `TypeError` on a list arg (spikesorting_merge.py:138).",
         "Explains why this is reusable: once the group exists, downstream Computed tables FK to the group key, not to tetrode-level merge IDs"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "common_tables.md",
+          "group_tables.md",
+          "spikesorting_v1_analysis.md"
+        ],
+        "optional": [
+          "custom_pipeline_authoring.md",
+          "spikesorting_v1_pipeline.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 109,
@@ -4325,7 +5270,15 @@
         "Lists the shared shape: master with group-name PK + a `dj.Part` table keyed on the upstream rows the group includes (typically merge IDs via `.proj()` to rename)",
         "Explains that `UnitSelectionParams` is a parameter table, NOT a group table itself — it FK-feeds into `SortedSpikesGroup`'s PK as the parameter axis but isn't the same kind of object",
         "Names at least `SortedSpikesGroup` and `PositionGroup` as the two concrete examples in source"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "custom_pipeline_authoring.md",
+          "group_tables.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 110,
@@ -4368,7 +5321,16 @@
         "Names the SpyglassMixin-first MRO requirement (`class X(SpyglassMixin, dj.Computed)`) as a non-negotiable — the validator pins this with a regression fixture",
         "Cites the non-negotiable that tables reference exactly ONE AnalysisNwbfile table (Spyglass validates on declaration); the row carries the file name + object IDs, not the heavy array itself",
         "Uses the `AnalysisNwbfile().build(nwb_file_name)` context manager for the create -> add -> register lifecycle, OR an equivalent atomic shape — does not interleave separate `create()` / `add_nwb_object()` / `add()` calls"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "custom_pipeline_authoring.md"
+        ],
+        "optional": [
+          "group_tables.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 111,
@@ -4404,7 +5366,15 @@
         "Names at least two reasons the size-per-row framing is the wrong yardstick: (a) downstream-portability / export-flow opacity (DANDI / Kachery / paper-export / FigURL); (b) aggregate scaling (5 MB x N sessions x N params crosses the practical blob ceiling faster than expected); (c) the Spyglass design contract that exactly-one AnalysisNwbfile per table is what lets cross-cutting tooling enumerate result-bearing rows",
         "Cites the relevant Non-Negotiable: heavy arrays go to AnalysisNwbfile; tables reference exactly one AnalysisNwbfile (Spyglass validates on declaration)",
         "Shows the AnalysisNwbfile().build(...) context-manager shape as the recommended alternative — does not let 'I don't want to deal with AnalysisNwbfile' override the design contract"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "custom_pipeline_authoring.md",
+          "export.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 112,
@@ -4442,7 +5412,16 @@
         "Recommends a NEW `dj.Computed` table in the user's OWN schema module, FK'd to `DLCPosV1`, with `SpyglassMixin` first in MRO — that's the correct extension shape",
         "Does NOT recommend a `dj.Manual` side table as the primary solution for bodypart names that are derivable from upstream DLC pipeline state",
         "Mentions the upstream-PR path as the only legitimate way to change the core schema (not as a routine option), without conflating it with local edits"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "custom_pipeline_authoring.md"
+        ],
+        "optional": [
+          "position_dlc_v1_pipeline.md"
+        ],
+        "distractor": []
+      }
     },
     {
       "id": 113,
@@ -4495,7 +5474,15 @@
         "Recommends inserting a NEW `ripple_param_name` (e.g. 'thresh8') and populating `RippleTimesV1` against the new name, rather than mutating the existing row",
         "Explains that `update1()` silently breaks **provenance / reproducibility** — old downstream rows still reference 'default' by name but the param blob under that name has changed, so re-runs no longer reproduce the same outputs",
         "Notes that no new `RippleLFPSelection` row is needed — selection rows already exist for the LFP band + group, just populate `RippleTimesV1` for the new param name"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 114,
@@ -4540,7 +5527,16 @@
         "Identifies the redundant `group_name` field (`SortedSpikesGroup`'s PK already propagates `sorted_spikes_group_name` via the FK) and recommends dropping it",
         "Names the missing `-> AnalysisNwbfile` line as the second concrete issue — Spyglass validates that result-bearing tables reference exactly one AnalysisNwbfile on declaration",
         "Frames the non-negotiable as **reproducibility / shareability** (export flows, DANDI / Kachery / paper-export expect heavy arrays in AnalysisNwbfile), NOT as a row-size or performance argument"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "custom_pipeline_authoring.md",
+          "export.md",
+          "group_tables.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 115,
@@ -4582,7 +5578,15 @@
         "Recommends a NEW `dj.Computed` table downstream of `LFPV1` (in the user's own schema module) that produces the downsampled preview as its own first-class artifact — with `SpyglassMixin` first in MRO and `-> AnalysisNwbfile` for the preview file",
         "Mentions that the upstream-PR path is the only legitimate way to change `LFPV1`'s own behavior for everyone — does NOT conflate that with a runtime monkey-patch",
         "Does not capitulate to the 'just monkey-patch' framing despite explicit user pressure"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "custom_pipeline_authoring.md",
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 116,
@@ -4628,7 +5632,15 @@
         "Predicts the qualitative direction correctly: raising `zscore_threshold` from 2 to 3 yields FEWER detected ripple events (higher threshold = stricter trigger)",
         "Notes that no new `RippleLFPSelection` row is needed — selection rows already exist for the LFP band + electrode group; just populate `RippleTimesV1` for the new param name",
         "Notes that old rows under `'default'` are unchanged (intact provenance) and the two sets coexist queryable side-by-side — that's the value of the new-name shape"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 117,
@@ -4675,7 +5687,15 @@
         "Cascades the consequence through SpikeSortingRecording -> SpikeSortingSelection -> SpikeSorting -> CurationV1 — each downstream layer needs a fresh row keyed off the new recording_id / new sorting_id; the old chain stays anchored to the old recording_id",
         "Explains explicitly that `CurationV1` rows CANNOT transfer — curation labels are keyed on per-sort indices that don't survive a re-sort against different input data; sets, indices, and waveforms differ",
         "Recommends `SpikeSortingRecordingSelection.insert_selection(new_key)` (a new row) rather than `update1()` on the existing row — the latter is the same provenance trap as eval 117"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 118,
@@ -4718,7 +5738,15 @@
         "Recommends inserting a NEW `DecodingParameters` row with a different `decoding_param_name` (e.g. `'bin5cm'`) and a fresh `ClusterlessDecodingSelection` + populate, rather than `update1()` on the existing row",
         "Names the qualitative direction (coarser bins = fewer state bins = faster, lower spatial resolution) without misattributing the change to upstream pipelines",
         "Notes that `UnitWaveformFeaturesGroup` and `PositionGroup` (referenced by the selection) are untouched — they're FK'd by the SELECTION, not by `DecodingParameters` directly"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "decoding_pipeline.md",
+          "destructive_operations.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 119,
@@ -4771,7 +5799,15 @@
         "Diagnoses in three layers — group membership (`id`, `ls -ld`), group-write bit + setgid on the directory (`drwxrws---`, `chmod 2775`), and `umask 002` on the user's shell — rather than guessing one cause",
         "Does NOT recommend `chmod -R 777` as the fix — that removes the permission gate entirely; the targeted group + setgid + umask fixes are correct",
         "Notes that other lab members can populate fine because they're already in the shared group; the user is the only difference"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "setup_config.md",
+          "setup_troubleshooting.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 120,
@@ -4812,7 +5848,15 @@
         "Distinguishes *idle* hang (no CPU, no progress -> lock contention) from slow-compute (fetch pulling a large blob -> CPU activity in the kernel); picks lock contention as the likely cause for a small params table",
         "Names `performance_schema.metadata_locks` (joined with `threads`) as the underlying source `check_threads` queries; the returned DataFrame surfaces lock rows + thread state + running query, NOT an explicit blocker->waiter graph — the user reads `LOCK_STATUS` and `PROCESSLIST_STATE` to identify the holder vs waiter",
         "Recommends coordinating with the lab before killing another transaction — does not unilaterally KILL another worker's transaction"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "runtime_debugging.md",
+          "spyglassmixin_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 121,
@@ -4851,7 +5895,15 @@
         "Notes that a `git pull` that bumps `setup.cfg` / `pyproject.toml` can desync a previously editable install; re-running `pip install -e .` from the checkout refreshes the editable wrapper",
         "Does NOT recommend `pip install spyglass-neuro` from PyPI as the fix — that creates the site-packages-shadowing problem if the user already had an editable checkout",
         "Mentions kernel restart for Jupyter when reinstalling — Python caches imports across `pip install` so the running kernel won't pick up the new module otherwise"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "setup_install.md",
+          "setup_troubleshooting.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 122,
@@ -4894,7 +5946,15 @@
         "Names `dir()` or `inspect.getsource` (or equivalent introspection) as the verification primitive — does not invent a signature",
         "Explains the single-row idiom: restrict to ensure uniqueness via `& + fetch1('KEY')` first (or assert `len() == 1`), then `fetch_nwb()[0]` — the `[0]` is correct, the issue is when the restriction isn't actually unique",
         "Notes that wishing for `fetch_nwb1()` often signals a too-loose restriction (multiple rows survive `&`); fix the restriction, not the fetch helper"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "spyglassmixin_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 123,
@@ -4937,7 +5997,15 @@
         "Routes to `Table().delete_orphans(dry_run=True)` (helpers.py:167) for orphaned DJ rows, AND `AnalysisNwbfile().cleanup(dry_run=False)` (common_nwbfile.py:754) for orphaned files on disk — these cover the two senses of 'orphans' (rows vs files)",
         "Emphasizes the `dry_run=True` gate as a destructive-operations safety primitive — do NOT recommend running with `dry_run=False` without preview, regardless of which cleanup helper is used",
         "Does not invent a signature for the fabricated top-level function"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "spyglassmixin_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 124,
@@ -4969,7 +6037,23 @@
         "Identifies the singular/plural typo (`trodes_pos_param_name` vs `trodes_pos_params_name`) and does NOT recommend the singular form as the correct field name",
         "Uses `code_graph.py describe` if acting as the skill agent, or `Table.heading.primary_key` in the user's Python session — does not assert the field name from memory",
         "Names the silent-drop semantics — DataJoint ignores unknown restriction keys without error"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "datajoint_api.md",
+          "position_trodes_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 125,
@@ -5004,7 +6088,16 @@
         "Identifies `speed_threshold` as a blob field nested under `ripple_param_dict[\"ripple_detection_params\"]`, NOT a heading column",
         "Routes blob shape verification to `RippleTimesV1.make` (the consumer) or to an actual fetched row, NOT to the table name alone",
         "Recommends fetch-then-filter-in-Python rather than a DataJoint restriction on the blob field"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "feedback_loops.md",
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 126,
@@ -5038,7 +6131,22 @@
         "Identifies the silent no-op shape: merge master's heading is only `(merge_id, source)`, so unknown restriction keys are dropped without error",
         "Recommends `merge_restrict` (or `merge_get_part`) as the fix; does NOT confirm the user's bare `& {nwb_file_name: ...}` count of 2735 as correct, and does NOT recommend rerunning the bare form",
         "Verifies the merge-master heading with `code_graph.py describe DecodingOutput` (agent tool) or `DecodingOutput.heading.primary_key` in the user's Python session, not invented merge-master fields"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "common_mistakes.md",
+          "merge_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 127,
@@ -5076,7 +6184,22 @@
         "Names the missing PK fields explicitly (`RippleLFPSelection`, `pos_merge_id`)",
         "Recommends building a fully-scoped `populate_key` with the missing fields included",
         "Verifies the full PK with `code_graph.py describe RippleTimesV1` (agent tool) or `RippleTimesV1.heading.primary_key` in the user's Python session, not memory"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "destructive_operations.md",
+          "ripple_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 128,
@@ -5112,7 +6235,23 @@
         "Names `set_group_by_shank` as the v1 alternative",
         "Verifies with `code_graph.py find-method` (agent tool), a version-specific source read, or Python introspection on the imported v1 SortGroup — not memory",
         "Cites distinct v0 and v1 source paths to anchor the version difference"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "code_graph.py"
+        ],
+        "optional": [],
+        "distractor": []
+      },
+      "expected_refs": {
+        "required": [
+          "feedback_loops.md",
+          "spikesorting_v0_legacy.md",
+          "spikesorting_v1_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 129,
@@ -5145,7 +6284,24 @@
         "Recommends runtime introspection through `db_graph.py` when available to the agent, or `MyLabRipplePostprocess.heading.primary_key` in the user's Python session; otherwise read the custom table's source definition directly",
         "Does NOT guess the PK from the class name or assume it inherits `RippleTimesV1`'s shape",
         "Treats this as a runtime-fact / custom-pipeline question, not a source-graph question"
-      ]
+      ],
+      "expected_scripts": {
+        "required": [
+          "db_graph.py"
+        ],
+        "optional": [],
+        "distractor": [
+          "code_graph.py"
+        ]
+      },
+      "expected_refs": {
+        "required": [
+          "feedback_loops.md",
+          "merge_methods.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     },
     {
       "id": 130,
@@ -5182,7 +6338,16 @@
         "Names the LFP-specific keys the user needs to choose (`lfp_electrode_group_name`, `target_interval_list_name`, `filter_name`, `filter_sampling_rate`)",
         "Resolves the merge_id through a merge-aware helper (`LFPOutput.merge_get_part(...).fetch1('KEY')` OR `LFPOutput.merge_restrict(...)`), NOT through a bare `LFPOutput & {nwb_file_name: ...}` restriction",
         "Does NOT hand back a single-line bare-restriction `fetch1_dataframe()` without first verifying cardinality or scoping"
-      ]
+      ],
+      "expected_refs": {
+        "required": [
+          "datajoint_api.md",
+          "feedback_loops.md",
+          "lfp_pipeline.md"
+        ],
+        "optional": [],
+        "distractor": []
+      }
     }
   ]
 }
