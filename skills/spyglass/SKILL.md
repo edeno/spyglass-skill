@@ -79,16 +79,7 @@ Users may span stages. Infer from imports/table names; ask only when the answer 
 
 ## Querying an Already-Configured DB
 
-If the user hasn't installed or configured Spyglass yet, route to [setup_install.md](references/setup_install.md). For a working install:
-
-```python
-from spyglass.common import Session, IntervalList
-
-Session.fetch(limit=10)                      # discover an nwb_file_name
-IntervalList & {"nwb_file_name": nwb_file}   # discover intervals for it
-```
-
-From here, open the relevant pipeline reference — each starts with a Canonical Example. Don't expand the full workflow inline.
+If Spyglass is not installed/configured, route to [setup_install.md](references/setup_install.md). For a working DB, start from `Session` / `IntervalList` discovery in [common_tables.md](references/common_tables.md), then open the relevant pipeline reference.
 
 ## Reference Routing
 
