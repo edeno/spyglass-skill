@@ -1,5 +1,10 @@
 # Problem-solving templates implementation plan
 
+**Status:** Partially executed / design reference. PR #26 implemented several
+templates and routing changes from this plan; use this file for the durable
+principle that templates belong in the reference that owns the problem shape,
+not in a catch-all template file or the root `SKILL.md`.
+
 This plan adds reusable Spyglass reasoning templates for advanced agent
 behavior without turning `SKILL.md` into a tutorial. The templates should make
 agents choose the right evidence path, produce complete answers, and avoid
@@ -312,4 +317,3 @@ Each commit should pass validation before the next.
 - No large workflow is duplicated from a pipeline reference.
 - `SKILL.md` remains a router and does not grow materially.
 - Internal links resolve and validator warnings do not increase.
-

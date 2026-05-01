@@ -1,5 +1,9 @@
 # Bundled scripts for `skills/spyglass/scripts/`
 
+**Status:** Living backlog / design note. Use this to evaluate new script
+ideas after checking whether `code_graph.py`, `db_graph.py`, or a reference
+template already covers the evidence surface.
+
 ## Context
 
 This list is a backlog, not an implementation queue. Since the first draft,

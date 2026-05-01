@@ -1,5 +1,9 @@
 # Round-D implementation plan
 
+**Status:** Historical / executed by PR #26. Keep as provenance for the
+Round-D edit sequence; use [round-e-impl-plan.md](round-e-impl-plan.md) for
+the next measurement pass.
+
 Round of skill edits and verification driven by the round-C 130-eval sweep
 analysis ([summary](https://github.com/edeno/spyglass-skill-workspace/blob/main/runs/round-c-2026-04-28/summary/SUMMARY.md)).
 This plan is granular: per-edit insertion anchors, validator gates between

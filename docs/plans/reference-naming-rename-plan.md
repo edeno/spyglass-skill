@@ -1,5 +1,8 @@
 # Reference naming and rename plan
 
+**Status:** Proposed future cleanup. Execute only as a standalone rename-only
+change after content-heavy PRs settle.
+
 This plan defines a consistent naming policy for Spyglass skill reference files
 and a staged rename path. It is intentionally separate from the Round-D content
 edits: renames are mechanical, high-churn, and should be reviewed independently

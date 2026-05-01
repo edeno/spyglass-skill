@@ -1,5 +1,8 @@
 # Round-E implementation plan
 
+**Status:** Active / next measurement plan. Execute after PR #26 merges to
+`master`.
+
 Measurement plan for what PR #26 (round-d) shipped but did not behaviorally
 verify. Round-d's narrow rerun validated the 8 Phase 2 edits; the **post-run**
 work (18 rubric corrections + 6 skill refinements + bundled-script CLI
