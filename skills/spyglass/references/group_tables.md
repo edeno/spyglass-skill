@@ -77,16 +77,16 @@ Pattern:
 
 1. Identify the semantic label in the prompt.
 2. Find the table that owns that label or membership.
-3. Walk/join from that owner table to the artifact rows being grouped.
+3. Walk/join from that owner table to the member rows being grouped.
 4. Fetch the concrete keys or merge IDs expected by the group part table.
 5. Pass only those keys to `create_group()`.
 
 Use `code_graph.py` to find the source-declared path before writing the join:
 
 ```bash
-# Owner = table declaring the semantic label; target = table whose keys/merge_ids the group part stores.
-python skills/spyglass/scripts/code_graph.py path --to <OwnerTable> <GroupedArtifactTable>
-python skills/spyglass/scripts/code_graph.py describe <GroupedArtifactTable> --json
+# Owner = table declaring the semantic label; member = table whose keys/merge_ids the group part stores.
+python skills/spyglass/scripts/code_graph.py path --to <OwnerTable> <GroupMemberTable>
+python skills/spyglass/scripts/code_graph.py describe <GroupMemberTable> --json
 ```
 
 Do not pass all session rows or all session merge IDs and say "filter upstream if needed"; that creates the wrong group.
