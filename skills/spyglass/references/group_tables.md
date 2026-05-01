@@ -8,6 +8,7 @@ Group tables aggregate many upstream rows under one stable key, often user-named
 - [Why they exist](#why-they-exist)
 - [Concrete examples in Spyglass](#concrete-examples-in-spyglass)
 - [Group vs. merge — quick comparison](#group-vs-merge--quick-comparison)
+- [Semantic subsets before create_group](#semantic-subsets-before-create_group)
 - [Worked example](#worked-example)
 - [Cross-references](#cross-references)
 
@@ -65,6 +66,22 @@ Same suffix conventions live nearby (`*Group` vs. `*Output`), and both involve a
 | Common landmines | Classmethod-discard on restricted relations, silent-no-op on `& {nwb_file_name: ...}` (see [merge_methods.md](merge_methods.md)) | Re-creating an existing group has different per-table behavior — must delete first or pick a new name; downstream-name reuse not enforced. Source-verified split: `SortedSpikesGroup.create_group` raises; `PositionGroup.create_group` logs and returns; `UnitWaveformFeaturesGroup.create_group` warns and returns; `PoseGroup.create_group` warns and returns. None of these are append-like (see SortedSpikesGroup section below for the full pattern). |
 
 Use a merge when you have *interchangeable* implementations of one analysis. Use a group when you have *several distinct entities* that one downstream analysis needs as a unit.
+
+## Semantic subsets before create_group
+
+When a user asks for a group by semantic label, translate that label into concrete table keys before calling `create_group()`.
+
+Examples of semantic labels: brain region, animal/session cohort, interval set, curation label, tetrode/shank subset, lab/team ownership.
+
+Pattern:
+
+1. Identify the semantic label in the prompt.
+2. Find the table that owns that label or membership.
+3. Walk/join from that owner table to the artifact rows being grouped.
+4. Fetch the concrete keys or merge IDs expected by the group part table.
+5. Pass only those keys to `create_group()`.
+
+Do not pass all session rows or all session merge IDs and say "filter upstream if needed"; that creates the wrong group.
 
 ## Worked example
 
