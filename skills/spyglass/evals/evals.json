@@ -1226,17 +1226,16 @@
           "BrainRegion",
           "region_name",
           "SortGroupElectrode",
-          "limit=1",
           "CurationV1"
         ],
         "forbidden_substrings": [
           "unit_id=5 has region"
         ],
         "behavioral_checks": [
-          "Leads with the explicit FK walk `SortGroup.SortGroupElectrode * Electrode * BrainRegion` (with `.proj('recording_id')` on `SpikeSortingSelection` to avoid the dependent-attribute refusal, OR an equivalent two-restriction split) as the source-of-truth answer",
+          "Reaches the brain region either via the canonical helper `CurationV1.get_sort_group_info(key)` (the bundled per-eval shortcut) OR via the explicit FK walk `SortGroup.SortGroupElectrode * Electrode * BrainRegion`. Either is acceptable; the helper is what the skill's spike-sorting reference recommends as the fastest path. A response that punts entirely on routing through curation/sorting fails.",
           "Notes that `unit_id` does NOT affect the region — all units in a sort group share the same electrodes",
-          "Mentions `CurationV1.get_sort_group_info` only as a convenience shortcut, AND calls out its `limit=1` sampling: it returns one region per sort group, accurate for tetrodes but incomplete for polymer-probe sort groups whose electrodes span multiple regions",
-          "For polymer probes spanning regions within a sort group, recommends the explicit FK walk over the helper",
+          "Acknowledges that brain region is per-electrode (`Electrode -> BrainRegion`) and shared across electrodes within a sort group. Whether the helper or the explicit FK walk is used, the response makes clear the region resolves via `Electrode * BrainRegion`, not via a fabricated direct attribute on `CurationV1` or on a unit row.",
+          "For polymer probes (sort groups potentially spanning multiple regions within one shank), recommends the explicit FK walk `SortGroup.SortGroupElectrode * Electrode * BrainRegion` rather than relying on the helper's per-sort-group sampling. Tetrode-only datasets satisfy this trivially; polymer-probe datasets need the walk.",
           "Does not invent a direct `region` attribute on `CurationV1` or on the unit itself"
         ],
         "expected_output_tables_exempt": [
@@ -1258,13 +1257,12 @@
         "Response contains substring `BrainRegion`.",
         "Response contains substring `region_name`.",
         "Response contains substring `SortGroupElectrode`.",
-        "Response contains substring `limit=1`.",
         "Response contains substring `CurationV1`.",
         "Response does not contain substring `unit_id=5 has region`.",
-        "Leads with the explicit FK walk `SortGroup.SortGroupElectrode * Electrode * BrainRegion` (with `.proj('recording_id')` on `SpikeSortingSelection` to avoid the dependent-attribute refusal, OR an equivalent two-restriction split) as the source-of-truth answer",
+        "Reaches the brain region either via the canonical helper `CurationV1.get_sort_group_info(key)` (the bundled per-eval shortcut) OR via the explicit FK walk `SortGroup.SortGroupElectrode * Electrode * BrainRegion`. Either is acceptable; the helper is what the skill's spike-sorting reference recommends as the fastest path. A response that punts entirely on routing through curation/sorting fails.",
         "Notes that `unit_id` does NOT affect the region — all units in a sort group share the same electrodes",
-        "Mentions `CurationV1.get_sort_group_info` only as a convenience shortcut, AND calls out its `limit=1` sampling: it returns one region per sort group, accurate for tetrodes but incomplete for polymer-probe sort groups whose electrodes span multiple regions",
-        "For polymer probes spanning regions within a sort group, recommends the explicit FK walk over the helper",
+        "Acknowledges that brain region is per-electrode (`Electrode -> BrainRegion`) and shared across electrodes within a sort group. Whether the helper or the explicit FK walk is used, the response makes clear the region resolves via `Electrode * BrainRegion`, not via a fabricated direct attribute on `CurationV1` or on a unit row.",
+        "For polymer probes (sort groups potentially spanning multiple regions within one shank), recommends the explicit FK walk `SortGroup.SortGroupElectrode * Electrode * BrainRegion` rather than relying on the helper's per-sort-group sampling. Tetrode-only datasets satisfy this trivially; polymer-probe datasets need the walk.",
         "Does not invent a direct `region` attribute on `CurationV1` or on the unit itself"
       ],
       "expected_scripts": {
@@ -4199,14 +4197,13 @@
           "IntervalList",
           "interval_list_name",
           "SpikeSortingRecording",
-          "SpikeSortingRecordingSelection",
-          "& ("
+          "SpikeSortingRecordingSelection"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
-          "Restricts via a sub-restriction of the form `(Table & (Other & {...}))` — the response must contain '& (' as a literal substring",
+          "Restricts `SpikeSortingRecording` via either a sub-restriction (`Table & (Selection & {...})`) OR a 2-table natural join (`Table * Selection & {...}`) — both are functionally equivalent for two tables and either is acceptable. The actual failure mode is restricting `SpikeSortingRecording` directly with `& {\"interval_list_name\": ...}`, which silently drops the unknown attribute.",
           "Routes the IntervalList restriction through `SpikeSortingRecordingSelection` (where `nwb_file_name` / `interval_list_name` actually live as secondary attrs via `-> IntervalList`), NOT directly through `SpikeSortingRecording` (which only carries `recording_id` in its heading per recording.py:185-191)",
-          "Does not propose a multi-table `*` chain in the proposed code blocks — the canonical answer should use a sub-restriction (`& (...)` parens) rather than chaining tables with the natural-join operator",
+          "Does not chain 3+ tables with `*` where `nwb_file_name` is a secondary attribute on multiple sides — that shape raises `DataJointError: ambiguous attribute`. Two-table `*` joins are fine.",
           "Fetches `nwb_file_name` from the restricted `SpikeSortingRecordingSelection` (or via a deliberate join/proj), NOT from `SpikeSortingRecording` itself — the latter has no `nwb_file_name` in its heading",
           "Does not claim DataJoint 'walks the FK chain' from `SpikeSortingRecording` to `IntervalList` automatically — the restriction works only because both `SpikeSortingRecordingSelection` and the restricted `IntervalList` share `(nwb_file_name, interval_list_name)` in their headings"
         ],
@@ -4223,10 +4220,9 @@
         "Response contains substring `interval_list_name`.",
         "Response contains substring `SpikeSortingRecording`.",
         "Response contains substring `SpikeSortingRecordingSelection`.",
-        "Response contains substring `& (`.",
-        "Restricts via a sub-restriction of the form `(Table & (Other & {...}))` — the response must contain '& (' as a literal substring",
+        "Restricts `SpikeSortingRecording` via either a sub-restriction (`Table & (Selection & {...})`) OR a 2-table natural join (`Table * Selection & {...}`) — both are functionally equivalent for two tables and either is acceptable. The actual failure mode is restricting `SpikeSortingRecording` directly with `& {\"interval_list_name\": ...}`, which silently drops the unknown attribute.",
         "Routes the IntervalList restriction through `SpikeSortingRecordingSelection` (where `nwb_file_name` / `interval_list_name` actually live as secondary attrs via `-> IntervalList`), NOT directly through `SpikeSortingRecording` (which only carries `recording_id` in its heading per recording.py:185-191)",
-        "Does not propose a multi-table `*` chain in the proposed code blocks — the canonical answer should use a sub-restriction (`& (...)` parens) rather than chaining tables with the natural-join operator",
+        "Does not chain 3+ tables with `*` where `nwb_file_name` is a secondary attribute on multiple sides — that shape raises `DataJointError: ambiguous attribute`. Two-table `*` joins are fine.",
         "Fetches `nwb_file_name` from the restricted `SpikeSortingRecordingSelection` (or via a deliberate join/proj), NOT from `SpikeSortingRecording` itself — the latter has no `nwb_file_name` in its heading",
         "Does not claim DataJoint 'walks the FK chain' from `SpikeSortingRecording` to `IntervalList` automatically — the restriction works only because both `SpikeSortingRecordingSelection` and the restricted `IntervalList` share `(nwb_file_name, interval_list_name)` in their headings"
       ],
@@ -4992,14 +4988,12 @@
           "camera_name",
           "nwb_file_name"
         ],
-        "forbidden_substrings": [
-          "CameraDevice & {'nwb_file_name'",
-          "CameraDevice & {\"nwb_file_name\""
-        ],
+        "forbidden_substrings": [],
         "behavioral_checks": [
           "Routes through `VideoFile` (the per-session mapping) restricted by `nwb_file_name`, NOT through `CameraDevice` alone (which is a global name-keyed lookup with no session attr in its heading)",
           "Recognizes that `camera_name` on `VideoFile` is a secondary column — NOT a declared `-> CameraDevice` FK — and the link is by name match (validated at ingest in `_prepare_video_entry`)",
-          "Restricts `VideoFile` by `nwb_file_name` (a PK field via `-> TaskEpoch`); does NOT attempt `CameraDevice & {nwb_file_name: ...}` (silent no-op, no such attr in CameraDevice's heading)"
+          "Restricts `VideoFile` by `nwb_file_name` (a PK field via `-> TaskEpoch`); does NOT attempt `CameraDevice & {nwb_file_name: ...}` (silent no-op, no such attr in CameraDevice's heading)",
+          "Does not RECOMMEND `CameraDevice & {nwb_file_name: ...}` as a working query (silent no-op since CameraDevice has no `nwb_file_name` in its heading). Pedagogically labeled `# WRONG` / anti-pattern examples that show the trap explicitly are acceptable — the test is whether the response *recommends* the broken shape, not whether the literal text appears anywhere."
         ],
         "expected_output_tables_exempt": [
           "TaskEpoch"
@@ -5011,11 +5005,10 @@
         "Response contains substring `CameraDevice`.",
         "Response contains substring `camera_name`.",
         "Response contains substring `nwb_file_name`.",
-        "Response does not contain substring `CameraDevice & {'nwb_file_name'`.",
-        "Response does not contain substring `CameraDevice & {\"nwb_file_name\"`.",
         "Routes through `VideoFile` (the per-session mapping) restricted by `nwb_file_name`, NOT through `CameraDevice` alone (which is a global name-keyed lookup with no session attr in its heading)",
         "Recognizes that `camera_name` on `VideoFile` is a secondary column — NOT a declared `-> CameraDevice` FK — and the link is by name match (validated at ingest in `_prepare_video_entry`)",
-        "Restricts `VideoFile` by `nwb_file_name` (a PK field via `-> TaskEpoch`); does NOT attempt `CameraDevice & {nwb_file_name: ...}` (silent no-op, no such attr in CameraDevice's heading)"
+        "Restricts `VideoFile` by `nwb_file_name` (a PK field via `-> TaskEpoch`); does NOT attempt `CameraDevice & {nwb_file_name: ...}` (silent no-op, no such attr in CameraDevice's heading)",
+        "Does not RECOMMEND `CameraDevice & {nwb_file_name: ...}` as a working query (silent no-op since CameraDevice has no `nwb_file_name` in its heading). Pedagogically labeled `# WRONG` / anti-pattern examples that show the trap explicitly are acceptable — the test is whether the response *recommends* the broken shape, not whether the literal text appears anywhere."
       ],
       "expected_refs": {
         "required": [
@@ -5715,7 +5708,8 @@
         "behavioral_checks": [
           "Correctly identifies that ONLY the decoding output (`ClusterlessDecodingV1` / `SortedSpikesDecodingV1`) changes — spike sorting and position upstream are unaffected because they don't FK to `DecodingParameters`",
           "Recommends inserting a NEW `DecodingParameters` row with a different `decoding_param_name` (e.g. `'bin5cm'`) and a fresh `ClusterlessDecodingSelection` + populate, rather than `update1()` on the existing row",
-          "Names the qualitative direction (coarser bins = fewer state bins = faster, lower spatial resolution) without misattributing the change to upstream pipelines",
+          "Does not misattribute the bin-size change to upstream pipelines (the response correctly localizes the impact to decoding output; spike sorting / position / waveform features are NOT claimed to need re-running).",
+          "Names the qualitative direction of the bin-size change (coarser bins → fewer state bins → faster compute, lower spatial resolution; or finer bins → more state bins → slower, higher resolution).",
           "Notes that `UnitWaveformFeaturesGroup` and `PositionGroup` (referenced by the selection) are untouched — they're FK'd by the SELECTION, not by `DecodingParameters` directly"
         ],
         "expected_output_tables_exempt": [
@@ -5736,7 +5730,8 @@
         "Response contains substring `ClusterlessDecodingSelection`.",
         "Correctly identifies that ONLY the decoding output (`ClusterlessDecodingV1` / `SortedSpikesDecodingV1`) changes — spike sorting and position upstream are unaffected because they don't FK to `DecodingParameters`",
         "Recommends inserting a NEW `DecodingParameters` row with a different `decoding_param_name` (e.g. `'bin5cm'`) and a fresh `ClusterlessDecodingSelection` + populate, rather than `update1()` on the existing row",
-        "Names the qualitative direction (coarser bins = fewer state bins = faster, lower spatial resolution) without misattributing the change to upstream pipelines",
+        "Does not misattribute the bin-size change to upstream pipelines (the response correctly localizes the impact to decoding output; spike sorting / position / waveform features are NOT claimed to need re-running).",
+        "Names the qualitative direction of the bin-size change (coarser bins → fewer state bins → faster compute, lower spatial resolution; or finer bins → more state bins → slower, higher resolution).",
         "Notes that `UnitWaveformFeaturesGroup` and `PositionGroup` (referenced by the selection) are untouched — they're FK'd by the SELECTION, not by `DecodingParameters` directly"
       ],
       "expected_refs": {

@@ -319,6 +319,20 @@ populated = MyComputed & (
 ).proj()
 ```
 
+### Sub-restriction vs. natural-join restriction
+
+Two shapes both work for "downstream rows whose upstream-secondary-attribute matches X":
+
+```python
+# Sub-restriction (canonical): explicit; only one source for `that_field`.
+MyComputed & (MySelection & {"that_field": "x"}).proj()
+
+# 2-table natural join with restriction: also works for two tables.
+MyComputed * MySelection & {"that_field": "x"}
+```
+
+**Prefer the sub-restriction.** The natural-join form works fine for two tables, but with 3+ tables in a `*` chain where the same secondary attribute is exposed on multiple sides (common with PK-renamed FKs), DataJoint raises `DataJointError: Ambiguous attribute`, and the failure mode is non-obvious. The sub-restriction shape names the source table once and avoids the trap by construction. Make the sub-restriction the default for "filter by upstream-secondary-attribute" queries; reserve `*` for cases where you actually need columns from multiple tables in the result.
+
 ### Two failure shapes this guards against
 
 1. **Field not on the downstream heading.** The agent writes a restriction referencing a field that's only exposed upstream. Dict restriction silently no-ops (the unknown key is dropped, so the restriction reduces to the full table); SQL-string restriction (`& "that_field = 'x'"`) may error at query-build time when MySQL parses the column name.

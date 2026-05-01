@@ -215,6 +215,8 @@ When the user asks "what changes if I re-run with new params?", "what cascades i
 
 **Slot 4 — Verification step.** Concrete command for confirming the cascade scope. In a Python/DataJoint session: `Table.descendants()` / `Table.ancestors()` (DataJoint's runtime introspection on the `dj.Diagram`-derived graph). From a live DB CLI: `db_graph.py path --down <Class>` / `db_graph.py path --up <Class>`. From source-only (no live DB, no Python session): `code_graph.py path --down <Class>`. Name the actual command, not "walk the graph."
 
+**Slot 5 - Qualitative direction of the change.** After enumerating the structural cascade in slots 1-4, name the *qualitative impact* the user should expect: faster vs. slower, finer vs. coarser, more vs. fewer rows, different vs. same numerical output. This is what tells the user whether to commit. Examples: raising `place_bin_size` from 2 cm to 5 cm produces ~2.5x fewer state bins in 1D (~6.25x in 2D), so fits run faster and posteriors are coarser; raising `zscore_threshold` from 2.0 to 3.0 in ripple detection produces fewer-or-equal detected ripple events (usually fewer; equal only if no events fell in the 2.0-3.0 z-score band) — a stricter cut keeps the highest-amplitude events only; upsampling position from 30 Hz to 250 Hz produces ~8x more rows in `TrodesPosV1` and larger analysis NWB files but finer-grained downstream fits. The cascade structure is necessary but not sufficient - without slot 5 the user has the mechanics but not the intuition for whether the swap is worth running.
+
 ### Worked-example pattern
 
 For a parameter swap on a `*Params` table:

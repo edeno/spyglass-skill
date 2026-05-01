@@ -349,7 +349,7 @@ from spyglass.spikesorting.v1 import CurationV1
   - `get_recording(key)` — SpikeInterface BaseRecording
   - `get_sorting(key, as_dataframe=False)` — `as_dataframe=False` (default) builds a `si.NumpySorting` from spike times and does NOT carry curation-label properties (`spikesorting/v1/curation.py:182-223`); the labels live on the analysis NWB units table. Pass `as_dataframe=True` to get a pandas dataframe whose rows include the `curation_label` column.
   - `get_merged_sorting(key)` — Sorting with merge groups applied
-  - `get_sort_group_info(key)` — Electrode/brain region info
+  - `get_sort_group_info(key)` — joins `SortGroup.SortGroupElectrode * Electrode * BrainRegion` and samples one electrode per sort group via `fetch(limit=1)` (`curation.py:283-302`). Usually appropriate for standard tetrode groups (one shank, region typically uniform across the four channels — but not enforced; verify explicitly if regions may vary). On polymer probes / multi-region sort groups it under-reports: a single sort group can span CA1+CA3 within one shank, and the helper returns only the first electrode's region. For polymer / multi-region datasets — or any sort group where you can't pre-confirm region uniformity — walk the FK chain explicitly: `(CurationV1 & key) * SpikeSortingSelection * SpikeSortingRecordingSelection.proj("recording_id", "sort_group_id") * SortGroup.SortGroupElectrode * Electrode * BrainRegion` and inspect `region_name.unique()` per `sort_group_id`.
 
 **Gotcha — `FigURLCurationSelection.generate_curation_uri` requires
 the parent CurationV1 NWB to have a `curation_label` column.**
