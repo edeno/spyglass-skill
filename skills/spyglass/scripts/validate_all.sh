@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
             fi
             shift ;;
         -h|--help)
-            sed -n '2,20p' "$0"; exit 0 ;;
+            sed -n '2,23p' "$0"; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
