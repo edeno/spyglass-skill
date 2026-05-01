@@ -106,11 +106,12 @@ Extract all fields that match the table's heading from a dictionary.
 Returns table name in CamelCase format.
 
 ### `file_like(name=None, **kwargs) -> QueryExpression`
-Wildcard search on file name fields.
+Wildcard search on the first table field whose name contains "file" (`utils/mixins/helpers.py:44-56`). The helper wraps the input in `%...%` itself — pass the *core* substring, not a SQL wildcard pattern.
 
 ```python
-Session().file_like('j16%')
-# Finds sessions with nwb_file_name matching 'j16%'
+Session().file_like('j16')
+# Wraps internally → %j16% → finds Session rows whose nwb_file_name
+# (the first "file"-named field on Session) contains 'j16'.
 ```
 
 ### `restrict_by_list(field: str, values: list, return_restr=False) -> QueryExpression`
@@ -124,7 +125,7 @@ Session().restrict_by_list('nwb_file_name', ['file1.nwb', 'file2.nwb'])
 Identifies which parent table is causing an IntegrityError on insert. Useful for debugging.
 
 ### `get_fully_defined_key(key=None, required_fields=None) -> dict`
-Gets complete primary key, prompting user for missing fields if needed.
+Resolves a complete primary key from a unique partial restriction (`utils/mixins/helpers.py:92-111`). Returns the key as-is if already full; otherwise restricts the table by the partial key and returns the single matching row's PK. Raises `KeyError` if the partial key matches zero rows or more than one. **Does not prompt** — there's no interactive fallback.
 
 ### `ensure_single_entry(key=True)`
 Validates that a key corresponds to exactly one table entry.
@@ -175,7 +176,7 @@ direct equivalents — defined on `dj.Table` and inherited by every
 Gets total size of analysis files referenced by this table.
 
 ### `delete_orphans(dry_run=True, **kwargs)`
-Find and delete entries that have no child table entries.
+Find and delete entries that have no child-table rows. **Default is `dry_run=True`** — preview first; the result is the candidate set. With `dry_run=False`, the helper calls `orphans.super_delete(warn=False, **kwargs)` (`utils/mixins/helpers.py:167-188`), which **bypasses `cautious_delete`** — the team check does not run, and the per-`ext_type` external-file cleanup loop is skipped (same skip pattern as a bare `super_delete()`; see [destructive_operations.md](destructive_operations.md)). Treat `dry_run=False` as **admin cleanup only**: dry-run first, inspect the candidate set, then run cleanup helpers (`AnalysisNwbfile().cleanup(...)` etc.) explicitly afterward.
 
 ## Parameters
 

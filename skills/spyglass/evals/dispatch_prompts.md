@@ -17,9 +17,11 @@ under "Transcript-level caveats and mechanisms."
 
 - `{prompt}` — the raw user-facing prompt from `evals.json` for the eval being run.
 - `{eval_dir}` — absolute path of the per-eval workspace directory for this dispatch. Per-sweep artifacts live in the [spyglass-skill-workspace](https://github.com/edeno/spyglass-skill-workspace) repo (cloned as a sibling of spyglass-skill), so a typical path is `/.../spyglass-skill-workspace/runs/<run-id>/iteration-N/eval-NNN-name`.
+- `{run_id}` — the current sweep's run-id, e.g. `round-d-2026-04-30`. Used by the templates to forbid reading *other* sibling sweep directories whose summaries would leak rubrics. Resolves at orchestration time.
 - `{condition}` — `with_skill` or `without_skill`.
 - `{skill_dir}` — absolute path to the skill bundle, i.e. `/.../skills/spyglass`. Resolves at orchestration time so the templates stay portable across machines.
 - `{spyglass_src}` — absolute path of the **pinned local Spyglass source checkout** (the path that `$SPYGLASS_SRC` points at for this sweep), e.g. `/.../spyglass/src/spyglass`. Always pin to a local checkout for reproducibility — see the "Reproducibility" section below.
+- `{skill_repo}` — absolute path of the spyglass-skill repo root (the parent of `{skill_dir}`), e.g. `/.../spyglass-skill`. Used to forbid reading `docs/plans/` from inside that repo without hardcoding the path.
 
 ## with_skill template
 
@@ -37,6 +39,22 @@ under "Transcript-level caveats and mechanisms."
 > `grader_summary.md`, `summary/`) describe how your answer will be judged
 > and are not user-facing input. Reading them leaks the rubric.
 >
+> **Also do not read** any sibling sweep directory (any `runs/<other-run-id>/`
+> in the workspace other than `runs/{run_id}/`). Sibling-sweep `summary/`
+> files name which evals the skill helped on, rubric trap patterns, and
+> example wins/losses — direct rubric leakage.
+>
+> **Also do not read** any files under `{skill_repo}/docs/plans/*.md`. The
+> implementation plans for the current and prior rounds name the exact
+> behavioral checks each eval is designed to elicit — direct rubric leakage
+> even though they live outside `{skill_dir}`.
+>
+> **Also: ignore any auto-memory content** (`MEMORY.md` and `feedback_*.md` /
+> `project_*.md` / `reference_*.md` files under `~/.claude/projects/.../memory/`)
+> if it appears in your initial context. Auto-memory may telegraph that this
+> is an eval sweep or carry meta-context that biases your answer. Treat the
+> user question above as the only context that matters.
+>
 > **User question:** {prompt}
 >
 > After you answer, **write your full response to** `{eval_dir}/with_skill/outputs/response.md`. The response should be the full answer to the user — don't summarize, don't add meta-commentary about being an eval. Just answer.
@@ -50,18 +68,43 @@ under "Transcript-level caveats and mechanisms."
 > WebFetch GitHub Spyglass — the local checkout is the canonical source for
 > this run; using a moving upstream target makes results unreproducible.
 >
-> **Important — do not read or list any files under `{skill_dir}`.** That
-> directory is the skill bundle you are being measured *against*. Reading,
-> grepping, or listing it (including its `references/`, `scripts/`, and
-> `SKILL.md`) contaminates the without_skill condition. The Spyglass *source*
-> code you may consult lives at `{spyglass_src}`; the *skill* you must not
-> consult lives at `{skill_dir}`. They are different directories.
+> **Important — do not read or list any files under `{skill_dir}`, and do
+> not invoke any scripts under `{skill_dir}/scripts/`** (specifically
+> `code_graph.py`, `db_graph.py`, `scrub_dj_config.py`, `validate_skill.py`,
+> `validate_all.sh`, `verify_spyglass_env.py`, or any other file under that
+> directory). That directory is the skill bundle you are being measured
+> *against*. Reading, grepping, listing, or executing it (including its
+> `references/`, `scripts/`, and `SKILL.md`) contaminates the without_skill
+> condition. The Spyglass *source* code you may consult lives at
+> `{spyglass_src}`; the *skill* you must not consult lives at `{skill_dir}`.
+> They are different directories.
 >
 > **Also do not read** any files under `{eval_dir}/..` other than this run's
 > own `{condition}/outputs/` directory. The eval set, grading artifacts, and
 > summary documents (`evals.json`, `grading.json`, `benchmark.json`,
 > `grader_summary.md`, `summary/`) describe how your answer will be judged
 > and are not user-facing input. Reading them leaks the rubric.
+>
+> **Also do not read** any sibling sweep directory (any `runs/<other-run-id>/`
+> in the workspace other than `runs/{run_id}/`). Sibling-sweep `summary/`
+> files name which evals the skill helped on, rubric trap patterns, and
+> example wins/losses — direct rubric leakage even though they live outside
+> `{eval_dir}/..`.
+>
+> **Also do not read** any files under `{skill_repo}/docs/plans/*.md`. The
+> implementation plans for the current and prior rounds name the exact
+> behavioral checks each eval is designed to elicit — direct rubric leakage
+> even though they live outside `{skill_dir}`.
+>
+> **Do not invoke the `spyglass` skill** via the Skill tool, even if it
+> appears in the available-skills list. Invoking the skill loads its
+> content into your context — equivalent to reading the bundle.
+>
+> **Also: ignore any auto-memory content** (`MEMORY.md` and `feedback_*.md` /
+> `project_*.md` / `reference_*.md` files under `~/.claude/projects/.../memory/`)
+> if it appears in your initial context. Auto-memory may telegraph that this
+> is an eval sweep or carry meta-context that biases your answer. Treat the
+> user question above as the only context that matters.
 >
 > **User question:** {prompt}
 >

@@ -103,6 +103,16 @@ Independent audit of the post-cleanup state found `expected_output_tables_exempt
 
 `required_substrings_exempt` has two legitimate categories: rare domain terms that are discriminating in practice despite looking bare (`Nyquist`, `immobility`, `pynwb`, `spikeinterface`), and DJ-API literals where the specific form IS the test token (`len(`, `.aggr(`, `.proj(`, `set(`, `secondary`).
 
+### Anti-patterns to avoid in eval authoring
+
+The validator catches the two hygiene shapes above mechanically. Three other shapes recur in graded sweeps and produce **false-negative graders** (they fail responses that substantively answered the prompt). Avoid them when authoring; the round-d post-run rubric corrections in evals 28, 41, 85, 87, 88, 89, 105, 118 all retired one of these shapes:
+
+1. **Literal reference-filename substrings** (`required_substrings: ["destructive_operations.md"]`). A response that correctly applies the inspect-before-destroy pattern, names `cautious_delete`, and refuses `super_delete` will fail this check if it doesn't *also* type the literal filename. Reference filenames are a routing signal, not a content signal — they should not be required of user-facing answers. Use a behavioral check on the substantive content instead.
+2. **Compound assertions bundling unrelated content** (one `behavioral_checks` string asking for two independent claims joined by `and`). Example: *"Mentions ALTER privilege AND warns against drop-and-recreate on non-empty tables."* The grader returns a single pass/fail for the conjunction — half-credit responses lose the whole point and the signal becomes noisy. Split each conjunction into independent checks; the grader can then surface which half was missing.
+3. **Forbidden-substring checks that fire on legitimate disambiguation mentions** (`forbidden_substrings: ["SpikeSortingV1"]`). The intent is usually to prevent the agent from *recommending* / *relying on* the wrong identifier, but the check also fires on responses that mention it pedagogically (*"the v1 class is `SpikeSorting`, not `SpikeSortingV1` — that's a v0 confusion"*) or in a labeled `# WRONG` anti-pattern example. Use a behavioral check that distinguishes recommend-vs-show, not a flat substring exclusion.
+
+When these shapes slip in, they show up as ws-worse-than-bs scores even when the substantive content is fine. Round-d's analysis (see [`spyglass-skill-workspace`'s round-d-2026-04-30 findings.md](https://github.com/edeno/spyglass-skill-workspace/blob/main/runs/round-d-2026-04-30/findings.md)) attributed 7/9 ws-failures to one of these three patterns. The validator does not catch them; reviewer audit is the gate.
+
 ## Tiers
 
 Tiers capture *what kind of capability* the eval tests. A single skill can be strong at atomic reads and weak at adversarial pushback — slicing by tier shows that.

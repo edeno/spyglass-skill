@@ -33,7 +33,7 @@ from spyglass.common import populate_all_common
 # creates the copy via `copy_nwb_link_raw_ephys` and then passes
 # `out_nwb_file_name` to `populate_all_common`
 # (`data_import/insert_sessions.py:67-90`). Querying
-# `(Nwbfile & {nwb_file_name: ...})` shows the form already
+# `(Nwbfile & {"nwb_file_name": ...})` shows the form already
 # registered for the session.
 populate_all_common("raw_file_.nwb", raise_err=True)  # note trailing _
 ```
@@ -44,8 +44,8 @@ Once you have the traceback, route back to the matching failure signature in [ru
 
 Useful when you want to isolate which table is failing without re-running the ones that succeeded. The faithful isolation pattern is **NOT** `T().populate(...)` — `populate_all_common` doesn't go through `populate()` for most tables. The driver's per-table loop lives in `single_transaction_make` (`common/populate_all_common.py:114-150`):
 
-- For `SpyglassIngestion` tables (the bulk of the common-tier list — `Session`, `Raw`, `RawPosition`, `PositionSource`, `Electrode`, `ElectrodeGroup`, `DIOEvents`, `VideoFile`, `CameraDevice`, `Probe`, `ProbeType`, `OptogeneticProtocol`, `Virus`, etc.; full list at `populate_all_common.py:7-40`), the driver calls `table().insert_from_nwbfile(nwb_file_name, config=table_config)` directly. The `config` dict comes from `entries.yaml` if present and overrides defaults; calling bare `populate()` skips this.
-- For non-`SpyglassIngestion` tables, the driver derives a key from upstream parents and calls `table().make(pop_key)` (`:127, 150`).
+- **`SpyglassIngestion` tables — direct `insert_from_nwbfile` branch.** The bulk of the common-tier list — `Session`, `Raw`, `RawPosition`, `Electrode`, `ElectrodeGroup`, `DIOEvents`, `VideoFile`, `CameraDevice`, `Probe`, `ProbeType`, `OptogeneticProtocol`, `Virus`, etc. (full list at `populate_all_common.py:7-40`). The driver calls `table().insert_from_nwbfile(nwb_file_name, config=table_config)` directly. The `config` dict comes from `entries.yaml` if present and overrides defaults; calling bare `populate()` skips this.
+- **Non-`SpyglassIngestion` tables — `make(pop_key)` branch.** Includes `PositionSource` (`SpyglassMixin, dj.Manual` at `common_behav.py:34` — not `SpyglassIngestion`, despite shipping in the common-tier list). The driver derives a key from upstream parents and calls `table().make(pop_key)` (`:127, 150`); `PositionSource.make` then delegates to its own `insert_from_nwbfile` (`common_behav.py:59-69`).
 
 Patterns matching the actual driver:
 
@@ -53,15 +53,28 @@ Patterns matching the actual driver:
 from spyglass.common import Session, Raw, DIOEvents, PositionSource
 
 # SpyglassIngestion tables — pass the copied (trailing-underscore)
-# filename and let entries.yaml override defaults if present.
+# filename. Note: this propagates exceptions but does NOT preserve
+# entries.yaml. The driver loads entries.yaml and threads
+# config=table_config into insert_from_nwbfile (see
+# populate_all_common.py:111, :116, :242); the bare call below
+# skips that. Pass `config=...` yourself if a yaml override matters
+# for the table you're isolating.
 copy_name = "raw_file_.nwb"  # see "Primary fix" above for why this form
-for T in [Session, Raw, DIOEvents, PositionSource]:
-    T().insert_from_nwbfile(copy_name)   # exception propagates
+for T in [Session, Raw, DIOEvents]:                    # SpyglassIngestion only
+    T().insert_from_nwbfile(copy_name)                  # exception propagates
+# PositionSource is NOT SpyglassIngestion — see the next snippet
+# (it goes through the make(pop_key) branch).
 
 # Non-SpyglassIngestion tables — derive the key from upstream parents
 # (the driver does this via `parents().proj()` joins; the simplest
 # manual form when one parent is `Session` is to pass the registered
-# Nwbfile name) and call .make(key) directly.
+# Nwbfile name) and call .make(key) directly. Note: the driver
+# special-cases a few of these before the generic make() loop —
+# PositionSource (nwb_file_name only; populate_all_common.py:137),
+# and ImportedPose / ImportedLFP / OptogeneticProtocol (`:141-143`,
+# imported via the late-import block at `:180-181`). For those, the
+# faithful isolation is `Table().make({"nwb_file_name": copy_name})`
+# rather than reconstructing the parent-derived key.
 # from spyglass.common.<module> import OtherTable
 # OtherTable().make({"nwb_file_name": copy_name})
 ```

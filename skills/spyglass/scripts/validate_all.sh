@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Convenience runner: main validator + regression fixtures + (optional)
-# runnable-example import harness. Single command instead of remembering
-# three invocations.
+# Convenience runner: main validator + regression fixtures + tool-contract
+# fixtures (code_graph.py, db_graph.py) + evals.json expectation-drift gate
+# + (informational) runnable-example import harness. Single command instead
+# of remembering six invocations.
 #
 # Usage:
 #   spyglass/scripts/validate_all.sh [--spyglass-src PATH] [--python-env PATH]
@@ -13,10 +14,13 @@
 # python3; pass a conda env's python to actually verify real imports
 # (otherwise the harness skips everything as "spyglass not installed").
 #
-# Exit status: 1 if the main validator OR the regression suite fails.
-# The harness is informational — its failures are printed but do not
-# change the exit code because spyglass environment availability is
-# not a property of the skill itself.
+# Exit status: 1 if any of the five gated stages fails — main validator,
+# validator-regression fixtures, code_graph.py tool-contract fixtures,
+# db_graph.py tool-contract fixtures, or evals.json expectation-drift check
+# (`flatten_expectations.py --check`). The runnable-import harness (stage
+# 6) is informational — its failures are printed but do not change the
+# exit code because spyglass environment availability is not a property
+# of the skill itself.
 
 set -u
 
@@ -41,7 +45,7 @@ while [[ $# -gt 0 ]]; do
             fi
             shift ;;
         -h|--help)
-            sed -n '2,20p' "$0"; exit 0 ;;
+            sed -n '2,23p' "$0"; exit 0 ;;
         *)
             echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
@@ -76,7 +80,7 @@ if ! [[ " ${VALIDATOR_ARGS[*]} " == *" --baseline-warnings "* ]]; then
 fi
 
 echo "============================================================"
-echo "[1/5] Main validator"
+echo "[1/6] Main validator"
 echo "============================================================"
 "$PY" "$SCRIPT_DIR/validate_skill.py" --spyglass-src "$SPYGLASS_SRC" \
     "${VALIDATOR_ARGS[@]}"
@@ -84,7 +88,7 @@ validator_rc=$?
 
 echo
 echo "============================================================"
-echo "[2/5] Validator-regression fixtures"
+echo "[2/6] Validator-regression fixtures"
 echo "============================================================"
 "$PY" "$SKILL_ROOT/tests/test_validator_regressions.py" \
     --spyglass-src "$SPYGLASS_SRC"
@@ -92,7 +96,7 @@ regression_rc=$?
 
 echo
 echo "============================================================"
-echo "[3/5] code_graph.py tool-contract fixtures"
+echo "[3/6] code_graph.py tool-contract fixtures"
 echo "============================================================"
 "$PY" "$SKILL_ROOT/tests/test_code_graph.py" \
     --spyglass-src "$SPYGLASS_SRC"
@@ -100,7 +104,7 @@ code_graph_rc=$?
 
 echo
 echo "============================================================"
-echo "[4/5] db_graph.py tool-contract fixtures"
+echo "[4/6] db_graph.py tool-contract fixtures"
 echo "============================================================"
 # db_graph.py imports DataJoint and Spyglass lazily on runtime paths. Pass
 # --python-env so subprocess fixtures use the interpreter the user picked.
@@ -113,14 +117,26 @@ db_graph_rc=$?
 
 echo
 echo "============================================================"
-echo "[5/5] Runnable-example import harness (informational)"
+echo "[5/6] evals.json: derived expectations in sync with assertions"
+echo "============================================================"
+# `expectations` in each eval is auto-generated from the three `assertions`
+# buckets (required_substrings, forbidden_substrings, behavioral_checks).
+# When `assertions` changes but the script is forgotten, skill-creator's
+# stock grader reads stale expectations. Hard-fail on drift; fix with
+# `python3 skills/spyglass/evals/scripts/flatten_expectations.py`.
+"$PY" "$SKILL_ROOT/evals/scripts/flatten_expectations.py" --check
+expectations_rc=$?
+
+echo
+echo "============================================================"
+echo "[6/6] Runnable-example import harness (informational)"
 echo "============================================================"
 "$PY" "$SKILL_ROOT/tests/test_runnable_imports.py" \
     --spyglass-src "$SPYGLASS_SRC" || true  # harness rc is informational
 
 echo
-if [[ $validator_rc -ne 0 || $regression_rc -ne 0 || $code_graph_rc -ne 0 || $db_graph_rc -ne 0 ]]; then
-    echo "FAILED: validator=$validator_rc regression=$regression_rc code_graph=$code_graph_rc db_graph=$db_graph_rc"
+if [[ $validator_rc -ne 0 || $regression_rc -ne 0 || $code_graph_rc -ne 0 || $db_graph_rc -ne 0 || $expectations_rc -ne 0 ]]; then
+    echo "FAILED: validator=$validator_rc regression=$regression_rc code_graph=$code_graph_rc db_graph=$db_graph_rc expectations=$expectations_rc"
     exit 1
 fi
 echo "All gated checks passed."

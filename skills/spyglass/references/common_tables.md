@@ -1,5 +1,7 @@
 # Spyglass Common Tables Reference
 
+Spyglass-managed common-ingest tables — sessions/files, intervals, electrodes/devices, brain regions, task/lab metadata, and video/DIO registries (`VideoFile`, `CameraDevice`, `DIOEvents`). For DataJoint operators on these tables, see [datajoint_api.md](datajoint_api.md).
+
 ## Contents
 
 - [Session and File Management](#session-and-file-management)
@@ -14,7 +16,7 @@
 - [Table Relationship Summary](#table-relationship-summary)
 - [Discovery Patterns](#discovery-patterns)
 
-Tables in the `spyglass.common` schema. These are the root tables all pipelines depend on.
+Tables exported through the `spyglass.common` module across the common schemas (`common_ephys`, `common_behav`, `common_task`, `common_nwbfile`, etc. — `spyglass.common` is the Python export surface; the DataJoint schemas are split). These are the root tables all pipelines depend on.
 
 **Important**: Always verify table structure before writing queries that
 depend on specific column names. Use `code_graph.py describe` for
@@ -30,7 +32,8 @@ from spyglass.common import (
     Subject, LabMember, LabTeam, Institution, Lab,
     ElectrodeGroup, Electrode, Raw,
     DataAcquisitionDevice, CameraDevice, Probe, ProbeType,
-    RawPosition, VideoFile, DIOEvents,
+    RawPosition, PositionSource, VideoFile, DIOEvents,
+    PositionInfoParameters, IntervalPositionInfoSelection, IntervalPositionInfo,
     Task, TaskEpoch, BrainRegion, SensorData,
     FirFilterParameters,
 )
@@ -206,6 +209,7 @@ FirFilterParameters & 'filter_name LIKE "Theta%"'
 ### `VideoFile` / `DIOEvents`
 
 - Video file registry and digital I/O events (TTL pulses, sync lines).
+- **`VideoFile` field-ownership trap.** `VideoFile` is PK-keyed by `-> TaskEpoch` + `video_file_num`. `camera_name: varchar(80)` is a **secondary attribute** — *not* a declared `-> CameraDevice` FK (`common_behav.py:470`). The string match is enforced at ingest, not by the relational layer: `VideoFile._prepare_video_entry()` checks `CameraDevice & {"camera_name": camera_name}` and raises `KeyError` if no row matches (`common_behav.py:506`). FK propagation does *not* carry the camera identity from `VideoFile` to `CameraDevice` — to resolve cameras for a session, restrict `VideoFile` by `nwb_file_name`, fetch distinct `camera_name`, then restrict or join `CameraDevice` on that shared name (a natural join works because both tables expose `camera_name`; it just is not FK-driven). Do not write `CameraDevice & {"nwb_file_name": ...}` (no such field) and do not assume a declared FK path from `VideoFile` to `CameraDevice`. Distinct from `TaskEpoch`, which has both `-> [nullable] CameraDevice` and a separate `camera_names: blob` (plural list per epoch, `common_task.py:124`).
 
 ## Brain Regions
 
@@ -289,7 +293,7 @@ must:
    class MyAnalysis(SpyglassMixin, dj.Computed):
        definition = '''
        -> UpstreamTable
-       -> AnalysisNwbfile          # adds the analysis_nwbfile FK
+       -> AnalysisNwbfile          # FKs to the analysis-NWB-file registry; adds `analysis_file_name` to the PK
        ---
        my_object_id: varchar(80)   # match the width used by your source
        '''

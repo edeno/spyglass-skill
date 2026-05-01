@@ -49,7 +49,7 @@ methods on them:
 - `MuaEventsV1` (`dj.Computed` at `src/spyglass/mua/v1/mua.py:63`)
 - `CurationV1` (`dj.Manual` at `src/spyglass/spikesorting/v1/curation.py:30`)
 - `SpikeSorting`, `LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`, `ClusterlessDecodingV1`, `SortedSpikesDecodingV1` — all `dj.Computed`
-- `SpikeSortingSelection`, `SpikeSortingRecordingSelection`, `LFPSelection` and other `*Selection` tables — all `dj.Manual`
+- `SpikeSortingSelection`, `SpikeSortingRecordingSelection`, `LFPSelection` and other `*Selection` tables — ordinary DataJoint tables with their own PKs (most are `dj.Manual`; some are `dj.Lookup`, e.g. `LinearizationSelection` at `linearization/v1/main.py:101` and v0 decoding selection tables — verify the tier on a specific selection class before assuming). The point is: not merge masters.
 
 **Quick check in Python:**
 
@@ -124,7 +124,7 @@ Plus the staticmethod `Nwbfile.cleanup(delete_files=False)` at `src/spyglass/com
 
 - a DataJoint restriction **dict** (e.g. `{"nwb_file_name": f}`) — most common;
 - a **SQL WHERE string** (e.g. `"nwb_file_name = 'j1620210710_.nwb'"`);
-- a **table/query expression** (e.g. `PositionOutput & session_key`);
+- a **table/query expression** whose restriction is valid on the merge master or parts (e.g. `PositionOutput & {"merge_id": merge_id}`); be careful here — a query expression built with an *upstream* field like `nwb_file_name` (which isn't on the master's heading) silently no-ops at the `&` step and reduces to the whole table, exactly the silent-wrong-count footgun above;
 - or the literal default `True` — which restricts to the whole table and is what makes the classmethod-discard shape so dangerous.
 
 **Always pass the restriction as an argument:**
@@ -142,7 +142,7 @@ PositionOutput.merge_get_part(merge_key)
 PositionOutput.merge_view(merge_key)
 ```
 
-**Instance methods are safe** — these respect `self.restriction`, so `(Table & key).method()` works as expected: `merge_fetch`, `merge_populate`, `merge_restrict_class`, `merge_get_parent_class`, `fetch_nwb`, `delete` (the mixin override), plus SpyglassMixin helpers like `delete_orphans`, `fetch1`, `fetch`.
+**Instance methods preserve a valid relation restriction** — `(Table & key).method()` works as expected for `merge_fetch`, `merge_populate`, `fetch_nwb`, `delete` (the mixin override), `delete_orphans`, `fetch1`, `fetch`. They do **not**, however, rescue an *upstream-key* restriction on the merge master: `(MergeMaster & {"nwb_file_name": f}).fetch1()` has already silently no-oped at the `&` step (the master's heading carries only `merge_id`, not `nwb_file_name`), so the instance method is operating on a relation that points at the entire master. For upstream fields, route through `merge_restrict` / `merge_get_part` (which dispatch into the parts where those fields actually live). Note also that `merge_restrict_class` and `merge_get_parent_class` are *not* simple `self.restriction`-respecting helpers — they require an explicit `key` argument; pass the restriction in.
 
 If you are uncertain whether a method is a classmethod, read the source or err on the side of passing the restriction as an argument.
 
@@ -380,17 +380,15 @@ py_parts = set(n for n in dir(merge_module))
 orphans = db_parts - py_parts
 ```
 
-Drop the orphan only after confirming no one depends on it:
+**Admin-only destructive repair.** Dropping an orphan part table removes it from the schema and is **not reversible without a backup**. Before running the snippet below: (a) confirm with an admin / lab owner that the orphan part is genuinely abandoned (no other lab member's checkout still references it); (b) take a schema backup; (c) coordinate with anyone still on the old Spyglass version so their client doesn't re-declare the part on next import. This sits in the same risk class as the `drop()` calls covered in [destructive_operations.md](destructive_operations.md) — the inspect → confirm → destroy phase ordering applies here too.
 
 ```python
+# Admin only; run after the confirmation/backup steps above.
 dj.FreeTable(
     MergeMaster.connection,
     f'`{schema}`.`{master_table}__{orphan_part_name}`',
 ).drop_quick()
 ```
-
-Have anyone still on the old Spyglass version upgrade before the
-drop — otherwise their client will re-declare the part table.
 
 ### Deletion
 
