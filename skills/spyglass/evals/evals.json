@@ -1897,7 +1897,8 @@
           "Shows both sides of the diagnostic: Python/source table definition (for example `Table.describe()` / `code_graph.py describe`) versus live DB table definition (for example `SHOW CREATE TABLE` / `db_graph.py describe`)",
           "Routes the user to CHANGELOG.md or equivalent per-release migration notes as the place that documents which migration calls a given release introduced",
           "Names `Table.alter()` (or `Table().alter(...)`) as the migration mechanism the admin runs to bring the DB schema forward to match the package",
-          "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables",
+          "Mentions that DB-side migrations require ALTER privilege (most users do not have it on shared installs; coordinate with the admin).",
+          "Warns against drop-and-recreate on non-empty tables (drop+create is not a valid substitute for `Table.alter()` because it cascades and loses every downstream row).",
           "Does not recommend rolling the code back as the fix — i.e., does not propose `git checkout` to an older commit, downgrading the spyglass package, pinning to yesterday's version, or otherwise stepping the package backwards to match the DB. Semantic check: the failure shape is any phrasing of 'roll back to make the error go away,' not just the literal substring `git checkout`. The correct path is forward (apply migrations) not backward (revert the code)."
         ]
       },
@@ -1909,7 +1910,8 @@
         "Shows both sides of the diagnostic: Python/source table definition (for example `Table.describe()` / `code_graph.py describe`) versus live DB table definition (for example `SHOW CREATE TABLE` / `db_graph.py describe`)",
         "Routes the user to CHANGELOG.md or equivalent per-release migration notes as the place that documents which migration calls a given release introduced",
         "Names `Table.alter()` (or `Table().alter(...)`) as the migration mechanism the admin runs to bring the DB schema forward to match the package",
-        "Mentions ALTER privilege and warns against drop-and-recreate on non-empty tables",
+        "Mentions that DB-side migrations require ALTER privilege (most users do not have it on shared installs; coordinate with the admin).",
+        "Warns against drop-and-recreate on non-empty tables (drop+create is not a valid substitute for `Table.alter()` because it cascades and loses every downstream row).",
         "Does not recommend rolling the code back as the fix — i.e., does not propose `git checkout` to an older commit, downgrading the spyglass package, pinning to yesterday's version, or otherwise stepping the package backwards to match the DB. Semantic check: the failure shape is any phrasing of 'roll back to make the error go away,' not just the literal substring `git checkout`. The correct path is forward (apply migrations) not backward (revert the code)."
       ],
       "expected_refs": {
@@ -3970,8 +3972,7 @@
       "assertions": {
         "required_substrings": [
           "ripple_param_name",
-          "cautious_delete",
-          "destructive_operations.md"
+          "cautious_delete"
         ],
         "expected_output_tables_exempt": [
           "RippleParameters",
@@ -3987,7 +3988,7 @@
           "Uses the correct field name `ripple_param_name` (singular), not `ripple_params_name`",
           "Scopes the cleanup to RippleTimesV1 rows with the affected `ripple_param_name`, not all RippleTimesV1 rows",
           "Explicitly lists what is unaffected — LFP, LFPBand, RippleLFPSelection, position, decoding branches not downstream of the affected ripple times",
-          "Recommends cautious_delete (not super_delete or a manual drop) and routes to destructive_operations.md",
+          "Recommends `cautious_delete` (the SpyglassMixin team-aware default) rather than `super_delete()` / `force_permission=True` / a manual SQL drop, and follows the inspect-before-destroy pattern (preview the affected rows, confirm with the user, then execute). Naming the `destructive_operations.md` reference file is not required when the pattern is correctly applied.",
           "Flags editing a params row in place as an anti-pattern and recommends inserting a new `ripple_param_name` entry for future runs"
         ]
       },
@@ -3995,11 +3996,10 @@
       "expectations": [
         "Response contains substring `ripple_param_name`.",
         "Response contains substring `cautious_delete`.",
-        "Response contains substring `destructive_operations.md`.",
         "Uses the correct field name `ripple_param_name` (singular), not `ripple_params_name`",
         "Scopes the cleanup to RippleTimesV1 rows with the affected `ripple_param_name`, not all RippleTimesV1 rows",
         "Explicitly lists what is unaffected — LFP, LFPBand, RippleLFPSelection, position, decoding branches not downstream of the affected ripple times",
-        "Recommends cautious_delete (not super_delete or a manual drop) and routes to destructive_operations.md",
+        "Recommends `cautious_delete` (the SpyglassMixin team-aware default) rather than `super_delete()` / `force_permission=True` / a manual SQL drop, and follows the inspect-before-destroy pattern (preview the affected rows, confirm with the user, then execute). Naming the `destructive_operations.md` reference file is not required when the pattern is correctly applied.",
         "Flags editing a params row in place as an anti-pattern and recommends inserting a new `ripple_param_name` entry for future runs"
       ],
       "expected_refs": {
@@ -4095,8 +4095,7 @@
         "forbidden_substrings": [
           "LFPV1 would need to be re-populated",
           "SpikeSorting depends on position",
-          "CurationV1 would change",
-          "SpikeSortingV1"
+          "CurationV1 would change"
         ],
         "behavioral_checks": [
           "Calls Table.descendants() (or .ancestors() if upstream-direction) — names the actual DataJoint method, not 'walk the graph'.",
@@ -4104,7 +4103,8 @@
           "Identifies that inserting into `PositionOutput.TrodesPosV1` issues a new merge_id on `PositionOutput`",
           "Lists at least two downstream tables that would diverge (linearization, decoding via PositionGroup, ripple via pos_merge_id)",
           "Explicitly names LFP, spike-sorting, and curation as unaffected — they do not consume position",
-          "Does not use the v0 field name `position_info_param_name` or the nonexistent class `SpikeSortingV1`"
+          "Does not use the v0 field name `position_info_param_name` (the v1 field is `trodes_pos_params_name`).",
+          "Does not RECOMMEND or RELY ON a class named `SpikeSortingV1` as if it were the v1 sorting class (the v1 class is `SpikeSorting` in `spyglass.spikesorting.v1`). Pedagogically labeled disambiguation mentions (e.g., \"not `SpikeSortingV1`, that's a v0 confusion\") in the unaffected-branches list are fine."
         ]
       },
       "files": [],
@@ -4116,13 +4116,13 @@
         "Response does not contain substring `LFPV1 would need to be re-populated`.",
         "Response does not contain substring `SpikeSorting depends on position`.",
         "Response does not contain substring `CurationV1 would change`.",
-        "Response does not contain substring `SpikeSortingV1`.",
         "Calls Table.descendants() (or .ancestors() if upstream-direction) — names the actual DataJoint method, not 'walk the graph'.",
         "Identifies that a new `TrodesPosV1` row (new params_name) is produced, not an in-place update",
         "Identifies that inserting into `PositionOutput.TrodesPosV1` issues a new merge_id on `PositionOutput`",
         "Lists at least two downstream tables that would diverge (linearization, decoding via PositionGroup, ripple via pos_merge_id)",
         "Explicitly names LFP, spike-sorting, and curation as unaffected — they do not consume position",
-        "Does not use the v0 field name `position_info_param_name` or the nonexistent class `SpikeSortingV1`"
+        "Does not use the v0 field name `position_info_param_name` (the v1 field is `trodes_pos_params_name`).",
+        "Does not RECOMMEND or RELY ON a class named `SpikeSortingV1` as if it were the v1 sorting class (the v1 class is `SpikeSorting` in `spyglass.spikesorting.v1`). Pedagogically labeled disambiguation mentions (e.g., \"not `SpikeSortingV1`, that's a v0 confusion\") in the unaffected-branches list are fine."
       ],
       "expected_refs": {
         "required": [
@@ -4147,8 +4147,7 @@
       "assertions": {
         "required_substrings": [
           "DecodingOutput",
-          "merge_delete",
-          "destructive_operations.md"
+          "merge_delete"
         ],
         "expected_output_tables_exempt": [
           "ClusterlessDecodingV1",
@@ -4160,7 +4159,7 @@
           "Identifies that the prompt is under-specified and either asks a clarifying question or narrows scope explicitly",
           "Enumerates at least two plausible delete layers (merge entry vs. V1 computed row vs. on-disk artifact)",
           "Names the selection-scope ambiguity (which decoding_param_name / interval / session)",
-          "Recommends merge_delete with an explicit key (classmethod form) if the merge layer is chosen, and routes to destructive_operations.md for the inspect-before-destroy pattern",
+          "If the merge layer is the chosen scope, recommends `DecodingOutput.merge_delete(key)` in classmethod form (NOT chained as `(DecodingOutput & key).merge_delete()`, which silently discards the restriction per Common Mistake #1) AND follows the inspect-before-destroy pattern (preview affected rows, confirm with the user, execute). Naming the `destructive_operations.md` reference file is not required when the pattern is correctly applied.",
           "Does not produce an unscoped `.delete()` command without asking or narrowing"
         ]
       },
@@ -4168,11 +4167,10 @@
       "expectations": [
         "Response contains substring `DecodingOutput`.",
         "Response contains substring `merge_delete`.",
-        "Response contains substring `destructive_operations.md`.",
         "Identifies that the prompt is under-specified and either asks a clarifying question or narrows scope explicitly",
         "Enumerates at least two plausible delete layers (merge entry vs. V1 computed row vs. on-disk artifact)",
         "Names the selection-scope ambiguity (which decoding_param_name / interval / session)",
-        "Recommends merge_delete with an explicit key (classmethod form) if the merge layer is chosen, and routes to destructive_operations.md for the inspect-before-destroy pattern",
+        "If the merge layer is the chosen scope, recommends `DecodingOutput.merge_delete(key)` in classmethod form (NOT chained as `(DecodingOutput & key).merge_delete()`, which silently discards the restriction per Common Mistake #1) AND follows the inspect-before-destroy pattern (preview affected rows, confirm with the user, execute). Naming the `destructive_operations.md` reference file is not required when the pattern is correctly applied.",
         "Does not produce an unscoped `.delete()` command without asking or narrowing"
       ],
       "expected_refs": {
