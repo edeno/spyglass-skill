@@ -346,6 +346,12 @@ If you can't cite where a field is exposed, treat the query as a hypothesis. Thr
 - Source-read the table's `definition` block — declarations and `-> Other` FK rows, with the `---` divider separating PK from secondary attrs.
 - `Table.heading` (against a live DB) — shows the downstream table's exposed attributes (its own fields plus PK-inherited fields from upstream FKs). Don't confuse "appears in the upstream table's source" with "appears on the downstream table's heading" — only PK fields propagate down.
 
+```bash
+python skills/spyglass/scripts/code_graph.py describe <Table> --json
+```
+
+Use this before answering "can I restrict X by field Y?" or "which table owns field Y?". If the field is secondary on an upstream table, restrict that owner table first and pass the resulting relation into the downstream table; do not place the secondary field directly on a table that only inherits the owner's PK.
+
 ## Table Inspection Commands
 
 For LLM answers, prefer the bundled scripts when they can answer the

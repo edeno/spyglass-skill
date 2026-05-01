@@ -81,6 +81,13 @@ Pattern:
 4. Fetch the concrete keys or merge IDs expected by the group part table.
 5. Pass only those keys to `create_group()`.
 
+Use `code_graph.py` to find the source-declared path before writing the join:
+
+```bash
+python skills/spyglass/scripts/code_graph.py path --to <SemanticOwnerTable> <GroupedArtifactTable>
+python skills/spyglass/scripts/code_graph.py describe <GroupedArtifactTable> --json
+```
+
 Do not pass all session rows or all session merge IDs and say "filter upstream if needed"; that creates the wrong group.
 
 ## Worked example
