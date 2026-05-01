@@ -84,7 +84,8 @@ Pattern:
 Use `code_graph.py` to find the source-declared path before writing the join:
 
 ```bash
-python skills/spyglass/scripts/code_graph.py path --to <SemanticOwnerTable> <GroupedArtifactTable>
+# Owner = table declaring the semantic label; target = table whose keys/merge_ids the group part stores.
+python skills/spyglass/scripts/code_graph.py path --to <OwnerTable> <GroupedArtifactTable>
 python skills/spyglass/scripts/code_graph.py describe <GroupedArtifactTable> --json
 ```
 
