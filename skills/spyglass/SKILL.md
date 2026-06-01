@@ -1,22 +1,21 @@
 ---
 name: spyglass
-description: Use when the task involves Spyglass — the LorenFrankLab
-  neurophysiology framework built on DataJoint + NWB. Covers setup, NWB
-  ingestion, pipelines (spike sorting, LFP, ripple, decoding, position,
+description: Use when the task involves Spyglass — the LorenFrankLab neurophysiology
+  framework built on DataJoint + NWB. Covers setup, NWB ingestion,
+  pipelines (spike sorting, LFP, ripple, decoding, position,
   linearization, DLC, behavior/MoSeq), merge tables, paper exports
-  (DANDI/FigURL/Kachery), custom pipelines, and debugging
-  populate/make/fetch1 failures. Activate when the task touches any of
-  `import spyglass` / `from spyglass.*`, `SPYGLASS_BASE_DIR`,
-  `SpyglassMixin`, `merge_get_part`, `merge_restrict`, any Spyglass
-  versioned pipeline class (e.g., `LFPV1`, `TrodesPosV1`, `DLCPosV1`,
-  `RippleTimesV1`, `CurationV1`, `ClusterlessDecodingV1`,
-  `SortedSpikesDecodingV1`, `PoseGroup`, `MoseqModel`, `MoseqSyllable`, or
-  future `*V2`/`*V3` pipeline successors; also `SpikeSorting`), or
-  DLC/DANDI/Kachery/MoSeq/`keypoint_moseq` within a Spyglass context
-  — even if the user doesn't name "Spyglass" explicitly. Do NOT activate
-  for plain DataJoint without Spyglass imports, unrelated NWB tooling
-  (pynwb, ndx-*) outside Spyglass, or generic Python/NumPy/pandas debugging
-  when no Spyglass table is in the call chain.
+  (DANDI/FigURL/Kachery), and debugging populate/make/fetch1 failures.
+  Activate when the task touches any of `import spyglass` / `from
+  spyglass.*`, `SPYGLASS_BASE_DIR`, `SpyglassMixin`, `merge_get_part`,
+  `merge_restrict`, any Spyglass versioned pipeline class (e.g.,
+  `LFPV1`, `TrodesPosV1`, `DLCPosV1`, `RippleTimesV1`, `CurationV1`,
+  `ClusterlessDecodingV1`, `SortedSpikesDecodingV1`, `PoseGroup`, or
+  future `*V2`/`*V3` successors; also `SpikeSorting`), or
+  DLC/DANDI/Kachery/MoSeq/`keypoint_moseq` within a Spyglass context —
+  even if "Spyglass" isn't named. Do NOT activate for plain DataJoint
+  without Spyglass imports, unrelated NWB tooling (pynwb, ndx-*) outside
+  Spyglass, or generic Python/NumPy/pandas debugging with no Spyglass
+  table in the call chain.
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
