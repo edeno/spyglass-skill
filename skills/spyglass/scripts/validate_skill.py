@@ -2988,6 +2988,42 @@ def check_anti_patterns(results: ValidationResult):
                     )
 
 
+def _frontmatter_description(skill_content: str) -> str:
+    """Return the full frontmatter `description`, unfolding multi-line scalars.
+
+    The description is a folded YAML scalar: its continuation lines are
+    indented rather than re-prefixed with `description:`. Reading only the
+    first physical line (as this check originally did) undercounts the real
+    length to ~70 chars, which is how a >1024-char description could silently
+    pass the cap below. Parse the whole frontmatter block so the length and
+    broad-phrase checks see the actual string Claude loads at trigger time.
+    """
+    block = skill_content.split("---", 2)
+    block = block[1] if len(block) >= 3 else ""
+    try:
+        import yaml
+        fm = yaml.safe_load(block) or {}
+        desc = fm.get("description")
+        if desc is not None:
+            return str(desc)
+    except Exception:
+        pass  # fall back to a dependency-free unfold below
+    parts, collecting = [], False
+    for line in block.split("\n"):
+        if collecting:
+            if line[:1] in (" ", "\t"):
+                parts.append(line.strip())
+                continue
+            break  # a non-indented line is the next top-level key
+        if line.startswith("description:"):
+            head = line[len("description:"):].strip()
+            if head in (">", "|", ">-", "|-", ">+", "|+"):
+                head = ""  # block-scalar indicator, content is on next lines
+            parts.append(head)
+            collecting = True
+    return " ".join(p for p in parts if p)
+
+
 def check_structure(results: ValidationResult):
     """Check structural conventions: TOCs, ref links, trigger precision."""
     # Check that long reference files have a Contents section
@@ -3020,18 +3056,11 @@ def check_structure(results: ValidationResult):
         "DataJoint tables",
         "neuroscience data",
     ]
-    # Extract description from frontmatter
-    skill_lines = skill_content.split("\n")
-    in_frontmatter = False
-    description = ""
-    for line in skill_lines:
-        if line.strip() == "---":
-            if in_frontmatter:
-                break
-            in_frontmatter = True
-            continue
-        if in_frontmatter and line.startswith("description:"):
-            description = line
+    # Extract description from frontmatter. It is a folded multi-line YAML
+    # scalar, so read the whole thing (see _frontmatter_description) rather
+    # than the first physical line — the latter undercounts the length below
+    # and let a >1024-char description pass undetected.
+    description = _frontmatter_description(skill_content)
 
     for phrase in broad_phrases:
         if phrase.lower() in description.lower():
@@ -3046,7 +3075,7 @@ def check_structure(results: ValidationResult):
     # https://docs.anthropic.com/.../agent-skills/best-practices
     # 1. description must be <= 1024 chars (published cap)
     # 2. description must be third-person (no "I can", "you can", ...)
-    desc_body = description[len("description:"):].strip() if description else ""
+    desc_body = description.strip()
     if len(desc_body) > 1024:
         results.fail(
             f"description: frontmatter description is {len(desc_body)} chars; "

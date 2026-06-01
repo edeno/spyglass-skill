@@ -3032,7 +3032,44 @@ def fixture_clear_caches_invalidates_index(src_root):
     return True
 
 
+def fixture_folded_description_measured_in_full(src_root):
+    """Folded multi-line descriptions must be measured in full, not first-line.
+
+    Bug: check_structure read only the first physical `description:` line, so a
+    folded description exceeding the 1024-char cap was undercounted to ~70 chars
+    and silently passed. The extractor must unfold the continuation lines.
+    """
+    long = ("Use when " + "spyglass pipeline curation and debugging " * 30).strip()
+    wrapped = textwrap.fill(long, width=72, subsequent_indent="  ")
+    md = (
+        f"---\nname: spyglass\ndescription: {wrapped}\n"
+        "allowed-tools: Read\n---\n\n# Body\n"
+    )
+    full = v._frontmatter_description(md)
+    first_line_only = md.split("\n")[2][len("description:"):].strip()
+    if len(full) > 1024 and len(first_line_only) < 200:
+        print(f"  [ok] folded description measured in full ({len(full)} chars)")
+        return True
+    print("  [FAIL] folded description undercounted")
+    print(f"         full={len(full)} first_line_only={len(first_line_only)}")
+    return False
+
+
+def fixture_single_line_description_still_measured(src_root):
+    """Guard: a plain single-line description is still read in full."""
+    desc = "Use when the task involves Spyglass pipelines, curation, or decoding."
+    md = f"---\nname: spyglass\ndescription: {desc}\nallowed-tools: Read\n---\n\n# Body\n"
+    got = v._frontmatter_description(md)
+    if got == desc:
+        print("  [ok] single-line description read in full")
+        return True
+    print(f"  [FAIL] single-line description mismatch: {got!r}")
+    return False
+
+
 FIXTURES = [
+    fixture_folded_description_measured_in_full,
+    fixture_single_line_description_still_measured,
     fixture_class_registry_picks_version_by_filename,
     fixture_class_registry_uses_code_graph_index,
     fixture_marker_hygiene_warnings,
