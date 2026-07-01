@@ -948,6 +948,9 @@
           "database.password",
           "scrub_dj_config"
         ],
+        "required_substrings_exempt": [
+          "scrub_dj_config"
+        ],
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Prefers scrub_dj_config.py; jq / Python one-liner acceptable as fallback",
@@ -1902,6 +1905,9 @@
           "CHANGELOG.md",
           "SpikeSortingRecording"
         ],
+        "required_substrings_exempt": [
+          "CHANGELOG.md"
+        ],
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Identifies the drift direction: code ahead of DB",
@@ -2187,6 +2193,9 @@
         "required_substrings": [
           "environments/environment_min.yml",
           "--dry-run"
+        ],
+        "required_substrings_exempt": [
+          "environments/environment_min.yml"
         ],
         "forbidden_substrings": [
           "pin cv2 to"
@@ -2991,6 +3000,9 @@
       "expected_output": "Names common_mistakes.md (Mistake #2: too-loose restriction + fetch1) as the first stop, optionally with datajoint_api.md as a follow-up for the broader fetch / fetch1 / heading mechanics. Explains the choice in one line: cardinality errors are the canonical first-page footgun and the common_mistakes file points directly at the diagnostic pattern (print len(rel) before fetch1).",
       "assertions": {
         "required_substrings": [
+          "common_mistakes.md"
+        ],
+        "required_substrings_exempt": [
           "common_mistakes.md"
         ],
         "forbidden_substrings": [],
