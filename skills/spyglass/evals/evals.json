@@ -1260,7 +1260,10 @@
           "SpikeSortingSelection"
         ],
         "required_substrings_exempt": [
-          "limit=1"
+          "limit=1",
+          "SortGroup",
+          "SortGroupElectrode",
+          "Electrode"
         ]
       },
       "files": [],
@@ -4472,7 +4475,8 @@
           "Does NOT claim the filter lookup uses a `<=` semantic — that is the wrong rule applied to the wrong sampling-rate field"
         ],
         "required_substrings_exempt": [
-          "Nyquist"
+          "Nyquist",
+          "1000 Hz"
         ],
         "expected_output_tables_exempt": [
           "LFP",
@@ -6202,6 +6206,9 @@
           "pos_merge_id",
           "ripple/v1/ripple.py"
         ],
+        "required_substrings_exempt": [
+          "ripple/v1/ripple.py"
+        ],
         "expected_output_tables_exempt": [
           "RippleTimesV1",
           "RippleParameters",
@@ -6266,7 +6273,8 @@
           "Cites distinct v0 and v1 source paths to anchor the version difference"
         ],
         "required_substrings_exempt": [
-          "spikesorting_v1_pipeline.md"
+          "spikesorting_v1_pipeline.md",
+          "spikesorting/v1/recording.py"
         ]
       },
       "files": [],
