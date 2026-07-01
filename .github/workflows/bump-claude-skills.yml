@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out claude-skills (with submodules)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: edeno/claude-skills
           token: ${{ secrets.CLAUDE_SKILLS_PAT }}
