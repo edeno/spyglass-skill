@@ -197,6 +197,9 @@
           "Explicitly warns the user to NOT confirm the 200-row prompt",
           "Shows the corrected form with restriction as an argument",
           "Cites the classmethod-restriction-discard pattern"
+        ],
+        "required_substrings_exempt": [
+          "classmethod-restriction-discard"
         ]
       },
       "files": [],
@@ -308,6 +311,10 @@
         ],
         "expected_output_tables_exempt": [
           "ImportedPose"
+        ],
+        "required_substrings_exempt": [
+          "01_Concepts",
+          "Spyglass convention"
         ]
       },
       "files": [],
@@ -941,6 +948,9 @@
           "database.password",
           "scrub_dj_config"
         ],
+        "required_substrings_exempt": [
+          "scrub_dj_config"
+        ],
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Prefers scrub_dj_config.py; jq / Python one-liner acceptable as fallback",
@@ -1111,6 +1121,9 @@
           "Flags user-choice points (which electrodes, which interval/epoch, which params — and notably that '02_r1' is a run epoch while the user asked for LFP on the 'sleep epoch', so a separate interval must be picked for LFP)",
           "For the LFP step, pairs `filter_name='LFP 0-400 Hz'` with a `filter_sampling_rate` that MATCHES the Raw data's sampling rate — stock filters are registered in `FirFilterParameters` at fs=20000 and fs=30000 only (see `src/spyglass/common/common_filter.py`). The match is by equality (filter lookup), not by a Nyquist inequality. `target_sampling_rate` has schema default 1000 Hz (`src/spyglass/lfp/v1/lfp.py:40`) and need not be set explicitly. A response that invents a `filter_sampling_rate` not registered in FirFilterParameters, or claims the filter works at any `fs > 800 Hz`, is a miss.",
           "For the LFP step, uses the v1 electrode-selection surface: `LFPElectrodeGroup.create_lfp_electrode_group(...)` (at `src/spyglass/lfp/lfp_electrode.py:29`) followed by `LFPSelection.insert1`. Does NOT suggest `set_lfp_electrodes()` — that is the v0 API on `common_ephys.LFPSelection` and has no v1 equivalent on the LFP v1 tables."
+        ],
+        "required_substrings_exempt": [
+          "05_Export"
         ]
       },
       "files": [],
@@ -1247,7 +1260,10 @@
           "SpikeSortingSelection"
         ],
         "required_substrings_exempt": [
-          "limit=1"
+          "limit=1",
+          "SortGroup",
+          "SortGroupElectrode",
+          "Electrode"
         ]
       },
       "files": [],
@@ -1853,7 +1869,8 @@
           "Does not recommend remounting the share at the same path on both machines as the primary fix"
         ],
         "required_substrings_exempt": [
-          "['stores']['raw']"
+          "['stores']['raw']",
+          "dj.config['stores']"
         ]
       },
       "files": [],
@@ -1890,6 +1907,9 @@
         "required_substrings": [
           "CHANGELOG.md",
           "SpikeSortingRecording"
+        ],
+        "required_substrings_exempt": [
+          "CHANGELOG.md"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -2176,6 +2196,9 @@
         "required_substrings": [
           "environments/environment_min.yml",
           "--dry-run"
+        ],
+        "required_substrings_exempt": [
+          "environments/environment_min.yml"
         ],
         "forbidden_substrings": [
           "pin cv2 to"
@@ -2982,6 +3005,9 @@
         "required_substrings": [
           "common_mistakes.md"
         ],
+        "required_substrings_exempt": [
+          "common_mistakes.md"
+        ],
         "forbidden_substrings": [],
         "behavioral_checks": [
           "Names a specific reference file by name — common_mistakes.md (preferred) or datajoint_api.md (also valid)",
@@ -3650,7 +3676,8 @@
           "spyglassmixin_methods.md"
         ],
         "required_substrings_exempt": [
-          "fetch('KEY')"
+          "fetch('KEY')",
+          "spyglassmixin_methods.md"
         ],
         "forbidden_substrings": [],
         "behavioral_checks": [
@@ -3694,7 +3721,8 @@
           "destructive_operations.md"
         ],
         "required_substrings_exempt": [
-          "parents()"
+          "parents()",
+          "destructive_operations.md"
         ],
         "expected_output_tables_exempt": [
           "RippleTimesV1",
@@ -3781,6 +3809,9 @@
           "Identifies `SpikeSorting` (no V1 suffix) as the correct v1 spike-sorting Computed class and names its module (`spyglass.spikesorting.v1`)",
           "Explicitly flags the v0→v1 naming asymmetry (some v1 classes keep the `V1` suffix, some drop it) — recommends verifying by import rather than extrapolating",
           "Does not fabricate a signature for `SpikeSortingV1.populate` or claim it is an alias / deprecated name for `SpikeSorting`"
+        ],
+        "required_substrings_exempt": [
+          "spikesorting_v1_pipeline.md"
         ]
       },
       "files": [],
@@ -3926,7 +3957,8 @@
           "populate_all_common_debugging.md"
         ],
         "required_substrings_exempt": [
-          "raise_err=True"
+          "raise_err=True",
+          "populate_all_common_debugging.md"
         ],
         "expected_output_tables_exempt": [
           "Session",
@@ -4040,6 +4072,9 @@
           "Does not commit to one cause before the diagnostic is run",
           "Distinguishes direct-FK surfaces from upstream-chain differences (sorter params, position params) — latter is a second-order check",
           "Does not misattribute divergence purely to environment / package drift"
+        ],
+        "required_substrings_exempt": [
+          "decoding_pipeline.md"
         ]
       },
       "files": [],
@@ -4105,6 +4140,9 @@
           "Explicitly names LFP, spike-sorting, and curation as unaffected — they do not consume position",
           "Does not use the v0 field name `position_info_param_name` (the v1 field is `trodes_pos_params_name`).",
           "Does not RECOMMEND or RELY ON a class named `SpikeSortingV1` as if it were the v1 sorting class (the v1 class is `SpikeSorting` in `spyglass.spikesorting.v1`). Pedagogically labeled disambiguation mentions (e.g., \"not `SpikeSortingV1`, that's a v0 confusion\") in the unaffected-branches list are fine."
+        ],
+        "required_substrings_exempt": [
+          "position_trodes_v1_pipeline.md"
         ]
       },
       "files": [],
@@ -4437,7 +4475,8 @@
           "Does NOT claim the filter lookup uses a `<=` semantic — that is the wrong rule applied to the wrong sampling-rate field"
         ],
         "required_substrings_exempt": [
-          "Nyquist"
+          "Nyquist",
+          "1000 Hz"
         ],
         "expected_output_tables_exempt": [
           "LFP",
@@ -5925,6 +5964,9 @@
         ],
         "expected_output_tables_exempt": [
           "LFPV1"
+        ],
+        "required_substrings_exempt": [
+          "no such method"
         ]
       },
       "files": [],
@@ -5976,6 +6018,9 @@
         ],
         "expected_output_tables_exempt": [
           "LFPV1"
+        ],
+        "required_substrings_exempt": [
+          "no such top-level function"
         ]
       },
       "files": [],
@@ -6071,6 +6116,9 @@
           "Identifies `speed_threshold` as a blob field nested under `ripple_param_dict[\"ripple_detection_params\"]`, NOT a heading column",
           "Routes blob shape verification to `RippleTimesV1.make` (the consumer) or to an actual fetched row, NOT to the table name alone",
           "Recommends fetch-then-filter-in-Python rather than a DataJoint restriction on the blob field"
+        ],
+        "required_substrings_exempt": [
+          "ripple_pipeline.md"
         ]
       },
       "files": [],
@@ -6114,6 +6162,9 @@
           "Identifies the silent no-op shape: merge master's heading is only `(merge_id, source)`, so unknown restriction keys are dropped without error",
           "Recommends `merge_restrict` (or `merge_get_part`) as the fix; does NOT confirm the user's bare `& {nwb_file_name: ...}` count of 2735 as correct, and does NOT recommend rerunning the bare form",
           "Verifies the merge-master heading with `code_graph.py describe DecodingOutput` (agent tool) or `DecodingOutput.heading.primary_key` in the user's Python session, not invented merge-master fields"
+        ],
+        "required_substrings_exempt": [
+          "merge_methods.md"
         ]
       },
       "files": [],
@@ -6153,6 +6204,9 @@
         "required_substrings": [
           "RippleLFPSelection",
           "pos_merge_id",
+          "ripple/v1/ripple.py"
+        ],
+        "required_substrings_exempt": [
           "ripple/v1/ripple.py"
         ],
         "expected_output_tables_exempt": [
@@ -6217,6 +6271,10 @@
           "Names `set_group_by_shank` as the v1 alternative",
           "Verifies with `code_graph.py find-method` (agent tool), a version-specific source read, or Python introspection on the imported v1 SortGroup — not memory",
           "Cites distinct v0 and v1 source paths to anchor the version difference"
+        ],
+        "required_substrings_exempt": [
+          "spikesorting_v1_pipeline.md",
+          "spikesorting/v1/recording.py"
         ]
       },
       "files": [],
@@ -6321,6 +6379,9 @@
           "Names the LFP-specific keys the user needs to choose (`lfp_electrode_group_name`, `target_interval_list_name`, `filter_name`, `filter_sampling_rate`)",
           "Resolves the merge_id through a merge-aware helper (`LFPOutput.merge_get_part(...).fetch1('KEY')` OR `LFPOutput.merge_restrict(...)`), NOT through a bare `LFPOutput & {nwb_file_name: ...}` restriction",
           "Does NOT hand back a single-line bare-restriction `fetch1_dataframe()` without first verifying cardinality or scoping"
+        ],
+        "required_substrings_exempt": [
+          "lfp_pipeline.md"
         ]
       },
       "files": [],
