@@ -322,6 +322,10 @@ for child in RippleParameters().descendants(as_objects=True):
 
 If any descendant has rows, do not `update1()` — insert a new params row instead.
 
+**Even worse than `update1`: editing installed Spyglass source.** Do not open a source file under `src/spyglass/` (e.g. a table's `insert_default()` body) and change a default value there. That mutates the installed library for every project on the machine, is untracked, is wiped on the next reinstall, and — like `update1` — silently re-points rows already populated under that name. Parameters are *data*, not code: change them only through the DataJoint API by inserting a new named parameter set (above), never by editing the package.
+
+**Verify writes before reporting them done.** After any insert / update / delete, read the affected key back (`fetch1` / `len`) and confirm it changed as intended before telling the user it worked. A `PermissionError`, a silent `skip_duplicates=True` no-op, or a rolled-back transaction can leave the table unchanged — never narrate an unverified or failed edit as success.
+
 ## Cross-references
 
 - [merge_methods.md](merge_methods.md) — full classmethod-discard gotcha list and corrected call forms
