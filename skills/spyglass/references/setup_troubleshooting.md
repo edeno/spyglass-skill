@@ -126,7 +126,7 @@ sgc.LabMember.LabMemberInfo.insert1({
 
 `admin=1` reserves a member as a lab admin; team-permission semantics, `super_delete()` decisions, and the `force_permission=True` bypass live in [destructive_operations.md](destructive_operations.md) — don't reach for those to "fix" a missing-LabMember error. The fix is the insert above.
 
-**On shared lab filesystems.** Analysis, recording, export, and kachery directories drift out of group-writable as new subdirs are created by different users. If `ls -ld` shows the failing dir isn't group-writable, fix it through your lab's shared-permission process (cron, admin-run script, or `chown -R`) rather than chmod-ing per session. `Nwbfile().cleanup()` removes orphan NWB files from disk but does NOT fix permission bits on existing directories — filesystem-permission fixes must happen at the filesystem level, not via Spyglass helpers.
+**On shared lab filesystems.** Analysis, recording, export, and kachery directories drift out of group-writable as new subdirs are created by different users. If `ls -ld` shows the failing dir isn't group-writable, fix it through your lab's shared-permission process (cron, admin-run script, or `chown -R`) rather than chmod-ing per session. A bare `Nwbfile().cleanup()` only removes stale external filepath *entries*; it unlinks the underlying files from disk only when called as `Nwbfile().cleanup(delete_files=True)`. Neither form fixes permission bits on existing directories — filesystem-permission fixes must happen at the filesystem level, not via Spyglass helpers.
 
 ## Environment Creation Fails
 
@@ -273,7 +273,6 @@ schema changes without an explicit alter list, so `CHANGELOG.md`
 isn't a complete history — but for current versions it's the
 authoritative checklist. Symptoms include:
 
-- `KeyError: 'accessed'` on `AnalysisNwbfileLog.increment_access`
 - `KeyError: 'pipeline'` on `SpikeSortingRecording.populate`
 - `KeyError: 'target_sampling_rate'` on `LFPV1.populate`
 - `DataError (1406): Data too long for column ...`

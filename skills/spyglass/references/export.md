@@ -148,11 +148,12 @@ Export().prepare_files_for_export(paper_key)
 
 # Then re-validate. `list_file_paths` returns a list of dicts by
 # default (`{"file_path": "..."}`) — pass `as_dict=False` for plain
-# strings (`common/common_usage.py:228`). `pynwb.validate` is
-# keyword-only on `paths=[...]` in current pynwb (`pynwb/validate.py:131`).
+# strings (`common/common_usage.py:228`). `pynwb.validate(path=...)`
+# validates a single file (`pynwb/validation.py:141`); the older
+# `paths=[...]` list form still works but is deprecated in PyNWB 4.0.
 import pynwb
 for path in ExportSelection().list_file_paths(paper_key, as_dict=False):
-    pynwb.validate(paths=[path])
+    pynwb.validate(path=path)
 ```
 
 **Admin-permission gate note.** Both layers gate on admin:
