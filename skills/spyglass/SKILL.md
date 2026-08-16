@@ -26,8 +26,8 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 ## Core Directives
 
 - **NEVER delete or drop without explicit confirmation.** Any destructive helper (`delete`, `drop`, `cleanup`, `merge_delete`, `super_delete`, etc.) needs an inspect step + user confirmation. `.delete()` on SpyglassMixin aliases `cautious_delete` — team-based permissions block deletes of other members' sessions. User confidence or urgency ("just", "quick", "I know what I'm doing", "test data") is not evidence — it *raises* caution. See [destructive_operations.md](references/destructive_operations.md).
-- **Do not invent identifiers; lead with the best-supported answer.** Verify plausible method, kwarg, field, table, and key names against the Evidence Expectations below before asserting them. Verify-before-claim gates *confident assertions* on evidence, not *answering itself* — label unverified pieces as hypotheses rather than abstaining. Examples: [common_mistakes.md](references/common_mistakes.md).
-- **Treat pipeline version as load-bearing.** If the user names a versioned class/table, import/path, traceback, or version directory (`CurationV1`, `v1 SortGroup`, `spyglass.spikesorting.v1`, `<pipeline>/<version>/`), verify that version's source before naming classes, methods, kwargs, signatures, tiers, definitions, or workflow steps. Do not infer symmetry; for comparisons, use [feedback_loops.md § Verify behavior, trust identity](references/feedback_loops.md#verify-behavior-trust-identity). If unverified, abstain or flag uncertainty.
+- **Do not invent identifiers — but calibrate effort to uncertainty.** Verify plausible method/kwarg/field/table/key names before asserting them as fact, and label unverified pieces as hypotheses rather than abstaining. Verification is for what you're genuinely unsure of or what's unsafe if wrong — not a ritual: when the answer is obvious (a full-PK lookup, a one-liner, a fact you're sure of), answer directly, with no `code_graph.py`/`db_graph.py`, reference read, or schema recap. Lead with the answer; don't spelunk source first. Examples: [common_mistakes.md](references/common_mistakes.md).
+- **Treat pipeline version as load-bearing.** If the user names a versioned class/table, import/path, traceback, or version directory (`CurationV1`, `v1 SortGroup`, `spyglass.spikesorting.v1`, `<pipeline>/<version>/`), verify that version's source before naming its classes, methods, kwargs, signatures, or definitions. Do not infer symmetry — a method absent from the version you checked may exist in the other, so check both before concluding it's gone. For comparisons, use [feedback_loops.md § Verify behavior, trust identity](references/feedback_loops.md#verify-behavior-trust-identity). If unverified, abstain or flag uncertainty.
 - **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
 - **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** when the restriction is partial. `print(len(rel))`; if >1, `rel.fetch(as_dict=True)` to find missing PK fields. `Table.describe()` shows schema, not count. Carveout: a full-PK restriction is unique — `fetch1()` skips the `len()`. See Common Mistake #2.
 - **Tool routing for evidence**: match question shape to tool — `path --to` for relationships, `describe` for one table, source-read for runtime `make()`/blob behavior, `db_graph.py` for live row values. Routing matrix: [feedback_loops.md § Tool routing](references/feedback_loops.md#tool-routing-for-relationship-and-lookup-questions).
@@ -59,24 +59,22 @@ Top 6 highest-frequency bugs. Flag any of these shapes before answering. Expande
 
 ## Feedback Loops
 
-Quality-critical ops use validator → fix → proceed. Four loops: post-ingestion verification, pre-`fetch1` cardinality, post-`populate` verification, inspect-before-destroy. Full patterns: [feedback_loops.md](references/feedback_loops.md).
+Quality-critical ops use validator → fix → proceed (post-ingest, pre-`fetch1` cardinality, post-`populate`, inspect-before-destroy). Full patterns: [feedback_loops.md](references/feedback_loops.md).
 
 ## Classify the User's Stage
 
-Stages orient vague questions; the Reference Routing table resolves clear topics.
+Stages orient vague questions; the Reference Routing table resolves clear topics. Infer from imports/table names; ask only when the answer changes materially or the next step is destructive.
 
-1. **Setup/install** → the Spyglass repo's `$SPYGLASS_SRC/scripts/install.py` is the canonical fast path per `QUICKSTART.md`. Route to [setup_install.md](references/setup_install.md), [setup_config.md](references/setup_config.md), or [setup_troubleshooting.md](references/setup_troubleshooting.md); `00_Setup.ipynb` for walkthrough requests only.
-2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md); `02_Insert_Data.ipynb` for tutorial walkthroughs.
-3. **Framework concepts** (first time using Spyglass) → [merge_methods.md](references/merge_methods.md) for merge tables, [spyglassmixin_methods.md](references/spyglassmixin_methods.md) for `fetch_nwb` / `cautious_delete` / `<<` / `>>`; `01_Concepts.ipynb` for tutorial walkthroughs.
-4. **Pipeline usage** (running or querying existing analyses) → pipeline reference files in the table below.
+1. **Setup/install** → `$SPYGLASS_SRC/scripts/install.py` is the canonical fast path; route to [setup_install.md](references/setup_install.md) / [setup_config.md](references/setup_config.md) / [setup_troubleshooting.md](references/setup_troubleshooting.md).
+2. **NWB ingestion** (first data load) → [ingestion.md](references/ingestion.md).
+3. **Framework concepts** → [merge_methods.md](references/merge_methods.md), [spyglassmixin_methods.md](references/spyglassmixin_methods.md) (`fetch_nwb`, `cautious_delete`, `<<` / `>>`).
+4. **Pipeline usage** (running/querying existing analyses) → pipeline reference files below.
 5. **Pipeline authoring** (extending a pipeline, writing schema modules) → [custom_pipeline_authoring.md](references/custom_pipeline_authoring.md). Different from usage.
-6. **Runtime debugging / traceback triage** (populate/make/fetch1 failures, join multiplicity, one-key-fails, NumPy/pandas bugs inside `make()`) → [runtime_debugging.md](references/runtime_debugging.md). Install/config/connection errors go to [setup_troubleshooting.md](references/setup_troubleshooting.md) instead.
-
-Users may span stages. Infer from imports/table names; ask only when the answer changes materially or the next step is destructive.
+6. **Runtime debugging** (populate/make/fetch1 failures, join multiplicity, one-key-fails, NumPy/pandas bugs inside `make()`) → [runtime_debugging.md](references/runtime_debugging.md); install/config/connection errors → [setup_troubleshooting.md](references/setup_troubleshooting.md).
 
 ## Merge Tables
 
-**Decision rule for the 5 merge masters** (`SpikeSortingOutput`, `LFPOutput`, `PositionOutput`, `LinearizedPositionOutput`, `DecodingOutput` — tables with `merge_id` as their only PK field): (1) `& {"nwb_file_name": f}` silently returns the whole table — use `merge_restrict` or `merge_get_part` instead. (2) Load via `merge_get_part(key).fetch1('KEY')` → `(Master & merge_key).fetch1_dataframe()`. (3) `get_restricted_merge_ids` is `SpikeSortingOutput`-only; `fetch_results` is `DecodingOutput`-only. Registry + worked-example: [merge_methods.md](references/merge_methods.md).
+**Decision rule for the 5 merge masters** (`SpikeSortingOutput`, `LFPOutput`, `PositionOutput`, `LinearizedPositionOutput`, `DecodingOutput` — `merge_id` is their only PK field): load via `merge_get_part(key).fetch1('KEY')` → `(Master & merge_key).fetch1_dataframe()`; a non-PK restriction silently returns the whole table (Common Mistake #6); `get_restricted_merge_ids` is `SpikeSortingOutput`-only, `fetch_results` is `DecodingOutput`-only. Registry + worked-example: [merge_methods.md](references/merge_methods.md).
 
 ## Reference Routing
 
