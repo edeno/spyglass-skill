@@ -196,9 +196,9 @@ Both accept the same restriction shapes and both are classmethods — they diffe
 
 **Failure modes differ:**
 
-- `merge_restrict` on an over-broad restriction returns many rows (no raise); always check `len(...)` before `.fetch1(...)`. On a zero-match restriction it returns an empty query (no raise).
+- `merge_restrict` on an over-broad restriction returns many rows (no raise); always check `len(...)` before `.fetch1(...)`. On a zero-match restriction it returns `None` (after a `No parts found. Try adjusting restriction.` warning), **not** an empty query — guard for `None` before chaining `.fetch1(...)`.
 - `merge_get_part` on a restriction that matches entries in multiple parts raises `ValueError: Found multiple potential parts: [...]` unless `multi_source=True`.
-- `merge_get_part` on a restriction that matches zero parts raises `ValueError: Found 0 potential parts: []` — usually because the upstream was populated but never inserted into the merge (see the misleading-error note below and common_mistakes.md for the explicit insert fix). This raise does NOT fire for `merge_restrict`.
+- `merge_get_part` on a restriction that matches zero parts returns `None` (**not** a raise) — usually because the upstream was populated but never inserted into the merge (see the zero-match note below and common_mistakes.md for the explicit insert fix). Guard with `if part is None:`; a later `.fetch1('KEY')` on the `None` return raises `AttributeError`, not `ValueError`.
 
 ### Data Discovery
 
@@ -244,13 +244,13 @@ LFPOutput.merge_fetch('filter_name', restriction={'nwb_file_name': f})
 #### `merge_get_part(restriction, join_master=False, restrict_part=True, multi_source=False, return_empties=False) -> dj.Table`
 Returns the part table(s) containing entries matching the restriction. This is the key method for the merge workflow.
 
-**Raises `ValueError`** if zero or multiple sources match when `multi_source=False` (default). Always wrap in try/except or use `multi_source=True`.
+**Raises `ValueError`** only when *multiple* sources match and `multi_source=False` (default) — pass `multi_source=True` (or add a restriction) to allow multiple. A **zero-match returns `None`**, not a raise; guard with `if part is None:` before chaining (a later `.fetch1('KEY')` on the `None` return raises `AttributeError`, not `ValueError`).
 
-**Misleading-error note.** Current source raises
-`ValueError: Found 0 potential parts: []` (`utils/dj_merge_tables.py:634`)
-— the count is interpolated, so the literal "0" appears in the
-message and the empty list `[]` confirms zero sources matched. The
-usual cause is that the upstream source table (e.g.
+**Zero-match note.** A zero-match returns `None`, not a raise
+(`utils/dj_merge_tables.py:640-641`). The "Found N potential parts"
+message (`utils/dj_merge_tables.py:635`) renders **only** when two or
+more sources match — it can never print "Found 0". The usual cause of
+a `None` return is that the upstream source table (e.g.
 `IntervalPositionInfo`) has rows but they were never inserted into
 the merge part table (e.g. `PositionOutput.CommonPos`).
 
@@ -315,8 +315,8 @@ data = (PositionOutput.TrodesPosV1 & {'nwb_file_name': nwb_file}).fetch(...)
 
 **Footgun.** Don't write `(PositionOutput & {'nwb_file_name': nwb_file}).merge_fetch()`. The merge master's heading is just `(merge_id, source)` (`position/position_merge.py:31`), so the `&` step looks like the silent-no-op pattern this skill warns about elsewhere — even though `merge_fetch` happens to re-route the attached restriction to the parts internally (via `_merge_restrict_parts(restriction=self.restriction)` at `utils/dj_merge_tables.py:811-826`). The behavior works, but reading the line, you can't tell whether the restriction is being applied or silently ignored — the misreading is the bug. Prefer the explicit `restriction=` kwarg, or resolve through `PositionOutput.<Part>` / `merge_get_part(restriction)` when you know which source you want.
 
-#### `fetch1_dataframe(*attrs, **kwargs) -> pd.DataFrame`
-Fetch a single entry as a pandas DataFrame. Works by routing to the correct part table's `fetch1_dataframe` method.
+#### `fetch1_dataframe()` — per-master, **not** inherited from `_Merge`
+Fetch a single entry as a pandas DataFrame by routing to the source part table's own `fetch1_dataframe`. Unlike the methods above, this is **not** a base `_Merge` method (absent from `dj_merge_tables.py`) — each master defines its own with a divergent signature: `PositionOutput` (`position/position_merge.py:81`) and `LinearizedPositionOutput` (`linearization/merge.py:34`) take **no** positional args (passing attrs raises `TypeError`); `LFPOutput` (`lfp/lfp_merge.py:46`) accepts `*attrs, **kwargs`; `SpikeSortingOutput` and `DecodingOutput` define none, so `.fetch1_dataframe()` on those masters raises `AttributeError`.
 
 ```python
 df = (PositionOutput & {'merge_id': merge_id}).fetch1_dataframe()
@@ -356,17 +356,22 @@ PositionOutput().source_class_dict
 
 #### Stale / orphan merge-part tables
 
-`Merge.parts(camel_case=True)` introspects DB part names and calls
-`getattr(module, part_name)`. If a previous Spyglass version declared
-a part class (e.g. `ImportedLFPV1`, `ImportedPose`) that has since
-been removed from the code, the DB still has the part table but the
-Python class is gone. Symptom:
+`Merge.source_class_dict` introspects DB part names via
+`parts(camel_case=True)` and resolves each to its Python class with
+`getattr(module, part_name)` — but only `if hasattr(module, part_name)`
+(`utils/dj_merge_tables.py:718-722`). If a previous Spyglass version
+declared a part class (e.g. `ImportedLFPV1`, `ImportedPose`) that has
+since been removed from the code, the DB still has the part table but
+the Python class is gone. The orphan is **skipped** (never resolved),
+and the master logs a warning rather than raising:
 
 ```
-AttributeError: module 'spyglass.<pipeline>.<merge>' has no attribute '<PartClass>'
+WARNING: Missing code for <PartClass>
 ```
 
-raised from `Merge.source_class_dict` / `.fetch_nwb()` on the master.
+(`utils/dj_merge_tables.py:723-725`). The absent class typically
+surfaces later as a downstream `KeyError` / `TypeError` when something
+tries to route through the missing part.
 
 Find the orphan:
 
@@ -441,6 +446,6 @@ Examples in the wild:
 - `RippleTimesV1` (ripple.py:186): `-> PositionOutput.proj(pos_merge_id='merge_id')`. Build populate key with `pos_merge_id`, not `merge_id`, because `RippleTimesV1`'s own primary FK into `RippleLFPSelection` already uses a `merge_id` slot via `LFPBandV1`.
 - `MuaEventsV1` (mua.py:67–68): *two* renames at once — `PositionOutput.proj(pos_merge_id='merge_id')` and `IntervalList.proj(detection_interval='interval_list_name')`. Populate keys must use both renamed fields.
 
-The pattern is widespread — at least a dozen tables use it, including `LFPBandV1`, `DecodingClusters`, `PoseGroup.Pose`, `SortedSpikesUnit`, and selection tables in `position/v1/` and `spikesorting/`. Grep `.proj(` inside `definition = """` blocks to find them in your own pipeline.
+The pattern is widespread — other carriers include `LFPBandSelection` (`lfp/analysis/v1/lfp_band.py:26`), `PoseGroup.Pose` (`behavior/v1/core.py:28`), `UnitAnnotation` (`spikesorting/analysis/v1/unit_annotation.py:17`), and `SortedSpikesGroup.Units` (`spikesorting/analysis/v1/group.py:73`). (The rename lives on the *selection* / group table, not on the downstream `*V1` computed table — e.g. it is `LFPBandSelection`, not `LFPBandV1`, that carries it.) Grep `.proj(` inside `definition = """` blocks to find them in your own pipeline.
 
 **How to detect it.** Read the target table's `definition`. If you see `.proj(foo='bar')` inside an FK line, `foo` is what your populate key needs, not `bar`. `Table.heading.primary_key` also lists the renamed names, not the originals.

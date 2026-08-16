@@ -237,11 +237,11 @@ Each signature follows the same shape so the triage output is consistent.
 
 ### A. fetch1() cardinality
 
-**Symptom.** `DataJointError: fetch1 should only be called on relations with exactly one tuple` (or `no tuples`). Sometimes surfaces as `ValueError` from wrappers like `merge_get_part()` or `fetch1_dataframe()`. **Decoding-specific variant** — `DecodingOutput.fetch_results()` does NOT call `fetch1()`; it routes through `merge_restrict_class` (`utils/dj_merge_tables.py:770`), which raises `ValueError: Ambiguous entry. Data has mult rows in parent: ...` for the same diagnostic shape (under-specified restriction → multiple parent matches). Different error class, same fix.
+**Symptom.** `DataJointError: fetch1 should only be called on relations with exactly one tuple` (or `no tuples`). Merge "wrappers" surface it under a different class — `ValueError` from `merge_get_part()`, `KeyError` from `fetch1_dataframe()` (via its `ensure_single_entry()` guard). **Decoding-specific variant** — `DecodingOutput.fetch_results()` does NOT call `fetch1()`; it routes through `merge_restrict_class` (`utils/dj_merge_tables.py:770`), which raises `ValueError: Ambiguous entry. Data has mult rows in parent: ...` for the same diagnostic shape (under-specified restriction → multiple parent matches). Different error class, same fix.
 
 **Most likely root cause.** The restriction in front of `fetch1()` (or `merge_restrict_class`) is either too loose (matches multiple rows — every interval, every parameter set, every pipeline version) or too tight (matches zero rows because a field was wrong).
 
-**Why that explanation fits.** `fetch1()` is defined to raise on anything other than exactly one row, and Spyglass's universal wrappers `merge_get_part` and `fetch1_dataframe` call it internally. `DecodingOutput.fetch_results` instead routes through `merge_restrict_class`, which has its own multi-row guard and raises `ValueError` (`utils/dj_merge_tables.py:782-786`).
+**Why that explanation fits.** `fetch1()` is defined to raise on anything other than exactly one row, but the "wrappers" do **not** route through it: `merge_get_part` raises its own `ValueError` when multiple parts match (`utils/dj_merge_tables.py:634-639`), and `fetch1_dataframe` guards cardinality with `ensure_single_entry()` (`utils/mixins/helpers.py:113-126`), which raises `KeyError` — neither surfaces the failure through `fetch1()`'s `DataJointError`. `DecodingOutput.fetch_results` instead routes through `merge_restrict_class`, which has its own multi-row guard and raises `ValueError` (`utils/dj_merge_tables.py:782-786`).
 
 **Fastest confirmation checks.**
 
@@ -439,7 +439,7 @@ Field names vary across the codebase. A non-exhaustive map:
 | `LFPArtifactRemovedIntervalList` | `artifact_removed_interval_list_name` (`lfp/v1/lfp_artifact.py:162`) |
 | `LFPBandSelection` | `target_interval_list_name` (`lfp/analysis/v1/lfp_band.py:28`) |
 | `SpikeSortingRecordingSelection` (v0) | `sort_interval_name` — inherited via `-> SortInterval` (field defined in `SortInterval` at `:241`; declared on `SpikeSortingRecordingSelection` at `spikesorting_recording.py:324-332`) |
-| `SpikeSortingArtifactDetectionSelection` | `artifact_removed_interval_list_name` (`spikesorting/v0/spikesorting_artifact.py:88`) |
+| `ArtifactDetectionSelection` (v0) | `sort_interval_name` — inherited via `-> SpikeSortingRecording`; the selection itself adds only `custom_artifact_detection` (`spikesorting/v0/spikesorting_artifact.py:76`). Note `artifact_removed_interval_list_name` (line 88) is an *output* field on the **computed** `ArtifactDetection` table, not a selection field. |
 | `RippleLFPSelection` (feeds `RippleTimesV1`) | `target_interval_list_name` — **inherited two hops** via `-> LFPBandV1 -> LFPBandSelection`. `RippleLFPSelection` (`ripple/v1/ripple.py:33-37`) has no interval field of its own; the inherited name only shows up in the transitive primary key, so check `RippleLFPSelection.heading.primary_key` to see it. |
 | `MuaEventsV1` | `detection_interval` (projected from `IntervalList.interval_list_name` at `mua/v1/mua.py:68`) |
 | Decoding V1 selections | `encoding_interval` AND `decoding_interval` (both projected from `IntervalList.interval_list_name`, `decoding/v1/clusterless.py:88-89`) |
