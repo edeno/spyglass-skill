@@ -313,7 +313,7 @@ assert 'raw' in dj.config['stores'] and 'analysis' in dj.config['stores']
 
 ## Data Sharing Tables (Kachery)
 
-Three tables configure kachery-cloud sharing alongside the env vars above. The chain is `KacheryZone` (manual registry of available zones) → `AnalysisNwbfileKacherySelection` (manual selection pairing a zone with an analysis-NWB row) → `AnalysisNwbfileKachery` (computed; FKs to the selection at `sharing/sharing_kachery.py:113`). Skip the selection in your mental model and the populate path doesn't make sense.
+Three tables configure kachery-cloud sharing alongside the env vars above. The chain is `KacheryZone` (manual registry of available zones) → `AnalysisNwbfileKacherySelection` (manual selection pairing a zone with an analysis-NWB row) → `AnalysisNwbfileKachery` (computed; FKs to the selection at `sharing/sharing_kachery.py:142`). Skip the selection in your mental model and the populate path doesn't make sense.
 
 ```python
 from spyglass.sharing import (

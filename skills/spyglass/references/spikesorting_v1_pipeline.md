@@ -203,7 +203,7 @@ from spyglass.spikesorting.v1 import (
 **Parallel HDF5 reads can fail intermittently.** Current v1
 `SpikeSortingRecording.populate(...)` writes the processed recording
 into an analysis NWB via `SpikeInterfaceRecordingDataChunkIterator`
-(`spikesorting/v1/recording.py:844, 883`); the historical
+(`spikesorting/v1/recording.py:906, 945`); the historical
 `write_binary_recording` / `save_to_folder` path is no longer how v1
 stores its output. On older installs (or when SpikeInterface's
 multi-worker writers are still in the chain via custom params), the

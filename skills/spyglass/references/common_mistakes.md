@@ -104,7 +104,7 @@ This skill can route you to the tables to inspect, but it cannot tell you "the r
 
 A method, kwarg, column, or table name that sounds right given surrounding conventions — but isn't actually in the Spyglass source. The mistake looks like correct code and passes a reader's eyeball test; at runtime it raises `AttributeError`, `TypeError: unexpected keyword argument`, or `DataJointError: unknown attribute`. Real examples that shipped past multiple review passes in this codebase:
 
-- `moseq_model_params_name` — plausible because other params tables use the `<pipeline>_params_name` pattern (`trodes_pos_params_name`, `ripple_param_name`). But `MoseqModelParams` breaks the pattern — the real PK is `model_params_name` (`src/spyglass/behavior/v1/moseq.py:37`).
+- `moseq_model_params_name` — plausible because other params tables use the `<pipeline>_params_name` pattern (`trodes_pos_params_name`, `ripple_param_name`). But `MoseqModelParams` breaks the pattern — the real PK is `model_params_name` (`src/spyglass/behavior/v1/moseq.py:61`).
 - `reference_electrodes` as a kwarg on `set_lfp_band_electrodes` — plausible because shorter names are common. Real kwarg is `reference_electrode_list` (`src/spyglass/lfp/analysis/v1/lfp_band.py:48`).
 - `welch_nperseg` as a params field — plausible because welch-method parameters commonly use `nperseg`. Nowhere in the Spyglass codebase; fabricated whole.
 - `delete_downstream_parts` as a SpyglassMixin method — plausible because it survived in a deprecated wrapper's docstring. Not present on the current `SpyglassMixin` (search `src/spyglass/utils/dj_mixin.py` and `src/spyglass/utils/mixins/`); calling it raises `AttributeError`.

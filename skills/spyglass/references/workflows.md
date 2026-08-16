@@ -160,7 +160,7 @@ intervals.fetch(limit=5)
 
 ### Interval Arithmetic
 
-Spyglass ships a NumPy-based interval-manipulation suite in `spyglass.common.common_interval` that users routinely reinvent because the tutorials don't mention it. Use the `Interval` class (`common/common_interval.py:323`); the older module-level wrappers `interval_list_intersect`, `interval_list_union`, `interval_list_complement`, `intervals_by_length`, etc. log deprecation notices and forward to `Interval.intersect` / `Interval.by_length` / similar (`common_interval.py:1020, 1123`). Input shape is the standard `(N, 2)` start/stop array.
+Spyglass ships a NumPy-based interval-manipulation suite in `spyglass.common.common_interval` that users routinely reinvent because the tutorials don't mention it. Use the `Interval` class (`common/common_interval.py:323`) and its methods — e.g. `Interval.intersect` and `Interval.by_length` (`common_interval.py:542, 678`). The older module-level wrappers (`interval_list_intersect`, `interval_list_union`, `interval_list_complement`, `intervals_by_length`) have been **removed**; call the equivalent `Interval` methods directly. Input shape is the standard `(N, 2)` start/stop array.
 
 ```python
 from spyglass.common import IntervalList

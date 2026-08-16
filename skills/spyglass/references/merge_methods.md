@@ -39,7 +39,7 @@ only primary-key column:
 | `LFPOutput` (`src/spyglass/lfp/lfp_merge.py:16`) | `spyglass.lfp.lfp_merge` | Unifies `LFPV1`, `ImportedLFP`, etc. |
 | `PositionOutput` (`src/spyglass/position/position_merge.py:24`) | `spyglass.position.position_merge` | Unifies `TrodesPosV1`, `DLCPosV1`, `CommonPos`, `ImportedPose` |
 | `LinearizedPositionOutput` (`src/spyglass/linearization/merge.py:13`) | `spyglass.linearization.merge` | Unifies linearization pipeline outputs |
-| `DecodingOutput` (`src/spyglass/decoding/decoding_merge.py:19`) | `spyglass.decoding.decoding_merge` | Unifies `ClusterlessDecodingV1` + `SortedSpikesDecodingV1` |
+| `DecodingOutput` (`src/spyglass/decoding/decoding_merge.py:39`) | `spyglass.decoding.decoding_merge` | Unifies `ClusterlessDecodingV1` + `SortedSpikesDecodingV1` |
 
 **Common lookalikes that are NOT merge tables.** All of these are
 `dj.Computed` or `dj.Manual` — they have their own PKs and respond to

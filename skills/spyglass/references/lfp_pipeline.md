@@ -358,7 +358,7 @@ For ripple band, swap `"Theta 5-11 Hz"` for `"Ripple 150-250 Hz"` (band_edges `[
 
 ## Common Filters
 
-`FirFilterParameters` has one built-in helper — `create_standard_filters()` — that inserts the broadband `'LFP 0-400 Hz'` preset (`common_filter.py:577`). Everything else is user/lab-created via `add_filter(...)`; register once (site-wide) before any downstream `LFPSelection` or `LFPBandSelection` references the name.
+`FirFilterParameters` has one built-in helper — `create_standard_filters()` — that inserts the broadband `'LFP 0-400 Hz'` preset (`common_filter.py:609`). Everything else is user/lab-created via `add_filter(...)`; register once (site-wide) before any downstream `LFPSelection` or `LFPBandSelection` references the name.
 
 ```python
 from spyglass.common import FirFilterParameters
