@@ -31,7 +31,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Iterable
 from pathlib import Path
 
 MASKED = "***MASKED***"
@@ -45,6 +44,7 @@ _SENSITIVE_SUBSTRINGS = (
     "api_key",
     "auth",
 )
+
 
 def _default_config_paths() -> tuple[Path, ...]:
     """Resolve default config lookup paths lazily.
@@ -72,23 +72,18 @@ def is_sensitive_key(dotted_path: str) -> bool:
     return any(token in final_segment for token in _SENSITIVE_SUBSTRINGS)
 
 
-def scrub(config: dict, unmask: Iterable[str] = ()) -> dict:
+def scrub(config: dict) -> dict:
     """Recursively replace sensitive values with ``MASKED``.
 
-    ``unmask`` is a collection of dotted key paths to leave intact even
-    if they match a sensitive pattern — an explicit escape hatch for
-    debugging. A sensitive key that points to a dict or list has the
-    ENTIRE subtree replaced with ``MASKED``, because leaves inside (e.g.
+    A sensitive key that points to a dict or list has the ENTIRE subtree
+    replaced with ``MASKED``, because leaves inside (e.g.
     ``credentials.signing_key`` where the per-leaf name isn't itself
     recognized as sensitive) would otherwise leak.
     """
-    unmask_set = set(unmask)
-    return _scrub_recursive(config, prefix="", unmask=unmask_set)
+    return _scrub_recursive(config, prefix="")
 
 
-def _scrub_recursive(value, prefix: str, unmask: set[str]):
-    if prefix in unmask:
-        return value
+def _scrub_recursive(value, prefix: str):
     if is_sensitive_key(prefix) and value not in (None, ""):
         # Sensitive key → mask the whole subtree regardless of shape.
         # A dict / list under a sensitive key can hold nested secrets
@@ -97,16 +92,10 @@ def _scrub_recursive(value, prefix: str, unmask: set[str]):
         return MASKED
     if isinstance(value, dict):
         return {
-            key: _scrub_recursive(
-                item, _extend_path(prefix, key), unmask
-            )
-            for key, item in value.items()
+            key: _scrub_recursive(item, _extend_path(prefix, key)) for key, item in value.items()
         }
     if isinstance(value, list):
-        return [
-            _scrub_recursive(item, f"{prefix}[{i}]", unmask)
-            for i, item in enumerate(value)
-        ]
+        return [_scrub_recursive(item, f"{prefix}[{i}]") for i, item in enumerate(value)]
     return value
 
 
@@ -160,16 +149,6 @@ def main(argv: list[str] | None = None) -> int:
             "./dj_local_conf.json, then ~/.datajoint_config.json."
         ),
     )
-    parser.add_argument(
-        "--unmask",
-        default="",
-        help=(
-            "Comma-separated dotted key paths to leave unmasked in "
-            "stdout. DO NOT use inside a Claude / agent conversation — "
-            "unmasked values enter the model's context and tool-result "
-            "history. Local-shell debugging only."
-        ),
-    )
     output_format = parser.add_mutually_exclusive_group()
     output_format.add_argument(
         "--json",
@@ -188,9 +167,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        resolved = find_config_file(
-            Path(args.path).expanduser() if args.path else None
-        )
+        resolved = find_config_file(Path(args.path).expanduser() if args.path else None)
     except FileNotFoundError as exc:
         print(f"scrub_dj_config: {exc}", file=sys.stderr)
         return 2
@@ -212,35 +189,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 3
     except (
-        UnicodeDecodeError, PermissionError, IsADirectoryError, OSError,
+        UnicodeDecodeError,
+        PermissionError,
+        IsADirectoryError,
+        OSError,
     ) as exc:
         # Any other read-side failure (non-UTF-8 bytes, perms, symlink
         # loop, passed a dir by mistake). Report the exception class
         # only — the default traceback could include bytes from the
         # offending file.
         print(
-            f"scrub_dj_config: could not read {resolved}: "
-            f"{type(exc).__name__}",
+            f"scrub_dj_config: could not read {resolved}: {type(exc).__name__}",
             file=sys.stderr,
         )
         return 4
 
     try:
-        unmask = tuple(
-            key.strip() for key in args.unmask.split(",") if key.strip()
-        )
-        if unmask:
-            # Loud stderr banner — --unmask is the designed escape hatch
-            # but leaves raw values in stdout, which lands in tool-result
-            # / conversation history for any agent running the script.
-            print(
-                "scrub_dj_config: WARNING --unmask leaves "
-                f"{len(unmask)} key(s) raw in stdout: "
-                f"{', '.join(unmask)}. Do NOT run inside an active Claude "
-                "conversation — unmasked values enter context history.",
-                file=sys.stderr,
-            )
-        scrubbed = scrub(config, unmask=unmask)
+        scrubbed = scrub(config)
     except Exception as exc:  # noqa: BLE001 — deliberate: never leak raw
         print(
             f"scrub_dj_config: SCRUB FAILED: {type(exc).__name__}: {exc}",
