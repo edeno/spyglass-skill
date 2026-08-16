@@ -88,13 +88,29 @@ times = (IntervalList & {
 }).fetch1('valid_times')
 ```
 
-**Interval utility functions** (from `spyglass.common`):
+**Interval operations** — the `Interval` class (from `spyglass.common`):
 
-- `interval_list_intersect(interval1, interval2)` — Intersection
-- `interval_list_union(interval1, interval2)` — Union
-- `interval_list_contains(intervals, timestamps)` — Which timestamps fall within
-- `interval_list_excludes(intervals, timestamps)` — Which timestamps fall outside
-- `intervals_by_length(intervals, min_length)` — Filter by minimum duration
+The module-level `interval_list_intersect` / `interval_list_union` /
+`interval_list_contains` / `interval_list_excludes` / `intervals_by_length`
+helpers were **removed in 0.6.0** — importing them now raises `ImportError`.
+Use the `Interval` class instead: construct it from a `valid_times` array
+(or an `IntervalList` key), call a method, and read `.times` for the raw
+`(N, 2)` NumPy array.
+
+```python
+from spyglass.common import Interval
+
+Interval(interval1).intersect(interval2).times    # intersection -> (N, 2) array
+Interval(interval1).union(interval2).times          # union -> (N, 2) array
+Interval(intervals).by_length(min_length=5.0).times # keep intervals >= 5 s
+Interval(intervals).contains(timestamps)            # timestamps inside the intervals
+Interval(intervals).excludes(timestamps)            # timestamps outside the intervals
+```
+
+- `intersect`, `union`, and `by_length` return a new `Interval` — chain
+  `.times` for the underlying array.
+- `contains` / `excludes` return a NumPy array of the matching timestamps
+  directly (pass `as_indices=True` for their indices instead).
 
 ## Subject and Lab
 
