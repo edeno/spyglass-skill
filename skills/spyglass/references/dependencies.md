@@ -36,7 +36,7 @@ data = lfp_series.data[:]
 timestamps = lfp_series.timestamps[:]
 ```
 
-NWB extensions used (current `pyproject.toml:53-56`): `ndx-franklab-novela>=0.2.4` (Franklab metadata), `ndx-optogenetics==0.3.0`, `ndx-ophys-devices`, `ndx-pose` (pose estimation data).
+NWB extensions used (current `pyproject.toml:56-59`): `ndx-franklab-novela>=0.2.4` (Franklab metadata), `ndx-optogenetics==0.3.0`, `ndx-ophys-devices`, `ndx-pose` (pose estimation data).
 
 ### SpikeInterface
 
@@ -162,7 +162,7 @@ interval_0 = results.where(results.interval_labels == 0, drop=True)
 | DeepLabCut | `[dlc]` | DLC position pipeline wraps it for pose estimation. Interact via Spyglass tables, not DLC directly |
 | keypoint_moseq | `[moseq-cpu]` or `[moseq-gpu]` | Behavior pipeline's MoSeq module for behavioral syllable discovery |
 | pynapple | NOT in `pyproject.toml` | `fetch_pynapple()` is wired through `FetchMixin` on NWB-backed tables (same gate as `fetch_nwb()`), but the `pynapple` package itself is not listed as a Spyglass install requirement. Install it explicitly (`pip install pynapple`) if you need this method. |
-| sortingview + kachery-cloud | core (`pyproject.toml:51, 68`) | FigURL curation UI for spike sorting; Kachery for NWB file sharing. Installed by Spyglass core, NOT optional. |
+| kachery-cloud | `[kachery-cloud]` (`pip install spyglass-neuro[kachery-cloud]`, `pyproject.toml:95-99`) | Kachery for NWB-file / sorting sharing; backs the FigURL curation UI. `sortingview` (`pyproject.toml:72`) is core, but `kachery-cloud` is an optional extra — install it before any FigURL / Kachery upload. |
 
 ## Dependency Tiers
 
@@ -170,8 +170,8 @@ The boundary between "installed by Spyglass core" and "optional / extra-required
 
 | Tier | Packages | Source |
 | ------ | ---------- | ----------- |
-| **Core** (always installed) — PyPI distribution name → Python import name where they differ | `datajoint`, `pynwb`, `hdmf`, `spikeinterface`, `probeinterface`, `sortingview`, `kachery-cloud` (`import kachery_cloud`), `non-local-detector` (`import non_local_detector`), `track-linearization` (`import track_linearization`), `position-tools` (`import position_tools`), `ripple-detection` (`import ripple_detection`), `xarray`, `ndx-franklab-novela`, `ndx-optogenetics`, `ndx-ophys-devices`, `ndx-pose` | `pyproject.toml` `dependencies = [...]` (lines 43–71 in current source) |
+| **Core** (always installed) — PyPI distribution name → Python import name where they differ | `datajoint`, `pynwb`, `hdmf`, `spikeinterface`, `probeinterface`, `sortingview`, `non-local-detector` (`import non_local_detector`), `track-linearization` (`import track_linearization`), `position-tools` (`import position_tools`), `ripple-detection` (`import ripple_detection`), `ndx-franklab-novela`, `ndx-optogenetics`, `ndx-ophys-devices`, `ndx-pose` (`xarray` is *not* declared here — it is pulled in transitively via `non-local-detector`) | `pyproject.toml` `dependencies = [...]` (lines 43–75 in current source) |
 | **Pose Estimation** | `deeplabcut` (extras include `ffmpeg`) | Optional install extra `[dlc]` |
 | **Behavior** | `keypoint-moseq` (`import keypoint_moseq`), `jax-moseq`, `jax` | Optional install extras `[moseq-cpu]` / `[moseq-gpu]` |
-| **Test/dev only — NOT core** | `kachery`, `kachery-client`, `ghostipy`, `pytest`, `docker`, `netcdf4` | Optional install extra `[test]` (`pyproject.toml:101-113`). The legacy `kachery` / `kachery-client` packages are *not* part of the runtime Spyglass install; only `kachery-cloud` is. Do not assume them on a fresh install. |
+| **Test/dev only — NOT core** | `kachery`, `kachery-client`, `kachery-cloud`, `pytest`, `docker`, `netcdf4` | Optional install extra `[test]` (`pyproject.toml:110-122`). **None** of the `kachery` packages are in the core `dependencies` array — `kachery` / `kachery-client` / `kachery-cloud` ship only via the `[test]` and `[kachery-cloud]` extras. Do not assume any of them on a fresh core install. |
 | **Not installed by Spyglass** | `pynapple` | Required separately (`pip install pynapple`) when calling `fetch_pynapple()` |

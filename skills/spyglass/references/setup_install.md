@@ -31,7 +31,7 @@ pip install spyglass-neuro
 
 This installs Spyglass and its core Python dependencies but does not create a conda environment or configure the database. Set up DataJoint manually — most users put credentials in `~/.datajoint_config.json` (the path Spyglass's installer writes; see "What the installer actually does" below) or a per-project `dj_local_conf.json` next to your code; both are honored by DataJoint. Environment variables work too.
 
-Pure pip skips two things the conda path provides automatically: the environment itself and the DataJoint config. It is also less reliable for **optional / heavier pipeline extras** — spike-sorting binaries (`mountainsort4`) and filtering / FFT libraries (`ghostipy` — used by `common/common_filter.py`, not a sorter; `pyfftw`) often need conda-forge binaries, and DLC has its own environment file (`environments/environment_dlc.yml`). Verify against the install you need: `pyproject.toml` lists what pure pip will install; the `environments/*.yml` files list the extras conda-forge provides. Use the automated installer or `conda env create -f environments/environment.yml` + `pip install -e .` unless you have a specific reason to avoid conda.
+Pure pip skips two things the conda path provides automatically: the environment itself and the DataJoint config. It is also less reliable for **optional / heavier pipeline extras** — spike-sorting binaries (`mountainsort4`, which needs `pybind11` via conda-forge) often need conda-forge binaries, and DLC has its own environment file (`environments/environment_dlc.yml`). Verify against the install you need: `pyproject.toml` lists what pure pip will install; the `environments/*.yml` files list the extras conda-forge provides. Use the automated installer or `conda env create -f environments/environment.yml` + `pip install -e .` unless you have a specific reason to avoid conda.
 
 ### conda (from environment file)
 
@@ -79,7 +79,6 @@ and breaks otherwise-working installs. Symptoms include:
 - `"ndx-franklab-novela is not a namespace"`
 - `dj.Diagram(...)._repr_svg_` → "Node names and attributes should not contain ':'"
 - `pkg_resources` errors after `setuptools>=82`
-- `RuntimeError: Undefined plan with nthreads` from `pyfftw 0.13.0`
 
 **Fix.** Recreate the env from the current env file under `environments/` — `environments/environment_min.yml` is the recommended default per [§ conda (from environment file)](#conda-from-environment-file); `environments/environment.yml` is the heavier full install:
 
@@ -104,8 +103,10 @@ check which transitive deps pip wants to move.
   | 3.9 | `ImportError: cannot import name 'TypeAlias' from 'typing'` |
   | 3.10+ against an old MySQL server | `OperationalError (2003) [SSL: SSLV3_ALERT_HANDSHAKE_FAILURE]` — either upgrade the server's TLS or set `database.use_tls: false` for local dev |
 
-- On macOS, `pyfftw` has no PyPI wheels; use conda-forge:
-  `conda install -c conda-forge pyfftw pybind11` before `pip install -e .`.
+- On macOS, if you install the `mountainsort4` sorter extra, `pybind11`
+  (required by `mountainsort4` → `isosplit5`,
+  `environments/environment.yml:31`) may need conda-forge:
+  `conda install -c conda-forge pybind11` before `pip install -e .`.
 - If you see `Cargo, the Rust package manager, is not installed` during
   a jupyter-lab dependency build, install Rust via rustup — or
   preferably install via `environment.yml` which pulls prebuilt wheels.
@@ -207,12 +208,16 @@ Frank Lab.
 - Renaming the conda env: edit the `name:` field at the top of
   `environments/environment.yml` before running `conda env create`;
   the default name is `spyglass`.
-- `numpy` is unpinned in current Spyglass (`pyproject.toml:58`,
-  `environments/environment.yml:26`). The historical `numpy<1.24`
-  numba-compat workaround is no longer applied at the env-file level;
-  if a numba-dependent module (ripple detection, some decoding paths)
-  raises a numba-vs-numpy ABI error, check that module's own pin or
-  upgrade it rather than reaching for `numpy<1.24` blindly.
+- `numpy` is pinned `<2` in current Spyglass (`pyproject.toml:61`,
+  `environments/environment.yml:27`) because spikeinterface 0.99.1
+  calls `np.issctype`, removed in numpy 2.0 — upgrading numpy to 2.x
+  breaks the install, so do not treat it as free to bump.
+  (`environments/environment_min.yml:19` leaves numpy bare, but the
+  full env file and `pyproject.toml` bound it.) The historical
+  `numpy<1.24` numba-compat workaround is no longer applied at the
+  env-file level; if a numba-dependent module (ripple detection, some
+  decoding paths) raises a numba-vs-numpy ABI error, check that
+  module's own pin rather than reaching for `numpy<1.24` blindly.
 - Validate after install: `python scripts/validate.py`.
 
 ## Installer and Validator Scripts
