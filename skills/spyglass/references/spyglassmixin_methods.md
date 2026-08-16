@@ -136,13 +136,13 @@ Loads shared schemas for graph traversal (needed for `restrict_by` across schema
 ## Population (Mixin)
 
 ### `populate(*restrictions, **kwargs)`
-Populate computed table entries. Defined at `src/spyglass/utils/mixins/populate.py:48` as a superset of `datajoint.Table.populate` that adds before/after upstream-hash checking and parallel process support.
+Populate computed table entries. Defined at `src/spyglass/utils/mixins/populate.py:14` as a superset of `datajoint.Table.populate` that adds parallel-process support and enforces transaction-protected populate (non-transaction populate is no longer supported).
 
 Kwargs the mixin handles directly (popped before delegating to DataJoint):
-- `processes` (default `1`) — number of worker processes. Routes two ways depending on the class flag at `populate.py:95`:
-  - **`_parallel_make = False` (the default), transaction mode on** → passed through to `datajoint.Table.populate` via `kwargs["processes"] = processes`; DataJoint's own pool runs the parallelism. (Confirmed at `populate.py:95-98`.)
-  - **`_parallel_make = True`, `processes > 1`** → mixin uses its own `NonDaemonPool` so child processes can themselves spawn pools (needed when `make()` calls multiprocessing internally). Must run under `use_transaction=True`; otherwise raises `RuntimeError`.
-- `use_transaction` (default: class `_use_transaction`, usually `True`) — wraps each `make()` in a DB transaction so a mid-populate failure rolls back cleanly. Set `False` only for tables with long-running `make()` bodies that can't hold a transaction; then the mixin does a manual upstream-hash check and deletes any rows that were inserted into a table whose parents changed during the run.
+- `processes` (default `1`) — number of worker processes. Routes two ways depending on the class flag at `populate.py:20`:
+  - **`_parallel_make = False` (the default), transaction mode on** → passed through to `datajoint.Table.populate` via `kwargs["processes"] = processes`; DataJoint's own pool runs the parallelism. (Confirmed at `populate.py:40-42`.)
+  - **`_parallel_make = True`, `processes > 1`** → mixin uses its own `NonDaemonPool` so child processes can themselves spawn pools (needed when `make()` calls multiprocessing internally). Always runs under transaction protection (non-transaction populate is unsupported).
+- `use_transaction` (default: class `_use_transaction`, `True`) — wraps each `make()` in a DB transaction so a mid-populate failure rolls back cleanly. Non-transaction populate is no longer supported: passing `use_transaction=False` or setting `_use_transaction = False` raises `NotImplementedError` (`populate.py:22-31`). For a `make()` too long to hold a transaction, use a DataJoint **tri-part make** instead of disabling the transaction.
 
 Kwargs passed through to `datajoint.Table.populate`:
 - `reserve_jobs=True` — acquire a row in the `~jobs` table before each `make()` so parallel workers don't duplicate work. Required when running multiple `populate()` processes in different terminals against the same table.

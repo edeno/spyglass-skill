@@ -3,7 +3,7 @@
 
 Diagnosing failures that surface *after* Spyglass is installed and configured: `populate()` / `make()` errors, `fetch1()` cardinality mistakes, join multiplicity, and scientific-object bugs (NumPy/pandas) inside `make()`. If your error is install- or connection-related (cannot import spyglass, connection refused, SPYGLASS_BASE_DIR not set, Docker not running, TLS), go to [setup_troubleshooting.md](setup_troubleshooting.md) instead — that file owns the setup surface and this one does not duplicate it.
 
-Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin` pass exceptions through unchanged (`src/spyglass/utils/mixins/populate.py:118`). The only Spyglass-specific exception class is a bare `PopulateException` in `src/spyglass/common/errors.py`. So the traceback you see *is* the DataJoint traceback, and the root cause is almost never the final line.
+Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin` pass exceptions through unchanged (`src/spyglass/utils/mixins/populate.py:7`). The only Spyglass-specific exception class is a bare `PopulateException` in `src/spyglass/common/errors.py`. So the traceback you see *is* the DataJoint traceback, and the root cause is almost never the final line.
 
 ## Contents
 
@@ -368,7 +368,7 @@ Pay attention to the first field that differs — that's almost always the cause
 
 **Symptom.** `populate()` fails repeatedly without naming the failing key; subsequent runs say the job is reserved; parallel populate hides which worker crashed.
 
-**Most likely root cause.** DataJoint's orchestration (reservation, transactions, parallel workers) is masking the underlying error from steps 2–4. Spyglass doesn't customize this — `PopulateMixin` delegates to DataJoint's `populate()` (`src/spyglass/utils/mixins/populate.py:98`), and a single worker failure in `NonDaemonPool` kills the entire pool.
+**Most likely root cause.** DataJoint's orchestration (reservation, transactions, parallel workers) is masking the underlying error from steps 2–4. Spyglass doesn't customize this — `PopulateMixin` delegates to DataJoint's `populate()` (`src/spyglass/utils/mixins/populate.py:42`), and a single worker failure in `NonDaemonPool` kills the entire pool.
 
 **Why that explanation fits.** With `reserve_jobs=True`, failed keys are written to the `~jobs` table and skipped on the next call; with `use_transaction=True` (Spyglass default), the failing row is rolled back so post-mortem inspection shows no partial state; with parallel workers, only the first exception propagates.
 
@@ -420,7 +420,7 @@ errors_for_key.delete_quick()
 
 **Minimal fix.** Debug with orchestration off. Once the true cause is fixed, re-enable reservation/parallelism for the full run.
 
-**Robust fix.** For pipelines that routinely hit this, document the "debug single key" idiom in the pipeline's README and wrap common diagnostic calls in a small helper. If `use_transaction=False` is required (for long-running populates with external file writes), know that Spyglass adds an upstream-hash check around it (`src/spyglass/utils/mixins/populate.py:88-108`) that will raise if an upstream table changes mid-populate.
+**Robust fix.** For pipelines that routinely hit this, document the "debug single key" idiom in the pipeline's README and wrap common diagnostic calls in a small helper. Note that non-transaction populate is no longer supported: passing `use_transaction=False` (or setting `_use_transaction = False` on the class) raises `NotImplementedError` (`src/spyglass/utils/mixins/populate.py:22-31`). If a `make()` body is too long to hold a transaction, restructure it as a DataJoint **tri-part make** (`make_fetch` / `make_compute` / `make_insert`) rather than disabling the transaction.
 
 **Watch-outs.** A reserved job from a previous crashed run will silently skip in subsequent populates and look like "nothing is happening." Always check `jobs` before concluding that `populate()` is broken.
 
