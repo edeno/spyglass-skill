@@ -3071,18 +3071,31 @@ def check_structure(results: ValidationResult):
         else:
             results.ok(f"trigger: no broad phrase '{phrase}'")
 
-    # Hard constraints from Anthropic skill-authoring guidance:
-    # https://docs.anthropic.com/.../agent-skills/best-practices
-    # 1. description must be <= 1024 chars (published cap)
+    # Hard constraints on the frontmatter description:
+    # 1. length <= 1024 — measured in UTF-8 BYTES, not characters. Codex
+    #    enforces this at skill-load time: a description over the cap makes
+    #    the skill fail to load entirely (openai/codex#13941,
+    #    "invalid description: exceeds maximum length of 1024 characters").
+    #    Despite that message, the check counts bytes, not chars — Rust
+    #    str::len() returns byte length (openai/codex#7730: a description
+    #    under the char cap but over it in bytes still fails). Bytes is
+    #    therefore the correct, stricter bound; char count would let a
+    #    multibyte description (em-dashes, CJK) pass here yet fail in Codex.
+    #    Anthropic's best-practices.md documents the same 1024 cap.
     # 2. description must be third-person (no "I can", "you can", ...)
     desc_body = description.strip()
-    if len(desc_body) > 1024:
+    desc_bytes = len(desc_body.encode("utf-8"))
+    if desc_bytes > 1024:
         results.fail(
-            f"description: frontmatter description is {len(desc_body)} chars; "
-            f"Anthropic caps it at 1024 (best-practices.md)"
+            f"description: frontmatter description is {desc_bytes} UTF-8 bytes "
+            f"({len(desc_body)} chars); cap is 1024 bytes — Codex fails to "
+            f"load a skill over it (openai/codex#13941, #7730)"
         )
     else:
-        results.ok(f"description: length {len(desc_body)}/1024 chars")
+        results.ok(
+            f"description: length {desc_bytes}/1024 UTF-8 bytes "
+            f"({len(desc_body)} chars)"
+        )
 
     # SKILL.md body size — hard caps. Don't bump without migrating content
     # to references first. Anthropic target is <500 words for frequently-loaded

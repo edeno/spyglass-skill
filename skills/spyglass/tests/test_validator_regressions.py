@@ -3067,9 +3067,70 @@ def fixture_single_line_description_still_measured(src_root):
     return False
 
 
+@contextmanager
+def _with_skill_dir(desc):
+    """Point the validator at a synthetic SKILL.md with the given description.
+
+    check_structure reads `SKILL_DIR / "SKILL.md"` directly (not through
+    collect_md_files), so patch SKILL_DIR and REFERENCES_DIR at the module
+    level. The temp dir has no references/ subdir, so the ref-link loop
+    finds nothing and only the description checks run.
+    """
+    saved_skill, saved_refs = v.SKILL_DIR, v.REFERENCES_DIR
+    tmp = Path(tempfile.mkdtemp())
+    (tmp / "SKILL.md").write_text(
+        f"---\nname: spyglass\ndescription: {desc}\nallowed-tools: Read\n---\n\n# Body\n"
+    )
+    v.SKILL_DIR = tmp
+    v.REFERENCES_DIR = tmp / "references"  # absent → glob yields nothing
+    try:
+        yield
+    finally:
+        v.SKILL_DIR, v.REFERENCES_DIR = saved_skill, saved_refs
+
+
+def fixture_description_cap_measured_in_bytes(src_root):
+    """The 1024 description cap is enforced in UTF-8 bytes, not characters.
+
+    Codex fails to load a skill whose description exceeds the cap, and the
+    check counts bytes (Rust str::len), so a description under 1024 *chars*
+    but over 1024 *bytes* — em-dashes, CJK — still fails (openai/codex#7730,
+    #13941). A char-count check would let it pass here yet break in Codex.
+    """
+    # ~1000 chars, 25 of them em-dashes (3 bytes each): under 1024 chars,
+    # over 1024 bytes. A char-based check would not flag this.
+    desc = ("Use when working with Spyglass tables " + "— " * 25).ljust(1000, "x")
+    assert len(desc) <= 1024 < len(desc.encode("utf-8")), (
+        f"fixture setup broken: {len(desc)} chars, {len(desc.encode('utf-8'))} bytes"
+    )
+    with _with_skill_dir(desc):
+        results = v.ValidationResult()
+        v.check_structure(results)
+    return _assert_contains(
+        results, "UTF-8 bytes",
+        "description: over-byte/under-char description flagged",
+    )
+
+
+def fixture_description_under_byte_cap_passes(src_root):
+    """Guard: a description under the byte cap is not flagged by the cap check."""
+    desc = "Use when the task involves Spyglass pipelines, curation, or decoding."
+    with _with_skill_dir(desc):
+        results = v.ValidationResult()
+        v.check_structure(results)
+    cap_failures = [m for m in results.failed if "1024" in m or "UTF-8 bytes" in m]
+    if not cap_failures:
+        print("  [ok] description: short description passes the byte cap")
+        return True
+    print(f"  [FAIL] short description wrongly flagged: {cap_failures}")
+    return False
+
+
 FIXTURES = [
     fixture_folded_description_measured_in_full,
     fixture_single_line_description_still_measured,
+    fixture_description_cap_measured_in_bytes,
+    fixture_description_under_byte_cap_passes,
     fixture_class_registry_picks_version_by_filename,
     fixture_class_registry_uses_code_graph_index,
     fixture_marker_hygiene_warnings,
