@@ -354,11 +354,12 @@ Use this before answering "can I restrict X by field Y?" or "which table owns fi
 
 ## Table Inspection Commands
 
-For LLM answers, prefer the bundled scripts when they can answer the
-question: `code_graph.py describe/path/find-method` for source facts, and
-`db_graph.py describe/find-instance/path` for runtime headings, counts,
-rows, and DB adjacency. Use the interactive DataJoint forms below inside
-the user's Python session or when a script cannot see the needed context.
+For a quick check of one table's PK, parts, heading, or parents/children,
+the one-liners below are the answer — you don't need a script for that.
+Reach for the bundled scripts (`code_graph.py describe/path/find-method`,
+`db_graph.py describe/find-instance/path`) when you need multi-hop FK
+paths, live row counts/values, or cross-table adjacency a single
+one-liner can't give.
 
 ```python
 # View schema definition with primary/foreign keys
@@ -371,6 +372,13 @@ Table.heading
 Table.heading.names
 Table.heading.primary_key
 Table.heading.secondary_attributes
+
+# Primary key as a plain list (shorthand for .heading.primary_key)
+Table.primary_key
+
+# Part tables of a master (names by default; as_objects=True for objects)
+Table.parts()          # e.g. Probe.parts() -> ['Probe.Shank', 'Probe.Electrode']
+Table.PartName         # access one part directly, e.g. Probe.Shank, Probe.Electrode
 
 # View parent/child relationships
 Table.parents()
