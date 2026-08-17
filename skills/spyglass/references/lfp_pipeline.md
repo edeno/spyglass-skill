@@ -36,7 +36,7 @@ from spyglass.lfp.v1 import LFPSelection, LFPV1
 
 # 0. Make sure the standard FIR filter rows exist. The canonical
 #    "LFP 0-400 Hz" filter ships at both 20 kHz and 30 kHz sampling
-#    rates and is inserted by this helper (`common/common_filter.py:577`).
+#    rates and is inserted by this helper (`common/common_filter.py:609`).
 #    The notebook 30_LFP.py:67 calls this before any LFPSelection.insert1.
 FirFilterParameters().create_standard_filters()
 

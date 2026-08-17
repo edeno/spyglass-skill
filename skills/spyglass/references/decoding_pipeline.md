@@ -75,7 +75,7 @@ ClusterlessDecodingSelection.insert1(selection_key, skip_duplicates=True)
 ClusterlessDecodingV1.populate(selection_key)
 
 # 2. Fetch via DecodingOutput. These classmethods dispatch through
-#    merge_restrict_class(key) internally (decoding_merge.py:74-111) — the
+#    merge_restrict_class(key) internally (decoding_merge.py:94-125) — the
 #    key must resolve to exactly one parent-table row, or you get
 #    ValueError: "Ambiguous entry". A full selection_key (as built above)
 #    usually does; a partial {"nwb_file_name": f} typically does not.
@@ -104,7 +104,7 @@ model = DecodingOutput.fetch_model(selection_key)
 | `fetch_position_info(key)` | (DataFrame, list) | Position data + variable names |
 | `fetch_linear_position_info(key)` | DataFrame | Linearized position projected onto track graph |
 | `fetch_spike_data(key, filter_by_interval)` | list | Spike times (+ features for clusterless) |
-| `create_decoding_view(key, ...)` | FigURL view object (1D or 2D) | Returns a `create_1D_decode_view` / `create_2D_decode_view` view from `non_local_detector.visualization`; call `.url(label=...)` on the returned object to get the shareable string URL. See `decoding/decoding_merge.py:114`. |
+| `create_decoding_view(key, ...)` | FigURL view object (1D or 2D) | Returns a `create_1D_decode_view` / `create_2D_decode_view` view from `non_local_detector.visualization`; call `.url(label=...)` on the returned object to get the shareable string URL. See `decoding/decoding_merge.py:134`. |
 | `cleanup(dry_run)` | None | Remove orphaned .nc/.pkl files |
 
 ## Results Structure (xarray.Dataset)
@@ -123,7 +123,7 @@ results = DecodingOutput.fetch_results(key)
 # - state_bins: STACKED state-and-position index (NOT a plain position
 #   coordinate). Each entry is a (state, position) pair. The non_local_detector
 #   visualization unstacks it before extracting position
-#   (`decoding/decoding_merge.py:148-153`):
+#   (`decoding/decoding_merge.py:173-178`):
 #     posterior = (results.acausal_posterior
 #         .unstack("state_bins")
 #         .drop_sel(state=["Local", "No-Spike"], errors="ignore")
@@ -389,7 +389,7 @@ fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
 # `state_bins` is a stacked (state, position) coordinate — plotting
 # `acausal_posterior.values` directly mixes state and position rows
 # on one axis. Mirror the merge-table visualization helper
-# (`decoding/decoding_merge.py:148`): unstack `state_bins`, drop the
+# (`decoding/decoding_merge.py:173`): unstack `state_bins`, drop the
 # discrete states (`Local`, `No-Spike`) so only the continuous
 # trajectory states remain, sum across remaining states, and
 # renormalize over position. The result is a (time, position)
