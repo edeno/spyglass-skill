@@ -331,7 +331,7 @@ MyComputed & (MySelection & {"that_field": "x"}).proj()
 MyComputed * MySelection & {"that_field": "x"}
 ```
 
-**Prefer the sub-restriction.** The natural-join form works fine for two tables, but with 3+ tables in a `*` chain where the same secondary attribute is exposed on multiple sides (common with PK-renamed FKs), DataJoint raises `DataJointError: Ambiguous attribute`, and the failure mode is non-obvious. The sub-restriction shape names the source table once and avoids the trap by construction. Make the sub-restriction the default for "filter by upstream-secondary-attribute" queries; reserve `*` for cases where you actually need columns from multiple tables in the result.
+**Prefer the sub-restriction.** The natural-join form works fine for two tables, but with 3+ tables in a `*` chain where the same secondary attribute is exposed on multiple sides (common with PK-renamed FKs), DataJoint raises `DataJointError: Ambiguous attribute`, and the failure mode is non-obvious. The sub-restriction shape names the source table once and avoids the trap by construction. Make the sub-restriction the default for *filter-by-upstream-secondary-attribute* queries. Reach for `*` when you genuinely need columns from multiple tables in one result, **or to intersect tables** — "which entities appear in both `A` and `B`" is `set((A * B).fetch('shared_key'))`: the natural join keeps only rows sharing every common attribute (the co-populated set), and `set()` / `distinct` collapses row multiplication.
 
 ### Two failure shapes this guards against
 
