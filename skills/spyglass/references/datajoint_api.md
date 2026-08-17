@@ -376,9 +376,10 @@ Table.heading.secondary_attributes
 # Primary key as a plain list (shorthand for .heading.primary_key)
 Table.primary_key
 
-# Part tables of a master (names by default; as_objects=True for objects)
-Table.parts()          # e.g. Probe.parts() -> ['Probe.Shank', 'Probe.Electrode']
-Table.PartName         # access one part directly, e.g. Probe.Shank, Probe.Electrode
+# Part tables of a master. parts() returns full DB table names (pass
+# as_objects=True for FreeTable objects); access a specific part by attribute:
+Table.parts()
+Table.PartName         # e.g. Probe.Shank, Probe.Electrode
 
 # View parent/child relationships
 Table.parents()
