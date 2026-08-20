@@ -162,7 +162,7 @@ interval_0 = results.where(results.interval_labels == 0, drop=True)
 | DeepLabCut | `[dlc]` | DLC position pipeline wraps it for pose estimation. Interact via Spyglass tables, not DLC directly |
 | keypoint_moseq | `[moseq-cpu]` or `[moseq-gpu]` | Behavior pipeline's MoSeq module for behavioral syllable discovery |
 | pynapple | NOT in `pyproject.toml` | `fetch_pynapple()` is wired through `FetchMixin` on NWB-backed tables (same gate as `fetch_nwb()`), but the `pynapple` package itself is not listed as a Spyglass install requirement. Install it explicitly (`pip install pynapple`) if you need this method. |
-| kachery-cloud | `[kachery-cloud]` (`pip install spyglass-neuro[kachery-cloud]`, `pyproject.toml:95-99`) | Kachery for NWB-file / sorting sharing; backs the FigURL curation UI. `sortingview` (`pyproject.toml:72`) is core, but `kachery-cloud` is an optional extra — install it before any FigURL / Kachery upload. |
+| kachery-cloud | `[kachery-cloud]` (`pip install 'spyglass-neuro[kachery-cloud]'`, `pyproject.toml:95-99`) | Kachery for NWB-file / sorting sharing; backs the FigURL curation UI. `sortingview` (`pyproject.toml:72`) is core, but `kachery-cloud` is an optional extra — install it before any FigURL / Kachery upload. |
 
 ## Dependency Tiers
 
