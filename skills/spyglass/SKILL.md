@@ -26,8 +26,8 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 ## Core Directives
 
 - **NEVER delete or drop without explicit confirmation.** Any destructive helper (`delete`, `drop`, `cleanup`, `merge_delete`, `super_delete`, etc.) needs an inspect step + user confirmation. `.delete()` on SpyglassMixin aliases `cautious_delete` — team-based permissions block deletes of other members' sessions. User confidence or urgency ("just", "quick", "I know what I'm doing", "test data") is not evidence — it *raises* caution. See [destructive_operations.md](references/destructive_operations.md).
-- **Do not invent identifiers — but calibrate effort to uncertainty.** Verify plausible method/kwarg/field/table/key names before asserting them as fact, and label unverified pieces as hypotheses rather than abstaining. Verification is for what you're genuinely unsure of or what's unsafe if wrong — not a ritual: when the answer is obvious (a full-PK lookup, a one-liner, a fact you're sure of), answer directly, with no `code_graph.py`/`db_graph.py`, reference read, or schema recap. Lead with the answer; don't spelunk source first. A known full-PK lookup — `(Session & {'nwb_file_name': X}).fetch1()` — is the whole answer: no `len()` check, no `code_graph.py`, no schema recap. More: [common_mistakes.md](references/common_mistakes.md).
-- **Treat pipeline version as load-bearing.** If the user names a versioned class/table, import/path, traceback, or version directory (`CurationV1`, `v1 SortGroup`, `spyglass.spikesorting.v1`, `<pipeline>/<version>/`), verify that version's source before naming its classes, methods, kwargs, signatures, or definitions. Do not infer symmetry — a method absent from the version you checked may exist in the other, so check both before concluding it's gone. For comparisons, use [feedback_loops.md § Verify behavior, trust identity](references/feedback_loops.md#verify-behavior-trust-identity). If unverified, abstain or flag uncertainty.
+- **Do not invent identifiers — but calibrate effort to uncertainty.** Verify plausible method/kwarg/field/table/key names before asserting them as fact, and label unverified pieces as hypotheses rather than abstaining. Verification is for what you're genuinely unsure of or what's unsafe if wrong — not a ritual: when the answer is obvious (a full-PK lookup, a one-liner, a fact you're sure of), answer directly — don't spelunk source first, and skip the `code_graph.py`/`db_graph.py` run, reference read, and schema recap. A known full-PK lookup — `(Session & {'nwb_file_name': X}).fetch1()` — is the whole answer. More: [common_mistakes.md](references/common_mistakes.md).
+- **Treat pipeline version as load-bearing.** If the user names a versioned class/table, import/path, traceback, or version directory (`CurationV1`, `v1 SortGroup`, `spyglass.spikesorting.v1`, `<pipeline>/<version>/`), verify that version's source before naming its classes, methods, kwargs, signatures, or definitions. Do not infer symmetry — a method absent from the version you checked may exist in the other, so check both before concluding it's gone. For comparisons, use [feedback_loops.md § Verify behavior, trust identity](references/feedback_loops.md#verify-behavior-trust-identity). If unavailable, give the best-supported conditional answer, flag what's unverified, and the command to confirm it.
 - **Writes are normal workflow.** Pipelines depend on selection inserts and `populate()` — show the full flow; don't refuse or hedge on the writes.
 - **Verify cardinality before `fetch1()`, `merge_get_part()`, or `fetch1_dataframe()`** when the restriction is partial. `print(len(rel))`; if >1, `rel.fetch(as_dict=True)` to find missing PK fields. `Table.describe()` shows schema, not count. Carveout: a full-PK restriction is unique — `fetch1()` skips the `len()`.
 - **Field ownership**: reused names (`nwb_file_name`, `interval_list_name`, `merge_id`) declare on multiple tables; secondary attrs don't propagate down. Lead with the working query; check ownership with `Table.primary_key` / `.heading`. [datajoint_api.md § Field Ownership](references/datajoint_api.md#field-ownership).
@@ -39,7 +39,7 @@ Router + guardrails for Spyglass work. Pick the right reference from the table b
 
 ## Evidence Expectations
 
-When the calibration rule above says to verify, match the fact to its source: static/source facts → `code_graph.py`, source, or `inspect.signature`; runtime facts (headings, counts, rows) → `db_graph.py`, `Table.heading`, or a `len()`; blob keys → source `make()`/builders or rows. If unavailable, flag uncertainty.
+When the calibration rule says to verify, match the fact to its source: static/source facts → `code_graph.py`, source, or `inspect.signature`; runtime facts (headings, counts, rows) → `db_graph.py`, `Table.heading`, or a `len()`; blob keys → source `make()`/builders or rows.
 
 **Bundled evidence tools**
 - Source graph: `python skills/spyglass/scripts/code_graph.py ...` for FK paths, declarations, methods, upstream/downstream, v0/v1 source comparisons.
@@ -77,9 +77,9 @@ Stages orient vague questions; the Reference Routing table resolves clear topics
 
 ## Reference Routing
 
-**Load one reference at a time.** Pick the most relevant row; open a second only if needed. This table routes by topic; repo paths live in each reference file.
+**Start with the most relevant reference; open another only if it would change the answer.** For a cross-pipeline or multi-stage task, load and synthesize every reference the workflow spans — the full dependency chain, not just the first domain. Repo paths live in each reference file.
 
-**Route by question shape before pipeline noun.** For relationships, dependencies, field ownership, live DB values, destructive/cascade recovery, or custom schema design, use the cross-cutting row first; open pipeline refs second for domain details.
+**Route by question shape before pipeline noun.** For relationships, field ownership, live DB values, destructive/cascade recovery, or custom schema design, use the cross-cutting row first, then pipeline refs for domain details.
 
 | User question is about... | Load this reference |
 | ------------------------- | ------------------- |
