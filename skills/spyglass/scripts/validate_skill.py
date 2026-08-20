@@ -3071,18 +3071,18 @@ def check_structure(results: ValidationResult):
         else:
             results.ok(f"trigger: no broad phrase '{phrase}'")
 
-    # Hard constraints from Anthropic skill-authoring guidance:
-    # https://docs.anthropic.com/.../agent-skills/best-practices
-    # 1. description must be <= 1024 chars (published cap)
+    # Hard constraints on the frontmatter description:
+    # 1. length <= 1024 characters, matching Codex's skill validator.
     # 2. description must be third-person (no "I can", "you can", ...)
     desc_body = description.strip()
-    if len(desc_body) > 1024:
+    desc_chars = len(desc_body)
+    if desc_chars > 1024:
         results.fail(
-            f"description: frontmatter description is {len(desc_body)} chars; "
-            f"Anthropic caps it at 1024 (best-practices.md)"
+            f"description: frontmatter description is {desc_chars} chars; "
+            f"cap is 1024 characters"
         )
     else:
-        results.ok(f"description: length {len(desc_body)}/1024 chars")
+        results.ok(f"description: length {desc_chars}/1024 chars")
 
     # SKILL.md body size — hard caps. Don't bump without migrating content
     # to references first. Anthropic target is <500 words for frequently-loaded

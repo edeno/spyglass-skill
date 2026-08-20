@@ -40,7 +40,7 @@ Output to the user in one message, before asking for confirmation:
 - Sample rows (`.fetch(as_dict=True, limit=5)` or similar)
 - What will cascade: child tables that will also lose rows
 - For file-cleanup helpers, list filenames that will be deleted
-- For large deletes, also report total disk that will be reclaimed: `rel.get_table_storage_usage(human_readable=True)` (sums sizes of referenced **analysis** files — useful for "is this worth doing" decisions before the user confirms). **Caveat:** the helper only works on tables that carry `analysis_file_name` in their heading (`utils/helpers.py:321`); on tables without it (`Session`, `Nwbfile`, raw merge masters, parameter/selection rows that don't reference an analysis file), it logs a warning and returns 0. Don't report a literal "0 MiB will be reclaimed" on those — the disk impact lives in the *raw* external store, not the analysis-file store, and needs a different measurement (see `Nwbfile.cleanup` notes below).
+- For large deletes, also report total disk that will be reclaimed: `rel.get_table_storage_usage(human_readable=True)` (sums sizes of referenced **analysis** files — useful for "is this worth doing" decisions before the user confirms). **Caveat:** the helper only works on tables that carry `analysis_file_name` in their heading (`utils/mixins/helpers.py:321`); on tables without it (`Session`, `Nwbfile`, raw merge masters, parameter/selection rows that don't reference an analysis file), it logs a warning and returns 0. Don't report a literal "0 MiB will be reclaimed" on those — the disk impact lives in the *raw* external store, not the analysis-file store, and needs a different measurement (see `Nwbfile.cleanup` notes below).
 
 ### Phase 3 — Wait for explicit confirmation
 
@@ -91,7 +91,7 @@ Any helper that removes rows or files goes through this file's patterns.
 
 **Default response to a `PermissionError`: coordinate, don't bypass.** The error names the experimenter who owns the blocking session(s) — talk to them. If the experimenter is no longer reachable (left the lab, on extended leave), contact a lab admin. The bypass mechanisms exist but are not the first response — they live in [When a user explicitly asks to bypass](#when-a-user-explicitly-asks-to-bypass) below.
 
-If the error message is `Could not find name for datajoint user <name> in LabMember.LabMemberInfo`, the user just needs to be added to `LabMember` (see `setup_troubleshooting.md` "AccessError / PermissionError"). That is a setup gap, not a permission denial — fix the gap, no bypass needed.
+If the error message is `Could not find exactly 1 datajoint user <name> in common.LabMember.LabMemberInfo` (a `ValueError` from `get_djuser_name`, `common/common_lab.py:134`), the user just needs to be added to `LabMember` (see `setup_troubleshooting.md` "AccessError / PermissionError"). That is a setup gap, not a permission denial — fix the gap, no bypass needed. (The same error also fires when *more than one* `LabMemberInfo` row maps to that datajoint user — there the remedy is to delete the duplicate, not add a row.)
 
 **Coverage gaps where the team check does NOT fire (know these — they let data through):**
 
@@ -321,6 +321,10 @@ for child in RippleParameters().descendants(as_objects=True):
 ```
 
 If any descendant has rows, do not `update1()` — insert a new params row instead.
+
+**Even worse than `update1`: editing installed Spyglass source.** Do not open a source file under `src/spyglass/` (e.g. a table's `insert_default()` body) and change a default value there. That mutates the installed library for every project using that environment, bypasses database provenance, and is wiped on the next reinstall. It does not re-point an existing database row: default insertion ordinarily uses `skip_duplicates=True`, so a row already stored under that primary key remains unchanged and the source and database silently diverge. Parameters are *data*, not code: change them only through the DataJoint API by inserting a new named parameter set (above), never by editing the package.
+
+**Verify writes before reporting them done.** After any insert / update / delete, read the affected key back (`fetch1` / `len`) and confirm it changed as intended before telling the user it worked. A `PermissionError`, a silent `skip_duplicates=True` no-op, or a rolled-back transaction can leave the table unchanged — never narrate an unverified or failed edit as success.
 
 ## Cross-references
 

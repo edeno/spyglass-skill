@@ -37,11 +37,14 @@ from spyglass.decoding.v1.clusterless import (
 # created upstream; a DecodingParameters row whose name is the version-
 # suffixed default (e.g. "contfrag_clusterless_v1.2.0"); encoding_interval_name
 # and decoding_interval_name exist in IntervalList. Stock default names are
-# defined in DecodingParameters.contents keyed on
-# f"<shape>_<source>_{non_local_detector_version}" (`decoding/v1/core.py:48`),
-# but they are NOT auto-inserted at module import — call
-# `DecodingParameters().insert_default()` (`decoding/v1/core.py:68`) once,
-# or query the table to confirm a matching row before insert.
+# keyed on f"<shape>_<source>_{non_local_detector_version}" in
+# DecodingParameters._default_contents() (`decoding/v1/core.py:64-81`) and DO
+# auto-insert via the `contents` property at table declaration (module import)
+# on a fresh DB — but ONLY when non_local_detector is importable; a broken
+# install logs a warning and skips them (`decoding/v1/core.py:99-109`). If the
+# defaults are missing (e.g. after a broken-install skip), call
+# `DecodingParameters().insert_default()` (`decoding/v1/core.py:112`) as a
+# fallback, or query the table to confirm a matching row before insert.
 # Don't hard-code a bare "contfrag_clusterless"; query DecodingParameters first
 # (`(DecodingParameters & 'decoding_param_name LIKE "contfrag_clusterless%"').fetch1("decoding_param_name")`)
 # or import the version constant alongside.
@@ -51,7 +54,7 @@ from spyglass.decoding.v1.clusterless import (
 #    and `PositionGroup` (`decoding/v1/clusterless.py:83`,
 #    `decoding/v1/core.py:130`); without it the insert raises FK
 #    failures. `estimate_decoding_params` defaults to 1 in the table
-#    definition (`clusterless.py:90`); set it explicitly to 0 if you
+#    definition (`clusterless.py:95`); set it explicitly to 0 if you
 #    want the fixed-parameter path.
 from non_local_detector import __version__ as non_local_detector_version
 selection_key = {
@@ -62,9 +65,9 @@ selection_key = {
     "encoding_interval": encoding_interval_name,
     "decoding_interval": decoding_interval_name,
     "estimate_decoding_params": 0,  # explicit; table default is 1.
-                                     # Branches in the make() handler
-                                     # (`clusterless.py:289` true branch
-                                     # vs `:333` false branch) are very
+                                     # Branches in `_run_decoder`
+                                     # (`clusterless.py:296` true branch
+                                     # vs `:340` false branch) are very
                                      # different — see "estimate vs
                                      # fixed parameters" below.
 }
@@ -72,7 +75,7 @@ ClusterlessDecodingSelection.insert1(selection_key, skip_duplicates=True)
 ClusterlessDecodingV1.populate(selection_key)
 
 # 2. Fetch via DecodingOutput. These classmethods dispatch through
-#    merge_restrict_class(key) internally (decoding_merge.py:74-111) — the
+#    merge_restrict_class(key) internally (decoding_merge.py:94-125) — the
 #    key must resolve to exactly one parent-table row, or you get
 #    ValueError: "Ambiguous entry". A full selection_key (as built above)
 #    usually does; a partial {"nwb_file_name": f} typically does not.
@@ -101,7 +104,7 @@ model = DecodingOutput.fetch_model(selection_key)
 | `fetch_position_info(key)` | (DataFrame, list) | Position data + variable names |
 | `fetch_linear_position_info(key)` | DataFrame | Linearized position projected onto track graph |
 | `fetch_spike_data(key, filter_by_interval)` | list | Spike times (+ features for clusterless) |
-| `create_decoding_view(key, ...)` | FigURL view object (1D or 2D) | Returns a `create_1D_decode_view` / `create_2D_decode_view` view from `non_local_detector.visualization`; call `.url(label=...)` on the returned object to get the shareable string URL. See `decoding/decoding_merge.py:114`. |
+| `create_decoding_view(key, ...)` | FigURL view object (1D or 2D) | Returns a `create_1D_decode_view` / `create_2D_decode_view` view from `non_local_detector.visualization`; call `.url(label=...)` on the returned object to get the shareable string URL. See `decoding/decoding_merge.py:134`. |
 | `cleanup(dry_run)` | None | Remove orphaned .nc/.pkl files |
 
 ## Results Structure (xarray.Dataset)
@@ -120,7 +123,7 @@ results = DecodingOutput.fetch_results(key)
 # - state_bins: STACKED state-and-position index (NOT a plain position
 #   coordinate). Each entry is a (state, position) pair. The non_local_detector
 #   visualization unstacks it before extracting position
-#   (`decoding/decoding_merge.py:148-153`):
+#   (`decoding/decoding_merge.py:173-178`):
 #     posterior = (results.acausal_posterior
 #         .unstack("state_bins")
 #         .drop_sel(state=["Local", "No-Spike"], errors="ignore")
@@ -175,12 +178,12 @@ decoding_params  : LONGBLOB             # model initialization parameters
 decoding_kwargs  = NULL : LONGBLOB      # additional keyword arguments
 ```
 
-**`decoding_params` and `decoding_kwargs` are SIBLING top-level attributes**, not nested inside one another. This matters when inserting a custom param set — a common mistake is to nest `decoding_kwargs` inside `decoding_params`. The runtime kwargs then never reach `get_valid_kwargs`; instead, they get spread into the classifier constructor (`ClusterlessDetector(**decoding_params)`, `decoding/v1/clusterless.py:287`), and current `non_local_detector` constructors have explicit signatures (no catch-all `**kwargs`), so this usually raises `TypeError: unexpected keyword argument 'decoding_kwargs'` at classifier construction rather than degrading silently.
+**`decoding_params` and `decoding_kwargs` are SIBLING top-level attributes**, not nested inside one another. This matters when inserting a custom param set — a common mistake is to nest `decoding_kwargs` inside `decoding_params`. The runtime kwargs then never reach `get_valid_kwargs`; instead, they get spread into the classifier constructor (`ClusterlessDetector(**decoding_params)`, `decoding/v1/clusterless.py:294`), and current `non_local_detector` constructors have explicit signatures (no catch-all `**kwargs`), so this usually raises `TypeError: unexpected keyword argument 'decoding_kwargs'` at classifier construction rather than degrading silently.
 
-- `decoding_params` — classifier constructor kwargs (model architecture, state bins, transitions). Consumed as `ClusterlessDetector(**decoding_params)` inside `make_compute`.
-- `decoding_kwargs` — runtime kwargs passed through to the classifier call. The `make()` handler has two branches gated on `estimate_decoding_params` (table default `1`; both `clusterless.py:90` and `sorted_spikes.py:55`):
-  - **True branch (`clusterless.py:289`)** — Baum-Welch. Treats times outside decoding intervals as missing via an `is_missing` mask and assigns `interval_labels` from that mask; `decoding_kwargs` flow to `estimate_parameters`.
-  - **False branch (`clusterless.py:333`)** — fixed-parameter. Predicts only on non-empty decoding intervals and concatenates those outputs; `decoding_kwargs` are split by `get_valid_kwargs` into fit and predict kwargs.
+- `decoding_params` — classifier constructor kwargs (model architecture, state bins, transitions). Consumed as `ClusterlessDetector(**decoding_params)` inside `_run_decoder`.
+- `decoding_kwargs` — runtime kwargs passed through to the classifier call. Decoding has two branches gated on `estimate_decoding_params` (table default `1`; both `clusterless.py:95` and `sorted_spikes.py:59`). `ClusterlessDecodingV1` has no `make()` — its make is split into `make_fetch`/`make_compute`/`make_insert`, and both branches live in `_run_decoder`; `SortedSpikesDecodingV1` keeps a single `make()` (`sorted_spikes.py:73`) delegating to its own `_run_decoder`:
+  - **True branch (`clusterless.py:296`, `sorted_spikes.py:242`)** — Baum-Welch. Treats times outside decoding intervals as missing via an `is_missing` mask and assigns `interval_labels` from that mask; `decoding_kwargs` flow to `estimate_parameters`.
+  - **False branch (`clusterless.py:340`, `sorted_spikes.py:285`)** — fixed-parameter. Predicts only on non-empty decoding intervals and concatenates those outputs; `decoding_kwargs` are split by `get_valid_kwargs` into fit and predict kwargs.
 
   Spyglass passes the dict through; the specific keyword names the installed `non_local_detector` recognizes (commonly `n_chunks`, `cache_likelihood`) are documented in that package — verify against the installed signatures if a kwarg appears to be ignored or rejected.
 
@@ -220,7 +223,7 @@ from spyglass.decoding import PositionGroup
 
 **Gotcha — `position_variables` must match the upstream DataFrame's
 column names.** `PositionGroup.create_group` defaults
-`position_variables=['position_x', 'position_y']`. Both `TrodesPosV1.fetch1_dataframe()` and `DLCPosV1.fetch1_dataframe()` emit columns literally named `position_x` and `position_y` (see `src/spyglass/position/v1/position_dlc_selection.py:184-186` for DLC), so the **defaults match both upstream sources without modification**. Overriding `position_variables` with body-part-prefixed names like `['head_position_x', 'head_position_y']` is the typical mistake — those columns don't exist on the merge-fetched DataFrame, so when `upsample_rate` is non-NaN the `_upsample` helper raises `KeyError: 'head_position_x'` while iterating the requested variable names (`src/spyglass/decoding/v1/core.py:289-291`). When `upsample_rate` is NaN, the `KeyError` instead fires later, downstream of `fetch_position_info`, when the decoding `make()` body slices the returned DataFrame by `position_variable_names`. Distinct from `ValueError: No objects to concatenate`, which means the `PositionGroup.Position` part is empty for the key (no `pos_merge_id`s in the loop) — a different problem.
+`position_variables=['position_x', 'position_y']`. Both `TrodesPosV1.fetch1_dataframe()` and `DLCPosV1.fetch1_dataframe()` emit columns literally named `position_x` and `position_y` (see `src/spyglass/position/v1/position_dlc_selection.py:184-186` for DLC), so the **defaults match both upstream sources without modification**. Overriding `position_variables` with body-part-prefixed names like `['head_position_x', 'head_position_y']` is the typical mistake — those columns don't exist on the merge-fetched DataFrame, so when `upsample_rate` is non-NaN the `_upsample` helper raises `KeyError: 'head_position_x'` while iterating the requested variable names (`src/spyglass/decoding/v1/core.py:289-291`). When `upsample_rate` is NaN, the `KeyError` instead fires later, downstream of `fetch_position_info`, when the decoding `make()` body slices the returned DataFrame by `position_variable_names`. Distinct from `ValueError: No objects to concatenate`, which means the `PositionGroup.Position` part is empty for the key (no `pos_merge_id`s in the loop) — a different problem. Distinct again: a `fetch1` cardinality error raised *inside* `fetch_position_info()` after you changed or re-populated position looks like a stale/orphaned `pos_merge_id`, but that is a hypothesis, not the first check — confirm the failing key's full PK (an omitted bool default like `estimate_decoding_params` makes the key match >1 selection row) and the position-source count (`len(PositionOutput & {'nwb_file_name': nwb})`; both 0 and >1 break the `fetch1`) *before* the orphan story, running [runtime_debugging.md § Procedure](runtime_debugging.md#procedure) in order. Fix a stale pointer by re-selecting on `PositionGroup`, never by deleting `PositionGroup.Position` — a `SpyglassMixinPart` whose `.delete()` redirects to the master and cascades to downstream decoding rows.
 
 Check:
 
@@ -232,19 +235,19 @@ PositionGroup().create_group(..., position_variables=cols[:2])
 
 ## User inputs vs `populate()` plumbing
 
-Applies to both clusterless and sorted-spikes decoding. The user-side surface is small; the rest is plumbing inside `*DecodingV1.make()`. Listing plumbing as a user input over-scopes the answer; missing a real input under-scopes it.
+Applies to both clusterless and sorted-spikes decoding. The user-side surface is small; the rest is plumbing inside `*DecodingV1.populate()` (a single `make()` for sorted spikes, split `make_fetch`/`make_compute`/`make_insert` for clusterless). Listing plumbing as a user input over-scopes the answer; missing a real input under-scopes it.
 
 **User inputs** — must exist before `*DecodingSelection.insert1`:
 
 - **Neural-data group**: `UnitWaveformFeaturesGroup` for clusterless, `SortedSpikesGroup` for sorted spikes; upstream features/spikes already populated.
 - **`PositionGroup`**: row pointing at a populated `PositionOutput`.
-- **`DecodingParameters`**: stock defaults are version-suffixed `f"<shape>_<source>_{non_local_detector_version}"` and are *not* auto-inserted on import; lab/custom rows may use any name, so query `DecodingParameters` rather than assuming the suffix.
+- **`DecodingParameters`**: stock defaults are version-suffixed `f"<shape>_<source>_{non_local_detector_version}"` and auto-insert via the `contents` property at table declaration (import) on a fresh DB, unless `non_local_detector` fails to import — then they are skipped with a warning and `insert_default()` backfills them; lab/custom rows may use any name, so query `DecodingParameters` rather than assuming the suffix.
 - **`encoding_interval` and `decoding_interval`**: `IntervalList` names; can be the same row.
 - **`estimate_decoding_params`**: 0 = fixed params from `DecodingParameters`; 1 = re-fit via Baum-Welch during populate.
 
 Reaching `UnitWaveformFeaturesGroup` from a fresh `SpikeSorting.populate` run additionally requires a `CurationV1` row surfaced through `SpikeSortingOutput`: `SpikeSortingOutput.insert([curation_key], part_name="CurationV1")`, where `curation_key` is a `CurationV1` row key — *not* a `SpikeSortingSelection` or `SpikeSorting` key. `UnitWaveformFeaturesSelection` FKs to `SpikeSortingOutput` (`decoding/v1/waveform_features.py:106`), and v1 feature computation reads `SpikeSortingOutput.CurationV1` to recover `sorting_id` (`decoding/v1/waveform_features.py:154`). The decoder consumes the waveform features, not the accept/reject curation labels.
 
-**Plumbing inside `make()`** — not user-inserted rows: aligning spike (or feature) times to the position grid; building track graph / environment from `PositionGroup`; constructing the HMM transition matrix + observation model (clusterless mark intensity vs sorted-spikes place fields) from `DecodingParameters`; fitting on `encoding_interval` + forward-backward on `decoding_interval`; writing `results_path` (.nc) + `classifier_path` (.pkl) — populated outputs, not inputs. For "what do I need to run decoding?" answer with the user-input list. For "why is the decoder wrong?" debug user inputs first, then source-read the relevant `make()`.
+**Plumbing inside `populate()`** — not user-inserted rows: aligning spike (or feature) times to the position grid; building track graph / environment from `PositionGroup`; constructing the HMM transition matrix + observation model (clusterless mark intensity vs sorted-spikes place fields) from `DecodingParameters`; fitting on `encoding_interval` + forward-backward on `decoding_interval`; writing `results_path` (.nc) + `classifier_path` (.pkl) — populated outputs, not inputs. For "what do I need to run decoding?" answer with the user-input list. For "why is the decoder wrong?" debug user inputs first, then source-read the relevant `make`/`make_compute`/`_run_decoder`.
 
 ## Clusterless Decoding Flow
 
@@ -310,8 +313,8 @@ from spyglass.decoding.v1.waveform_features import (
 ### Running Clusterless Decoding
 
 ```python
-# decoding_param_name is version-suffixed in DecodingParameters.contents
-# (`decoding/v1/core.py:48`). Build it from the runtime version constant
+# decoding_param_name is version-suffixed in DecodingParameters._default_contents()
+# (`decoding/v1/core.py:64-81`). Build it from the runtime version constant
 # rather than hard-coding a bare prefix.
 from non_local_detector import __version__ as non_local_detector_version
 # `nwb_file_name` is REQUIRED — inherited transitively through both
@@ -386,7 +389,7 @@ fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
 # `state_bins` is a stacked (state, position) coordinate — plotting
 # `acausal_posterior.values` directly mixes state and position rows
 # on one axis. Mirror the merge-table visualization helper
-# (`decoding/decoding_merge.py:148`): unstack `state_bins`, drop the
+# (`decoding/decoding_merge.py:173`): unstack `state_bins`, drop the
 # discrete states (`Local`, `No-Spike`) so only the continuous
 # trajectory states remain, sum across remaining states, and
 # renormalize over position. The result is a (time, position)
@@ -424,12 +427,16 @@ DecodingOutput.merge_restrict({'nwb_file_name': nwb_file})
 
 # Get a specific decoding entry. Build the key from a real
 # DecodingParameters row name — the stock defaults are version-
-# suffixed (`decoding/v1/core.py:48`, e.g.
+# suffixed (`decoding/v1/core.py:64-81`, e.g.
 # f"contfrag_clusterless_{non_local_detector_version}") — and
-# include enough fields to pick exactly one parent row, otherwise
-# `merge_get_part` raises `ValueError: Ambiguous entry...` via
-# `merge_restrict_class` (see § DecodingOutput Merge Table). A full
-# selection_key (the one used at populate time) is the safest:
+# include enough fields to pick exactly one part row. If the
+# restriction spans more than one source part table, `merge_get_part`
+# raises `ValueError: Found N potential parts...`
+# (`utils/dj_merge_tables.py:634-639`); an under-specified single-part
+# key instead fails at the trailing `.fetch1("KEY")`, which expects
+# exactly one row. ("Ambiguous entry" via `merge_restrict_class` is the
+# separate fetch_results/fetch_model path — see § DecodingOutput Merge
+# Table.) A full selection_key (the one used at populate time) is safest:
 from non_local_detector import __version__ as non_local_detector_version
 selection_key = {
     "nwb_file_name": nwb_file,

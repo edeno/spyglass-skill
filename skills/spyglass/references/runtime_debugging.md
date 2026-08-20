@@ -3,7 +3,7 @@
 
 Diagnosing failures that surface *after* Spyglass is installed and configured: `populate()` / `make()` errors, `fetch1()` cardinality mistakes, join multiplicity, and scientific-object bugs (NumPy/pandas) inside `make()`. If your error is install- or connection-related (cannot import spyglass, connection refused, SPYGLASS_BASE_DIR not set, Docker not running, TLS), go to [setup_troubleshooting.md](setup_troubleshooting.md) instead — that file owns the setup surface and this one does not duplicate it.
 
-Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin` pass exceptions through unchanged (`src/spyglass/utils/mixins/populate.py:118`). The only Spyglass-specific exception class is a bare `PopulateException` in `src/spyglass/common/errors.py`. So the traceback you see *is* the DataJoint traceback, and the root cause is almost never the final line.
+Spyglass **does not** wrap DataJoint errors: `SpyglassMixin` and `PopulateMixin` pass exceptions through unchanged (`src/spyglass/utils/mixins/populate.py:7`). The only Spyglass-specific exception class is a bare `PopulateException` in `src/spyglass/common/errors.py`. So the traceback you see *is* the DataJoint traceback, and the root cause is almost never the final line.
 
 ## Contents
 
@@ -44,6 +44,8 @@ Match the first informative line of your traceback against the left column; jump
 | `Exception: The sorter kilosort2 is not installed` (or other wrong-sorter / wrong-params) when you asked for something else | [G. populate(key) with a non-PK dict iterates the whole Selection](#g-populatekey-with-a-non-pk-dict-iterates-the-whole-selection) |
 | `IntegrityError: Cannot add or update a child row: a foreign key constraint fails` | [H. IntegrityError on insert often means an ancestor row is missing](#h-integrityerror-on-insert-often-means-an-ancestor-row-is-missing) |
 | Idle hang, no CPU progress, no log output — populate just sits there | [I. populate() or a query hangs indefinitely](#i-populate-or-a-query-hangs-indefinitely) |
+| `ValueError` on non-unique / duplicate contact positions at `SpikeSortingRecording.populate` (multi-shank sort group; probeinterface wording varies by version — e.g. `Contact positions must be unique within a probe`) | (not here — go to [spikesorting_v1_pipeline.md § Step 1: Recording Preprocessing](spikesorting_v1_pipeline.md#step-1-recording-preprocessing): use `set_group_by_shank`, one sort group per shank) |
+| `IndexError: index 0 is out of bounds for axis 0 with size 0` from `convert_epoch_interval_name_to_position_interval_name` (DLC populate) | (not here — go to [position_dlc_v1_pipeline.md § empty PositionIntervalMap](position_dlc_v1_pipeline.md#gotcha--empty-positionintervalmap-on-old-ingestions-or-dlc-only-sessions)) |
 | `ValueError: Could not find exactly 1 datajoint user <name> in common.LabMember.LabMemberInfo` | (not here — go to [setup_troubleshooting.md § AccessError / PermissionError on a shared installation](setup_troubleshooting.md#accesserror--permissionerror-on-a-shared-installation)) |
 | `Could not find SPYGLASS_BASE_DIR`, connection refused, import failure | (not here — go to [setup_troubleshooting.md](setup_troubleshooting.md); that file owns the setup surface) |
 
@@ -237,11 +239,11 @@ Each signature follows the same shape so the triage output is consistent.
 
 ### A. fetch1() cardinality
 
-**Symptom.** `DataJointError: fetch1 should only be called on relations with exactly one tuple` (or `no tuples`). Sometimes surfaces as `ValueError` from wrappers like `merge_get_part()` or `fetch1_dataframe()`. **Decoding-specific variant** — `DecodingOutput.fetch_results()` does NOT call `fetch1()`; it routes through `merge_restrict_class` (`utils/dj_merge_tables.py:770`), which raises `ValueError: Ambiguous entry. Data has mult rows in parent: ...` for the same diagnostic shape (under-specified restriction → multiple parent matches). Different error class, same fix.
+**Symptom.** `DataJointError: fetch1 should only be called on relations with exactly one tuple` (or `no tuples`). Merge "wrappers" surface it under a different class — `ValueError` from `merge_get_part()`, `KeyError` from `fetch1_dataframe()` (via its `ensure_single_entry()` guard). **Decoding-specific variant** — `DecodingOutput.fetch_results()` does NOT call `fetch1()`; it routes through `merge_restrict_class` (`utils/dj_merge_tables.py:770`), which raises `ValueError: Ambiguous entry. Data has mult rows in parent: ...` for the same diagnostic shape (under-specified restriction → multiple parent matches). Different error class, same fix.
 
 **Most likely root cause.** The restriction in front of `fetch1()` (or `merge_restrict_class`) is either too loose (matches multiple rows — every interval, every parameter set, every pipeline version) or too tight (matches zero rows because a field was wrong).
 
-**Why that explanation fits.** `fetch1()` is defined to raise on anything other than exactly one row, and Spyglass's universal wrappers `merge_get_part` and `fetch1_dataframe` call it internally. `DecodingOutput.fetch_results` instead routes through `merge_restrict_class`, which has its own multi-row guard and raises `ValueError` (`utils/dj_merge_tables.py:782-786`).
+**Why that explanation fits.** `fetch1()` is defined to raise on anything other than exactly one row, but the "wrappers" do **not** route through it: `merge_get_part` raises its own `ValueError` when multiple parts match (`utils/dj_merge_tables.py:634-639`), and `fetch1_dataframe` guards cardinality with `ensure_single_entry()` (`utils/mixins/helpers.py:113-126`), which raises `KeyError` — neither surfaces the failure through `fetch1()`'s `DataJointError`. `DecodingOutput.fetch_results` instead routes through `merge_restrict_class`, which has its own multi-row guard and raises `ValueError` (`utils/dj_merge_tables.py:782-786`).
 
 **Fastest confirmation checks.**
 
@@ -368,7 +370,7 @@ Pay attention to the first field that differs — that's almost always the cause
 
 **Symptom.** `populate()` fails repeatedly without naming the failing key; subsequent runs say the job is reserved; parallel populate hides which worker crashed.
 
-**Most likely root cause.** DataJoint's orchestration (reservation, transactions, parallel workers) is masking the underlying error from steps 2–4. Spyglass doesn't customize this — `PopulateMixin` delegates to DataJoint's `populate()` (`src/spyglass/utils/mixins/populate.py:98`), and a single worker failure in `NonDaemonPool` kills the entire pool.
+**Most likely root cause.** DataJoint's orchestration (reservation, transactions, parallel workers) is masking the underlying error from steps 2–4. Spyglass doesn't customize this — `PopulateMixin` delegates to DataJoint's `populate()` (`src/spyglass/utils/mixins/populate.py:42`), and a single worker failure in `NonDaemonPool` kills the entire pool.
 
 **Why that explanation fits.** With `reserve_jobs=True`, failed keys are written to the `~jobs` table and skipped on the next call; with `use_transaction=True` (Spyglass default), the failing row is rolled back so post-mortem inspection shows no partial state; with parallel workers, only the first exception propagates.
 
@@ -420,7 +422,7 @@ errors_for_key.delete_quick()
 
 **Minimal fix.** Debug with orchestration off. Once the true cause is fixed, re-enable reservation/parallelism for the full run.
 
-**Robust fix.** For pipelines that routinely hit this, document the "debug single key" idiom in the pipeline's README and wrap common diagnostic calls in a small helper. If `use_transaction=False` is required (for long-running populates with external file writes), know that Spyglass adds an upstream-hash check around it (`src/spyglass/utils/mixins/populate.py:88-108`) that will raise if an upstream table changes mid-populate.
+**Robust fix.** For pipelines that routinely hit this, document the "debug single key" idiom in the pipeline's README and wrap common diagnostic calls in a small helper. Note that non-transaction populate is no longer supported: passing `use_transaction=False` (or setting `_use_transaction = False` on the class) raises `NotImplementedError` (`src/spyglass/utils/mixins/populate.py:22-31`). If a `make()` body is too long to hold a transaction, restructure it as a DataJoint **tri-part make** (`make_fetch` / `make_compute` / `make_insert`) rather than disabling the transaction.
 
 **Watch-outs.** A reserved job from a previous crashed run will silently skip in subsequent populates and look like "nothing is happening." Always check `jobs` before concluding that `populate()` is broken.
 
@@ -439,7 +441,7 @@ Field names vary across the codebase. A non-exhaustive map:
 | `LFPArtifactRemovedIntervalList` | `artifact_removed_interval_list_name` (`lfp/v1/lfp_artifact.py:162`) |
 | `LFPBandSelection` | `target_interval_list_name` (`lfp/analysis/v1/lfp_band.py:28`) |
 | `SpikeSortingRecordingSelection` (v0) | `sort_interval_name` — inherited via `-> SortInterval` (field defined in `SortInterval` at `:241`; declared on `SpikeSortingRecordingSelection` at `spikesorting_recording.py:324-332`) |
-| `SpikeSortingArtifactDetectionSelection` | `artifact_removed_interval_list_name` (`spikesorting/v0/spikesorting_artifact.py:88`) |
+| `ArtifactDetectionSelection` (v0) | `sort_interval_name` — inherited via `-> SpikeSortingRecording`; the selection itself adds only `custom_artifact_detection` (`spikesorting/v0/spikesorting_artifact.py:76`). Note `artifact_removed_interval_list_name` (line 88) is an *output* field on the **computed** `ArtifactDetection` table, not a selection field. |
 | `RippleLFPSelection` (feeds `RippleTimesV1`) | `target_interval_list_name` — **inherited two hops** via `-> LFPBandV1 -> LFPBandSelection`. `RippleLFPSelection` (`ripple/v1/ripple.py:33-37`) has no interval field of its own; the inherited name only shows up in the transitive primary key, so check `RippleLFPSelection.heading.primary_key` to see it. |
 | `MuaEventsV1` | `detection_interval` (projected from `IntervalList.interval_list_name` at `mua/v1/mua.py:68`) |
 | Decoding V1 selections | `encoding_interval` AND `decoding_interval` (both projected from `IntervalList.interval_list_name`, `decoding/v1/clusterless.py:88-89`) |

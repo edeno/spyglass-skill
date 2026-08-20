@@ -21,7 +21,7 @@ This reference focuses on the two most common FigURL paths in Spyglass; a third 
 - **Decoding visualization**: generate a 1D or 2D interactive view of posterior probabilities over time
 - *MUA event visualization (not covered in detail here)*: see [mua_pipeline.md](mua_pipeline.md).
 
-Sources: `src/spyglass/spikesorting/v1/figurl_curation.py`, `src/spyglass/decoding/decoding_merge.py` (`create_decoding_view`). FigURL is the upstream **web service / project**, not a Spyglass Python dependency. Spyglass integrates with it via `sortingview` and `kachery-cloud` (the actual installed packages — see `pyproject.toml:51, 68`).
+Sources: `src/spyglass/spikesorting/v1/figurl_curation.py`, `src/spyglass/decoding/decoding_merge.py` (`create_decoding_view`). FigURL is the upstream **web service / project**, not a Spyglass Python dependency. Spyglass integrates with it via `sortingview` (core, `pyproject.toml:72`) and `kachery-cloud` (optional `[kachery-cloud]` extra, `pyproject.toml:95-99`).
 
 Upstream project (FigURL itself, for questions beyond Spyglass integration): <https://github.com/flatironinstitute/figurl>
 
@@ -78,10 +78,13 @@ CurationV1.insert_curation(
 
 ### Prerequisite: curation_label column
 
-`generate_curation_uri()` requires the upstream `CurationV1` NWB to have a `curation_label` column. Add labels when inserting the parent curation — even empty ones are fine:
+`generate_curation_uri()` requires the upstream `CurationV1` NWB to have a `curation_label` column. `insert_curation` writes that column only when **at least one unit carries a non-empty label** — `labels={}` is skipped (an all-empty ragged column has no dtype for hdmf to infer, so the `curation.py:396` guard drops it). Pass at least one real label:
 
 ```python
-CurationV1.insert_curation(sorting_id=sorting_id, labels={})  # other args omitted
+CurationV1.insert_curation(
+    sorting_id=sorting_id,
+    labels={unit_id: ["accept"]},  # >=1 non-empty label required; {} is skipped
+)  # other args omitted
 ```
 
 ### Key Methods
@@ -120,7 +123,7 @@ Under the hood, this routes to `non_local_detector.visualization.figurl_1D.creat
 
 ## Prerequisites
 
-- `sortingview` and `kachery-cloud` installed (core Spyglass dependencies)
+- `sortingview` (core Spyglass dependency, `pyproject.toml:72`) and `kachery-cloud` (optional extra — `pip install 'spyglass-neuro[kachery-cloud]'`, `pyproject.toml:95-99`) installed
 - A valid kachery zone configured — see [setup_config.md](setup_config.md) for the env vars and the `KacheryZone` / `AnalysisNwbfileKachery` tables
 - Internet access — FigURL uploads to kachery-cloud and returns a hosted URL
 - For curation workflows: the `curation_label` column must exist on the parent `CurationV1` NWB
@@ -130,5 +133,5 @@ Under the hood, this routes to `non_local_detector.visualization.figurl_1D.creat
 - **URL retention**: kachery-cloud zones have retention policies. If the URL stops working, the underlying data has expired — repopulate to regenerate
 - **Upload size**: large sortings or recordings can take minutes to upload. `_generate_figurl` accepts a `segment_duration_sec` windowing kwarg, but the normal `FigURLCuration.populate(sel_key)` path does *not* expose it through `FigURLCurationSelection`. The table workflow does not expose this knob; using it requires custom code around the private helper (you'd have to manually assemble the recording/sorting inputs `populate` would have built for you), so prefer the table workflow unless you are deliberately bypassing it
 - **Re-fetching labels**: `get_labels()` / `get_merge_groups()` hit kachery every call. If the curator updates the URL, re-run these to pull the latest state — no local cache
-- **`generate_curation_uri()` requires the parent `CurationV1` NWB to have a `curation_label` column** — `insert_curation(labels=None)` itself just doesn't create one. The error fires later when you generate the figurl URI: `figurl_curation.py:87-93` raises `ValueError: Sorting object must have a 'curation_label' column ...`. Pass `labels={}` (or any non-`None` dict) to `insert_curation` — the `insert_curation` body adds the `curation_label` column whenever `labels is not None`, and any unit IDs missing from the dict get an empty `[]` automatically (see the `if labels is not None:` block in `spikesorting/v1/curation.py`). You don't have to enumerate every unit_id yourself.
+- **`generate_curation_uri()` requires the parent `CurationV1` NWB to have a `curation_label` column** — `insert_curation` writes that column only when `labels is not None` **and at least one unit has a non-empty label list** (`spikesorting/v1/curation.py:396` guards on `any(len(value) > 0 ...)`; an all-empty ragged column is skipped because hdmf can't infer its dtype). Both `insert_curation(labels=None)` and `labels={}` leave the column absent. The error fires later when you generate the figurl URI: `figurl_curation.py:87-93` raises `ValueError: Sorting object must have a 'curation_label' column ...`. Pass at least one real label, e.g. `labels={unit_id: ["accept"]}`; unit IDs missing from the dict still default to `[]` (via `labels.get(unit_id, [])`), so you only need to label the units you care about — not enumerate every one.
 - **V0 vs V1**: v0 has its own `curation_figurl.py` with a similar but not identical API. V1 is the only path to use for new work — do not fall back to v0 if the v1 path fails. Existing v0 curation rows remain readable via `SpikeSortingOutput` (the merge table is source-agnostic); the FigURL generation path is what differs. Legacy v0 references are in [spikesorting_v0_legacy.md](spikesorting_v0_legacy.md).

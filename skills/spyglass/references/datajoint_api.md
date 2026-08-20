@@ -111,7 +111,7 @@ names, times = (Session & key).fetch('nwb_file_name', 'session_start_time')
 # Returns list of dicts with only primary key fields
 ```
 
-**Footgun — too-loose restriction.** `fetch1()` (and universal wrappers like `merge_get_part` and `fetch1_dataframe`) raises `DataJointError: expected one row, got N` when the restriction matches multiple rows. The decoding-only `DecodingOutput.fetch_results` is **NOT** a `fetch1()` wrapper — it routes through `merge_restrict_class` (`utils/dj_merge_tables.py:770`), which raises a different error shape: `ValueError: Ambiguous entry. Data has mult rows in parent: ...` when the restriction matches multiple parent rows. Same diagnostic outcome (under-specified key), distinct error class — pattern-match on `ValueError` for the decoding case. The usual cause is under-specifying the key: `{"nwb_file_name": nwb_file}` alone typically matches every interval, every parameter set, and every pipeline version for that session. `fetch_nwb()` is a SEPARATE footgun — it silently returns a list across all matching rows, so `[0]`-indexing on an under-specified restriction quietly picks an arbitrary row instead of raising. Fix for all shapes: include enough primary-key fields to pick exactly one row. When unsure what fields exist, print the loose-restriction result first and use it to build a fully-specified key:
+**Footgun — too-loose restriction.** `fetch1()` raises `DataJointError: fetch1 requires exactly one tuple in the input set.` (the `fetch1('attr')` form instead raises `fetch1 should only return one tuple. N tuples found`) when the restriction matches multiple rows. Spyglass's merge "wrappers" surface the same under-specification with a *different* error class — `merge_get_part` raises `ValueError` and `fetch1_dataframe` raises `KeyError` (via its `ensure_single_entry()` guard), not `DataJointError`. The decoding-only `DecodingOutput.fetch_results` is **NOT** a `fetch1()` wrapper — it routes through `merge_restrict_class` (`utils/dj_merge_tables.py:770`), which raises a different error shape: `ValueError: Ambiguous entry. Data has mult rows in parent: ...` when the restriction matches multiple parent rows. Same diagnostic outcome (under-specified key), distinct error class — pattern-match on `ValueError` for the decoding case. The usual cause is under-specifying the key: `{"nwb_file_name": nwb_file}` alone typically matches every interval, every parameter set, and every pipeline version for that session. `fetch_nwb()` is a SEPARATE footgun — it silently returns a list across all matching rows, so `[0]`-indexing on an under-specified restriction quietly picks an arbitrary row instead of raising. Fix for all shapes: include enough primary-key fields to pick exactly one row. When unsure what fields exist, print the loose-restriction result first and use it to build a fully-specified key:
 
 ```python
 # Discover
@@ -138,8 +138,8 @@ Use these freely when exploring or finding the right `merge_id`. They are what t
 
 - `.fetch_nwb()` — loads an NWB object from the filestore. `SpyglassMixin.fetch_nwb` calls `_download_missing_files` internally (`src/spyglass/utils/mixins/fetch.py:330`), so it will trigger Kachery/DANDI pulls if the file isn't local.
 - `.fetch1_dataframe()` — loads a DataFrame from an AnalysisNwbfile. Defined on many tables that store time series, including the `PositionOutput`, `LFPOutput`, and `LinearizedPositionOutput` merge tables and V1 tables like `LFPV1`, `LFPBandV1`, `TrodesPosV1`, `RippleTimesV1`. **Not** on `SpikeSortingOutput` or `DecodingOutput` — those use different data-loading paths.
-- `DecodingOutput.fetch_results(key)` — loads an xarray Dataset from an `.nc` file on disk (`src/spyglass/decoding/decoding_merge.py:74`). Decoding-only.
-- `DecodingOutput.fetch_model(key)` — loads the trained decoder model from disk (`src/spyglass/decoding/decoding_merge.py:79`). Decoding-only.
+- `DecodingOutput.fetch_results(key)` — loads an xarray Dataset from an `.nc` file on disk (`src/spyglass/decoding/decoding_merge.py:94`). Decoding-only.
+- `DecodingOutput.fetch_model(key)` — loads the trained decoder model from disk (`src/spyglass/decoding/decoding_merge.py:99`). Decoding-only.
 
 **File-backed data retrieval — prefer accessors over manual paths.** For *retrieving* file-backed data, use the Spyglass accessors above; they split into two families with different resolution paths:
 
@@ -331,7 +331,7 @@ MyComputed & (MySelection & {"that_field": "x"}).proj()
 MyComputed * MySelection & {"that_field": "x"}
 ```
 
-**Prefer the sub-restriction.** The natural-join form works fine for two tables, but with 3+ tables in a `*` chain where the same secondary attribute is exposed on multiple sides (common with PK-renamed FKs), DataJoint raises `DataJointError: Ambiguous attribute`, and the failure mode is non-obvious. The sub-restriction shape names the source table once and avoids the trap by construction. Make the sub-restriction the default for "filter by upstream-secondary-attribute" queries; reserve `*` for cases where you actually need columns from multiple tables in the result.
+**Prefer the sub-restriction.** The natural-join form works fine for two tables, but with 3+ tables in a `*` chain where the same secondary attribute is exposed on multiple sides (common with PK-renamed FKs), DataJoint raises `DataJointError: Ambiguous attribute`, and the failure mode is non-obvious. The sub-restriction shape names the source table once and avoids the trap by construction. Make the sub-restriction the default for *filter-by-upstream-secondary-attribute* queries. Reach for `*` when you genuinely need columns from multiple tables in one result, **or to intersect tables** — "which entities appear in both `A` and `B`" is `set((A * B).fetch('shared_key'))`: the natural join keeps only rows sharing every common attribute (the co-populated set), and `set()` / `distinct` collapses row multiplication.
 
 ### Two failure shapes this guards against
 
@@ -354,11 +354,12 @@ Use this before answering "can I restrict X by field Y?" or "which table owns fi
 
 ## Table Inspection Commands
 
-For LLM answers, prefer the bundled scripts when they can answer the
-question: `code_graph.py describe/path/find-method` for source facts, and
-`db_graph.py describe/find-instance/path` for runtime headings, counts,
-rows, and DB adjacency. Use the interactive DataJoint forms below inside
-the user's Python session or when a script cannot see the needed context.
+For a quick check of one table's PK, parts, heading, or parents/children,
+the one-liners below are the answer — you don't need a script for that.
+Reach for the bundled scripts (`code_graph.py describe/path/find-method`,
+`db_graph.py describe/find-instance/path`) when you need multi-hop FK
+paths, live row counts/values, or cross-table adjacency a single
+one-liner can't give.
 
 ```python
 # View schema definition with primary/foreign keys
@@ -371,6 +372,14 @@ Table.heading
 Table.heading.names
 Table.heading.primary_key
 Table.heading.secondary_attributes
+
+# Primary key as a plain list (shorthand for .heading.primary_key)
+Table.primary_key
+
+# Part tables of a master. parts() returns full DB table names (pass
+# as_objects=True for FreeTable objects); access a specific part by attribute:
+Table.parts()
+Table.PartName         # e.g. Probe.Shank, Probe.Electrode
 
 # View parent/child relationships
 Table.parents()

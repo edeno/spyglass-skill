@@ -36,7 +36,7 @@ from spyglass.lfp.v1 import LFPSelection, LFPV1
 
 # 0. Make sure the standard FIR filter rows exist. The canonical
 #    "LFP 0-400 Hz" filter ships at both 20 kHz and 30 kHz sampling
-#    rates and is inserted by this helper (`common/common_filter.py:577`).
+#    rates and is inserted by this helper (`common/common_filter.py:609`).
 #    The notebook 30_LFP.py:67 calls this before any LFPSelection.insert1.
 FirFilterParameters().create_standard_filters()
 
@@ -133,7 +133,7 @@ LFPElectrodeGroup.create_lfp_electrode_group(
 
 **How electrode groups work.** `LFPElectrodeGroup` is the named per-session set of electrodes used to make one LFP stream. `create_lfp_electrode_group(...)` validates that every `electrode_id` exists in `Electrode` for that `nwb_file_name`, sorts and deduplicates the list, inserts the master row, then inserts one `LFPElectrodeGroup.LFPElectrode` part row per electrode. Downstream `LFPV1` populated from this group contains exactly that group's electrodes. A later `LFPBandSelection.LFPBandElectrode` can choose a *subset* of the group plus optional reference electrodes for band filtering, but it starts from the upstream LFP group — you can't introduce a new electrode at the band step that wasn't in the LFP group.
 
-**`electrode_list` means electrode IDs, not array indices.** Pass Spyglass `Electrode.electrode_id` values, *not* array column positions in the NWB `ElectricalSeries`, channel names, or any other ordinal — Spyglass translates the IDs to NWB column indices with `get_electrode_indices()` before handing them to the filtering backend (`ghostipy`, called internally; users normally do not invoke it directly). For `LFPBandSelection`, `electrode_list` is the subset of *upstream LFP* electrodes to band-filter, and `reference_electrode_list` entries must likewise be upstream LFP electrode IDs (or `-1` for "no reference"). References do *not* have to appear in the output `electrode_list` — you can reference against an electrode that you don't want band-filtered output for.
+**`electrode_list` means electrode IDs, not array indices.** Pass Spyglass `Electrode.electrode_id` values, *not* array column positions in the NWB `ElectricalSeries`, channel names, or any other ordinal — Spyglass translates the IDs to NWB column indices with `get_electrode_indices()` before handing them to Spyglass's vendored FIR module `spyglass.common._fir_filter` (derived from ghostipy under Apache-2.0 but self-contained — ghostipy is not a runtime dependency), which users normally do not invoke directly. For `LFPBandSelection`, `electrode_list` is the subset of *upstream LFP* electrodes to band-filter, and `reference_electrode_list` entries must likewise be upstream LFP electrode IDs (or `-1` for "no reference"). References do *not* have to appear in the output `electrode_list` — you can reference against an electrode that you don't want band-filtered output for.
 
 ## Step 2: Filter Raw Data
 
@@ -358,7 +358,7 @@ For ripple band, swap `"Theta 5-11 Hz"` for `"Ripple 150-250 Hz"` (band_edges `[
 
 ## Common Filters
 
-`FirFilterParameters` has one built-in helper — `create_standard_filters()` — that inserts the broadband `'LFP 0-400 Hz'` preset (`common_filter.py:577`). Everything else is user/lab-created via `add_filter(...)`; register once (site-wide) before any downstream `LFPSelection` or `LFPBandSelection` references the name.
+`FirFilterParameters` has one built-in helper — `create_standard_filters()` — that inserts the broadband `'LFP 0-400 Hz'` preset (`common_filter.py:609`). Everything else is user/lab-created via `add_filter(...)`; register once (site-wide) before any downstream `LFPSelection` or `LFPBandSelection` references the name.
 
 ```python
 from spyglass.common import FirFilterParameters

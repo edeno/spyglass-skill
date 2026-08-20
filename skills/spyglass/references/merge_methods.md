@@ -39,7 +39,7 @@ only primary-key column:
 | `LFPOutput` (`src/spyglass/lfp/lfp_merge.py:16`) | `spyglass.lfp.lfp_merge` | Unifies `LFPV1`, `ImportedLFP`, etc. |
 | `PositionOutput` (`src/spyglass/position/position_merge.py:24`) | `spyglass.position.position_merge` | Unifies `TrodesPosV1`, `DLCPosV1`, `CommonPos`, `ImportedPose` |
 | `LinearizedPositionOutput` (`src/spyglass/linearization/merge.py:13`) | `spyglass.linearization.merge` | Unifies linearization pipeline outputs |
-| `DecodingOutput` (`src/spyglass/decoding/decoding_merge.py:19`) | `spyglass.decoding.decoding_merge` | Unifies `ClusterlessDecodingV1` + `SortedSpikesDecodingV1` |
+| `DecodingOutput` (`src/spyglass/decoding/decoding_merge.py:39`) | `spyglass.decoding.decoding_merge` | Unifies `ClusterlessDecodingV1` + `SortedSpikesDecodingV1` |
 
 **Common lookalikes that are NOT merge tables.** All of these are
 `dj.Computed` or `dj.Manual` — they have their own PKs and respond to
@@ -196,9 +196,9 @@ Both accept the same restriction shapes and both are classmethods — they diffe
 
 **Failure modes differ:**
 
-- `merge_restrict` on an over-broad restriction returns many rows (no raise); always check `len(...)` before `.fetch1(...)`. On a zero-match restriction it returns an empty query (no raise).
+- `merge_restrict` on an over-broad restriction returns many rows (no raise); always check `len(...)` before `.fetch1(...)`. On a zero-match restriction it returns `None` (after a `No parts found. Try adjusting restriction.` warning), **not** an empty query — guard for `None` before chaining `.fetch1(...)`.
 - `merge_get_part` on a restriction that matches entries in multiple parts raises `ValueError: Found multiple potential parts: [...]` unless `multi_source=True`.
-- `merge_get_part` on a restriction that matches zero parts raises `ValueError: Found 0 potential parts: []` — usually because the upstream was populated but never inserted into the merge (see the misleading-error note below and common_mistakes.md for the explicit insert fix). This raise does NOT fire for `merge_restrict`.
+- `merge_get_part` on a restriction that matches zero parts returns `None` (**not** a raise) — usually because the upstream was populated but never inserted into the merge (see the zero-match note below and common_mistakes.md for the explicit insert fix). Guard with `if part is None:`; a later `.fetch1('KEY')` on the `None` return raises `AttributeError`, not `ValueError`.
 
 ### Data Discovery
 
@@ -244,13 +244,13 @@ LFPOutput.merge_fetch('filter_name', restriction={'nwb_file_name': f})
 #### `merge_get_part(restriction, join_master=False, restrict_part=True, multi_source=False, return_empties=False) -> dj.Table`
 Returns the part table(s) containing entries matching the restriction. This is the key method for the merge workflow.
 
-**Raises `ValueError`** if zero or multiple sources match when `multi_source=False` (default). Always wrap in try/except or use `multi_source=True`.
+**Raises `ValueError`** only when *multiple* sources match and `multi_source=False` (default) — pass `multi_source=True` (or add a restriction) to allow multiple. A **zero-match returns `None`**, not a raise; guard with `if part is None:` before chaining (a later `.fetch1('KEY')` on the `None` return raises `AttributeError`, not `ValueError`).
 
-**Misleading-error note.** Current source raises
-`ValueError: Found 0 potential parts: []` (`utils/dj_merge_tables.py:634`)
-— the count is interpolated, so the literal "0" appears in the
-message and the empty list `[]` confirms zero sources matched. The
-usual cause is that the upstream source table (e.g.
+**Zero-match note.** A zero-match returns `None`, not a raise
+(`utils/dj_merge_tables.py:640-641`). The "Found N potential parts"
+message (`utils/dj_merge_tables.py:635`) renders **only** when two or
+more sources match — it can never print "Found 0". The usual cause of
+a `None` return is that the upstream source table (e.g.
 `IntervalPositionInfo`) has rows but they were never inserted into
 the merge part table (e.g. `PositionOutput.CommonPos`).
 
@@ -315,8 +315,8 @@ data = (PositionOutput.TrodesPosV1 & {'nwb_file_name': nwb_file}).fetch(...)
 
 **Footgun.** Don't write `(PositionOutput & {'nwb_file_name': nwb_file}).merge_fetch()`. The merge master's heading is just `(merge_id, source)` (`position/position_merge.py:31`), so the `&` step looks like the silent-no-op pattern this skill warns about elsewhere — even though `merge_fetch` happens to re-route the attached restriction to the parts internally (via `_merge_restrict_parts(restriction=self.restriction)` at `utils/dj_merge_tables.py:811-826`). The behavior works, but reading the line, you can't tell whether the restriction is being applied or silently ignored — the misreading is the bug. Prefer the explicit `restriction=` kwarg, or resolve through `PositionOutput.<Part>` / `merge_get_part(restriction)` when you know which source you want.
 
-#### `fetch1_dataframe(*attrs, **kwargs) -> pd.DataFrame`
-Fetch a single entry as a pandas DataFrame. Works by routing to the correct part table's `fetch1_dataframe` method.
+#### `fetch1_dataframe()` — per-master, **not** inherited from `_Merge`
+Fetch a single entry as a pandas DataFrame by routing to the source part table's own `fetch1_dataframe`. Unlike the methods above, this is **not** a base `_Merge` method (absent from `dj_merge_tables.py`) — each master defines its own with a divergent signature: `PositionOutput` (`position/position_merge.py:81`) and `LinearizedPositionOutput` (`linearization/merge.py:34`) take **no** positional args (passing attrs raises `TypeError`); `LFPOutput` (`lfp/lfp_merge.py:46`) accepts `*attrs, **kwargs`; `SpikeSortingOutput` and `DecodingOutput` define none, so `.fetch1_dataframe()` on those masters raises `AttributeError`.
 
 ```python
 df = (PositionOutput & {'merge_id': merge_id}).fetch1_dataframe()
@@ -356,17 +356,22 @@ PositionOutput().source_class_dict
 
 #### Stale / orphan merge-part tables
 
-`Merge.parts(camel_case=True)` introspects DB part names and calls
-`getattr(module, part_name)`. If a previous Spyglass version declared
-a part class (e.g. `ImportedLFPV1`, `ImportedPose`) that has since
-been removed from the code, the DB still has the part table but the
-Python class is gone. Symptom:
+`Merge.source_class_dict` introspects DB part names via
+`parts(camel_case=True)` and resolves each to its Python class with
+`getattr(module, part_name)` — but only `if hasattr(module, part_name)`
+(`utils/dj_merge_tables.py:718-722`). If a previous Spyglass version
+declared a part class (e.g. `ImportedLFPV1`, `ImportedPose`) that has
+since been removed from the code, the DB still has the part table but
+the Python class is gone. The orphan is **skipped** (never resolved),
+and the master logs a warning rather than raising:
 
 ```
-AttributeError: module 'spyglass.<pipeline>.<merge>' has no attribute '<PartClass>'
+WARNING: Missing code for <PartClass>
 ```
 
-raised from `Merge.source_class_dict` / `.fetch_nwb()` on the master.
+(`utils/dj_merge_tables.py:723-725`). The absent class typically
+surfaces later as a downstream `KeyError` / `TypeError` when something
+tries to route through the missing part.
 
 Find the orphan:
 
@@ -424,13 +429,13 @@ The methods above all live on the `_Merge` base — they exist on every merge ma
 | Method | Defined on | NOT available on | Replacement for the other masters |
 |--------|-----------|------------------|-----------------------------------|
 | `get_restricted_merge_ids(key, sources=..., restrict_by_artifact=..., as_dict=...)` | `SpikeSortingOutput` only (`src/spyglass/spikesorting/spikesorting_merge.py:111`) | `PositionOutput`, `LFPOutput`, `DecodingOutput`, `LinearizedPositionOutput` | Use `merge_restrict({"nwb_file_name": f, ...}).fetch("merge_id")` or `merge_get_part(key).fetch("merge_id")` |
-| `fetch_results(key)` | `DecodingOutput` only (`src/spyglass/decoding/decoding_merge.py:74`) | `PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `LinearizedPositionOutput` | Use `merge_get_part(key).fetch1_dataframe()` or `(Master & merge_key).fetch1_dataframe()` |
+| `fetch_results(key)` | `DecodingOutput` only (`src/spyglass/decoding/decoding_merge.py:94`) | `PositionOutput`, `LFPOutput`, `SpikeSortingOutput`, `LinearizedPositionOutput` | Use `merge_get_part(key).fetch1_dataframe()` or `(Master & merge_key).fetch1_dataframe()` |
 
 The base-`_Merge` methods (`merge_view`, `merge_restrict`, `merge_get_part`, `merge_get_parent`, `merge_fetch`, `merge_populate`, `merge_delete`, `merge_delete_parent`, `extract_merge_id`, `get_source_from_key`) are the portable way to work across all five masters — reach for a per-master helper only when you are on that specific master and want its convenience shape.
 
 **Why the convenience helpers exist.** `SpikeSortingOutput.get_restricted_merge_ids` wraps the common "resolve session + sort-group + artifact filter → merge_ids" flow that is specific to sorted data. `DecodingOutput.fetch_results` wraps the decoding-specific "load the xarray result set for one decode" flow (the V1 tables `ClusterlessDecodingV1` and `SortedSpikesDecodingV1` also define their own `fetch_results` — those are downstream computed tables, not merge masters). Neither pattern generalizes to the other four masters, which is why the helper isn't on the base.
 
-**`fetch_results` has a merge-aware cardinality check — but the diagnostic is not bare `&`.** `DecodingOutput.fetch_results(key)` delegates through `cls().merge_restrict_class(key).fetch_results()` (`src/spyglass/decoding/decoding_merge.py:74-76`). `merge_restrict_class` (`src/spyglass/utils/dj_merge_tables.py:770-789`) does `parent.fetch("KEY", as_dict=True)` and raises `ValueError: Ambiguous entry. Data has mult rows in parent` when the key resolves to more than one parent row (not the `fetch1()` "expected one tuple" error). **Don't** precheck with `len(DecodingOutput & key) == 1` — that's subject to the silent-no-op footgun above because the master only has `merge_id` in its heading. Use `len(DecodingOutput.merge_get_part(key))` or `len(DecodingOutput.merge_restrict(key))` to check cardinality first. See [common_mistakes.md](common_mistakes.md) Common Mistake #2 for the general too-loose-restriction pattern.
+**`fetch_results` has a merge-aware cardinality check — but the diagnostic is not bare `&`.** `DecodingOutput.fetch_results(key)` delegates through `cls().merge_restrict_class(key).fetch_results()` (`src/spyglass/decoding/decoding_merge.py:94-96`). `merge_restrict_class` (`src/spyglass/utils/dj_merge_tables.py:770-789`) does `parent.fetch("KEY", as_dict=True)` and raises `ValueError: Ambiguous entry. Data has mult rows in parent` when the key resolves to more than one parent row (not the `fetch1()` "expected one tuple" error). **Don't** precheck with `len(DecodingOutput & key) == 1` — that's subject to the silent-no-op footgun above because the master only has `merge_id` in its heading. Use `len(DecodingOutput.merge_get_part(key))` or `len(DecodingOutput.merge_restrict(key))` to check cardinality first. See [common_mistakes.md](common_mistakes.md) Common Mistake #2 for the general too-loose-restriction pattern.
 
 ## Projected FK rename pattern
 
@@ -441,6 +446,6 @@ Examples in the wild:
 - `RippleTimesV1` (ripple.py:186): `-> PositionOutput.proj(pos_merge_id='merge_id')`. Build populate key with `pos_merge_id`, not `merge_id`, because `RippleTimesV1`'s own primary FK into `RippleLFPSelection` already uses a `merge_id` slot via `LFPBandV1`.
 - `MuaEventsV1` (mua.py:67–68): *two* renames at once — `PositionOutput.proj(pos_merge_id='merge_id')` and `IntervalList.proj(detection_interval='interval_list_name')`. Populate keys must use both renamed fields.
 
-The pattern is widespread — at least a dozen tables use it, including `LFPBandV1`, `DecodingClusters`, `PoseGroup.Pose`, `SortedSpikesUnit`, and selection tables in `position/v1/` and `spikesorting/`. Grep `.proj(` inside `definition = """` blocks to find them in your own pipeline.
+The pattern is widespread — other carriers include `LFPBandSelection` (`lfp/analysis/v1/lfp_band.py:26`), `PoseGroup.Pose` (`behavior/v1/core.py:28`), `UnitAnnotation` (`spikesorting/analysis/v1/unit_annotation.py:17`), and `SortedSpikesGroup.Units` (`spikesorting/analysis/v1/group.py:100-103`). (The rename lives on the *selection* / group table, not on the downstream `*V1` computed table — e.g. it is `LFPBandSelection`, not `LFPBandV1`, that carries it.) Grep `.proj(` inside `definition = """` blocks to find them in your own pipeline.
 
 **How to detect it.** Read the target table's `definition`. If you see `.proj(foo='bar')` inside an FK line, `foo` is what your populate key needs, not `bar`. `Table.heading.primary_key` also lists the renamed names, not the originals.

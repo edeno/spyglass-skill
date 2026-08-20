@@ -30,7 +30,7 @@ class FooGroup(SpyglassMixin, dj.Manual):
         """
 ```
 
-Downstream tables foreign-key `FooGroup` (the master). The part rows do **not** "come along automatically" — a downstream table that FKs the master sees the master's PK fields and gets the natural join with the part only when something explicitly references the part table. Most groups expose a helper method on the master that materializes the membership list when needed (`SortedSpikesGroup.fetch_spike_data` at `spikesorting/analysis/v1/group.py:171-179` queries `SortedSpikesGroup.Units` directly), or the consumer joins the part table inline (`*Group * Group.Member`) inside `make()`. The user picks the group name; the framework manages the cardinality of the master row, but accessing members is an explicit step.
+Downstream tables foreign-key `FooGroup` (the master). The part rows do **not** "come along automatically" — a downstream table that FKs the master sees the master's PK fields and gets the natural join with the part only when something explicitly references the part table. Most groups expose a helper method on the master that materializes the membership list when needed (`SortedSpikesGroup.fetch_spike_data` at `spikesorting/analysis/v1/group.py:288-296` queries `SortedSpikesGroup.Units` directly), or the consumer joins the part table inline (`*Group * Group.Member`) inside `make()`. The user picks the group name; the framework manages the cardinality of the master row, but accessing members is an explicit step.
 
 ## Why they exist
 
@@ -60,7 +60,7 @@ Same suffix conventions live nearby (`*Group` vs. `*Output`), and both involve a
 | | Merge table | Group table |
 |---|---|---|
 | Rows aggregated | Different *versions* of one analysis (v0 vs v1, sorter A vs sorter B). One row per version per upstream input. | Multiple upstream entities grouped into one named set. One row per member. |
-| PK shape on master | `merge_id` only | Per-table; user-supplied. `SortedSpikesGroup` keys on `(nwb_file_name, unit_filter_params_name, sorted_spikes_group_name)` (`spikesorting/analysis/v1/group.py:63-67` — note the `-> UnitSelectionParams` FK in the PK). `PositionGroup` keys on `(nwb_file_name, position_group_name)` only (`decoding/v1/core.py:130`). Downstream-FK or `create_group(...)` callers must supply the right tuple — `unit_filter_params_name` is required for SortedSpikesGroup and is a common omission. |
+| PK shape on master | `merge_id` only | Per-table; user-supplied. `SortedSpikesGroup` keys on `(nwb_file_name, unit_filter_params_name, sorted_spikes_group_name)` (`spikesorting/analysis/v1/group.py:95-97` — note the `-> UnitSelectionParams` FK in the PK). `PositionGroup` keys on `(nwb_file_name, position_group_name)` only (`decoding/v1/core.py:130`). Downstream-FK or `create_group(...)` callers must supply the right tuple — `unit_filter_params_name` is required for SortedSpikesGroup and is a common omission. |
 | Downstream FK target | The master's `merge_id` (opaque UUID) | The group name (semantic, user-readable) |
 | Helper methods | `merge_get_part`, `merge_restrict`, `merge_get_parent`, `merge_delete` | `create_group()` instance method on the master |
 | Common landmines | Classmethod-discard on restricted relations, silent-no-op on `& {nwb_file_name: ...}` (see [merge_methods.md](merge_methods.md)) | Re-creating an existing group has different per-table behavior — must delete first or pick a new name; downstream-name reuse not enforced. Source-verified split: `SortedSpikesGroup.create_group` raises; `PositionGroup.create_group` logs and returns; `UnitWaveformFeaturesGroup.create_group` warns and returns; `PoseGroup.create_group` warns and returns. None of these are append-like (see SortedSpikesGroup section below for the full pattern). |
@@ -105,7 +105,7 @@ from spyglass.spikesorting.analysis.v1.group import (
 
 # 1. Discover the merge keys for the unit sets you want to group.
 #    `SortedSpikesGroup.Units` FKs `SpikeSortingOutput.proj(
-#    spikesorting_merge_id='merge_id')` (`spikesorting/analysis/v1/group.py:73`),
+#    spikesorting_merge_id='merge_id')` (`spikesorting/analysis/v1/group.py:100-103`),
 #    so each `keys` entry must carry `spikesorting_merge_id`, NOT
 #    `merge_id` — `create_group` splats the dict straight into the part
 #    (`group.py:97-103`). Project the renamed column when fetching.
@@ -133,13 +133,13 @@ print(len(existing), "existing rows for this group key")
 # 4. Create the group. create_group() inserts the master row and all
 #    part rows in one call; it raises if a row with the same
 #    (nwb_file_name, unit_filter_params_name, sorted_spikes_group_name)
-#    triple already exists (`spikesorting/analysis/v1/group.py:84-95`).
+#    triple already exists (`spikesorting/analysis/v1/group.py:119-125`).
 #    The same group_name CAN coexist under a different
 #    unit_filter_params_name — they're distinct rows by PK
-#    (`spikesorting/analysis/v1/group.py:63`). HOWEVER:
+#    (`spikesorting/analysis/v1/group.py:95-97`). HOWEVER:
 #    `SortedSpikesGroup.fetch_spike_data` only restricts the Units
 #    part by (`nwb_file_name`, `sorted_spikes_group_name`)
-#    (`spikesorting/analysis/v1/group.py:171`) — it does NOT filter
+#    (`spikesorting/analysis/v1/group.py:318-322`) — it does NOT filter
 #    by `unit_filter_params_name`. If two rows share a group_name
 #    under different filter params, fetch_spike_data merges their
 #    units silently. Keep `sorted_spikes_group_name` unique per
@@ -162,11 +162,11 @@ print((SortedSpikesGroup & group_key).fetch1())
 print(len(SortedSpikesGroup.Units & group_key), "units in the group")
 ```
 
-The decoding-selection insert then takes `group_key` as one foreign-key block; `SortedSpikesDecodingSelection` declares `-> SortedSpikesGroup`. The part rows are *not* implicitly carried by the master FK — the decoding `make()` materializes them by calling `SortedSpikesGroup.fetch_spike_data(key, time)`, which queries `SortedSpikesGroup.Units` explicitly (`spikesorting/analysis/v1/group.py:171-179`).
+The decoding-selection insert then takes `group_key` as one foreign-key block; `SortedSpikesDecodingSelection` declares `-> SortedSpikesGroup`. The part rows are *not* implicitly carried by the master FK — the decoding `make()` materializes them by calling `SortedSpikesGroup.fetch_spike_data(key, return_unit_ids=True)` (the second positional is `time_slice`, an optional interval defaulting to `None`, not a time vector — for a time-vector API use `get_spike_indicator(key, time)` / `get_firing_rate(key, time)`), which queries `SortedSpikesGroup.Units` explicitly (`spikesorting/analysis/v1/group.py:318`).
 
 ## Cross-references
 
-- [merge_methods.md](merge_methods.md) — sister concept. Classmethod-discard is the merge-table footgun where a restricted relation is silently dropped because the method is a `@classmethod` that ignores `self`. Group-master methods need to be checked individually: `SortedSpikesGroup.fetch_spike_data(key, time)` is a `@classmethod`, but it takes `key` as an explicit argument and routes through `get_fully_defined_key(key)` (`spikesorting/analysis/v1/group.py:142, 168`), so the merge-style classmethod-discard footgun doesn't apply there. The general rule still holds: don't rely on relation restrictions reaching the method body unless the method is documented as instance- or restriction-aware.
+- [merge_methods.md](merge_methods.md) — sister concept. Classmethod-discard is the merge-table footgun where a restricted relation is silently dropped because the method is a `@classmethod` that ignores `self`. Group-master methods need to be checked individually: `SortedSpikesGroup.fetch_spike_data(key, ...)` is a `@classmethod`, but it takes `key` as an explicit argument and routes through `get_fully_defined_key(key)` (`spikesorting/analysis/v1/group.py:288, 313`), so the merge-style classmethod-discard footgun doesn't apply there. The general rule still holds: don't rely on relation restrictions reaching the method body unless the method is documented as instance- or restriction-aware.
 - [common_tables.md](common_tables.md) — `Session`, the common upstream FK for most session-scoped group masters; check the per-table heading for exceptions (e.g. `PoseGroup` is global and does not FK `Session`; `UnitSelectionParams` is a parameter table referenced from `SortedSpikesGroup`'s PK, not a group master).
 - [spyglassmixin_methods.md](spyglassmixin_methods.md) — `cautious_delete` semantics apply to groups; deleting a group cascades to its part rows.
 - [decoding_pipeline.md](decoding_pipeline.md) — `SortedSpikesDecodingSelection` and `ClusterlessDecodingSelection` are the canonical downstream consumers.

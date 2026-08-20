@@ -158,4 +158,4 @@ syllable_df = (MoseqSyllable & label_key).fetch1_dataframe()
 
 Optional dependency (`pip install 'spyglass-neuro[moseq-cpu]'` or `'spyglass-neuro[moseq-gpu]'` — quote the extras spec for zsh).
 
-- `keypoint_moseq` (imported as `kpms`) — motion sequencing from keypoint data. Used internally by `MoseqModel.make()` (project setup, format conversion, PCA, AR-HMM fitting) and `MoseqSyllable.make()` (applying a fit model to new data). You do not normally call `kpms` directly from skill code; `PoseGroup.fetch_pose_datasets(format_for_moseq=True)` produces the arrays the pipeline needs.
+- `keypoint_moseq` (imported as `kpms`) — motion sequencing from keypoint data. Used internally by `MoseqModel`'s `make_compute`/`make_insert` (no single `make()`; project setup, format conversion, PCA, AR-HMM fitting) and `MoseqSyllable.make()` (applying a fit model to new data). You do not normally call `kpms` directly from skill code; `PoseGroup.fetch_pose_datasets(format_for_moseq=True)` produces the arrays the pipeline needs.

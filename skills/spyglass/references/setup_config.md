@@ -74,7 +74,7 @@ python3 -c 'import json; d=json.load(open("dj_local_conf.json")); d.pop("databas
 
 Use these forms from the `Bash` tool (not the `Read` tool). Apply the same pattern for `~/.datajoint_config.json`. If you need to inspect `dj.config` at runtime from Python, print `{k: v for k, v in dj.config.items() if k != "database.password"}` — never bare `dict(dj.config)`.
 
-**For *validating* config resolution rather than *reading* config values**, use the skill-side triage script: `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_config --check base_dir_resolved`. It confirms the resolved values without echoing secrets — the right tool when the goal is "does Spyglass see the config it should?" rather than "what's in the file?"
+**For *validating* config resolution rather than *reading* config values**, use the skill-side triage script: `python skills/spyglass/scripts/verify_spyglass_env.py --check dj_config_loaded --check base_dir_resolved`. It confirms the resolved values without echoing secrets — the right tool when the goal is "does Spyglass see the config it should?" rather than "what's in the file?"
 
 ### Generating Config Programmatically
 
@@ -313,7 +313,7 @@ assert 'raw' in dj.config['stores'] and 'analysis' in dj.config['stores']
 
 ## Data Sharing Tables (Kachery)
 
-Three tables configure kachery-cloud sharing alongside the env vars above. The chain is `KacheryZone` (manual registry of available zones) → `AnalysisNwbfileKacherySelection` (manual selection pairing a zone with an analysis-NWB row) → `AnalysisNwbfileKachery` (computed; FKs to the selection at `sharing/sharing_kachery.py:113`). Skip the selection in your mental model and the populate path doesn't make sense.
+Three tables configure kachery-cloud sharing alongside the env vars above. The chain is `KacheryZone` (manual registry of available zones) → `AnalysisNwbfileKacherySelection` (manual selection pairing a zone with an analysis-NWB row) → `AnalysisNwbfileKachery` (computed; FKs to the selection at `sharing/sharing_kachery.py:142`). Skip the selection in your mental model and the populate path doesn't make sense.
 
 ```python
 from spyglass.sharing import (

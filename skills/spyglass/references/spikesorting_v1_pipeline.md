@@ -203,7 +203,7 @@ from spyglass.spikesorting.v1 import (
 **Parallel HDF5 reads can fail intermittently.** Current v1
 `SpikeSortingRecording.populate(...)` writes the processed recording
 into an analysis NWB via `SpikeInterfaceRecordingDataChunkIterator`
-(`spikesorting/v1/recording.py:844, 883`); the historical
+(`spikesorting/v1/recording.py:906, 945`); the historical
 `write_binary_recording` / `save_to_folder` path is no longer how v1
 stores its output. On older installs (or when SpikeInterface's
 multi-worker writers are still in the chain via custom params), the
@@ -219,8 +219,10 @@ mutating the default.
 
 **Clusterless sorting requires one sort group per shank.** Sort groups
 spanning multiple shanks produce duplicate `(x, y)` contact positions,
-which SpikeInterface rejects at `SpikeSortingRecording.populate` with
-`ValueError: contact positions are not unique`.
+which SpikeInterface / probeinterface reject at `SpikeSortingRecording.populate`
+with a `ValueError` on non-unique contact positions — the exact wording is
+probeinterface-version-specific (e.g. `Contact positions must be unique within
+a probe. Found N duplicate(s)…`, `probeinterface/probe.py`).
 
 ```python
 SortGroup().set_group_by_shank(nwb_file_name=nwb_file)

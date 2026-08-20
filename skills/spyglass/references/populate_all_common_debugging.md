@@ -44,8 +44,8 @@ Once you have the traceback, route back to the matching failure signature in [ru
 
 Useful when you want to isolate which table is failing without re-running the ones that succeeded. The faithful isolation pattern is **NOT** `T().populate(...)` — `populate_all_common` doesn't go through `populate()` for most tables. The driver's per-table loop lives in `single_transaction_make` (`common/populate_all_common.py:114-150`):
 
-- **`SpyglassIngestion` tables — direct `insert_from_nwbfile` branch.** The bulk of the common-tier list — `Session`, `Raw`, `RawPosition`, `Electrode`, `ElectrodeGroup`, `DIOEvents`, `VideoFile`, `CameraDevice`, `Probe`, `ProbeType`, `OptogeneticProtocol`, `Virus`, etc. (full list at `populate_all_common.py:7-40`). The driver calls `table().insert_from_nwbfile(nwb_file_name, config=table_config)` directly. The `config` dict comes from `entries.yaml` if present and overrides defaults; calling bare `populate()` skips this.
-- **Non-`SpyglassIngestion` tables — `make(pop_key)` branch.** Includes `PositionSource` (`SpyglassMixin, dj.Manual` at `common_behav.py:34` — not `SpyglassIngestion`, despite shipping in the common-tier list). The driver derives a key from upstream parents and calls `table().make(pop_key)` (`:127, 150`); `PositionSource.make` then delegates to its own `insert_from_nwbfile` (`common_behav.py:59-69`).
+- **`SpyglassIngestion` tables — direct `insert_from_nwbfile` branch.** The bulk of the common-tier list — `Session`, `Raw`, `Electrode`, `ElectrodeGroup`, `DIOEvents`, `CameraDevice`, `Probe`, `ProbeType`, `RawCompassDirection`, `Virus`, etc. (imports at `populate_all_common.py:7-40`; the gate is `isinstance(table(), SpyglassIngestion)` at `:114`). The driver calls `table().insert_from_nwbfile(nwb_file_name, config=table_config)` directly. The `config` dict comes from `entries.yaml` if present and overrides defaults; calling bare `populate()` skips this.
+- **Non-`SpyglassIngestion` tables — `make(pop_key)` branch.** Includes `PositionSource` (`SpyglassMixin, dj.Manual` at `common_behav.py:34` — not `SpyglassIngestion`, despite shipping in the common-tier list), plus `RawPosition` (`common_behav.py:178`) and `VideoFile` (`common_behav.py:452`), both `SpyglassMixin, dj.Imported`, and `OptogeneticProtocol` (`SpyglassMixin, dj.Manual` at `common_optogenetics.py:15`) — none subclass `SpyglassIngestion`, and `RawPosition` / `VideoFile` have no `insert_from_nwbfile` method at all, so the direct branch would `AttributeError`. The driver derives a key from upstream parents and calls `table().make(pop_key)` (`:127, 150`); `PositionSource.make` then delegates to its own `insert_from_nwbfile` (`common_behav.py:59-69`).
 
 Patterns matching the actual driver:
 
@@ -70,11 +70,14 @@ for T in [Session, Raw, DIOEvents]:                    # SpyglassIngestion only
 # manual form when one parent is `Session` is to pass the registered
 # Nwbfile name) and call .make(key) directly. Note: the driver
 # special-cases a few of these before the generic make() loop —
-# PositionSource (nwb_file_name only; populate_all_common.py:137),
-# and ImportedPose / ImportedLFP / OptogeneticProtocol (`:141-143`,
-# imported via the late-import block at `:180-181`). For those, the
-# faithful isolation is `Table().make({"nwb_file_name": copy_name})`
-# rather than reconstructing the parent-derived key.
+# PositionSource (nwb_file_name only; populate_all_common.py:137)
+# and ImportedPose / ImportedLFP / OptogeneticProtocol (`:141-143`).
+# ImportedPose / ImportedLFP are pulled in via the in-function
+# late-import block at `:186-188`; OptogeneticProtocol is a
+# module-top-level import from spyglass.common.common_optogenetics
+# (`:33-39`). For those, the faithful isolation is
+# `Table().make({"nwb_file_name": copy_name})` rather than
+# reconstructing the parent-derived key.
 # from spyglass.common.<module> import OtherTable
 # OtherTable().make({"nwb_file_name": copy_name})
 ```

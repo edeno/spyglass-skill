@@ -3067,9 +3067,69 @@ def fixture_single_line_description_still_measured(src_root):
     return False
 
 
+@contextmanager
+def _with_skill_dir(desc):
+    """Point the validator at a synthetic SKILL.md with the given description.
+
+    check_structure reads `SKILL_DIR / "SKILL.md"` directly (not through
+    collect_md_files), so patch SKILL_DIR and REFERENCES_DIR at the module
+    level. The temp dir has no references/ subdir, so the ref-link loop
+    finds nothing and only the description checks run.
+    """
+    saved_skill, saved_refs = v.SKILL_DIR, v.REFERENCES_DIR
+    tmp = Path(tempfile.mkdtemp())
+    (tmp / "SKILL.md").write_text(
+        f"---\nname: spyglass\ndescription: {desc}\nallowed-tools: Read\n---\n\n# Body\n"
+    )
+    v.SKILL_DIR = tmp
+    v.REFERENCES_DIR = tmp / "references"  # absent → glob yields nothing
+    try:
+        yield
+    finally:
+        v.SKILL_DIR, v.REFERENCES_DIR = saved_skill, saved_refs
+
+
+def fixture_multibyte_description_under_character_cap_passes(src_root):
+    """A multibyte description below 1024 characters remains valid."""
+    # ~1000 chars, 25 of them em-dashes (3 bytes each): under 1024 chars,
+    # over 1024 bytes. A byte-based check would incorrectly reject it.
+    desc = ("Use when working with Spyglass tables " + "— " * 25).ljust(1000, "x")
+    assert len(desc) <= 1024 < len(desc.encode("utf-8")), (
+        f"fixture setup broken: {len(desc)} chars, {len(desc.encode('utf-8'))} bytes"
+    )
+    with _with_skill_dir(desc):
+        results = v.ValidationResult()
+        v.check_structure(results)
+    cap_failures = [
+        m for m in results.failed
+        if "description: frontmatter description" in m and "1024" in m
+    ]
+    if not cap_failures:
+        print("  [ok] description: multibyte text under character cap passes")
+        return True
+    print(f"  [FAIL] multibyte description wrongly flagged: {cap_failures}")
+    return False
+
+
+def fixture_description_over_character_cap_fails(src_root):
+    """A description over 1024 characters is rejected."""
+    desc = "Use when working with Spyglass tables ".ljust(1025, "x")
+    assert len(desc) == 1025
+    with _with_skill_dir(desc):
+        results = v.ValidationResult()
+        v.check_structure(results)
+    return _assert_contains(
+        results,
+        "1025 chars",
+        "description: text over character cap is flagged",
+    )
+
+
 FIXTURES = [
     fixture_folded_description_measured_in_full,
     fixture_single_line_description_still_measured,
+    fixture_multibyte_description_under_character_cap_passes,
+    fixture_description_over_character_cap_fails,
     fixture_class_registry_picks_version_by_filename,
     fixture_class_registry_uses_code_graph_index,
     fixture_marker_hygiene_warnings,

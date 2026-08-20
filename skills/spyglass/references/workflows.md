@@ -121,20 +121,25 @@ sessions = (Session & {"subject_id": "J16"}).fetch("KEY")
 results = []
 for sk in sessions:
     key = {**sk, "interval_list_name": "task"}
-    # `merge_get_part(key)` raises (ValueError on the strict-source
-    # path, `utils/dj_merge_tables.py:634`; DataJointError on other
-    # internal failure modes) before returning when zero or multiple
-    # parts match. A `len(part) == 1` guard never executes on the
-    # failure branches, so wrap the call in try/except and use
-    # `multi_source=True` to opt out of the strict-one check when
+    # `merge_get_part(key)` raises `ValueError` ONLY when *multiple*
+    # parts match with `multi_source=False`
+    # (`utils/dj_merge_tables.py:634-639`). A ZERO-match returns `None`
+    # (source line 640-641) — it does NOT raise, and an invalid
+    # restriction is swallowed internally rather than surfaced as a
+    # DataJointError. So try/except catches only the multiple-match
+    # case; the zero-match `None` must be handled explicitly before
+    # `len()`, or `len(None)` raises an uncaught TypeError mid-batch.
+    # Pass `multi_source=True` to opt out of the strict-one check when
     # multiple matches are acceptable.
     try:
         part = PositionOutput.merge_get_part(key)
-    except (dj.DataJointError, ValueError):
-        # zero or multiple matches — skip this session in the batch
+    except ValueError:
+        # multiple parts matched — skip this ambiguous session
         continue
-    # `merge_get_part` raises only on zero or multiple matching PART
-    # TABLES — it does NOT prove the returned part relation has
+    if part is None:
+        # zero parts matched (e.g. upstream never inserted into merge)
+        continue
+    # A single resolved part TABLE does NOT prove the part relation has
     # exactly one ROW. Verify before fetch1, otherwise a multi-row
     # part will raise mid-batch.
     if len(part) != 1:
@@ -160,7 +165,7 @@ intervals.fetch(limit=5)
 
 ### Interval Arithmetic
 
-Spyglass ships a NumPy-based interval-manipulation suite in `spyglass.common.common_interval` that users routinely reinvent because the tutorials don't mention it. Use the `Interval` class (`common/common_interval.py:323`); the older module-level wrappers `interval_list_intersect`, `interval_list_union`, `interval_list_complement`, `intervals_by_length`, etc. log deprecation notices and forward to `Interval.intersect` / `Interval.by_length` / similar (`common_interval.py:1020, 1123`). Input shape is the standard `(N, 2)` start/stop array.
+Spyglass ships a NumPy-based interval-manipulation suite in `spyglass.common.common_interval` that users routinely reinvent because the tutorials don't mention it. Use the `Interval` class (`common/common_interval.py:323`) and its methods — e.g. `Interval.intersect` and `Interval.by_length` (`common_interval.py:542, 678`). The older module-level wrappers (`interval_list_intersect`, `interval_list_union`, `interval_list_complement`, `intervals_by_length`) have been **removed**; call the equivalent `Interval` methods directly. Input shape is the standard `(N, 2)` start/stop array.
 
 ```python
 from spyglass.common import IntervalList

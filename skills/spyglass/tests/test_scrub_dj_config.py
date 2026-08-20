@@ -24,9 +24,7 @@ FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures/dj_config"
 @pytest.fixture(scope="session")
 def scrub_module():
     """Import scrub_dj_config as a module so we can exercise its API."""
-    spec = importlib.util.spec_from_file_location(
-        "scrub_dj_config", SCRIPT_PATH
-    )
+    spec = importlib.util.spec_from_file_location("scrub_dj_config", SCRIPT_PATH)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -65,7 +63,7 @@ def scrub_module():
         # Edge: value "authority" contains "auth" as a substring —
         # this is a KNOWN over-mask the predicate accepts because the
         # safer default is to mask anything resembling an auth field.
-        # The escape hatch is --unmask authority.
+        # (No unmask escape hatch — the safe over-mask is intentional.)
         ("authority", True),
         # Edge: my_keyword contains "key" but not "access_key" / "api_key";
         # since we don't match bare "key", this is NOT masked.
@@ -99,10 +97,7 @@ def test_scrub_preserves_non_sensitive_fields(scrub_module):
     assert scrubbed["database.host"] == config["database.host"]
     assert scrubbed["database.port"] == config["database.port"]
     assert scrubbed["database.user"] == config["database.user"]
-    assert (
-        scrubbed["custom"]["spyglass_dirs"]["base"]
-        == config["custom"]["spyglass_dirs"]["base"]
-    )
+    assert scrubbed["custom"]["spyglass_dirs"]["base"] == config["custom"]["spyglass_dirs"]["base"]
     assert scrubbed["stores"]["raw"]["location"] == config["stores"]["raw"]["location"]
 
 
@@ -115,9 +110,9 @@ def test_scrub_masks_database_password_on_every_fixture(scrub_module):
     ):
         config = _load_fixture(fixture_name)
         scrubbed = scrub_module.scrub(config)
-        assert (
-            scrubbed["database.password"] == scrub_module.MASKED
-        ), f"password not masked in {fixture_name}"
+        assert scrubbed["database.password"] == scrub_module.MASKED, (
+            f"password not masked in {fixture_name}"
+        )
 
 
 def test_scrub_masks_store_access_and_secret_keys(scrub_module):
@@ -160,18 +155,6 @@ def test_scrub_leaves_empty_and_none_secrets_untouched(scrub_module):
     assert scrubbed["custom"]["empty_secret"] == ""
 
 
-def test_scrub_unmask_escape_hatch(scrub_module):
-    """--unmask on a specific path leaves that one untouched."""
-    config = _load_fixture("with_stores.json")
-    scrubbed = scrub_module.scrub(
-        config, unmask=("stores.raw.access_key",)
-    )
-    assert scrubbed["stores"]["raw"]["access_key"] == "AKIAEXAMPLE1234"
-    # Others still masked.
-    assert scrubbed["stores"]["raw"]["secret_key"] == scrub_module.MASKED
-    assert scrubbed["database.password"] == scrub_module.MASKED
-
-
 def test_scrub_masks_dict_under_sensitive_key(scrub_module):
     """A sensitive key holding a dict: the WHOLE subtree must be masked.
 
@@ -191,10 +174,7 @@ def test_scrub_masks_dict_under_sensitive_key(scrub_module):
         }
     }
     scrubbed = scrub_module.scrub(config)
-    assert (
-        scrubbed["custom"]["kachery_cloud"]["credentials"]
-        == scrub_module.MASKED
-    )
+    assert scrubbed["custom"]["kachery_cloud"]["credentials"] == scrub_module.MASKED
 
 
 def test_scrub_masks_list_under_sensitive_key(scrub_module):
@@ -264,29 +244,6 @@ def test_cli_compact_json_flag():
     assert "\n  " not in result.stdout
     parsed = json.loads(result.stdout)
     assert parsed["database.password"] == "***MASKED***"
-
-
-def test_cli_unmask_prints_warning_banner():
-    """--unmask must fire a loud stderr banner naming the keys.
-
-    The banner exists to deter running with --unmask inside an active
-    Claude / agent conversation — the unmasked values land in stdout,
-    which becomes part of tool-result / context history.
-    """
-    result = _run_cli(
-        [
-            "--unmask",
-            "database.password",
-            str(FIXTURES_DIR / "basic.json"),
-        ]
-    )
-    assert result.returncode == 0
-    assert "WARNING" in result.stderr
-    assert "--unmask" in result.stderr
-    assert "database.password" in result.stderr
-    # And the unmasked value IS in stdout (that's the escape-hatch contract).
-    parsed = json.loads(result.stdout)
-    assert parsed["database.password"] == "s3cr3t-password"
 
 
 def test_cli_read_failure_returns_4_and_empty_stdout(tmp_path):

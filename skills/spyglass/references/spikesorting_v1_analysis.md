@@ -23,7 +23,7 @@ from spyglass.spikesorting.analysis.v1.group import SortedSpikesGroup, UnitSelec
 **UnitSelectionParams** (Manual)
 
 - Key: `unit_filter_params_name`
-- Defaults: `"all_units"`, `"exclude_noise"`, `"default_exclusion"` — declared in `contents` plus `insert_default()` (`spikesorting/analysis/v1/group.py:17-59`). Despite being a `dj.Manual`, the rows are *not* auto-inserted on import. **On a fresh DB, run `UnitSelectionParams().insert_default()` once** before any `SortedSpikesGroup.create_group(..., unit_filter_params_name=...)` call that references one of these names — otherwise the FK insert fails with no matching row.
+- Defaults: `"all_units"`, `"exclude_noise"`, `"default_exclusion"` — declared in `contents` plus `insert_default()` (`spikesorting/analysis/v1/group.py:68-89`). Despite being a `dj.Manual`, the rows are *not* auto-inserted on import. **On a fresh DB, run `UnitSelectionParams().insert_default()` once** before any `SortedSpikesGroup.create_group(..., unit_filter_params_name=...)` call that references one of these names — otherwise the FK insert fails with no matching row.
 
 **SortedSpikesGroup** (Manual)
 
@@ -36,7 +36,7 @@ from spyglass.spikesorting.analysis.v1.group import SortedSpikesGroup, UnitSelec
 # Create a group. `keys` are inserted directly into the part table
 # `SortedSpikesGroup.Units`, which FKs
 # `SpikeSortingOutput.proj(spikesorting_merge_id='merge_id')`
-# (`spikesorting/analysis/v1/group.py:73, 97-103`). Each entry must
+# (`spikesorting/analysis/v1/group.py:97-103`). Each entry must
 # therefore use the renamed key, NOT raw `merge_id`.
 SortedSpikesGroup().create_group(
     group_name='HPC_02_r1',
@@ -64,7 +64,7 @@ firing_rate = SortedSpikesGroup().get_firing_rate(
 
 **`time_slice` accepts a `slice`, list, or tuple.** The docstring says
 `time_slice: list of float, optional`; the implementation at
-`src/spyglass/spikesorting/analysis/v1/group.py:231-232` converts a
+`src/spyglass/spikesorting/analysis/v1/group.py:396-397` converts a
 list/tuple to a slice via `time_slice = slice(*time_slice)`. Both of
 these work:
 

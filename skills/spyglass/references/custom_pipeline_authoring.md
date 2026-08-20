@@ -84,7 +84,7 @@ These are the rules most likely to cause mysterious failures if ignored. Behavio
 1. **`SpyglassMixin` must be first in inheritance order**, before `dj.Manual`/`Lookup`/`Computed`/`Imported`/`Part`. From `docs/src/ForDevelopers/Classes.md`: "SpyglassMixin must be the first class inherited to ensure method overrides work correctly." Part tables use `SpyglassMixinPart` instead.
 2. **Choose the right tier**. `dj.Lookup` for params (contents baked into the class), `dj.Manual` for selection/grouping tables the user populates, `dj.Computed` with `make()` for analysis outputs, `dj.Imported` for tables populated by walking an NWB file. See the tier list in `TableTypes.md`.
 3. **Keep Parameters, Selection, and Computed tables separate.** Combining them (e.g., putting a `params` blob directly on a Computed table) breaks reproducibility and makes re-runs with different params impossible without deleting rows.
-4. **Write analysis outputs to `AnalysisNwbfile`** when the result is sizeable (arrays, waveforms, posteriors). Keep only small metadata in DataJoint columns. Tables should reference exactly one AnalysisNwbfile table — Spyglass validates this on declaration.
+4. **Write analysis outputs to `AnalysisNwbfile`** when the result is sizeable (arrays, waveforms, posteriors). Keep only small metadata in DataJoint columns. Tables should reference exactly one AnalysisNwbfile table — Spyglass validates this on first instantiation of the declared table (raises `ValueError` "Tables cannot have multiple AnalysisNwbfiles").
 5. **Only introduce a merge table for genuinely multi-source outputs.** If you only have one implementation, skip the merge table and let downstream tables FK-ref your Computed table directly.
 6. **Never use `skip_duplicates=True` when your `make()` inserts into `IntervalList`.** Spyglass's built-in pipelines protect against orphaned-interval drift by nuking orphans on every delete — but custom `make()`s that call `IntervalList.insert1(..., skip_duplicates=True)` bypass that protection. Scenario: you delete the downstream entry, leave the interval row in place, re-run `make()` — the new computation silently attaches to the OLD interval row. Silent wrong data. If your pipeline needs a new `IntervalList` row, either insert without `skip_duplicates` (let it raise) or delete the old interval first. See `docs/src/ForDevelopers/Management.md`.
 
@@ -233,7 +233,10 @@ class PosDerivedAnalysis(SpyglassMixin, dj.Computed):
     def make(self, key):
         # Option A: require a specific upstream source (safer).
         parent = PositionOutput().merge_get_parent(key)
-        if parent.camel_name != "TrodesPosV1":
+        # merge_get_parent returns a plain dj.FreeTable (no camel_name);
+        # derive the class name from its table_name (Spyglass's own idiom,
+        # e.g. position_merge.py:88).
+        if dj.utils.to_camel_case(parent.table_name) != "TrodesPosV1":
             raise ValueError("PosDerivedAnalysis requires TrodesPosV1")
         position_df = (PositionOutput & key).fetch1_dataframe()
         # ... compute ...
@@ -247,8 +250,9 @@ class PosDerivedAnalysis(SpyglassMixin, dj.Computed):
         # instead (`position/v1/imported_pose.py:110`). The same is true
         # of `fetch_video_path()`. FK-ref'ing the merge master is
         # general; per-source method availability is not. Either gate
-        # via merge_get_parent.camel_name (as in Option A), or branch
-        # on the parent class and call the appropriate accessor.
+        # via `dj.utils.to_camel_case(merge_get_parent(key).table_name)`
+        # (as in Option A), or branch on the parent class and call the
+        # appropriate accessor.
 ```
 
 Same pattern applies to `LFPOutput`, `SpikeSortingOutput`, `DecodingOutput`, `LinearizedPositionOutput`.
@@ -316,9 +320,10 @@ nwb_file_name = (Session & key).fetch1("nwb_file_name")
 # table_name is the NAME the object gets in the NWB scratch space
 # (the retrieval key), not a description. DataFrames and numpy arrays
 # are auto-wrapped into DynamicTable / ScratchData respectively.
-# ALWAYS pass table_name explicitly — default is "pandas_table", so
-# multiple add_nwb_object() calls without distinct names collide in
-# scratch space and later retrieval fails.
+# ALWAYS pass table_name explicitly — the default name is type-dependent
+# ("pandas_table" for DataFrames, "numpy_array" for numpy arrays), so
+# multiple same-type add_nwb_object() calls without distinct names collide
+# in scratch space and later retrieval fails.
 with AnalysisNwbfile().build(nwb_file_name) as builder:
     obj_id = builder.add_nwb_object(my_numpy_array, table_name="result")
     analysis_file_name = builder.analysis_file_name
@@ -338,7 +343,7 @@ AnalysisNwbfile().add(nwb_file_name, analysis_file_name)  # registers
 AnalysisNwbfile().add_nwb_object(...)                      # fails
 ```
 
-**Constraint**: a table may reference only one AnalysisNwbfile table (either `common.common_nwbfile.AnalysisNwbfile` or a custom per-user one, not both). Spyglass validates this on declaration.
+**Constraint**: a table may reference only one AnalysisNwbfile table (either `common.common_nwbfile.AnalysisNwbfile` or a custom per-user one, not both). Spyglass validates this on first instantiation of the declared table (raises `ValueError` "Tables cannot have multiple AnalysisNwbfiles" from `_validate_analysis_nwbfile_fks`, `utils/dj_mixin.py:90`), not during declaration itself.
 
 **Discovering what already exists**: import `AnalysisRegistry` from `spyglass.common` (re-exported from `spyglass.common.common_nwbfile`) and use the `all_classes` property — `AnalysisRegistry().all_classes` (`common_nwbfile.py:431`) returns every registered `AnalysisNwbfile` subclass across schemas as **initialized table objects** (each entry is the result of `_get_tbl_from_name(...)()`, not a bare class), in a `list[SpyglassAnalysis]`. For one specific team, `AnalysisRegistry().get_class("myteam")` (`common_nwbfile.py:396`) returns just that registered table. Use these when auditing what other teams have already authored before adding your own, or when building cross-pipeline tools that need to iterate all analysis-file tables. (The `AnalysisRegistry` class docstring lists a `get_all_classes()` method — that's stale; the actual surface is the `all_classes` property.)
 
@@ -389,7 +394,7 @@ my_teams = (LabTeam.LabTeamMember & {"lab_member_name": member_name}).fetch("tea
 print(list(my_teams))
 ```
 
-A user with no `LabMember.LabMemberInfo` row hits `cautious_delete` errors of the form `Could not find name for datajoint user <name> in LabMember.LabMemberInfo`. The fix is to insert the row, not to bypass the check — see [setup_troubleshooting.md](setup_troubleshooting.md) "AccessError / PermissionError".
+A user with no `LabMember.LabMemberInfo` row hits `cautious_delete` errors of the form `Could not find exactly 1 datajoint user <name> in common.LabMember.LabMemberInfo` (a `ValueError` from `LabMember.get_djuser_name`, `common/common_lab.py:134`). The fix is to insert the row, not to bypass the check — see [setup_troubleshooting.md](setup_troubleshooting.md) "AccessError / PermissionError".
 
 **When to use which.** SQL grants when the question is "can this connection structurally do X" (ALTER, DROP, cross-schema DELETE). `LabMember` / `LabTeam` when the question is "should Spyglass let this user do X to *this* session's data" (cautious_delete behavior, ownership-aware logic in custom `make()` bodies).
 
